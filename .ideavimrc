@@ -1,0 +1,172 @@
+" Basic settings 
+let mapleader=" "
+set scrolloff=20
+set relativenumber
+set number
+set visualbell
+set noerrorbells
+" Clipboard
+set clipboard+=unnamed
+set clipboard+=unnamedplus
+set clipboard^=ideaput
+
+" Search Behaviour 
+set ignorecase
+set smartcase
+set incsearch
+
+" LSP Navigation
+nmap gR <Action>(FindUsages)
+nmap gD <Action>(GotoDeclaration)
+nmap gd <Action>(GotoDeclaration)
+nmap gi <Action>(GotoImplementation)
+nmap gt <Action>(GotoTypeDeclaration)
+nmap <leader>ca <Action>(ShowIntentionActions)
+nmap <leader>rn <Action>(RenameElement)
+nmap <leader>D <Action>(ShowErrorDescription)
+nmap <leader>dl <Action>(ShowErrorDescription)
+nmap K <Action>(QuickJavaDoc)
+nmap gh <Action>(QuickJavaDoc)
+nmap <C-k> <Action>(ParameterInfo)
+nmap <leader>ds <Action>(FileStructurePopup)
+
+" NvimTree equivalent mappings
+nmap <leader>ee <Action>(ActivateProjectToolWindow)
+nmap <leader>ef <Action>(SelectInProjectView)
+
+" Command mode and escape
+map ; :
+imap jk <Esc>
+
+" Keep selection after indent
+vmap < <gv
+vmap > >gv
+
+" Window splitting
+map <leader>sv <Action>(SplitVertically)
+map <leader>sh <Action>(SplitHorizontally)
+map <leader>se <Action>(MaximizeEditorInSplit)
+map <leader>sx <Action>(CloseContent)
+
+" Buffer navigation
+nmap ]b <Action>(NextTab)
+nmap [b <Action>(PreviousTab)
+nmap <leader>x <Action>(CloseContent)
+
+" Terminal
+map <leader>th <Action>(ActivateTerminalToolWindow)
+map <leader>tv <Action>(Terminal.OpenInTerminal)
+
+" Search
+map <leader>wk <Action>(GotoAction)
+
+" Diagnostics
+map <leader>dw <Action>(ShowErrorDescription)
+map <leader>dd <Action>(ShowErrorDescription)
+
+" Code completion
+imap <C-k> <Action>(PreviousTemplateVariable)
+imap <C-j> <Action>(NextTemplateVariable)
+imap <Tab> <Action>(CodeCompletion)
+imap <S-Tab> <Action>(PreviousTemplateVariable)
+
+" Telescope equivalent mappings
+map <Space>ff <Action>(GotoFile)
+map <Space>fb <Action>(RecentFiles)
+map <Space>fw <Action>(FindInPath)
+
+" Git navigation
+nmap ]h <Action>(VcsShowNextChangeMarker)
+nmap [h <Action>(VcsShowPrevChangeMarker)
+
+" Git actions
+nmap <leader>hs <Action>(Vcs.AddToStaging)
+nmap <leader>hr <Action>(Vcs.RollbackChangedLines)
+vmap <leader>hs <Action>(Vcs.AddToStaging)
+vmap <leader>hr <Action>(Vcs.RollbackChangedLines)
+
+" Buffer-wide git actions
+nmap <leader>hS <Action>(Git.Add)
+nmap <leader>hR <Action>(Git.ResetHead)
+nmap <leader>hu <Action>(Vcs.Rollback)
+
+" Git preview and info
+nmap <leader>hp <Action>(VcsShowCurrentChangeMarker)
+nmap <leader>hi <Action>(VcsShowCurrentChangeMarker)
+nmap <leader>hb <Action>(Annotate)
+nmap <leader>hB <Action>(Git.ToggleAnnotations)
+
+" Git diff
+nmap <leader>hd <Action>(Compare.LastVersion)
+nmap <leader>hD <Action>(Compare.Selected)
+
+" Diagnostic navigation
+nmap ]d <Action>(GotoNextError)
+nmap [d <Action>(GotoPreviousError)
+
+" Move line up/down
+nmap <A-Up> :move-2<CR>
+nmap <A-Down> :move+1<CR>
+imap <A-Up> <Esc>:move-2<CR>gi
+imap <A-Down> <Esc>:move+1<CR>gi
+vmap <A-Up> :move'<-2<CR>gv=gv
+vmap <A-Down> :move'>+1<CR>gv=gv
+
+nmap <A-k> :move-2<CR>
+nmap <A-j> :move+1<CR>
+imap <A-k> <Esc>:move-2<CR>gi
+imap <A-j> <Esc>:move+1<CR>gi
+vmap <A-k> :move'<-2<CR>gv=gv
+vmap <A-j> :move'>+1<CR>gv=gv
+
+" Duplicate line up/down
+nmap <S-A-Up> YP
+nmap <S-A-Down> Yp
+imap <S-A-Up> <Esc>YPgi
+imap <S-A-Down> <Esc>Ypgi
+vmap <S-A-Up> y`>pgvo
+vmap <S-A-Down> y`>p`[v`]
+
+nmap <S-A-k> YP
+nmap <S-A-j> Yp
+imap <S-A-k> <Esc>YPgi
+imap <S-A-j> <Esc>Ypgi
+vmap <S-A-k> y`>PgvO
+vmap <S-A-j> y`>p`[v`]
+
+" Source config file
+nnoremap <leader>si :source ~/.ideavimrc<CR>
+
+" Enable Surround plugin
+set surround
+
+" Enable NERDTree plugin
+set NERDTree
+
+" NERDTree mappings similar to NvimTree
+nmap <leader>ee :NERDTreeFocus<CR>
+nmap <leader>ef :NERDTreeFind<CR>
+nmap <C-n> :NERDTreeToggle<CR>
+
+" File navigation and operations
+let g:NERDTreeMapJumpNextSibling = 'j'
+let g:NERDTreeMapJumpPrevSibling = 'k'
+let g:NERDTreeMapNewFile = 'a'
+let g:NERDTreeMapDelete = 'd'
+
+set commentary
+nnoremap <leader>/ :action CommentByLineComment<CR>
+vnoremap <leader>/ :action CommentByLineComment<CR>
+
+" Navigate between splits 
+nmap <C-h> <C-w>h
+nmap <C-j> <C-w>j
+nmap <C-k> <C-w>k
+nmap <C-l> <C-w>l
+
+" Open command pallete
+map <leader>pp <Action>(GotoAction)
+
+" Hide sidebar and bottom bar
+map <leader>hw :action HideAllWindows<CR>
+

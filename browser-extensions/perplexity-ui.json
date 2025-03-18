@@ -1,0 +1,131 @@
+{
+  "localStorage": {
+    "cdnLastUpdated": 1737927489810,
+    "devMode": false,
+    "energySavingMode": false,
+    "extensionIconAction": "dashboard",
+    "favoritePluginIds": [],
+    "isPostUpdateReleaseNotesPopupDismissed": false,
+    "plugins": {
+      "blockAnalyticEvents": {
+        "enabled": true
+      },
+      "commandMenu": {
+        "enabled": true,
+        "hotkey": ["meta", "shift", "p"]
+      },
+      "hide-get-mobile-app-cta-btn": {
+        "enabled": true
+      },
+      "imageGenModelSelector": {
+        "enabled": true
+      },
+      "onCloudflareTimeoutAutoReload": {
+        "behavior": "reload",
+        "enabled": false
+      },
+      "queryBox:focusSelector": {
+        "defaultFocusMode": "internet",
+        "enabled": true,
+        "mode": "persistent"
+      },
+      "queryBox:focusSelector:webRecency": {
+        "enabled": true
+      },
+      "queryBox:fullWidthFollowUp": {
+        "enabled": false
+      },
+      "queryBox:languageModelSelector": {
+        "changeTimezone": false,
+        "enabled": true,
+        "followUp": true,
+        "main": true,
+        "respectDefaultSpaceModel": false
+      },
+      "queryBox:noFileCreationOnPaste": {
+        "enabled": true
+      },
+      "queryBox:slashCommandMenu": {
+        "enabled": true,
+        "showTriggerButton": true
+      },
+      "queryBox:slashCommandMenu:promptHistory": {
+        "enabled": true,
+        "trigger": {
+          "onNavigation": true,
+          "onSubmit": true
+        }
+      },
+      "queryBox:submitOnCtrlEnter": {
+        "enabled": false
+      },
+      "spaceNavigator": {
+        "enabled": true
+      },
+      "thread:betterCodeBlocks": {
+        "enabled": true,
+        "maxHeight": {
+          "collapseByDefault": false,
+          "enabled": true,
+          "showToggleButton": true,
+          "value": 500
+        },
+        "stickyHeader": true,
+        "unwrap": {
+          "enabled": true,
+          "showToggleButton": true
+        }
+      },
+      "thread:betterMessageCopyButtons": {
+        "enabled": true
+      },
+      "thread:betterMessageToolbars": {
+        "collapsibleQuery": false,
+        "enabled": true,
+        "explicitModelName": true,
+        "hideUnnecessaryButtons": true,
+        "simplifyRewriteDropdown": true,
+        "sticky": true,
+        "tokensCount": false,
+        "wordsAndCharactersCount": true
+      },
+      "thread:canvas": {
+        "enabled": false
+      },
+      "thread:collapseEmptyThreadVisualCols": {
+        "enabled": false
+      },
+      "thread:customThreadContainerWidth": {
+        "enabled": false,
+        "value": 1100
+      },
+      "thread:dragAndDropFileToUploadInThread": {
+        "enabled": true
+      },
+      "thread:exportThread": {
+        "enabled": true
+      },
+      "thread:toc": {
+        "enabled": true
+      },
+      "zenMode": {
+        "alwaysHideHomepageWidgets": true,
+        "alwaysHideRelatedQuestions": false,
+        "alwaysHideVisualCols": false,
+        "enabled": true,
+        "lastState": false,
+        "persistent": false
+      }
+    },
+    "preloadTheme": false,
+    "schemaVersion": "1.3.6.0",
+    "showPostUpdateReleaseNotesPopup": false,
+    "theme": "complexity-shy-moment"
+  },
+  "db": {
+    "themes": [],
+    "betterCodeBlocksFineGrainedOptions": [],
+    "promptHistory": [],
+    "pinnedSpaces": []
+  }
+}
