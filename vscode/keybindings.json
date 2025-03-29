@@ -101,8 +101,7 @@
   },
   {
     "key": "ctrl+n",
-    "command": "workbench.action.toggleSidebarVisibility",
-    "when": "editorTextFocus || sideBarFocus"
+    "command": "workbench.action.toggleSidebarVisibility"
   },
   {
     "key": "ctrl+k",

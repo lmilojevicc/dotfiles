@@ -3,7 +3,8 @@
 .windows,
 .linux {
   font-family:
-    "Hasklug Nerd Font", "DM Mono", "SpaceMono Nerd Font", "FiraCode Nerd Font",
+    "DM Mono", "Consolas For Powerline", "Sometype Mono", "Geist Mono",
+    "Hasklig", "Hasklug Nerd Font", "SpaceMono Nerd Font", "FiraCode Nerd Font",
     "JetBrainsMono Nerd Font", "Cascadia Mono NF",
     "RecMonoDuotone Nerd Font Mono", monospace;
 }
@@ -30,7 +31,7 @@
 /* ------------ Tab bar ------------ */
 div.tabs-container {
   font-style: italic;
-  font-weight: 500;
+  font-weight: 300;
 }
 
 /* ------------ Command Center ------------ */
@@ -315,13 +316,6 @@ div.tabs-container {
   font-size: 14px !important;
   text-transform: uppercase;
   color: #bc9abc !important;
-}
-
-.composite.title h2::before {
-  display: inline-block;
-  margin-right: 6px;
-  font-size: 1.1rem;
-  content: "🚀";
 }
 
 /* ------------ Activity Bar Icons Center ------------ */

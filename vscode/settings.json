@@ -65,14 +65,14 @@
   "editor.cursorSurroundingLines": 20,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.folding": true,
-  "editor.fontFamily": "'Hasklug Nerd Font', 'DM Mono', 'SpaceMono Nerd Font', 'FiraCode Nerd Font', 'JetBrainsMono Nerd Font', 'Cascadia Mono NF', 'RecMonoDuotone Nerd Font Mono', monospace",
+  "editor.fontFamily": "'Consolas For Powerline', 'Sometype Mono', 'Geist Mono', 'Hasklig', 'Hasklug Nerd Font', 'DM Mono', 'SpaceMono Nerd Font', 'FiraCode Nerd Font', 'JetBrainsMono Nerd Font', 'Cascadia Mono NF', 'RecMonoDuotone Nerd Font Mono', monospace",
   "editor.fontLigatures": false,
   "editor.fontSize": 16,
   "editor.fontWeight": 400,
   "editor.formatOnSave": true,
   "editor.glyphMargin": true,
   "editor.guides.indentation": true,
-  "editor.lineHeight": 2,
+  "editor.lineHeight": 1.6,
   "editor.lineNumbers": "off",
   "editor.minimap.enabled": false,
   "editor.overviewRulerBorder": false,
@@ -138,6 +138,9 @@
   "vim.easymotion": true,
   "vim.leader": "<Space>",
   "vim.commandLineModeKeyBindingsNonRecursive": [],
+  "vim.handleKeys": {
+    "<C-u>": true
+  },
   "vim.insertModeKeyBindingsNonRecursive": [{ "after": ["<ESC>"], "before": ["j", "k"] }],
   "vim.normalModeKeyBindingsNonRecursive": [
     { "before": ["u"], "commands": ["undo"] },
@@ -404,5 +407,6 @@
   "workbench.list.smoothScrolling": true,
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
-  "autoHide.mode": "auto"
+  "autoHide.mode": "auto",
+  "workbench.productIconTheme": "feather-vscode"
 }
