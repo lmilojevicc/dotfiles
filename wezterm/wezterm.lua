@@ -6,6 +6,10 @@ config.max_fps = 240
 config.front_end = "WebGpu"
 config.harfbuzz_features = { "calt=0", "clig=0", "liga=0" }
 config.font = wezterm.font_with_fallback({
+	{ family = "Consolas For Powerline" },
+	{ family = "Sometype Mono" },
+	{ family = "Fragment Mono" },
+	{ family = "Geist Mono" },
 	{ family = "Hasklig" },
 	{ family = "DM Mono" },
 	{ family = "Space Mono" },

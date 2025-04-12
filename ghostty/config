@@ -1,5 +1,8 @@
 # Font
-font-family = "Hasklug Nerd Font"
+font-family = "Consolas For Powerline"
+font-family = "Sometype Mono"
+font-family = "Fragment Mono"
+font-family = "Symbols Nerd Font"
 font-size = 16
 font-feature = -calt,-liga,-dlig
 
@@ -32,10 +35,12 @@ keybind = shift+alt+up=goto_split:up
 keybind = shift+alt+down=goto_split:down
 
 # Change pane sizes
-keybind = shift+cmd+alt+left=resize_split:left,5
-keybind = shift+cmd+alt+right=resize_split:right,5
-keybind = shift+cmd+alt+up=resize_split:up,5
-keybind = shift+cmd+alt+down=resize_split:down,5
+keybind = shift+cmd+alt+left=resize_split:left,25
+keybind = shift+cmd+alt+right=resize_split:right,25
+keybind = shift+cmd+alt+up=resize_split:up,25
+keybind = shift+cmd+alt+down=resize_split:down,25
+
+keybind = shift+alt+e=equalize_splits
 
 # Toggle pane zoom state
 keybind = shift+alt+z=toggle_split_zoom
