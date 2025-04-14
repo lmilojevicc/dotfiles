@@ -1,4 +1,6 @@
 .DS_Store
 tmux/plugins
 yazi/flavors
+yazi/plugins/*
+!yazi/plugins/smart-paste.yazi
 **/*.log
