@@ -61,18 +61,6 @@
 
   // Terminal
   {
-    "key": "shift+alt+h",
-    "command": "workbench.action.terminal.split",
-    "args": { "split": "horizontal" },
-    "when": "terminalFocus"
-  },
-  {
-    "key": "shift+alt+v",
-    "command": "workbench.action.terminal.split",
-    "args": { "split": "vertical" },
-    "when": "terminalFocus"
-  },
-  {
     "key": "shift+alt+right",
     "command": "workbench.action.terminal.focusNextPane",
     "when": "terminalFocus && !editorTextFocus"
@@ -95,7 +83,7 @@
 
   // Switching focus between Editor, Terminal and Sidebar
   {
-    "key": "ctrl+x",
+    "key": "alt+t",
     "command": "workbench.action.togglePanel",
     "when": "editorTextFocus || terminalFocus"
   },

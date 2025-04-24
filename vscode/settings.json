@@ -72,7 +72,7 @@
   "editor.formatOnSave": true,
   "editor.glyphMargin": true,
   "editor.guides.indentation": true,
-  "editor.lineHeight": 1.6,
+  "editor.lineHeight": 1.4,
   "editor.lineNumbers": "off",
   "editor.minimap.enabled": false,
   "editor.overviewRulerBorder": false,
@@ -120,7 +120,7 @@
   "terminal.integrated.enableImages": true,
   "terminal.integrated.enableMultiLinePasteWarning": "always",
   "terminal.integrated.fontSize": 14,
-  "terminal.integrated.fontFamily": "Symbols Nerd Font Mono",
+  "terminal.integrated.fontFamily": " 'Symbols Nerd Font Mono', 'Sometype Mono'",
   "terminal.integrated.gpuAcceleration": "on",
   "terminal.integrated.lineHeight": 1.3,
   "togglequotes.chars": ["\"", "'", "`"],
@@ -375,14 +375,13 @@
 
   /** ------------ Workbench Settings ------------ **/
   "workbench.colorCustomizations": {
-    "statusBar.background": "#005f5f",
-    "statusBar.debuggingBackground": "#005f5f",
+    "statusBar.background": "#11111B",
+    "statusBar.debuggingBackground": "#11111B",
     "statusBar.debuggingForeground": "#ffffff",
     "statusBar.foreground": "#ffffff",
-    "statusBar.noFolderBackground": "#005f5f",
+    "statusBar.noFolderBackground": "#11111B",
     "terminal.background": "#00000000"
   },
-  "workbench.colorTheme": "Noir Catppuccin Mocha",
   "workbench.editor.editorActionsLocation": "titleBar",
   "workbench.editor.empty.hint": "hidden",
   "workbench.editorLargeFileConfirmation": 10024,
@@ -408,5 +407,7 @@
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
   "autoHide.mode": "auto",
-  "workbench.productIconTheme": "feather-vscode"
+  "workbench.productIconTheme": "feather-vscode",
+  "workbench.colorTheme": "Noir Catppuccin Mocha",
+  "workbench.iconTheme": "vscode-great-icons"
 }
