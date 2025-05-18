@@ -1,0 +1,14 @@
+# Tmxu
+tmux/plugins
+
+# Yazi
+yazi/flavors
+yazi/plugins/*
+!yazi/plugins/smart-paste.yazi
+
+# ncspot
+ncspot/*
+!ncspot/config.toml
+
+**/*.log
+.DS_Store

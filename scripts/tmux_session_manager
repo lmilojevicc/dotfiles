@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+tmux_server_running() {
+  tmux has-session 2>/dev/null
+  return $?
+}
+
+SESSION_CMD="tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session'"
+
+tmux_session_manager() {
+  local selected_session
+  local header
+
+  if tmux_server_running; then
+    header="Enter: connect | Ctrl-N: new session | Ctrl-X: kill session | Ctrl-R: rename session"
+  else
+    header="No tmux server running. Select 'Create new session' to start one."
+  fi
+
+  selected_session=$(eval "$SESSION_CMD" |
+    fzf --height 40% --reverse \
+      --border-label ' tmux sessions ' \
+      --border \
+      --prompt '⚡  ' \
+      --header "$header" \
+      --bind "ctrl-n:execute(tmux command-prompt -p 'Session name: ' 'new-session -d -s \"%%\"')+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')" \
+      --bind "ctrl-x:execute(tmux kill-session -t {} 2>/dev/null)+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')" \
+      --bind "ctrl-r:execute-silent(tmux command-prompt -p 'New name: ' 'rename-session -t {} \"%%\"')+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')")
+
+  if [[ "$selected_session" == "Create new session" ]]; then
+    read -p "Enter session name (default: new-session): " session_name
+    session_name=${session_name:-new-session}
+
+    tmux new-session -d -s "$session_name"
+    if [[ -z "$TMUX" ]]; then
+      tmux attach-session -t "$session_name"
+    else
+      tmux switch-client -t "$session_name"
+    fi
+    return
+  fi
+
+  if [[ -n "$selected_session" ]]; then
+    if [[ -z "$TMUX" ]]; then
+      tmux attach-session -t "$selected_session"
+    else
+      tmux switch-client -t "$selected_session"
+    fi
+  fi
+}
+
+tmux_session_manager
