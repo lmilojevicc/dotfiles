@@ -1,2 +1,44 @@
 [manager]
 show_hidden = true
+
+[plugin]
+prepend_previewers = [
+  # Archive previewer ouch
+  { mime = "application/*zip", run = "ouch" },
+  { mime = "application/x-tar", run = "ouch" },
+  { mime = "application/x-bzip2", run = "ouch" },
+  { mime = "application/x-7z-compressed", run = "ouch" },
+  { mime = "application/x-rar", run = "ouch" },
+  { mime = "application/x-xz", run = "ouch" },
+  { mime = "application/xz", run = "ouch" },
+
+  { name = "*.md", run = "glow" },
+
+  # Duckdb
+  { name = "*.csv", run = "duckdb" },
+  { name = "*.tsv", run = "duckdb" },
+  { name = "*.json", run = "duckdb" },
+  { name = "*.parquet", run = "duckdb" },
+  { name = "*.txt", run = "duckdb" },
+  { name = "*.xlsx", run = "duckdb" },
+  { name = "*.db", run = "duckdb" },
+  { name = "*.duckdb", run = "duckdb" },
+]
+prepend_fetchers = [
+  { id = "git", name = "*", run = "git" },
+  { id = "git", name = "*/", run = "git" },
+]
+prepend_preloaders = [
+  { name = "*.csv", run = "duckdb", multi = false },
+  { name = "*.tsv", run = "duckdb", multi = false },
+  { name = "*.json", run = "duckdb", multi = false },
+  { name = "*.parquet", run = "duckdb", multi = false },
+  { name = "*.txt", run = "duckdb", multi = false },
+  { name = "*.xlsx", run = "duckdb", multi = false },
+]
+
+[opener]
+extract = [
+  { run = 'ouch d -y "%*"', desc = "Extract here with ouch", for = "windows" },
+  { run = 'ouch d -y "$@"', desc = "Extract here with ouch", for = "unix" },
+]

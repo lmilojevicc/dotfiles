@@ -4,7 +4,6 @@ tmux/plugins
 # Yazi
 yazi/flavors
 yazi/plugins/*
-!yazi/plugins/smart-paste.yazi
 
 # ncspot
 ncspot/*
