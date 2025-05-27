@@ -65,12 +65,12 @@
   "editor.glyphMargin": true,
   "editor.guides.indentation": true,
   "editor.lineHeight": 1.4,
-  "editor.lineNumbers": "off",
+  "editor.lineNumbers": "on",
   "editor.minimap.enabled": false,
   "editor.overviewRulerBorder": false,
-  "editor.renderLineHighlight": "none",
-  "editor.renderWhitespace": "none",
-  "editor.rulers": [100],
+  "editor.renderLineHighlight": "line",
+  "editor.renderWhitespace": "selection",
+  "editor.rulers": [120],
   "editor.scrollbar.horizontal": "hidden",
   "editor.scrollbar.vertical": "hidden",
   "editor.stickyScroll.enabled": true,
@@ -78,7 +78,7 @@
   "editor.unicodeHighlight.ambiguousCharacters": false,
   "editor.unicodeHighlight.invisibleCharacters": false,
   "editor.wordWrap": "on",
-  "editor.wordWrapColumn": 100,
+  "editor.wordWrapColumn": 120,
   "editor.inlineSuggest.enabled": false,
   "editor.tabSize": 2,
   "errorLens.messageEnabled": true,
@@ -102,7 +102,10 @@
   "notebook.defaultFormatter": "ms-python.black-formatter",
   "notebook.formatOnSave.enabled": true,
   "path-intellisense.ignoreTsConfigBaseUrl": true,
-  "settingsSync.ignoredExtensions": ["ms-vscode.powershell", "ms-vscode-remote.remote-wsl"],
+  "settingsSync.ignoredExtensions": [
+    "ms-vscode.powershell",
+    "ms-vscode-remote.remote-wsl"
+  ],
   /** ------------ Terminal Configurations ------------ **/
   "terminal.external.osxExec": "WezTerm.app",
   "terminal.integrated.cursorBlinking": true,
@@ -161,7 +164,7 @@
       "commands": ["workbench.action.closeActiveEditor"]
     },
     {
-      "before": ["<leader>", "b", "D"],
+      "before": ["<leader>", "b", "o"],
       "commands": ["workbench.action.closeOtherEditors"]
     },
     {
@@ -173,7 +176,7 @@
       "before": [";"]
     },
     {
-      "before": ["<leader>", "t", "m"],
+      "before": ["<leader>", "c", "P"],
       "commands": ["workbench.action.selectTheme"]
     },
     {
@@ -232,7 +235,10 @@
     },
     {
       "before": ["<leader>", "t", "d"],
-      "commands": ["workbench.actions.view.problems", "workbench.panel.markers.focus"]
+      "commands": [
+        "workbench.actions.view.problems",
+        "workbench.panel.markers.focus"
+      ]
     },
     // LSP
     {
@@ -374,6 +380,16 @@
     {
       "before": ["<leader>", "p", "p"],
       "commands": ["workbench.action.showCommands"]
+    },
+
+    // Flash for VSCode
+    {
+      "before": ["g", "s", "f"],
+      "commands": ["flash-vscode.start"]
+    },
+    {
+      "before": ["g", "s", "t"],
+      "commands": ["flash-vscode.startSelection"]
     }
   ],
   "vim.smartRelativeLine": true,
@@ -425,7 +441,8 @@
     "statusBar.debuggingForeground": "#ffffff",
     "statusBar.foreground": "#ffffff",
     "statusBar.noFolderBackground": "#11111B",
-    "terminal.background": "#00000000"
+    "terminal.background": "#00000000",
+    "[Vira*]": {}
   },
   "workbench.editor.editorActionsLocation": "titleBar",
   "workbench.editor.empty.hint": "hidden",
@@ -448,7 +465,8 @@
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
   "workbench.productIconTheme": "feather-vscode",
-  "workbench.colorTheme": "Noir Catppuccin Mocha",
-  "workbench.iconTheme": "vscode-great-icons",
-  "find-it-faster.general.useTerminalInEditor": true
+  "workbench.iconTheme": "verdandi",
+  "find-it-faster.general.useTerminalInEditor": true,
+  "autoHide.enable": false,
+  "workbench.colorTheme": "Noir Catppuccin Mocha"
 }

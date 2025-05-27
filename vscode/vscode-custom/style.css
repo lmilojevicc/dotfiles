@@ -3,9 +3,9 @@
 .windows,
 .linux {
   font-family:
-    "DM Mono", "Consolas For Powerline", "Sometype Mono", "Geist Mono",
-    "Hasklig", "Hasklug Nerd Font", "SpaceMono Nerd Font", "FiraCode Nerd Font",
-    "JetBrainsMono Nerd Font", "Cascadia Mono NF",
+    "Maple Mono NF", "DM Mono", "Consolas For Powerline", "Sometype Mono",
+    "Geist Mono", "Hasklig", "Hasklug Nerd Font", "SpaceMono Nerd Font",
+    "FiraCode Nerd Font", "JetBrainsMono Nerd Font", "Cascadia Mono NF",
     "RecMonoDuotone Nerd Font Mono", monospace;
 }
 
@@ -31,7 +31,7 @@
 /* ------------ Tab bar ------------ */
 div.tabs-container {
   font-style: italic;
-  font-weight: 300;
+  font-weight: 500;
 }
 
 /* ------------ Command Center ------------ */
