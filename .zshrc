@@ -1,36 +1,37 @@
 # Environment Variables
-alias lvim='NVIM_APPNAME=nvim-lazy nvim'  # Alias for lazy nvim
-
-export WEZTERM_CONFIG_FILE="$HOME/.config/wezterm/wezterm.lua"
+export EDITOR="nvim"
 export MANPAGER="nvim +Man!"
 export XDG_CONFIG_HOME="$HOME/.config"
-export EDITOR="nvim"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" 
+export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
+export BUN_INSTALL="$HOME/.bun"
 
 # PATH 
-export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
-export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
-export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
-export PATH="$PATH:$(go env GOPATH)/bin"
+export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="$(go env GOPATH)/bin:$PATH"
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
+export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin" 
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always {}' \
-  --bind 'ctrl-/:change-preview-window(down|hidden|)'"
+  --bind 'alt-p:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --color=always {}'"
-export FZF_CTRL_R_OPTS="--preview 'echo {}' --preview-window up:3:hidden:wrap --bind 'ctrl-/:toggle-preview'"
 export FZF_DEFAULT_COMMAND="fd --type f"
 export FZF_DEFAULT_OPTS=" \
---color=bg+:#1e1e2e,bg:#11111b,spinner:#f5e0dc,hl:#f38ba8 \
---color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
---color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8 \
---preview-window '~3' \
+--color=bg+:#11111b,bg:#11111b,spinner:#F5E0DC,hl:#F38BA8 \
+--color=fg:#CDD6F4,header:#89B4FA,info:#CBA6F7,pointer:#F5E0DC \
+--color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
+--color=selected-bg:#313244 \
+--color=border:#313244,label:#CDD6F4 \
+--style full \
 --height 40% \
---border=rounded \
---border \
---prompt=\"󰍉 \" \
---pointer=\"󰁔\" \
---marker=\"󰄲\"
---bind 'ctrl-/:change-preview-window(50%|hidden|)'"
+--tmux 80%,70% \
+--prompt=\" \" \
+--pointer=\"󰁔 \" \
+--marker=\" \"
+--bind 'alt-p:toggle-preview'"
 
 # Homebrew Setup
 if [[ -f "/opt/homebrew/bin/brew" ]]; then
@@ -41,7 +42,7 @@ fi
 autoload -Uz compinit && compinit  
 
 # Docker CLI completions
-fpath=(/Users/milo/.docker/completions $fpath)
+fpath=(~/.docker/completions $fpath)
 
 # History Settings
 HISTSIZE=5000
@@ -101,35 +102,43 @@ zinit snippet OMZP::macos
 # Ensure completion system is properly loaded after plugins
 zinit cdreplay -q
 
-# fzf-tab Styling
+# Remove zinit 'zi' alias so it doesn't conflict with fzf zoxide 'zi'
+zinit ice atload'unalias zi'
+
+# fzf-tab Configuration
 zstyle ':fzf-tab:*' fzf-pad 4 
 zstyle ':fzf-tab:*' prefix ''
 zstyle ':fzf-tab:*' continuous-trigger 'tab'
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*:descriptions' format '[%d]'
-zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 zstyle ':completion:*' menu no
 zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
 zstyle ':fzf-tab:complete:*:*' fzf-preview 'bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath'
+zstyle ':fzf-tab:*' use-fzf-default-opts yes
 
 # Aliases
+alias lvim='NVIM_APPNAME=nvim-lazy nvim' 
+
 alias c='clear'
 alias l='eza -lh  --icons=auto'
 alias ls='eza -1   --icons=auto'
 alias ll='eza -lha --icons=auto --sort=name --group-directories-first'
 alias ld='eza -lhD --icons=auto'
-
-alias fe='$EDITOR $(fzf)'
-alias fkill='ps -ef | fzf | awk "{print \$2}" | xargs kill -9'
-alias frg='rg --color=always --line-number --no-heading --smart-case "" | fzf --ansi --delimiter : --preview "bat --color=always {1} --highlight-line {2}" | cut -d ":" -f1,2 | xargs -r $EDITOR +$(cut -d ":" -f2) $(cut -d ":" -f1)'
+alias lt='eza -T --icons=auto'
 
 alias cd="z"
 alias cat="bat"
 alias lg="lazygit"
 alias brewup='brew update && brew upgrade && brew upgrade --cask --greedy && brew cleanup'
 
+# Run zi with Alt-Z
+bindkey -s '\ez' 'zi\n'
+
 alias tsm='tmux_session_manager'
 bindkey -s '\et' 'tmux_session_manager\n'
+
+alias ssm='sesh-fzf'
+bindkey -s '\es' 'ssm\n'
 
 # Shell Integrations
 eval "$(fzf --zsh)"
@@ -187,12 +196,9 @@ function b() {
 source <(ng completion script)
 
 # ghcup environment
-[ -f "/Users/milo/.ghcup/env" ] && . "/Users/milo/.ghcup/env"
+[ -f "$HOME/.ghcup/env" ] && . "$HOME/.ghcup/env"
 
 
 # bun completions
-[ -s "/Users/milo/.bun/_bun" ] && source "/Users/milo/.bun/_bun"
+[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
-# bun
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"

@@ -1,52 +1,224 @@
 #!/usr/bin/env bash
 
-tmux_server_running() {
-  tmux has-session 2>/dev/null
-  return $?
+in_tmux() {
+  [ -n "$TMUX" ]
 }
 
-SESSION_CMD="tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session'"
+get_sessions() {
+  local icon="$(tput setaf 2)$(tput sgr0)"
+  tmux list-sessions -F '#S' 2>/dev/null | while read -r session; do
+    echo "${icon} ${session}"
+  done
+}
 
-tmux_session_manager() {
-  local selected_session
-  local header
+get_zoxide_dirs() {
+  local icon="$(tput setaf 3) $(tput sgr0)"
+  zoxide query -l | sed "s|^$HOME|~|; s|^|${icon} |"
+}
 
-  if tmux_server_running; then
-    header="Enter: connect | Ctrl-N: new session | Ctrl-X: kill session | Ctrl-R: rename session"
+# Get both sessions and directories
+get_all() {
+  get_sessions
+  get_zoxide_dirs
+}
+
+strip_icon() {
+  echo "$1" | cut -c3-
+}
+
+switch_to_session() {
+  local session="$1"
+  if in_tmux; then
+    tmux switch-client -t "$session"
   else
-    header="No tmux server running. Select 'Create new session' to start one."
-  fi
-
-  selected_session=$(eval "$SESSION_CMD" |
-    fzf --height 40% --reverse \
-      --border-label ' tmux sessions ' \
-      --border \
-      --prompt '⚡  ' \
-      --header "$header" \
-      --bind "ctrl-n:execute(tmux command-prompt -p 'Session name: ' 'new-session -d -s \"%%\"')+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')" \
-      --bind "ctrl-x:execute(tmux kill-session -t {} 2>/dev/null)+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')" \
-      --bind "ctrl-r:execute-silent(tmux command-prompt -p 'New name: ' 'rename-session -t {} \"%%\"')+reload(tmux list-sessions -F \"#S\" 2>/dev/null || echo 'Create new session')")
-
-  if [[ "$selected_session" == "Create new session" ]]; then
-    read -p "Enter session name (default: new-session): " session_name
-    session_name=${session_name:-new-session}
-
-    tmux new-session -d -s "$session_name"
-    if [[ -z "$TMUX" ]]; then
-      tmux attach-session -t "$session_name"
-    else
-      tmux switch-client -t "$session_name"
-    fi
-    return
-  fi
-
-  if [[ -n "$selected_session" ]]; then
-    if [[ -z "$TMUX" ]]; then
-      tmux attach-session -t "$selected_session"
-    else
-      tmux switch-client -t "$selected_session"
-    fi
+    tmux attach-session -t "$session"
   fi
 }
 
-tmux_session_manager
+# Create session from zoxide directory
+create_session_from_dir() {
+  local dir="$1"
+  local session_name
+  session_name=$(basename "$dir")
+  if tmux has-session -t "$session_name" 2>/dev/null; then
+    switch_to_session "$session_name"
+  else
+    tmux new-session -d -s "$session_name" -c "$dir"
+    switch_to_session "$session_name"
+  fi
+}
+
+# Run yazi and create session from exit path
+run_yazi_and_create_session() {
+  local tmp_file
+  tmp_file=$(mktemp)
+  yazi --cwd-file="$tmp_file"
+  if [ -s "$tmp_file" ]; then
+    local exit_dir
+    exit_dir=$(cat "$tmp_file")
+    if [ -d "$exit_dir" ]; then
+      create_session_from_dir "$exit_dir"
+    fi
+  fi
+  rm -f "$tmp_file"
+}
+
+delete_session() {
+  local session="$1"
+  tmux kill-session -t "$session"
+}
+
+fzf_with_style() {
+  if [ -n "$TMUX_POPUP" ]; then
+    fzf "$@" \
+      --ansi \
+      --style full \
+      --height 100% \
+      --border \
+      --preview-window 'right:55%' \
+      --pointer='󰁔 ' \
+      --marker=' ' \
+      --bind 'alt-p:toggle-preview'
+  else
+    fzf "$@" \
+      --ansi \
+      --style full \
+      --tmux 90%,80% \
+      --border \
+      --preview-window 'right:55%' \
+      --pointer='󰁔 ' \
+      --marker=' ' \
+      --bind 'alt-p:toggle-preview'
+  fi
+}
+
+fzf_unified_manager() {
+  local mode=""
+  local rename_target=""
+  while :; do
+    if [[ "$mode" == "rename" ]]; then
+      # Rename mode: prompt for new session name
+      new_name=$(
+        printf "" | fzf_with_style \
+          --print-query \
+          --prompt="Rename session '$rename_target' to: " \
+          --header="Type new session name and hit Enter, or Esc to cancel" \
+          --border-label " Rename Session "
+      )
+      new_name=$(head -1 <<<"$new_name")
+      if [[ -n "$new_name" && "$new_name" != "$rename_target" ]]; then
+        tmux rename-session -t "$rename_target" "$new_name"
+      fi
+      mode=""
+      rename_target=""
+      continue
+    elif [[ "$mode" == "create" ]]; then
+      # Create mode: prompt for new session name
+      new_name=$(
+        printf "" | fzf_with_style \
+          --print-query \
+          --prompt="Enter new session name: " \
+          --header="Type new session name and hit Enter, or Esc to cancel" \
+          --border-label " New Session "
+      )
+      new_name=$(head -1 <<<"$new_name")
+      if [[ -n "$new_name" ]]; then
+        tmux new-session -d -s "$new_name"
+      fi
+      mode=""
+      continue
+    fi
+
+    unified_list=$(
+      get_all |
+        fzf_with_style \
+          --header=$'<CR>: Switch/Create | ^R: Rename | ^N: New | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^Y: Yazi | Esc: Quit' \
+          --border-label ' Session Manager ' \
+          --prompt=' ' \
+          --bind "ctrl-t:reload('${BASH_SOURCE[0]}' --get-sessions)" \
+          --bind "ctrl-z:reload('${BASH_SOURCE[0]}' --get-zoxide)" \
+          --bind "ctrl-a:reload('${BASH_SOURCE[0]}' --get-all)" \
+          --preview '
+            if [[ {} == " "* ]]; then
+              tmux capture-pane -ep -t $(echo {} | cut -c3-) 2>/dev/null
+            elif [[ {} == " "* ]]; then
+              target="$(echo {} | cut -c3-)"
+              target="${target# }"  # Remove any leading space
+              target="${target/#\~/$HOME}"
+              eza -lah --icons --color=always "$target" | head -200
+            fi
+          ' \
+          --expect enter,ctrl-r,ctrl-n,ctrl-x,ctrl-y
+    )
+
+    key=$(head -1 <<<"$unified_list")
+    selected=$(tail -n +2 <<<"$unified_list" | head -1)
+    [ -z "$key" ] && break
+
+    if [[ "$selected" == " "* ]]; then
+      session_name=$(strip_icon "$selected")
+      case "$key" in
+      enter)
+        switch_to_session "$session_name"
+        break
+        ;;
+      ctrl-r)
+        mode="rename"
+        rename_target="$session_name"
+        ;;
+      ctrl-n)
+        mode="create"
+        ;;
+      ctrl-x)
+        delete_session "$session_name"
+        ;;
+      ctrl-y)
+        run_yazi_and_create_session
+        break
+        ;;
+      esac
+    elif [[ "$selected" == " "* ]]; then
+      dir_path=$(strip_icon "$selected")
+      dir_path="${dir_path# }"
+      dir_path="${dir_path/#\~/$HOME}"
+
+      case "$key" in
+      enter)
+        create_session_from_dir "$dir_path"
+        break
+        ;;
+      ctrl-r)
+        # Not applicable for directories
+        ;;
+      ctrl-n)
+        mode="create"
+        ;;
+      ctrl-x)
+        # Not applicable for directories
+        ;;
+      ctrl-y)
+        run_yazi_and_create_session
+        break
+        ;;
+      esac
+    fi
+  done
+}
+
+# Handle command line arguments for filtering
+case "$1" in
+--get-sessions)
+  get_sessions
+  exit 0
+  ;;
+--get-zoxide)
+  get_zoxide_dirs
+  exit 0
+  ;;
+--get-all)
+  get_all
+  exit 0
+  ;;
+esac
+
+fzf_unified_manager

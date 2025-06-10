@@ -1,0 +1,17 @@
+#!/usr/bin/env zsh
+
+command sesh connect "$(
+  command sesh list --icons | fzf --tmux 80%,70% \
+    --no-sort --ansi --border-label ' sesh ' --prompt '⚡  ' \
+      --header '^A All | ^T Tmux | ^G Configs | ^Z Zoxide | ^X Tmux Kill | ^F Find' \
+      --bind 'tab:down,btab:up' \
+      --bind 'ctrl-a:change-prompt(⚡ )+reload(command sesh list --icons)' \
+      --bind 'ctrl-t:change-prompt(  )+reload(command sesh list -t --icons)' \
+      --bind 'ctrl-g:change-prompt(  )+reload(command sesh list -c --icons)' \
+      --bind 'ctrl-z:change-prompt(  )+reload(command sesh list -z --icons)' \
+      --bind 'ctrl-f:change-prompt(  )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+      --bind 'ctrl-x:execute(tmux kill-session -t {2..})+change-prompt(⚡  )+reload(command sesh list --icons)' \
+    --preview-window 'right:55%' \
+    --preview 'command sesh preview {}'
+)"
+
