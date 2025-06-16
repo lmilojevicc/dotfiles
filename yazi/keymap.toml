@@ -1,4 +1,4 @@
-[manager]
+[mgr]
 prepend_keymap = [
   # Handy remaps
 { on = "?", run = "help", desc = "Open help menu" },

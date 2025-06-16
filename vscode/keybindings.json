@@ -139,17 +139,7 @@
     "when": "editorTextFocus && suggestWidgetVisible"
   },
   {
-    "key": "shift+tab",
-    "command": "selectPrevSuggestion",
-    "when": "editorTextFocus && suggestWidgetVisible"
-  },
-  {
     "key": "ctrl+j",
-    "command": "selectNextSuggestion",
-    "when": "editorTextFocus && suggestWidgetVisible"
-  },
-  {
-    "key": "tab",
     "command": "selectNextSuggestion",
     "when": "editorTextFocus && suggestWidgetVisible"
   },

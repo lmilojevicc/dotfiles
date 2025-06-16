@@ -57,9 +57,6 @@ nmap <leader>x <Action>(CloseContent)
 map <leader>th <Action>(ActivateTerminalToolWindow)
 map <leader>tv <Action>(Terminal.OpenInTerminal)
 
-" Search
-map <leader>wk <Action>(GotoAction)
-
 " Diagnostics
 map <leader>dw <Action>(ShowErrorDescription)
 map <leader>dd <Action>(ShowErrorDescription)
@@ -73,7 +70,7 @@ imap <S-Tab> <Action>(PreviousTemplateVariable)
 " Telescope equivalent mappings
 map <Space>ff <Action>(GotoFile)
 map <Space>fb <Action>(RecentFiles)
-map <Space>fw <Action>(FindInPath)
+map <Space>fg <Action>(FindInPath)
 
 " Git navigation
 nmap ]h <Action>(VcsShowNextChangeMarker)
@@ -134,9 +131,6 @@ imap <S-A-j> <Esc>Ypgi
 vmap <S-A-k> y`>PgvO
 vmap <S-A-j> y`>p`[v`]
 
-" Source config file
-nnoremap <leader>si :source ~/.ideavimrc<CR>
-
 " Enable Surround plugin
 set surround
 
@@ -170,3 +164,10 @@ map <leader>pp <Action>(GotoAction)
 " Hide sidebar and bottom bar
 map <leader>hw :action HideAllWindows<CR>
 
+set functiontextobj
+
+set which-key
+set notimeout
+
+set easymotion
+nmap gsf <Plug>(easymotion-f)

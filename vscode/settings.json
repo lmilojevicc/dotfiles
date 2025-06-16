@@ -465,7 +465,7 @@
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
   "workbench.productIconTheme": "feather-vscode",
-  "workbench.iconTheme": "verdandi",
+  "workbench.iconTheme": "material-icon-theme",
   "find-it-faster.general.useTerminalInEditor": true,
   "autoHide.enable": false,
   "workbench.colorTheme": "Noir Catppuccin Mocha"
