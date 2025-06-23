@@ -1,18 +1,15 @@
-start-at-login = true 
+start-at-login = true
 
 enable-normalization-flatten-containers = true
 enable-normalization-opposite-orientation-for-nested-containers = true
 
 # Activate borders
 after-startup-command = [
-  'exec-and-forget borders active_color=0xffcba6f7 inactive_color=0xff45475a width=5.0 hidpi=on blur_radius=5.0'
+  'exec-and-forget borders active_color=0xff89b4fa inactive_color=0xff45475a width=5.0 hidpi=on style=round',
 ]
-
-accordion-padding = 15 
 
 # Possible values: tiles|accordion
 default-root-container-layout = 'tiles'
-
 default-root-container-orientation = 'auto'
 
 key-mapping.preset = 'qwerty'
@@ -22,20 +19,22 @@ automatically-unhide-macos-hidden-apps = false
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 on-focus-changed = "move-mouse window-lazy-center"
 
+accordion-padding = 24
+
 [gaps]
 inner.horizontal = 12
-inner.vertical =   12
-outer.left =       12
-outer.bottom =     12
-outer.top =        12
-outer.right =      12
+inner.vertical = 12
+outer.left = 24
+outer.bottom = 24
+outer.top = 24
+outer.right = 24
 
 [mode.main.binding]
 # Go to next/prev workspace
 cmd-ctrl-shift-left = 'workspace prev'
 cmd-ctrl-shift-right = 'workspace next'
 
-ctrl-shift-f = ['fullscreen'] 
+ctrl-shift-f = ['fullscreen']
 ctrl-shift-t = ['layout tiling floating']
 
 # Change layout 
@@ -68,7 +67,7 @@ ctrl-6 = 'workspace 6'
 ctrl-7 = 'workspace 7'
 ctrl-8 = 'workspace 8'
 ctrl-9 = 'workspace 9'
-ctrl-0 = 'workspace 10' 
+ctrl-0 = 'workspace 10'
 
 # Move window to workspace 
 ctrl-shift-1 = 'move-node-to-workspace 1'
@@ -82,12 +81,25 @@ ctrl-shift-8 = 'move-node-to-workspace 8'
 ctrl-shift-9 = 'move-node-to-workspace 9'
 ctrl-shift-0 = 'move-node-to-workspace 10'
 
-# Switch to service mode 
-ctrl-shift-semicolon = 'mode service'
+# Reload config
+ctrl-shift-r = ['reload-config']
 
-[mode.service.binding]
-esc = ['reload-config', 'mode main']
-backspace = ['close-all-windows-but-current', 'mode main']
+# Switch to mode 
+ctrl-shift-l = 'mode layout'
+
+[mode.layout.binding]
+esc = ['mode main']
+left = 'resize width -50'
+down = 'resize height +50'
+up = 'resize height -50'
+right = 'resize width +50'
+minus = 'resize smart -50'
+equal = 'resize smart +50'
+t = 'layout tiles horizontal vertical'
+a = 'layout accordion horizontal vertical'
+e = 'flatten-workspace-tree'
+f = ['layout tiling floating']
+shift-f = ['fullscreen']
 
 # Move apps to their workspace 
 [[on-window-detected]]
@@ -134,15 +146,3 @@ run = 'layout floating'
 [[on-window-detected]]
 if.app-id = 'com.raycast.macos'
 run = 'layout floating'
-
-[workspace-to-monitor-force-assignment]
-1 = "main"        
-2 = "main" 
-3 = "main" 
-4 = "main"        
-5 = "main" 
-6 = "main" 
-7 = "main" 
-8 = "main" 
-9 = "main"        
-10 = "main" 
