@@ -37,7 +37,7 @@ config.line_height = 1
 config.window_background_opacity = 1
 config.text_background_opacity = 1
 config.window_decorations = "RESIZE"
-config.window_padding = { left = 8, right = 8, top = 8, bottom = 8 }
+config.window_padding = { left = 8, right = 8, top = 16, bottom = 8 }
 config.enable_tab_bar = false
 config.enable_scroll_bar = false
 

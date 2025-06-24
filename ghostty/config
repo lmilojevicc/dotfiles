@@ -9,7 +9,7 @@ font-feature = -calt,-liga,-dlig
 
 # Color scheme
 theme = catppuccin-noir
-window-padding-x = 10
+window-padding-x = 5
 window-padding-y = 5 
 window-padding-balance = true
 split-divider-color = #313244
