@@ -69,7 +69,7 @@ delete_session() {
 }
 
 fzf_with_style() {
-  if [ -n "$TMUX_POPUP" ]; then
+  if [ -n "$TMUX_POPUP" ] || [ "$FZF_TMUX" = "0" ] || [ -n "$TMUX_PANE" ]; then
     fzf "$@" \
       --ansi \
       --style full \

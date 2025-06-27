@@ -5,6 +5,7 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" 
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
+export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 
 # PATH 
 export PATH="$BUN_INSTALL/bin:$PATH"
@@ -26,7 +27,7 @@ export FZF_DEFAULT_OPTS=" \
 --color=selected-bg:#313244 \
 --color=border:#313244,label:#CDD6F4 \
 --style full \
---height 40% \
+--height 60% \
 --tmux 80%,70% \
 --prompt=\" \" \
 --pointer=\"󰁔 \" \
@@ -88,8 +89,6 @@ zinit snippet OMZP::npm
 zinit snippet OMZP::golang
 zinit snippet OMZP::postgres
 zinit snippet OMZP::mongocli
-zinit snippet OMZP::tmux
-zinit snippet OMZP::vscode
 zinit snippet OMZP::docker-compose
 zinit snippet OMZP::pip
 zinit ice wait lucid as"completion"
@@ -107,6 +106,7 @@ zinit ice atload'unalias zi'
 
 # fzf-tab Configuration
 zstyle ':fzf-tab:*' fzf-pad 4 
+zstyle ':fzf-tab:*' fzf-opts '--min-height 35% --border --layout=reverse'
 zstyle ':fzf-tab:*' prefix ''
 zstyle ':fzf-tab:*' continuous-trigger 'tab'
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
@@ -134,8 +134,8 @@ alias brewup='brew update && brew upgrade && brew upgrade --cask --greedy && bre
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
 
-alias tsm='tmux_session_manager'
-bindkey -s '\et' 'tmux_session_manager\n'
+alias tsm='tmux-session-manager'
+bindkey -s '\et' 'tmux-session-manager\n'
 
 alias ssm='sesh-fzf'
 bindkey -s '\es' 'ssm\n'
