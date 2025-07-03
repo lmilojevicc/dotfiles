@@ -19,6 +19,10 @@ export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always {}' \
   --bind 'alt-p:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --color=always {}'"
+export FZF_CTRL_R_OPTS="
+  --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort'
+  --color header:italic
+  --header 'Press CTRL-Y to copy command into clipboard'"
 export FZF_DEFAULT_COMMAND="fd --type f"
 export FZF_DEFAULT_OPTS=" \
 --color=bg+:#11111b,bg:#11111b,spinner:#F5E0DC,hl:#F38BA8 \
