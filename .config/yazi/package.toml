@@ -33,6 +33,11 @@ use = "yazi-rs/plugins:smart-paste"
 rev = "55bf699"
 hash = "104fa2ce07d8890b07fcff68b0aaf923"
 
+[[plugin.deps]]
+use = "pirafrank/what-size"
+rev = "d896656"
+hash = "62251f94eb67648d42cdfcfb8be0fad2"
+
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-mocha"
 rev = "02f3fc6"

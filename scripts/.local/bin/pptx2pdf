@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+function pptx2pdf() {
+    local recursive=0
+    local output_dir="pdf_output"
+
+    # Parse options
+    while getopts ":r" opt; do
+        case $opt in
+        r)
+            recursive=1
+            ;;
+        *)
+            echo "Usage: pptx2pdf [-r] [output_dir]"
+            return 1
+            ;;
+        esac
+    done
+    shift $((OPTIND - 1))
+
+    if [ "$1" != "" ]; then
+        output_dir="$1"
+    fi
+
+    if ! command -v soffice &>/dev/null; then
+        echo "Error: LibreOffice not found. Please install LibreOffice."
+        return 1
+    fi
+
+    if [ "$recursive" -eq 1 ]; then
+        # Recursive mode
+        local pptx_files=$(find . -type f -name "*.pptx")
+        if [ -z "$pptx_files" ]; then
+            echo "No PPTX files found in current directory and subdirectories"
+            return 1
+        fi
+
+        echo "Found $(echo "$pptx_files" | wc -l) PPTX file(s) recursively"
+        echo "Converting to PDF..."
+
+        mkdir -p "$output_dir"
+
+        while IFS= read -r file; do
+            if soffice --headless --convert-to pdf --outdir "$output_dir" "$file"; then
+                echo "✓ Converted $file to $output_dir/"
+            else
+                echo "✗ Conversion failed for $file"
+            fi
+        done <<<"$pptx_files"
+    else
+        # Non-recursive mode
+        local pptx_count=$(ls *.pptx 2>/dev/null | wc -l)
+        if [ "$pptx_count" -eq 0 ]; then
+            echo "No PPTX files found in current directory"
+            return 1
+        fi
+
+        echo "Found $pptx_count PPTX file(s)"
+        echo "Converting to PDF..."
+
+        mkdir -p "$output_dir"
+
+        if soffice --headless --convert-to pdf --outdir "$output_dir" *.pptx; then
+            echo "✓ Successfully converted $pptx_count file(s) to $output_dir/"
+        else
+            echo "✗ Conversion failed"
+            return 1
+        fi
+    fi
+}
+
+pptx2pdf "$@"
