@@ -14,6 +14,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
+export PATH="$HOME/.opencode/bin:$PATH"
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS="--preview 'bat --color=always {}' \
@@ -53,6 +54,11 @@ export _ZO_FZF_OPTS=" \
 --marker=\" \" \
 --preview 'eza -lh --icons=auto --color=always {2..}' \
 --bind 'alt-p:toggle-preview'"
+
+export LS_COLORS="$(vivid generate catppuccin-mocha)"
+
+export FX_LINE_NUMBERS=true
+export FX_THEME=3
 
 # Homebrew Setup
 if [[ -f "/opt/homebrew/bin/brew" ]]; then
