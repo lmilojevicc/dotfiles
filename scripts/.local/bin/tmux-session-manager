@@ -5,14 +5,14 @@ in_tmux() {
 }
 
 get_sessions() {
-  local icon="$(tput setaf 2)$(tput sgr0)"
+  local icon="$(tput setaf 6)$(tput sgr0)"
   tmux list-sessions -F '#S' 2>/dev/null | while read -r session; do
     echo "${icon} ${session}"
   done
 }
 
 get_zoxide_dirs() {
-  local icon="$(tput setaf 3) $(tput sgr0)"
+  local icon="$(tput setaf 4) $(tput sgr0)"
   zoxide query -l | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
@@ -76,7 +76,7 @@ fzf_with_style() {
       --height 100% \
       --border \
       --preview-window 'right:55%' \
-      --pointer='󰁔 ' \
+      --pointer=' ' \
       --marker=' ' \
       --bind 'alt-p:toggle-preview'
   else
@@ -86,7 +86,7 @@ fzf_with_style() {
       --tmux 90%,80% \
       --border \
       --preview-window 'right:55%' \
-      --pointer='󰁔 ' \
+      --pointer=' ' \
       --marker=' ' \
       --bind 'alt-p:toggle-preview'
   fi
