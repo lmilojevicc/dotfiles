@@ -30,6 +30,9 @@ outer.top = 24
 outer.right = 24
 
 [mode.main.binding]
+cmd-h = []     # Disable "hide application"
+cmd-alt-h = [] # Disable "hide others"
+
 # Go to next/prev workspace
 cmd-ctrl-shift-left = 'workspace prev'
 cmd-ctrl-shift-right = 'workspace next'
@@ -90,16 +93,47 @@ ctrl-shift-l = 'mode layout'
 [mode.layout.binding]
 esc = ['mode main']
 left = 'resize width -50'
-down = 'resize height +50'
-up = 'resize height -50'
+down = 'resize height -50'
+up = 'resize height +50'
 right = 'resize width +50'
+h = 'resize width -50'
+j = 'resize height -50'
+k = 'resize height +50'
+l = 'resize width +50'
 minus = 'resize smart -50'
 equal = 'resize smart +50'
 t = 'layout tiles horizontal vertical'
 a = 'layout accordion horizontal vertical'
-e = 'flatten-workspace-tree'
+e = 'balance-sizes'
+w = 'flatten-workspace-tree'
 f = ['layout tiling floating']
+r = ['reload-config']
 shift-f = ['fullscreen']
+c = ['mode center']
+
+[mode.center.binding]
+esc = ['mode main']
+l = ['mode layout']
+# Raycast almost maximize (CTRL-OPTION-COMMAND-F2)
+a = [
+  '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 122 using {control down, option down, command down}' || aerospace layout tiling''',
+]
+# Raycast center two thirds (CTRL-OPTION-COMMAND-F2)
+s = [
+  '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 99 using {control down, option down, command down}' || aerospace layout tiling''',
+]
+# Raycast center three fourths (CTRL-OPTION-COMMAND-F3)
+d = [
+  '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 120 using {control down, option down, command down}' || aerospace layout tiling''',
+]
+# Raycast center thrid (CTRL-OPTION-COMMAND-F4)
+f = [
+  '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 96 using {control down, option down, command down}' || aerospace layout tiling''',
+]
+# Raycast center half (CTRL-OPTION-COMMAND-F5)
+g = [
+  '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 118 using {control down, option down, command down}' || aerospace layout tiling''',
+]
 
 # Move apps to their workspace 
 [[on-window-detected]]
@@ -146,3 +180,12 @@ run = 'layout floating'
 [[on-window-detected]]
 if.app-id = 'com.raycast.macos'
 run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.objective-see.lulu.app'
+run = 'layout floating'
+
+# Tiling apps
+[[on-window-detected]]
+if.app-id = 'com.superace.updf.mac'
+run = 'layout tiling'
