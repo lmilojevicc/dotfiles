@@ -108,42 +108,54 @@ config.colors = {
 	},
 }
 
+config.leader = { key = "F2", mods = "CTRL", timeout_milliseconds = 1000 }
+
+config.key_tables = {
+	pane_mode = {
+		{ key = "v", action = act.SplitPane({ direction = "Right" }) },
+		{ key = "h", action = act.SplitPane({ direction = "Down" }) },
+		{ key = "x", action = act.CloseCurrentPane({ confirm = true }) },
+		{ key = "z", action = act.TogglePaneZoomState },
+		{ key = "e", action = act.ResetFontAndWindowSize },
+
+		-- Exit
+		{ key = "Escape", action = "PopKeyTable" },
+		{ key = "q", action = "PopKeyTable" },
+	},
+
+	resize_mode = {
+		{ key = "h", action = act.AdjustPaneSize({ "Left", 10 }) },
+		{ key = "l", action = act.AdjustPaneSize({ "Right", 10 }) },
+		{ key = "k", action = act.AdjustPaneSize({ "Up", 5 }) },
+		{ key = "j", action = act.AdjustPaneSize({ "Down", 5 }) },
+		{ key = "e", action = act.ResetFontAndWindowSize },
+
+		-- Exit
+		{ key = "Escape", action = "PopKeyTable" },
+		{ key = "q", action = "PopKeyTable" },
+	},
+}
 -- Keybindings
 config.keys = {
-	-- Copy mode
-	{ key = "c", mods = SHIFT_ALT, action = act.ActivateCopyMode },
-
 	-- macOS text navigation
-	{ key = "LeftArrow", mods = "ALT", action = act.SendString("\x1bb") },
-	{ key = "RightArrow", mods = "ALT", action = act.SendString("\x1bf") },
 	{ key = "LeftArrow", mods = "CMD", action = act.SendString("\x01") },
 	{ key = "RightArrow", mods = "CMD", action = act.SendString("\x05") },
 	{ key = "Backspace", mods = "CMD", action = act.SendKey({ key = "u", mods = "CTRL" }) },
 
-	-- Pane management
-	{ key = "x", mods = SHIFT_ALT, action = act.CloseCurrentPane({ confirm = true }) },
-	{ key = "s", mods = SHIFT_ALT, action = act.PaneSelect({ mode = "SwapWithActive" }) },
-	{ key = "r", mods = SHIFT_ALT, action = act.RotatePanes("Clockwise") },
-	{ key = "r", mods = SHIFT_CMD_ALT, action = act.RotatePanes("CounterClockwise") },
+	-- Leader + w enters window mode
+	{ key = "w", mods = "LEADER", action = wezterm.action.ActivateKeyTable({ name = "pane_mode", one_shot = true }) },
 
-	-- Pane splitting
-	{ key = "v", mods = SHIFT_ALT, action = act.SplitHorizontal({ domain = "CurrentPaneDomain" }) },
-	{ key = "h", mods = SHIFT_ALT, action = act.SplitVertical({ domain = "CurrentPaneDomain" }) },
+	-- Leader + s enters resize mode
+	--stylua: ignore
+	{ key = "s", mods = "LEADER", action = wezterm.action.ActivateKeyTable({ name = "resize_mode", one_shot = false }) },
 
-	-- Pane navigation
-	{ key = "LeftArrow", mods = SHIFT_ALT, action = act.ActivatePaneDirection("Left") },
-	{ key = "RightArrow", mods = SHIFT_ALT, action = act.ActivatePaneDirection("Right") },
-	{ key = "UpArrow", mods = SHIFT_ALT, action = act.ActivatePaneDirection("Up") },
-	{ key = "DownArrow", mods = SHIFT_ALT, action = act.ActivatePaneDirection("Down") },
+	-- Pane Navigation
+	{ key = "h", mods = "LEADER", action = act.ActivatePaneDirection("Left") },
+	{ key = "l", mods = "LEADER", action = act.ActivatePaneDirection("Right") },
+	{ key = "k", mods = "LEADER", action = act.ActivatePaneDirection("Up") },
+	{ key = "j", mods = "LEADER", action = act.ActivatePaneDirection("Down") },
 
-	-- Pane resizing
-	{ key = "LeftArrow", mods = SHIFT_CMD_ALT, action = act.AdjustPaneSize({ "Left", 5 }) },
-	{ key = "RightArrow", mods = SHIFT_CMD_ALT, action = act.AdjustPaneSize({ "Right", 5 }) },
-	{ key = "UpArrow", mods = SHIFT_CMD_ALT, action = act.AdjustPaneSize({ "Up", 5 }) },
-	{ key = "DownArrow", mods = SHIFT_CMD_ALT, action = act.AdjustPaneSize({ "Down", 5 }) },
-
-	-- Toggle zoom
-	{ key = "z", mods = SHIFT_ALT, action = act.TogglePaneZoomState },
+	{ key = "[", mods = "LEADER", action = act.ActivateCopyMode },
 }
 
 return config
