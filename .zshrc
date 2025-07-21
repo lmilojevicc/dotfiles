@@ -21,8 +21,9 @@ export FZF_CTRL_T_OPTS="--preview 'bat --color=always {}' \
   --bind 'alt-p:toggle-preview'"
 export FZF_ALT_C_OPTS="--preview 'eza -la --color=always {}'"
 export FZF_CTRL_R_OPTS="
-  --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort'
-  --color header:italic
+  --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort' \
+  --color header:italic \
+  --prompt=\" \" \
   --header 'Press CTRL-Y to copy command into clipboard'"
 export FZF_DEFAULT_COMMAND="fd --type f"
 export FZF_DEFAULT_OPTS=" \
@@ -34,8 +35,8 @@ export FZF_DEFAULT_OPTS=" \
 --style full \
 --height 60% \
 --tmux 80%,70% \
---prompt=\" \" \
---pointer=\"󰁔 \" \
+--prompt=\" \" \
+--pointer=\" \" \
 --marker=\" \"
 --bind 'alt-p:toggle-preview'"
 
@@ -49,8 +50,8 @@ export _ZO_FZF_OPTS=" \
 --style full \
 --height 60% \
 --tmux 80%,70% \
---prompt=\" \" \
---pointer=\"󰁔 \" \
+--prompt=\" \" \
+--pointer=\" \" \
 --marker=\" \" \
 --preview 'eza -lh --icons=auto --color=always {2..}' \
 --bind 'alt-p:toggle-preview'"
@@ -105,7 +106,6 @@ zinit light zsh-users/zsh-completions
 zinit light zsh-users/zsh-autosuggestions
 zinit light Aloxaf/fzf-tab
 zinit light thirteen37/fzf-alias
-zinit light jeffreytse/zsh-vi-mode
 
 # Oh-My-Zsh snippets
 zinit snippet OMZL::git.zsh
@@ -127,6 +127,7 @@ zinit ice wait lucid as"completion"
 zinit snippet OMZP::rust
 zinit ice wait lucid as"completion"
 zinit snippet OMZP::macos
+zinit snippet OMZP::vi-mode
 
 # Ensure completion system is properly loaded after plugins
 zinit cdreplay -q
@@ -134,9 +135,9 @@ zinit cdreplay -q
 # fzf-tab Configuration
 zstyle ':fzf-tab:*' fzf-pad 4
 zstyle ':fzf-tab:*' fzf-flags --bind=tab:accept
-zstyle ':fzf-tab:*' fzf-opts '--min-height 35% --border --layout=reverse'
+zstyle ':fzf-tab:*' fzf-opts '--border --layout=reverse'
 zstyle ':fzf-tab:*' prefix ''
-zstyle ':fzf-tab:*' continuous-trigger 'tab'
+zstyle ':fzf-tab:*' continuous-trigger '/'
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':completion:*' menu no
@@ -146,6 +147,7 @@ zstyle ':fzf-tab:*' use-fzf-default-opts yes
 
 # Aliases
 alias lvim='NVIM_APPNAME=nvim-lazy nvim'
+alias lvi='NVIM_APPNAME=nvim-lazy nvim'
 alias vi="nvim"
 alias vim="nvim"
 
@@ -162,8 +164,8 @@ alias lg="lazygit"
 alias brewup='brew update && brew upgrade && brew upgrade --cask --greedy && brew cleanup'
 
 # Vim Motions Setup
-ZVM_VI_ESCAPE_BINDKEY='^['
-ZVM_KEYTIMEOUT=0
+bindkey -v
+export KEYTIMEOUT=1 # Reduce mode switch delay
 
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
@@ -178,9 +180,23 @@ bindkey -s '\es' 'ssm\n'
 bindkey '^ ' autosuggest-accept
 
 # Shell Integrations
-eval "$(fzf --zsh)"
-eval "$(starship init zsh)"
-eval "$(zoxide init zsh)"
+if command -v fzf &>/dev/null; then
+    eval "$(fzf --zsh)"
+else
+    echo "Warning: fzf not found." >&2
+fi
+
+if command -v zoxide &>/dev/null; then
+    eval "$(zoxide init zsh)"
+else
+    echo "Warning: zoxide not found." >&2
+fi
+
+if command -v starship &>/dev/null; then
+    eval "$(starship init zsh)"
+else
+    echo "Warning: starship not found. Using default prompt." >&2
+fi
 
 # Auto-start tmux
 if command -v tmux &>/dev/null && [ -z "$TMUX" ]; then
