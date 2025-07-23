@@ -18,7 +18,7 @@ cursor-style-blink = true
 macos-option-as-alt=true
 
 # Reload config
- eybind = ctrl+f2>esc=reload_config
+keybind = ctrl+f2>esc=reload_config
 
 # Pane Splitting & Management
 keybind = ctrl+f2>w>v=new_split:right
