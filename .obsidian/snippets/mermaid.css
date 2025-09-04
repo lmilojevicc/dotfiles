@@ -1,0 +1,20 @@
+div.mermaid {
+  text-align: center;
+  margin: 20px auto;
+  max-width: 100%;
+}
+
+/* Apply scaling in preview mode */
+.mermaid > svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent Mermaid charts from overflowing in PDF export */
+@media print {
+  .mermaid > svg {
+    max-width: 100%;
+    max-height: 100%;
+    page-break-inside: avoid;
+  }
+}

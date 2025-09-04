@@ -1,0 +1,51 @@
+/* .callout .callout-title { */
+/*   background: transparent !important; */
+/*   color: var(--text-normal) !important; */
+/*   font-weight: bold !important; */
+/* } */
+/**/
+/* .callout .callout-content { */
+/*   color: var(--text-normal) !important; */
+/*   background: transparent !important; */
+/*   box-shadow: none !important; */
+/* } */
+/**/
+/* .markdown-preview-view .callout .callout-content { */
+/*   background: transparent !important; */
+/*   background-color: transparent !important; */
+/*   box-shadow: none !important; */
+/* } */
+
+@media print {
+  .markdown-preview-view .callout .callout-content {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .callout {
+    margin: 1.5rem 0;
+    border: 0;
+    box-shadow: none !important;
+
+    /* box-shadow: */
+    /*   var(--background-modifier-border) 0px 0px 0px 1px inset, */
+    /*   rgb(255, 255, 255) 10px -10px 0px -2px, */
+    /*   var(--background-modifier-border) 10px -10px; */
+
+    /* box-shadow: */
+    /*   var(--background-modifier-border) 0px 0px 0px 1px inset, */
+    /*   rgb(255, 255, 255) -8px 8px 0px -2px, */
+    /*   var(--background-modifier-border) -8px 8px; */
+
+    /* box-shadow: */
+    /*   3px 3px */
+    /*     color-mix(in srgb, var(--background-modifier-border) 40%, transparent), */
+    /*   6px 6px */
+    /*     color-mix(in srgb, var(--background-modifier-border) 20%, transparent), */
+    /*   9px 9px */
+    /*     color-mix(in srgb, var(--background-modifier-border) 10%, transparent); */
+
+    border-radius: 8px !important;
+  }
+}
