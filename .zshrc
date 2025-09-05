@@ -135,6 +135,7 @@ zinit cdreplay -q
 # fzf-tab Configuration
 zstyle ':fzf-tab:*' fzf-pad 4
 zstyle ':fzf-tab:*' fzf-flags --bind=tab:accept
+zstyle ':fzf-tab:*' switch-group '<' '>'
 zstyle ':fzf-tab:*' fzf-opts '--border --layout=reverse'
 zstyle ':fzf-tab:*' prefix ''
 zstyle ':fzf-tab:*' continuous-trigger '/'
@@ -158,10 +159,11 @@ alias ll='eza -lha --icons=auto --sort=name --group-directories-first'
 alias ld='eza -lhD --icons=auto'
 alias lt='eza -T --icons=auto'
 
+alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | .[].name" | xargs -P0 -L1 brew fetch && brew upgrade && brew cleanup'
+
 alias cd="z"
 alias cat="bat"
 alias lg="lazygit"
-alias brewup='brew update && brew upgrade && brew upgrade --cask --greedy && brew cleanup'
 
 # Vim Motions Setup
 bindkey -v
@@ -169,12 +171,6 @@ export KEYTIMEOUT=1 # Reduce mode switch delay
 
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
-
-alias tsm='tmux-session-manager'
-bindkey -s '\et' 'tmux-session-manager\n'
-
-alias ssm='sesh-fzf'
-bindkey -s '\es' 'ssm\n'
 
 # Accept suggestions with 'C-Space'
 bindkey '^ ' autosuggest-accept

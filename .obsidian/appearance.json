@@ -42,8 +42,9 @@
     "rounded-borders",
     "external-link-icon"
   ],
-  "baseFontSize": 16.5,
+  "baseFontSize": 16,
   "showRibbon": true,
   "accentColor": "",
   "nativeMenus": false
 }
+

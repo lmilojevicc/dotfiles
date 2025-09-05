@@ -92,14 +92,6 @@ ctrl-shift-l = 'mode layout'
 
 [mode.layout.binding]
 esc = ['mode main']
-left = 'resize width -50'
-down = 'resize height -50'
-up = 'resize height +50'
-right = 'resize width +50'
-h = 'resize width -50'
-j = 'resize height -50'
-k = 'resize height +50'
-l = 'resize width +50'
 minus = 'resize smart -50'
 equal = 'resize smart +50'
 t = 'layout tiles horizontal vertical'

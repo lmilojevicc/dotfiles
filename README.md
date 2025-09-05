@@ -2,8 +2,16 @@
 
 Collection of dotfiles to keep my development environment consistent across different machines.
 
-## Creating symlinks for managing configuration
+## Setup
 
 ```bash
-ln -s ~/dotfiles/<dir/file> ~/.config/
+# Clone to home directory
+git clone https://github.com/lmilojevicc/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+
+# Install all configs
+stow .
+
+# Or install specific modules
+stow scripts # This will install add into .local/bin
 ```

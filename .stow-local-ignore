@@ -22,5 +22,7 @@ _darcs
 ^/COPYING
 
 .config/vscode
+.obsidian
 browser-extensions
 scripts
+Commit-Mono-Code.json

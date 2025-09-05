@@ -44,10 +44,11 @@
     "trash.period": 24,
     "trash.unloaded": false,
     "trash.whitelist-url": [],
-    "whitelist": [],
+    "whitelist": ["nickcoutsos.github.io"],
     "whitelist-url": []
   },
   "localStorage": {
     "click": "popup"
   }
 }
+

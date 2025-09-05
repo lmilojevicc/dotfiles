@@ -1,4 +1,5 @@
 # Font
+# font-family = "CommitMonoCode"
 font-family = "Maple Mono NF"
 font-size = 16
 font-feature = -calt,-liga,-dlig
@@ -18,7 +19,7 @@ cursor-style-blink = true
 macos-option-as-alt=true
 
 # Reload config
-keybind = ctrl+f2>esc=reload_config
+keybind = ctrl+f2>r=reload_config
 
 # Pane Splitting & Management
 keybind = ctrl+f2>w>v=new_split:right

@@ -57,7 +57,7 @@
   "editor.cursorSurroundingLines": 40,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.folding": true,
-  "editor.fontFamily": "'Maple Mono NF', 'Consolas For Powerline', 'Sometype Mono', 'Geist Mono', 'Hasklig', 'Hasklug Nerd Font', 'DM Mono', 'FiraCode Nerd Font', 'JetBrainsMono Nerd Font', monospace",
+  "editor.fontFamily": "ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', 'Oxygen Mono', 'Ubuntu Monospace', 'Source Code Pro', 'Fira Mono', 'Droid Sans Mono', 'Courier New', monospace",
   "editor.fontLigatures": false,
   "editor.fontSize": 16,
   "editor.fontWeight": 400,
@@ -102,10 +102,7 @@
   "notebook.defaultFormatter": "ms-python.black-formatter",
   "notebook.formatOnSave.enabled": true,
   "path-intellisense.ignoreTsConfigBaseUrl": true,
-  "settingsSync.ignoredExtensions": [
-    "ms-vscode.powershell",
-    "ms-vscode-remote.remote-wsl"
-  ],
+  "settingsSync.ignoredExtensions": ["ms-vscode.powershell", "ms-vscode-remote.remote-wsl"],
   /** ------------ Terminal Configurations ------------ **/
   "terminal.external.osxExec": "WezTerm.app",
   "terminal.integrated.cursorBlinking": true,
@@ -120,8 +117,8 @@
   "update.mode": "manual",
   "terminal.integrated.profiles.osx": {},
   "terminal.integrated.profiles.linux": {},
-  "terminal.integrated.defaultProfile.linux": "tmux",
-  "terminal.integrated.defaultProfile.osx": "tmux",
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.defaultProfile.osx": "zsh",
   /** ------------ VIM Configuration ------------ **/
   "vim.camelCaseMotion.enable": true,
   "vim.easymotion": true,
@@ -235,10 +232,7 @@
     },
     {
       "before": ["<leader>", "t", "d"],
-      "commands": [
-        "workbench.actions.view.problems",
-        "workbench.panel.markers.focus"
-      ]
+      "commands": ["workbench.actions.view.problems", "workbench.panel.markers.focus"]
     },
     // LSP
     {
@@ -468,5 +462,6 @@
   "workbench.iconTheme": "material-icon-theme",
   "find-it-faster.general.useTerminalInEditor": true,
   "autoHide.enable": false,
-  "workbench.colorTheme": "Noir Catppuccin Mocha"
+  "workbench.colorTheme": "Noir Catppuccin Mocha",
+  "github.copilot.nextEditSuggestions.enabled": true
 }
