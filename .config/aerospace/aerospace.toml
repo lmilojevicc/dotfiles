@@ -4,9 +4,9 @@ enable-normalization-flatten-containers = true
 enable-normalization-opposite-orientation-for-nested-containers = true
 
 # Activate borders
-after-startup-command = [
-  'exec-and-forget borders active_color=0xff89b4fa inactive_color=0xff45475a width=5.0 hidpi=on style=round',
-]
+# after-startup-command = [
+#   'exec-and-forget borders active_color=0xff89b4fa inactive_color=0xff45475a width=5.0 hidpi=on style=round',
+# ]
 
 # Possible values: tiles|accordion
 default-root-container-layout = 'tiles'
@@ -24,10 +24,10 @@ accordion-padding = 24
 [gaps]
 inner.horizontal = 12
 inner.vertical = 12
-outer.left = 24
-outer.bottom = 24
-outer.top = 24
-outer.right = 24
+outer.left = 12
+outer.bottom = 12
+outer.top = 12
+outer.right = 12
 
 [mode.main.binding]
 cmd-h = []     # Disable "hide application"

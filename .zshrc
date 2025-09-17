@@ -194,11 +194,6 @@ else
     echo "Warning: starship not found. Using default prompt." >&2
 fi
 
-# Auto-start tmux
-if command -v tmux &>/dev/null && [ -z "$TMUX" ]; then
-    tmux attach || tmux new-session
-fi
-
 # Custom Functions
 
 # cd to root of git repo

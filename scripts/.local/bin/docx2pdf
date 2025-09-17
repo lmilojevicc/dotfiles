@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage:"
+  echo "  $0 [-r] [output_dir]"
+  echo "    -r  Recursively convert all .doc and .docx files in current directory and subdirectories"
+  echo "    output_dir  Directory to place pdf files (default: current directory)"
+  exit 1
+}
+
+recursive=false
+outdir="$(pwd)"
+
+while getopts ":rh" opt; do
+  case $opt in
+  r)
+    recursive=true
+    ;;
+  h)
+    usage
+    ;;
+  \?)
+    echo "Invalid option: -$OPTARG" >&2
+    usage
+    ;;
+  esac
+done
+
+shift $((OPTIND - 1))
+
+if [ "$#" -ge 1 ]; then
+  outdir="$1"
+fi
+
+command -v soffice >/dev/null 2>&1 || {
+  echo "Error: LibreOffice (soffice) not found in PATH."
+  exit 2
+}
+
+mkdir -p "$outdir"
+
+convert_file() {
+  local file="$1"
+  echo "Converting: $file"
+  soffice --headless --convert-to pdf --outdir "$outdir" "$file"
+}
+
+if [ "$recursive" = true ]; then
+  echo "Searching recursively for .doc and .docx files..."
+
+  # First, let's see what files we find
+  mapfile -t files < <(find . -type f \( -iname '*.doc' -o -iname '*.docx' \) | sort)
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "No .doc or .docx files found in current directory and subdirectories."
+  else
+    echo "Found ${#files[@]} file(s):"
+    printf '  %s\n' "${files[@]}"
+    echo
+
+    for file in "${files[@]}"; do
+      convert_file "$file"
+    done
+  fi
+else
+  echo "Converting .doc and .docx files in current directory..."
+  file_count=0
+
+  # Use arrays to handle filenames with spaces properly
+  shopt -s nullglob nocaseglob
+  files=(*.doc *.docx)
+  shopt -u nullglob nocaseglob
+
+  if [ ${#files[@]} -eq 0 ]; then
+    echo "No .doc or .docx files found in current directory."
+  else
+    echo "Found ${#files[@]} file(s):"
+    printf '  %s\n' "${files[@]}"
+    echo
+
+    for file in "${files[@]}"; do
+      convert_file "$file"
+      ((file_count++))
+    done
+  fi
+fi
+
+echo "Done. PDFs saved to: $outdir"

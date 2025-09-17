@@ -104,7 +104,7 @@
   "path-intellisense.ignoreTsConfigBaseUrl": true,
   "settingsSync.ignoredExtensions": ["ms-vscode.powershell", "ms-vscode-remote.remote-wsl"],
   /** ------------ Terminal Configurations ------------ **/
-  "terminal.external.osxExec": "WezTerm.app",
+  "terminal.external.osxExec": "Ghostty.app",
   "terminal.integrated.cursorBlinking": true,
   "terminal.integrated.cursorStyle": "line",
   "terminal.integrated.enableImages": true,
@@ -459,9 +459,10 @@
   "editor.smoothScrolling": true,
   "terminal.integrated.smoothScrolling": true,
   "workbench.productIconTheme": "feather-vscode",
-  "workbench.iconTheme": "material-icon-theme",
+  "workbench.iconTheme": "symbols",
   "find-it-faster.general.useTerminalInEditor": true,
-  "autoHide.enable": false,
+  "github.copilot.nextEditSuggestions.enabled": false,
   "workbench.colorTheme": "Noir Catppuccin Mocha",
-  "github.copilot.nextEditSuggestions.enabled": true
+  "workbench.activityBar.location": "top",
+  "mdb.mcp.server": "enabled"
 }
