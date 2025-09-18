@@ -2,11 +2,12 @@
 .mac,
 .windows,
 .linux {
-  font-family:
-    "Maple Mono NF", "DM Mono", "Consolas For Powerline", "Sometype Mono",
-    "Geist Mono", "Hasklig", "Hasklug Nerd Font", "SpaceMono Nerd Font",
-    "FiraCode Nerd Font", "JetBrainsMono Nerd Font", "Cascadia Mono NF",
-    "RecMonoDuotone Nerd Font Mono", monospace;
+  font-family: "Maple Mono NF", monospace !important;
+}
+
+input.input,
+div.view-line {
+  font-family: "Maple Mono NF" !important;
 }
 
 /* ------------ Editor Top shadow ------------ */
@@ -30,7 +31,6 @@
 
 /* ------------ Tab bar ------------ */
 div.tabs-container {
-  font-style: italic;
   font-weight: 500;
 }
 
@@ -65,14 +65,6 @@ div.tabs-container {
 
 .monaco-workbench .part.sidebar .title-actions .action-item {
   margin-right: 0;
-}
-
-.monaco-list.mouse-support .monaco-list-row {
-  border-radius: 6px;
-  width: calc(100% - 8px);
-  padding-right: 4px !important;
-  padding-left: 0 !important;
-  margin-left: 4px !important;
 }
 
 .show-file-icons .folder-icon::before,
@@ -205,18 +197,6 @@ div.tabs-container {
   }
 }
 
-#bg-blur {
-  position: absolute;
-  z-index: 10;
-  width: 100%;
-  height: 100%;
-  left: 0;
-  top: 0;
-  background: rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(6px);
-  transition: all 1s ease-in;
-}
-
 /* ------------ Find Widget ------------ */
 .monaco-editor .find-widget {
   border-radius: 4px;
@@ -264,7 +244,6 @@ div.tabs-container {
 .monaco-editor-hover,
 .monaco-hover {
   box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.45) !important;
-  padding: 10px !important;
   background-color: #1e1e2e;
   backdrop-filter: blur(3px) !important;
   border-radius: 20px !important;
@@ -318,21 +297,7 @@ div.tabs-container {
   color: #bc9abc !important;
 }
 
-/* ------------ Activity Bar Icons Center ------------ */
-/*.monaco-workbench .activitybar > .content {*/
-/*  justify-content: center;*/
-/*}*/
-/**/
-/*.monaco-workbench .activitybar > .content > .composite-bar {*/
-/*  margin-bottom: inherit;*/
-/*}*/
-
-#command-blur {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.15);
-  top: 0;
-  left: 0;
-  backdrop-filter: blur(8px);
+/* Increase status bar height and text size */
+footer {
+  font-size: 14px !important;
 }
