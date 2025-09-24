@@ -145,6 +145,10 @@ if.app-id = 'com.brave.Browser'
 run = "move-node-to-workspace 2"
 
 [[on-window-detected]]
+if.app-id = 'md.obsidian'
+run = "move-node-to-workspace 3"
+
+[[on-window-detected]]
 if.app-id = 'com.spotify.client'
 run = "move-node-to-workspace 9"
 

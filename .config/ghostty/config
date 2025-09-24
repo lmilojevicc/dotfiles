@@ -5,15 +5,23 @@ font-size = 16
 font-feature = -calt,-liga,-dlig
 
 # Color scheme
-theme = catppuccin-noir
+theme = catppuccin-mocha
+background = #11111b
+foreground = #cdd6f4
+cursor-color = #f2cdcd
+selection-background = #45475a
+selection-foreground = #cdd6f4
+split-divider-color = #313244
+
+# Window
 window-padding-x = 5
 window-padding-y = 5 
 window-padding-balance = true
-mouse-hide-while-typing = true
 
 # Cursor settings
 cursor-style = bar
 cursor-style-blink = true
+mouse-hide-while-typing = true
 
 # Keybinds
 macos-option-as-alt=true
