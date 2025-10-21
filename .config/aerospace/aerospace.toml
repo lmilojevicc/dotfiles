@@ -106,7 +106,7 @@ c = ['mode center']
 [mode.center.binding]
 esc = ['mode main']
 l = ['mode layout']
-# Raycast almost maximize (CTRL-OPTION-COMMAND-F2)
+# Raycast almost maximize (CTRL-OPTION-COMMAND-F1)
 a = [
   '''exec-and-forget aerospace layout floating && osascript -e 'tell application "System Events" to key code 122 using {control down, option down, command down}' || aerospace layout tiling''',
 ]

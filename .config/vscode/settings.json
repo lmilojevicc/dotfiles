@@ -391,7 +391,7 @@
   "workbench.editorAssociations": {
     "*.copilotmd": "vscode.markdown.preview.editor",
     "{git,gitlens,git-graph}:/**/*.{md,csv,svg}": "default",
-    "*.md": "default",
+    "*.md": "vscode.markdown.preview.editor",
     "*.markdown": "default",
     "*.csv": "gc-excelviewer-csv-editor"
   },

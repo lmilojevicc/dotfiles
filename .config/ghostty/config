@@ -8,10 +8,11 @@ font-feature = -calt,-liga,-dlig
 theme = catppuccin-mocha
 background = #11111b
 foreground = #cdd6f4
-cursor-color = #f2cdcd
 selection-background = #45475a
 selection-foreground = #cdd6f4
 split-divider-color = #313244
+cursor-color = #b4befe
+cursor-invert-fg-bg = true
 
 # Window
 window-padding-x = 5
