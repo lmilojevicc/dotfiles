@@ -2,7 +2,7 @@
   "weight": 400,
   "italic": false,
   "alternates": {
-    "cv01": true,
+    "cv01": false,
     "cv02": true,
     "cv03": false,
     "cv04": true,
@@ -18,7 +18,7 @@
     "ss01": false,
     "ss02": false,
     "ss03": true,
-    "ss04": false,
+    "ss04": true,
     "ss05": true
   },
   "letterSpacing": 3,

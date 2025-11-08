@@ -5,10 +5,6 @@ local config = {}
 -- Check if we're running on macOS
 local is_macos = wezterm.target_triple:find("darwin") ~= nil
 
--- Define key modifiers as variables for readability
-local SHIFT_ALT = "SHIFT|ALT"
-local SHIFT_CMD_ALT = "SHIFT|CMD|ALT"
-
 -- Performance settings
 config.max_fps = 240
 config.animation_fps = 240
@@ -17,16 +13,8 @@ config.front_end = "WebGpu"
 -- Font configuration
 config.harfbuzz_features = { "calt=0", "clig=0", "liga=0", "ss01=1", "ss02=1" }
 config.font = wezterm.font_with_fallback({
-	{ family = "Maple Mono NF" },
-	{ family = "Consolas For Powerline" },
-	{ family = "Sometype Mono" },
-	{ family = "Fragment Mono" },
-	{ family = "Geist Mono" },
-	{ family = "Hasklig" },
-	{ family = "DM Mono" },
-	{ family = "Fira Code" },
-	{ family = "JetBrains Mono" },
-	{ family = "Symbols Nerd Font Mono", scale = 0.8 },
+	{ family = "Iosevka Based" },
+	{ family = "Maple Mono" },
 })
 config.font_size = 16.0
 config.freetype_load_target = "Light"
@@ -108,8 +96,6 @@ config.colors = {
 	},
 }
 
-config.leader = { key = "F2", mods = "CTRL", timeout_milliseconds = 1000 }
-
 config.key_tables = {
 	pane_mode = {
 		{ key = "v", action = act.SplitPane({ direction = "Right" }) },
@@ -135,7 +121,9 @@ config.key_tables = {
 		{ key = "q", action = "PopKeyTable" },
 	},
 }
+
 -- Keybindings
+config.leader = { key = "F2", mods = "CTRL", timeout_milliseconds = 1000 }
 config.keys = {
 	-- macOS text navigation
 	{ key = "LeftArrow", mods = "CMD", action = act.SendString("\x01") },
