@@ -30,8 +30,9 @@ outer.top = 12
 outer.right = 12
 
 [mode.main.binding]
-cmd-h = []     # Disable "hide application"
-cmd-alt-h = [] # Disable "hide others"
+cmd-h = []     # Disable "hide all app windows"
+cmd-m = []     # Disable "hide current app window"
+cmd-alt-h = [] # Disable "hide others windows"
 
 # Go to next/prev workspace
 cmd-ctrl-shift-left = 'workspace prev'
@@ -99,9 +100,18 @@ a = 'layout accordion horizontal vertical'
 e = 'balance-sizes'
 w = 'flatten-workspace-tree'
 f = ['layout tiling floating']
-r = ['reload-config']
+r = 'mode resize'
 shift-f = ['fullscreen']
 c = ['mode center']
+
+[mode.resize.binding]
+minus = 'resize smart -50'
+equal = 'resize smart +50'
+h = 'resize width -50'
+j = 'resize height +50'
+k = 'resize height -50'
+l = 'resize width +50'
+esc = 'mode layout'
 
 [mode.center.binding]
 esc = ['mode main']
