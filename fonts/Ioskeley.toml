@@ -104,6 +104,36 @@ shape = 400
 menu = 400
 css = 400
 
+[buildPlans.Ioskeley.weights.Bold]
+shape = 700
+menu = 700
+css = 700
+
+[buildPlans.Ioskeley.weights.Light]
+shape = 300
+menu = 300
+css = 300
+
+[buildPlans.Ioskeley.weights.Medium]
+shape = 500
+menu = 500
+css = 500
+
+[buildPlans.Ioskeley.weights.SemiBold]
+shape = 600
+menu = 600
+css = 600
+
+[buildPlans.Ioskeley.weights.ExtraBold]
+shape = 800
+menu = 800
+css = 800
+
+[buildPlans.Ioskeley.weights.Heavy]
+shape = 900
+menu = 900
+css = 900
+
 [buildPlans.Ioskeley.widths.Normal]
 shape = 600
 menu = 5

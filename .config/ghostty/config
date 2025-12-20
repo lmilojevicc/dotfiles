@@ -1,6 +1,9 @@
 # Font
+font-family = Maple Mono NL
+font-family = Maple Mono Cursive NL
+font-family = Gintronic
+font-family = CommitMonoBased
 font-family = Iosevka Based
-font-family = Maple Mono
 font-size = 16
 font-feature = -calt,-liga,-dlig
 
