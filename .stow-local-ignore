@@ -21,8 +21,8 @@ _darcs
 ^/LICENSE.*
 ^/COPYING
 
-.config/vscode
-.obsidian
-browser-extensions
-scripts
-Commit-Mono-Code.json
+.DS_Store
+.stowrc
+setup.sh
+vscode
+fonts

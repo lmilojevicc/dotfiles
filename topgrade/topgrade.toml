@@ -1,0 +1,6 @@
+[misc]
+only = ["shell", "rustup", "cargo", "go", "node", "deno", "bun", "pipx", "yazi"]
+
+assume_yes = true
+
+no_retry = true

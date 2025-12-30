@@ -1,13 +1,9 @@
 # Tmxu
-.config/tmux/plugins
+tmux/plugins/*
 
 # Yazi
-.config/yazi/flavors
-.config/yazi/plugins/*
-
-# ncspot
-.config/ncspot/*
-.config/!ncspot/config.toml
+yazi/flavors
+yazi/plugins/*
 
 **/*.log
 .DS_Store

@@ -15,13 +15,13 @@ hash = "e519d894e94ded741e06aae4d4775981"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:full-border"
-rev = "19dc890"
+rev = "517619a"
 hash = "3996fc74044bc44144b323686f887e1"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:git"
-rev = "19dc890"
-hash = "27ca02f49fd236b5cc7bf03c243859fe"
+rev = "517619a"
+hash = "73788c7dc5827ef4677c502c3ea8fa19"
 
 [[plugin.deps]]
 use = "Reledia/glow"
@@ -30,7 +30,7 @@ hash = "92b5c58159a51c567f82b618cee2b78"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:smart-paste"
-rev = "19dc890"
+rev = "517619a"
 hash = "75fd60b2df7115e0a6ca31a6a804d320"
 
 [[plugin.deps]]
@@ -40,5 +40,5 @@ hash = "62251f94eb67648d42cdfcfb8be0fad2"
 
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-mocha"
-rev = "ffe6e3a"
+rev = "9276ffa"
 hash = "8d7799e4598ff079fa5ee5c770d9bc08"

@@ -7,6 +7,7 @@ export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export DENO_INSTALL="$HOME/.deno"
+export STARSHIP_CONFIG=~/.config/starship/starship.toml
 
 # PATH
 export PATH="$DENO_INSTALL/bin:$PATH"
@@ -27,7 +28,7 @@ export FZF_CTRL_R_OPTS="
   --color header:italic \
   --prompt=\" \" \
   --header 'Press CTRL-Y to copy command into clipboard'"
-export FZF_DEFAULT_COMMAND="fd --type f"
+export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
 --color=bg+:#11111b,bg:#11111b,spinner:#F5E0DC,hl:#F38BA8 \
 --color=fg:#CDD6F4,header:#89B4FA,info:#CBA6F7,pointer:#F5E0DC \
@@ -68,8 +69,9 @@ if [[ -f "/opt/homebrew/bin/brew" ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-# Docker CLI completions
+# Custom completions
 fpath=(~/.docker/completions $fpath)
+fpath=(~/.zfunc $fpath)
 
 # Completion System
 autoload -Uz compinit && compinit
@@ -144,8 +146,8 @@ zstyle ':fzf-tab:*' continuous-trigger '/'
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':completion:*' menu no
-zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
-zstyle ':fzf-tab:complete:*:*' fzf-preview 'bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath'
+zstyle ':fzf-tab:complete:cd:*' fzf-preview "eza -1 --color=always $realpath"
+zstyle ':fzf-tab:complete:*:*' fzf-preview "bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath"
 zstyle ':fzf-tab:*' use-fzf-default-opts yes
 
 # Aliases
@@ -156,14 +158,13 @@ alias vim="nvim"
 
 alias c='clear'
 alias l='eza -lh  --icons=auto'
-alias ls='eza -1   --icons=auto'
 alias ll='eza -lha --icons=auto --sort=name --group-directories-first'
 alias ld='eza -lhD --icons=auto'
-alias lt='eza -T --icons=auto'
+alias lt='eza -lha --icons=auto --sort=time'
+alias ltre="eza --tree --level=2 --long --icons --git"
 
-alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | .[].name" | xargs -P0 -L1 brew fetch && brew upgrade && brew cleanup'
+alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | .[].name" | xargs -P0 -L1 brew fetch && brew upgrade --greedy && brew cleanup'
 
-alias cd="z"
 alias cat="bat"
 alias lg="lazygit"
 
@@ -173,9 +174,6 @@ export KEYTIMEOUT=1 # Reduce mode switch delay
 
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
-
-# Accept suggestions with 'C-Space'
-bindkey '^ ' autosuggest-accept
 
 # Shell Integrations
 if command -v fzf &>/dev/null; then
@@ -231,11 +229,13 @@ function b() {
 
 # External Tool Integrations
 
-# Angular CLI autocompletion
-source <(ng completion script)
-
 # ghcup environment
 [ -f "$HOME/.ghcup/env" ] && . "$HOME/.ghcup/env"
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
+
+# Generated for envman. Do not edit.
+[ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
+
+[[ -f ~/.secrets ]] && source ~/.secrets
