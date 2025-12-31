@@ -26,7 +26,7 @@ export FZF_ALT_C_OPTS="--preview 'eza -la --color=always {}'"
 export FZF_CTRL_R_OPTS="
   --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort' \
   --color header:italic \
-  --prompt=\" \" \
+  --prompt=\"  \" \
   --header 'Press CTRL-Y to copy command into clipboard'"
 export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
@@ -38,7 +38,7 @@ export FZF_DEFAULT_OPTS=" \
 --style full \
 --height 60% \
 --tmux 80%,70% \
---prompt=\" \" \
+--prompt=\"  \" \
 --pointer=\" \" \
 --marker=\" \"
 --bind 'alt-p:toggle-preview'"
@@ -53,7 +53,7 @@ export _ZO_FZF_OPTS=" \
 --style full \
 --height 60% \
 --tmux 80%,70% \
---prompt=\" \" \
+--prompt=\"  \" \
 --pointer=\" \" \
 --marker=\" \" \
 --preview 'eza -lh --icons=auto --color=always {2..}' \
@@ -137,20 +137,56 @@ zinit snippet OMZP::vi-mode
 zinit cdreplay -q
 
 # fzf-tab Configuration
-zstyle ':fzf-tab:*' fzf-pad 4
-zstyle ':fzf-tab:*' fzf-flags --bind=tab:accept
-zstyle ':fzf-tab:*' switch-group '<' '>'
-zstyle ':fzf-tab:*' fzf-opts '--border --layout=reverse'
-zstyle ':fzf-tab:*' prefix ''
-zstyle ':fzf-tab:*' continuous-trigger '/'
 zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':completion:*' menu no
-zstyle ':fzf-tab:complete:cd:*' fzf-preview "eza -1 --color=always $realpath"
-zstyle ':fzf-tab:complete:*:*' fzf-preview "bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath"
 zstyle ':fzf-tab:*' use-fzf-default-opts yes
+zstyle ':fzf-tab:*' fzf-flags --bind=tab:accept --height=60%
+zstyle ':fzf-tab:*' switch-group ',' '.'
+zstyle ':fzf-tab:*' prefix ''
+zstyle ':fzf-tab:*' continuous-trigger '/'
+zstyle ':fzf-tab:complete:*:*' fzf-preview 'bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath'
 
-# Aliases
+# Vim Motions Setup
+bindkey -v
+export KEYTIMEOUT=1 # Reduce mode switch delay
+
+# Open command in editor
+autoload -Uz edit-command-line
+zle -N edit-command-line
+bindkey -M vicmd 'ge' edit-command-line
+
+function tmux-man-split() {
+    if [[ -z "$TMUX" ]]; then
+        zle -M "Not in tmux session"
+        return 1
+    fi
+
+    local cmd="${BUFFER%% *}"
+    if [[ -z "$cmd" ]]; then
+        zle -M "No command in buffer"
+        return 1
+    fi
+
+    local current_word="${LBUFFER##* }${RBUFFER%% *}"
+
+    local search_pattern=""
+    if [[ "$current_word" =~ ^-+ ]]; then
+        search_pattern="-p '^\s*${current_word//-/\\-}'"
+    fi
+
+    local tmux_cmd="man $search_pattern $cmd 2>/dev/null || $cmd --help 2>/dev/null | nvim - $search_pattern || echo \"No manual entry or --help for $cmd\"; read -k 1 -s -p 'Press any key to close...'"
+
+    tmux split-window -v -l 40% "zsh -c '$tmux_cmd'"
+}
+
+zle -N tmux-man-split
+bindkey '^X^M' tmux-man-split
+
+# Expands history expressions like !! or !$ on space
+bindkey ' ' magic-space
+
+# Aliases and bindkeys
 alias lvim='NVIM_APPNAME=nvim-lazy nvim'
 alias lvi='NVIM_APPNAME=nvim-lazy nvim'
 alias vi="nvim"
@@ -159,42 +195,24 @@ alias vim="nvim"
 alias c='clear'
 alias l='eza -lh  --icons=auto'
 alias ll='eza -lha --icons=auto --sort=name --group-directories-first'
-alias ld='eza -lhD --icons=auto'
-alias lt='eza -lha --icons=auto --sort=time'
+alias ltime='eza -lha --icons=auto --sort=time'
+alias lsize='eza -lha --icons=auto --sort=size --total-size'
+alias ldir='eza -lhD --icons=auto'
 alias ltre="eza --tree --level=2 --long --icons --git"
 
 alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | .[].name" | xargs -P0 -L1 brew fetch && brew upgrade --greedy && brew cleanup'
 
-alias cat="bat"
+alias kps="keepassxc-cli"
 alias lg="lazygit"
-
-# Vim Motions Setup
-bindkey -v
-export KEYTIMEOUT=1 # Reduce mode switch delay
+alias ld="lazydocker"
 
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
 
-# Shell Integrations
-if command -v fzf &>/dev/null; then
-    eval "$(fzf --zsh)"
-else
-    echo "Warning: fzf not found." >&2
-fi
-
-if command -v zoxide &>/dev/null; then
-    eval "$(zoxide init zsh)"
-else
-    echo "Warning: zoxide not found." >&2
-fi
-
-if command -v starship &>/dev/null; then
-    eval "$(starship init zsh)"
-else
-    echo "Warning: starship not found. Using default prompt." >&2
-fi
-
-# Custom Functions
+# Git
+bindkey -s '^Xgc' 'git commit -m ""'
+bindkey -s '^Xgs' 'git status --short\n'
+bindkey -s '^Xgl' 'git log --oneline -n 10\n'
 
 # cd to root of git repo
 function cdr() {
@@ -226,6 +244,57 @@ function b() {
         return 1
     fi
 }
+
+autoload -Uz add-zsh-hook
+function auto_venv() {
+    # If already in a virtualenv, do nothing
+    if [[ -n "$VIRTUAL_ENV" && ! -f "$VIRTUAL_ENV/bin/activate" ]]; then
+        deactivate
+    fi
+
+    [[ -n "$VIRTUAL_ENV" ]] && return
+
+    local dir="$PWD"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -f "$dir/.venv/bin/activate" ]]; then
+            source "$dir/.venv/bin/activate"
+            return
+        fi
+        dir="${dir:h}"
+    done
+}
+
+function auto_ls() {
+    if command -v eza &>/dev/null; then
+        eza --icons=auto --color=always
+    elif command -v lsd &>/dev/null; then
+        lsd --color=always
+    else
+        ls --color=auto
+    fi
+}
+
+add-zsh-hook chpwd auto_venv
+add-zsh-hook chpwd auto_ls
+
+# Shell Integrations
+if command -v fzf &>/dev/null; then
+    eval "$(fzf --zsh)"
+else
+    echo "Warning: fzf not found." >&2
+fi
+
+if command -v zoxide &>/dev/null; then
+    eval "$(zoxide init zsh)"
+else
+    echo "Warning: zoxide not found." >&2
+fi
+
+if command -v starship &>/dev/null; then
+    eval "$(starship init zsh)"
+else
+    echo "Warning: starship not found. Using default prompt." >&2
+fi
 
 # External Tool Integrations
 
