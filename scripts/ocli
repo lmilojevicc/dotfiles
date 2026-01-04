@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+DEFAULT_MODEL="github-copilot/gpt-5-mini"
+
+function ocli() {
+    local model prompt agent show_model_picker=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+        -m | --model)
+            show_model_picker=true
+            shift
+            ;;
+        *)
+            shift
+            ;;
+        esac
+    done
+
+    agent="cli-strict"
+
+    if [[ "$show_model_picker" == true ]]; then
+        echo "🧠 Select model..."
+        model=$(opencode models | fzf \
+            --prompt="Model: " \
+            --height=50% \
+            --border \
+            --reverse \
+            --header="Press ESC to cancel") || return 1
+        echo -e "🧠 Using: $model"
+    else
+        model="$DEFAULT_MODEL"
+        echo -e "🧠 Using default model: $model\nℹ️ Use -m to pick your prefered model"
+    fi
+
+    echo "💬 Enter your prompt:"
+    read prompt
+
+    echo -e "⚡ Running: opencode run --agent $agent --model $model \"$prompt\""
+
+    opencode run --agent "$agent" --model "$model" "$prompt"
+}
+
+ocli "$@"
