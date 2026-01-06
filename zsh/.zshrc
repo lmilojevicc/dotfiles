@@ -60,6 +60,7 @@ export _ZO_FZF_OPTS=" \
 --bind 'alt-p:toggle-preview'"
 
 export LS_COLORS="$(vivid generate catppuccin-mocha)"
+export LS_OPTIONS='-F --color=auto'
 
 export FX_LINE_NUMBERS=true
 export FX_THEME=3
@@ -70,14 +71,14 @@ if [[ -f "/opt/homebrew/bin/brew" ]]; then
 fi
 
 # Custom completions
-fpath=(~/.docker/completions $fpath)
-fpath=(~/.zfunc $fpath)
+fpath=(~/.zsh/completions $fpath)
 
 # Completion System
 autoload -Uz compinit && compinit
 
 # History Settings
-HISTSIZE=5000
+HISTSIZE=10000
+SAVEHIST=10000
 HISTFILE=~/.zsh_history
 SAVEHIST=$HISTSIZE
 setopt EXTENDED_HISTORY
@@ -112,10 +113,7 @@ zinit light Aloxaf/fzf-tab
 zinit light thirteen37/fzf-alias
 
 # Oh-My-Zsh snippets
-zinit snippet OMZL::git.zsh
 zinit snippet OMZP::git
-zinit snippet OMZP::sudo
-zinit snippet OMZP::command-not-found
 zinit snippet OMZP::brew
 zinit snippet OMZP::python
 zinit snippet OMZP::node
@@ -131,7 +129,6 @@ zinit ice wait lucid as"completion"
 zinit snippet OMZP::rust
 zinit ice wait lucid as"completion"
 zinit snippet OMZP::macos
-zinit snippet OMZP::vi-mode
 
 # Ensure completion system is properly loaded after plugins
 zinit cdreplay -q
