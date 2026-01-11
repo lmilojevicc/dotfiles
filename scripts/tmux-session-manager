@@ -1,29 +1,51 @@
 #!/usr/bin/env bash
 
+# --- Configuration & Constants ---
+ICON_SESSION=""
+ICON_ZOXIDE="󰉖"
+ICON_FD="󰥩"
+
+export ICON_SESSION ICON_ZOXIDE ICON_FD
+
 in_tmux() {
   [ -n "$TMUX" ]
 }
 
+# --- Generators ---
+
 get_sessions() {
-  local icon="$(tput setaf 10)$(tput sgr0)"
+  local icon="$(tput setaf 10)${ICON_SESSION}$(tput sgr0)"
   tmux list-sessions -F '#S' 2>/dev/null | while read -r session; do
     echo "${icon} ${session}"
   done
 }
 
 get_zoxide_dirs() {
-  local icon="$(tput setaf 5) $(tput sgr0)"
+  local icon="$(tput setaf 4)${ICON_ZOXIDE}$(tput sgr0)"
   zoxide query -l | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
-# Get both sessions and directories
+get_fd_dirs() {
+  local icon="$(tput setaf 5)${ICON_FD}$(tput sgr0)"
+  fd -H -a -d 2 -t d -E .Trash . ~ 2>/dev/null | sed "s|^$HOME|~|; s|^|${icon} |"
+}
+
 get_all() {
   get_sessions
   get_zoxide_dirs
+  get_fd_dirs
 }
 
+# --- Helpers ---
+
 strip_icon() {
-  echo "$1" | cut -c3-
+  local clean_line
+  clean_line=$(echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g")
+  echo "${clean_line#* }"
+}
+
+strip_colors() {
+  echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g"
 }
 
 switch_to_session() {
@@ -35,20 +57,43 @@ switch_to_session() {
   fi
 }
 
-# Create session from zoxide directory
 create_session_from_dir() {
   local dir="$1"
   local session_name
+
+  if [ ! -d "$dir" ]; then
+    if in_tmux; then
+      tmux display-message -d 2000 "❌ Error: Directory '$dir' does not exist."
+    fi
+    return 1
+  fi
+
   session_name=$(basename "$dir")
+
+  if [ "$session_name" = "." ]; then
+    session_name=$(basename "$(pwd)")
+  fi
+
+  if [[ "$session_name" == .* ]]; then
+    session_name="dot_${session_name#.}"
+  fi
+
+  session_name=$(echo "$session_name" | tr . _ | tr : _)
+
+  if ! tmux has-session -t "$session_name" 2>/dev/null; then
+    tmux new-session -d -s "$session_name" -c "$dir"
+  fi
+
   if tmux has-session -t "$session_name" 2>/dev/null; then
     switch_to_session "$session_name"
   else
-    tmux new-session -d -s "$session_name" -c "$dir"
-    switch_to_session "$session_name"
+    # Fallback debug message if creation completely failed
+    if in_tmux; then
+      tmux display-message -d 2000 "❌ Failed to create session '$session_name'"
+    fi
   fi
 }
 
-# Run yazi and create session from exit path
 run_yazi_and_create_session() {
   local tmp_file
   tmp_file=$(mktemp)
@@ -63,41 +108,50 @@ run_yazi_and_create_session() {
   rm -f "$tmp_file"
 }
 
-delete_session() {
-  local session="$1"
-  tmux kill-session -t "$session"
+# --- Action Handlers ---
+
+delete_item() {
+  local raw_line="$1"
+  local clean_line
+  clean_line=$(strip_colors "$raw_line")
+
+  if [[ "$clean_line" == "$ICON_SESSION"* ]]; then
+    local session_name
+    session_name=$(strip_icon "$raw_line")
+    tmux kill-session -t "$session_name" 2>/dev/null
+  fi
 }
 
+# --- FZF Logic ---
+
 fzf_with_style() {
+  local fzf_opts=(
+    --ansi
+    --style full
+    --border
+    --preview-window 'right:55%'
+    --pointer=' '
+    --marker=' '
+    --bind 'alt-p:toggle-preview'
+  )
+
   if [ -n "$TMUX_POPUP" ] || [ "$FZF_TMUX" = "0" ]; then
-    fzf "$@" \
-      --ansi \
-      --style full \
-      --height 100% \
-      --border \
-      --preview-window 'right:55%' \
-      --pointer=' ' \
-      --marker=' ' \
-      --bind 'alt-p:toggle-preview'
+    fzf "${fzf_opts[@]}" "$@" --height 100%
   else
-    fzf "$@" \
-      --ansi \
-      --style full \
-      --tmux 80%,70% \
-      --border \
-      --preview-window 'right:55%' \
-      --pointer=' ' \
-      --marker=' ' \
-      --bind 'alt-p:toggle-preview'
+    fzf "${fzf_opts[@]}" "$@" --tmux 80%,70%
   fi
 }
 
 fzf_unified_manager() {
   local mode=""
   local rename_target=""
+
+  local mode_file=$(mktemp)
+  echo "--get-all" >"$mode_file"
+  trap "rm -f '$mode_file'" EXIT
+
   while :; do
     if [[ "$mode" == "rename" ]]; then
-      # Rename mode: prompt for new session name
       new_name=$(
         printf "" | fzf_with_style \
           --print-query \
@@ -117,30 +171,41 @@ fzf_unified_manager() {
     unified_list=$(
       get_all |
         fzf_with_style \
-          --header=$'<CR>: Switch/Create | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^Y: Yazi | Esc: Quit' \
+          --header=$'<CR>: Switch/Create | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi | Esc: Quit' \
           --border-label ' Session Manager ' \
           --prompt=' ' \
-          --bind "ctrl-t:reload('${BASH_SOURCE[0]}' --get-sessions)" \
-          --bind "ctrl-z:reload('${BASH_SOURCE[0]}' --get-zoxide)" \
-          --bind "ctrl-a:reload('${BASH_SOURCE[0]}' --get-all)" \
+          --bind "ctrl-t:execute-silent(echo '--get-sessions' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-sessions)" \
+          --bind "ctrl-z:execute-silent(echo '--get-zoxide' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-zoxide)" \
+          --bind "ctrl-f:execute-silent(echo '--get-fd' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-fd)" \
+          --bind "ctrl-a:execute-silent(echo '--get-all' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-all)" \
+          --bind "ctrl-x:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"execute-silent('${BASH_SOURCE[0]}' --delete-item {})+reload('${BASH_SOURCE[0]}' \$(cat '$mode_file'))\" || echo \"\"" \
+          --bind "ctrl-r:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"accept\" || echo \"\"" \
           --preview '
-            if [[ {} == " "* ]]; then
-              tmux capture-pane -ep -t $(echo {} | cut -c3-) 2>/dev/null
-            elif [[ {} == " "* ]]; then
-              target="$(echo {} | cut -c3-)"
-              target="${target# }"  # Remove any leading space
+            line=$(echo {} | sed "s/$(printf "\033")\[[0-9;]*m//g")
+            if [[ "$line" == "$ICON_SESSION"* ]]; then
+              target=$(echo "$line" | cut -d" " -f2-)
+              tmux capture-pane -ep -t "$target" 2>/dev/null
+            elif [[ "$line" == "$ICON_ZOXIDE"* ]] || [[ "$line" == "$ICON_FD"* ]]; then
+              target="$(echo "$line" | cut -d" " -f2-)"
               target="${target/#\~/$HOME}"
-              eza -lah --icons --color=always "$target" | head -200
+              eza -lah --icons=always --sort=name --group-directories-first --color=always "$target" | head -200
             fi
           ' \
-          --expect enter,ctrl-r,ctrl-n,ctrl-x,ctrl-y
+          --expect enter,ctrl-n,ctrl-y
     )
+
+    if [ -z "$unified_list" ]; then break; fi
 
     key=$(head -1 <<<"$unified_list")
     selected=$(tail -n +2 <<<"$unified_list" | head -1)
-    [ -z "$key" ] && break
 
-    if [[ "$selected" == " "* ]]; then
+    if [ -z "$key" ] && [ -n "$selected" ]; then
+      key="ctrl-r"
+    fi
+
+    clean_selected=$(strip_colors "$selected")
+
+    if [[ "$clean_selected" == "$ICON_SESSION"* ]]; then
       session_name=$(strip_icon "$selected")
       case "$key" in
       enter)
@@ -151,15 +216,12 @@ fzf_unified_manager() {
         mode="rename"
         rename_target="$session_name"
         ;;
-      ctrl-x)
-        delete_session "$session_name"
-        ;;
       ctrl-y)
         run_yazi_and_create_session
         break
         ;;
       esac
-    elif [[ "$selected" == " "* ]]; then
+    elif [[ "$clean_selected" == "$ICON_ZOXIDE"* ]] || [[ "$clean_selected" == "$ICON_FD"* ]]; then
       dir_path=$(strip_icon "$selected")
       dir_path="${dir_path# }"
       dir_path="${dir_path/#\~/$HOME}"
@@ -168,12 +230,6 @@ fzf_unified_manager() {
       enter)
         create_session_from_dir "$dir_path"
         break
-        ;;
-      ctrl-r)
-        # Not applicable for directories
-        ;;
-      ctrl-x)
-        # Not applicable for directories
         ;;
       ctrl-y)
         run_yazi_and_create_session
@@ -184,7 +240,6 @@ fzf_unified_manager() {
   done
 }
 
-# Handle command line arguments for filtering
 case "$1" in
 --get-sessions)
   get_sessions
@@ -194,8 +249,16 @@ case "$1" in
   get_zoxide_dirs
   exit 0
   ;;
+--get-fd)
+  get_fd_dirs
+  exit 0
+  ;;
 --get-all)
   get_all
+  exit 0
+  ;;
+--delete-item)
+  delete_item "$2"
   exit 0
   ;;
 esac
