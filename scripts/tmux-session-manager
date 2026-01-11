@@ -5,14 +5,14 @@ in_tmux() {
 }
 
 get_sessions() {
-  local icon="$(tput setaf 6)$(tput sgr0)"
+  local icon="$(tput setaf 10)$(tput sgr0)"
   tmux list-sessions -F '#S' 2>/dev/null | while read -r session; do
     echo "${icon} ${session}"
   done
 }
 
 get_zoxide_dirs() {
-  local icon="$(tput setaf 4) $(tput sgr0)"
+  local icon="$(tput setaf 5) $(tput sgr0)"
   zoxide query -l | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
@@ -69,7 +69,7 @@ delete_session() {
 }
 
 fzf_with_style() {
-  if [ -n "$TMUX_POPUP" ] || [ "$FZF_TMUX" = "0" ] || [ -n "$TMUX_PANE" ]; then
+  if [ -n "$TMUX_POPUP" ] || [ "$FZF_TMUX" = "0" ]; then
     fzf "$@" \
       --ansi \
       --style full \
@@ -83,7 +83,7 @@ fzf_with_style() {
     fzf "$@" \
       --ansi \
       --style full \
-      --tmux 90%,80% \
+      --tmux 80%,70% \
       --border \
       --preview-window 'right:55%' \
       --pointer=' ' \
@@ -112,27 +112,12 @@ fzf_unified_manager() {
       mode=""
       rename_target=""
       continue
-    elif [[ "$mode" == "create" ]]; then
-      # Create mode: prompt for new session name
-      new_name=$(
-        printf "" | fzf_with_style \
-          --print-query \
-          --prompt="Enter new session name: " \
-          --header="Type new session name and hit Enter, or Esc to cancel" \
-          --border-label " New Session "
-      )
-      new_name=$(head -1 <<<"$new_name")
-      if [[ -n "$new_name" ]]; then
-        tmux new-session -d -s "$new_name"
-      fi
-      mode=""
-      continue
     fi
 
     unified_list=$(
       get_all |
         fzf_with_style \
-          --header=$'<CR>: Switch/Create | ^R: Rename | ^N: New | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^Y: Yazi | Esc: Quit' \
+          --header=$'<CR>: Switch/Create | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^Y: Yazi | Esc: Quit' \
           --border-label ' Session Manager ' \
           --prompt=' ' \
           --bind "ctrl-t:reload('${BASH_SOURCE[0]}' --get-sessions)" \
@@ -166,9 +151,6 @@ fzf_unified_manager() {
         mode="rename"
         rename_target="$session_name"
         ;;
-      ctrl-n)
-        mode="create"
-        ;;
       ctrl-x)
         delete_session "$session_name"
         ;;
@@ -189,9 +171,6 @@ fzf_unified_manager() {
         ;;
       ctrl-r)
         # Not applicable for directories
-        ;;
-      ctrl-n)
-        mode="create"
         ;;
       ctrl-x)
         # Not applicable for directories
