@@ -1,0 +1,6 @@
+theme: catppuccin-mocha
+animation: "full"
+heading:
+  visible: false
+keymap:
+  send-request: f7

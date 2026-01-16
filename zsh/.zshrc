@@ -7,7 +7,8 @@ export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export DENO_INSTALL="$HOME/.deno"
-export STARSHIP_CONFIG=~/.config/starship/starship.toml
+export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
+export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 
 # PATH
 export PATH="$DENO_INSTALL/bin:$PATH"
@@ -126,8 +127,6 @@ zinit snippet OMZP::pip
 zinit ice wait lucid as"completion"
 zinit snippet OMZP::docker
 zinit ice wait lucid as"completion"
-zinit snippet OMZP::rust
-zinit ice wait lucid as"completion"
 zinit snippet OMZP::macos
 
 # Ensure completion system is properly loaded after plugins
@@ -202,6 +201,8 @@ alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | 
 alias kps="keepassxc-cli"
 alias lg="lazygit"
 alias ld="lazydocker"
+
+alias ddgr='ddgr -x -n 5'
 
 # Run zi with Alt-Z
 bindkey -s '\ez' 'zi\n'
