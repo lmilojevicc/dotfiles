@@ -127,18 +127,20 @@ delete_item() {
 fzf_with_style() {
   local fzf_opts=(
     --ansi
+    --color=spinner:#F5E0DC,hl:#F38BA8
+    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8
+    --color=selected-bg:#45475A
+    --color=border:#313244,label:#CDD6F4
     --style full
-    --border
     --preview-window 'right:55%'
-    --pointer=' '
-    --marker=' '
     --bind 'alt-p:toggle-preview'
   )
 
-  if [ -n "$TMUX_POPUP" ] || [ "$FZF_TMUX" = "0" ]; then
-    fzf "${fzf_opts[@]}" "$@" --height 100%
+  if [ -n "$TMUX" ]; then
+    fzf "${fzf_opts[@]}" "$@" --tmux 90%,80% --border=none --layout=default
   else
-    fzf "${fzf_opts[@]}" "$@" --tmux 80%,70%
+    fzf "${fzf_opts[@]}" "$@" --height 90% --layout=reverse
   fi
 }
 
@@ -171,7 +173,7 @@ fzf_unified_manager() {
     unified_list=$(
       get_all |
         fzf_with_style \
-          --header=$'<CR>: Switch/Create | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi | Esc: Quit' \
+          --header=$'Enter: Switch/Create | Esc: Quit | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi | Alt-p: Toggle Preview' \
           --border-label ' Session Manager ' \
           --prompt=' ' \
           --bind "ctrl-t:execute-silent(echo '--get-sessions' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-sessions)" \

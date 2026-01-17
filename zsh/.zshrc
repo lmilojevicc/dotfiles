@@ -21,44 +21,45 @@ export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
 export PATH="$HOME/.opencode/bin:$PATH"
 
 # FZF Default Options
-export FZF_CTRL_T_OPTS="--preview 'bat --color=always {}' \
-  --bind 'alt-p:toggle-preview'"
-export FZF_ALT_C_OPTS="--preview 'eza -la --color=always {}'"
-export FZF_CTRL_R_OPTS="
-  --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort' \
-  --color header:italic \
-  --prompt=\"  \" \
-  --header 'Press CTRL-Y to copy command into clipboard'"
+export FZF_CTRL_T_OPTS=" \
+    --preview 'bat --color=always {}' \
+    --bind 'alt-p:toggle-preview'"
+export FZF_ALT_C_OPTS=" \
+    --preview 'eza -la --color=always {}'"
+export FZF_CTRL_R_OPTS=" \
+    --bind 'ctrl-y:execute-silent(echo -n {2..} | pbcopy)+abort' \
+    --color header:italic \
+    --prompt=\"  \" \
+    --header 'Press CTRL-Y to copy command into clipboard'"
 export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
---color=bg+:#11111b,bg:#11111b,spinner:#F5E0DC,hl:#F38BA8 \
---color=fg:#CDD6F4,header:#89B4FA,info:#CBA6F7,pointer:#F5E0DC \
---color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
---color=selected-bg:#313244 \
---color=border:#313244,label:#CDD6F4 \
---style full \
---height 60% \
---tmux 80%,70% \
---prompt=\"  \" \
---pointer=\" \" \
---marker=\" \"
---bind 'alt-p:toggle-preview'"
+    --color=spinner:#F5E0DC,hl:#F38BA8 \
+    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
+    --color=selected-bg:#45475A \
+    --color=border:#313244,label:#CDD6F4 \
+    --reverse \
+    --multi \
+    --style full \
+    --height 60% \
+    --prompt=\"> \" \
+    --marker=\"> \" \
+    --bind 'alt-p:toggle-preview'"
 
 # Custom fzf options for zoxide's 'zi' command
 export _ZO_FZF_OPTS=" \
---color=bg+:#11111b,bg:#11111b,spinner:#F5E0DC,hl:#F38BA8 \
---color=fg:#CDD6F4,header:#89B4FA,info:#CBA6F7,pointer:#F5E0DC \
---color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
---color=selected-bg:#313244 \
---color=border:#313244,label:#CDD6F4 \
---style full \
---height 60% \
---tmux 80%,70% \
---prompt=\"  \" \
---pointer=\" \" \
---marker=\" \" \
---preview 'eza -lh --icons=auto --color=always {2..}' \
---bind 'alt-p:toggle-preview'"
+    --color=spinner:#F5E0DC,hl:#F38BA8 \
+    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
+    --color=selected-bg:#45475A \
+    --color=border:#313244,label:#CDD6F4 \
+    --reverse \
+    --style full \
+    --height 60% \
+    --prompt=\"> \" \
+    --marker=\"> \" \
+    --preview 'eza -lh --icons=auto --color=always {2..}' \
+    --bind 'alt-p:toggle-preview'"
 
 export LS_COLORS="$(vivid generate catppuccin-mocha)"
 export LS_OPTIONS='-F --color=auto'
@@ -137,10 +138,11 @@ zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*:descriptions' format '[%d]'
 zstyle ':completion:*' menu no
 zstyle ':fzf-tab:*' use-fzf-default-opts yes
-zstyle ':fzf-tab:*' fzf-flags --bind=tab:accept --height=60%
-zstyle ':fzf-tab:*' switch-group ',' '.'
+zstyle ':fzf-tab:*' fzf-flags --height=60% --bind=tab:accept
 zstyle ':fzf-tab:*' prefix ''
-zstyle ':fzf-tab:*' continuous-trigger '/'
+zstyle ':fzf-tab:*' fzf-bindings \
+    'alt-m:toggle+down' \
+    'alt-M:toggle+up'
 zstyle ':fzf-tab:complete:*:*' fzf-preview 'bat --color=always --style=numbers --line-range=:500 $realpath 2>/dev/null || eza -la --color=always $realpath'
 
 # Vim Motions Setup
