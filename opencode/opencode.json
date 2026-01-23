@@ -1,8 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "theme": "catppuccin-transparent",
+  "theme": "catppuccin-mocha-dark",
   "default_agent": "chill",
   "permission": {
     "bash": "ask"
+  },
+  "mcp": {
+    "MCP_DOCKER": {
+      "type": "local",
+      "command": ["docker", "mcp", "gateway", "run"],
+      "enabled": true
+    }
   }
 }

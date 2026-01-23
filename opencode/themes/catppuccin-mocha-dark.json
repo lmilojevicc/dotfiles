@@ -34,8 +34,8 @@
       "light": "mochaBlue"
     },
     "secondary": {
-      "dark": "mochaLavender",
-      "light": "mochaLavender"
+      "dark": "mochaBlue",
+      "light": "mochaBlue"
     },
     "accent": {
       "dark": "mochaTeal",
@@ -66,16 +66,16 @@
       "light": "mochaOverlay1"
     },
     "background": {
-      "dark": "none",
-      "light": "none"
+      "dark": "mochaCrust",
+      "light": "mochaCrust"
     },
     "backgroundPanel": {
-      "dark": "none",
-      "light": "none"
+      "dark": "mochaMantle",
+      "light": "mochaMantle"
     },
     "backgroundElement": {
-      "dark": "none",
-      "light": "none"
+      "dark": "mochaMantle",
+      "light": "mochaMantle"
     },
     "border": {
       "dark": "mochaSurface1",
