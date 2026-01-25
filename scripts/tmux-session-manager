@@ -26,7 +26,7 @@ get_zoxide_dirs() {
 }
 
 get_fd_dirs() {
-  local icon="$(tput setaf 5)${ICON_FD}$(tput sgr0)"
+  local icon="$(tput setaf 6)${ICON_FD}$(tput sgr0)"
   fd -H -a -d 2 -t d -E .Trash . ~ 2>/dev/null | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
@@ -128,10 +128,10 @@ fzf_with_style() {
   local fzf_opts=(
     --ansi
     --color=spinner:#F5E0DC,hl:#F38BA8
-    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA
+    --color=fg:#CDD6F4,header:#94E2D5,info:#CBA6F7,pointer:#F38BA8
     --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8
-    --color=selected-bg:#45475A
-    --color=border:#313244,label:#CDD6F4
+    --color=selected-bg:#1e1e2e,current-bg:#1e1e2e
+    --color=border:#313244,label:#CDD6F4 
     --style full
     --preview-window 'right:55%'
     --bind 'alt-p:toggle-preview'
@@ -175,7 +175,7 @@ fzf_unified_manager() {
         fzf_with_style \
           --header=$'Enter: Switch/Create | Esc: Quit | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi | Alt-p: Toggle Preview' \
           --border-label ' Session Manager ' \
-          --prompt=' ' \
+          --prompt='> ' \
           --bind "ctrl-t:execute-silent(echo '--get-sessions' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-sessions)" \
           --bind "ctrl-z:execute-silent(echo '--get-zoxide' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-zoxide)" \
           --bind "ctrl-f:execute-silent(echo '--get-fd' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-fd)" \

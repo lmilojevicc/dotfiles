@@ -14,7 +14,7 @@ export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 export PATH="$DENO_INSTALL/bin:$PATH"
 export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
-export PATH="$(go env GOPATH)/bin:$PATH"
+export PATH="$HOME/go/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
@@ -34,9 +34,9 @@ export FZF_CTRL_R_OPTS=" \
 export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
-    --color=selected-bg:#45475A \
+    --color=fg:#CDD6F4,header:#89B4FA,info:#A6E3A1,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#A6E3A1,hl+:#F38BA8 \
+    --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \
     --multi \
@@ -49,9 +49,9 @@ export FZF_DEFAULT_OPTS=" \
 # Custom fzf options for zoxide's 'zi' command
 export _ZO_FZF_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#F5C2E7,info:#CBA6F7,pointer:#89B4FA \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8 \
-    --color=selected-bg:#45475A \
+    --color=fg:#CDD6F4,header:#89B4FA,info:#A6E3A1,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#A6E3A1,hl+:#F38BA8 \
+    --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \
     --style full \
@@ -116,19 +116,11 @@ zinit light thirteen37/fzf-alias
 
 # Oh-My-Zsh snippets
 zinit snippet OMZP::git
-zinit snippet OMZP::brew
-zinit snippet OMZP::python
-zinit snippet OMZP::node
-zinit snippet OMZP::npm
 zinit snippet OMZP::golang
-zinit snippet OMZP::postgres
-zinit snippet OMZP::mongocli
-zinit snippet OMZP::docker-compose
+zinit snippet OMZP::rust
+zinit snippet OMZP::npm
+zinit snippet OMZP::uv
 zinit snippet OMZP::pip
-zinit ice wait lucid as"completion"
-zinit snippet OMZP::docker
-zinit ice wait lucid as"completion"
-zinit snippet OMZP::macos
 
 # Ensure completion system is properly loaded after plugins
 zinit cdreplay -q
@@ -206,9 +198,6 @@ alias ld="lazydocker"
 
 alias ddgr='ddgr -x -n 5'
 
-# Run zi with Alt-Z
-bindkey -s '\ez' 'zi\n'
-
 # Git
 bindkey -s '^Xgc' 'git commit -m ""'
 bindkey -s '^Xgs' 'git status --short\n'
@@ -264,14 +253,16 @@ function auto_venv() {
     done
 }
 
+if command -v eza &>/dev/null; then
+    _AUTO_LS_CMD="eza --icons=auto --color=always"
+elif command -v lsd &>/dev/null; then
+    _AUTO_LS_CMD="lsd --color=always"
+else
+    _AUTO_LS_CMD="ls --color=auto"
+fi
+
 function auto_ls() {
-    if command -v eza &>/dev/null; then
-        eza --icons=auto --color=always
-    elif command -v lsd &>/dev/null; then
-        lsd --color=always
-    else
-        ls --color=auto
-    fi
+    eval "$_AUTO_LS_CMD"
 }
 
 add-zsh-hook chpwd auto_venv
@@ -296,6 +287,10 @@ else
     echo "Warning: starship not found. Using default prompt." >&2
 fi
 
+if command -v mise &>/dev/null; then
+    eval "$(mise activate zsh)"
+fi
+
 # External Tool Integrations
 
 # ghcup environment
@@ -303,8 +298,5 @@ fi
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
-
-# Generated for envman. Do not edit.
-[ -s "$HOME/.config/envman/load.sh" ] && source "$HOME/.config/envman/load.sh"
 
 [[ -f ~/.secrets ]] && source ~/.secrets

@@ -15,12 +15,12 @@ hash = "e519d894e94ded741e06aae4d4775981"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:full-border"
-rev = "57f1863"
+rev = "de33976"
 hash = "3996fc74044bc44144b323686f887e1"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:git"
-rev = "57f1863"
+rev = "de33976"
 hash = "36a484acf6a0a0219c543ccb4cee218f"
 
 [[plugin.deps]]
@@ -30,7 +30,7 @@ hash = "92b5c58159a51c567f82b618cee2b78"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:smart-paste"
-rev = "57f1863"
+rev = "de33976"
 hash = "75fd60b2df7115e0a6ca31a6a804d320"
 
 [[plugin.deps]]
