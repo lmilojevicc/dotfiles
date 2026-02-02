@@ -1,29 +1,41 @@
 [include]
     path = ~/.gitconfig.local
+
 [init]
 	defaultBranch = main
+
 [core]
 	editor = nvim
 	pager = diff-so-fancy | less --tabs=4 -RF
+
 [column]
     ui = auto
+
 [push]
     default = simple
     autoSetupRemote = true
     followTags = true
+
 [pull]
 	rebase = true
+
 [diff]
     algorithm = histogram
-    colorMoved = zebra
     mnemonicPrefix = true
     renames = true
+
 [rerere]
     enabled = true
     autoupdate = true
+
+[merge]
+    conflictstyle = zdiff3
+
 [branch]
 	sort = -committerdate
+
 [interactive]
 	diffFilter = diff-so-fancy --patch
+
 [status]
 	branch = true
