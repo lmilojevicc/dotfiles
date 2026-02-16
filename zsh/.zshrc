@@ -119,8 +119,11 @@ zinit snippet OMZP::git
 zinit snippet OMZP::golang
 zinit snippet OMZP::rust
 zinit snippet OMZP::npm
+zinit snippet OMZP::bun
 zinit snippet OMZP::uv
 zinit snippet OMZP::pip
+zinit snippet OMZP::gcloud
+zinit snippet OMZP::kubectl
 
 # Ensure completion system is properly loaded after plugins
 zinit cdreplay -q
@@ -300,3 +303,6 @@ fi
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 [[ -f ~/.secrets ]] && source ~/.secrets
+
+# Added by Antigravity
+export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
