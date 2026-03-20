@@ -70,17 +70,17 @@ export FX_THEME=3
 # Homebrew Setup
 if [[ -f "/opt/homebrew/bin/brew" ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
+    FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"
 fi
 
 # Custom completions
-fpath=(~/.zsh/completions $fpath)
+fpath=($HOME/.zsh/completions $fpath)
 
 # Completion System
 autoload -Uz compinit && compinit
 
 # History Settings
 HISTSIZE=10000
-SAVEHIST=10000
 HISTFILE=~/.zsh_history
 SAVEHIST=$HISTSIZE
 setopt EXTENDED_HISTORY
@@ -123,6 +123,7 @@ zinit snippet OMZP::bun
 zinit snippet OMZP::uv
 zinit snippet OMZP::pip
 zinit snippet OMZP::gcloud
+zinit snippet OMZP::aws
 zinit snippet OMZP::kubectl
 
 # Ensure completion system is properly loaded after plugins
@@ -147,34 +148,7 @@ export KEYTIMEOUT=1 # Reduce mode switch delay
 # Open command in editor
 autoload -Uz edit-command-line
 zle -N edit-command-line
-bindkey -M vicmd 'ge' edit-command-line
-
-function tmux-man-split() {
-    if [[ -z "$TMUX" ]]; then
-        zle -M "Not in tmux session"
-        return 1
-    fi
-
-    local cmd="${BUFFER%% *}"
-    if [[ -z "$cmd" ]]; then
-        zle -M "No command in buffer"
-        return 1
-    fi
-
-    local current_word="${LBUFFER##* }${RBUFFER%% *}"
-
-    local search_pattern=""
-    if [[ "$current_word" =~ ^-+ ]]; then
-        search_pattern="-p '^\s*${current_word//-/\\-}'"
-    fi
-
-    local tmux_cmd="man $search_pattern $cmd 2>/dev/null || $cmd --help 2>/dev/null | nvim - $search_pattern || echo \"No manual entry or --help for $cmd\"; read -k 1 -s -p 'Press any key to close...'"
-
-    tmux split-window -v -l 40% "zsh -c '$tmux_cmd'"
-}
-
-zle -N tmux-man-split
-bindkey '^X^M' tmux-man-split
+bindkey -M vicmd 'R' edit-command-line
 
 # Expands history expressions like !! or !$ on space
 bindkey ' ' magic-space
