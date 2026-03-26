@@ -131,7 +131,7 @@ fzf_with_style() {
     --color=fg:#CDD6F4,header:#94E2D5,info:#CBA6F7,pointer:#F38BA8
     --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8
     --color=selected-bg:#1e1e2e,current-bg:#1e1e2e
-    --color=border:#313244,label:#CDD6F4 
+    --color=border:#313244,label:#CDD6F4
     --style full
     --preview-window 'right:55%'
     --bind 'alt-p:toggle-preview'
@@ -180,7 +180,7 @@ fzf_unified_manager() {
           --bind "ctrl-z:execute-silent(echo '--get-zoxide' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-zoxide)" \
           --bind "ctrl-f:execute-silent(echo '--get-fd' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-fd)" \
           --bind "ctrl-a:execute-silent(echo '--get-all' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-all)" \
-          --bind "ctrl-x:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"execute-silent('${BASH_SOURCE[0]}' --delete-item {})+reload('${BASH_SOURCE[0]}' \$(cat '$mode_file'))\" || echo \"\"" \
+          --bind "ctrl-x:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"execute-silent('${BASH_SOURCE[0]}' --delete-item {})+clear-query+reload('${BASH_SOURCE[0]}' \$(cat '$mode_file'))\" || echo \"\"" \
           --bind "ctrl-r:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"accept\" || echo \"\"" \
           --preview '
             line=$(echo {} | sed "s/$(printf "\033")\[[0-9;]*m//g")
