@@ -17,8 +17,8 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
-export PATH="$PATH:/Applications/Docker.app/Contents/Resources/bin"
 export PATH="$HOME/.opencode/bin:$PATH"
+export PATH="$PATH:/Applications/Obsidian.app/Contents/MacOS"
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS=" \
@@ -167,8 +167,6 @@ alias lsize='eza -lha --icons=auto --sort=size --total-size'
 alias ldir='eza -lhD --icons=auto'
 alias ltre="eza --tree --level=2 --long --icons --git"
 
-alias brewup='brew update && brew outdated --json | jq -r ".formulae + .casks | .[].name" | xargs -P0 -L1 brew fetch && brew upgrade --greedy && brew cleanup'
-
 alias kps="keepassxc-cli"
 alias lg="lazygit"
 alias ld="lazydocker"
@@ -277,6 +275,3 @@ fi
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 [[ -f ~/.secrets ]] && source ~/.secrets
-
-# Added by Antigravity
-export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
