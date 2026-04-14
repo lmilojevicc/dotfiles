@@ -77,6 +77,13 @@ fi
 fpath=($HOME/.zsh/completions $fpath)
 
 # Completion System
+# Prune stale zinit symlinks when plugins remove completion files upstream.
+for zinit_completion_dir in "$HOME/.cache/zinit/completions" "$XDG_DATA_HOME/zinit/completions"; do
+    for completion in "$zinit_completion_dir"/_*(N); do
+        [[ -L "$completion" && ! -e "$completion" ]] && command rm -f -- "$completion"
+    done
+done
+
 autoload -Uz compinit && compinit
 
 # History Settings
@@ -148,7 +155,8 @@ export KEYTIMEOUT=1 # Reduce mode switch delay
 # Open command in editor
 autoload -Uz edit-command-line
 zle -N edit-command-line
-bindkey -M vicmd 'R' edit-command-line
+bindkey '^X^E' edit-command-line
+bindkey -M vicmd '^X^E' edit-command-line
 
 # Expands history expressions like !! or !$ on space
 bindkey ' ' magic-space
@@ -166,12 +174,19 @@ alias ltime='eza -lha --icons=auto --sort=time'
 alias lsize='eza -lha --icons=auto --sort=size --total-size'
 alias ldir='eza -lhD --icons=auto'
 alias ltre="eza --tree --level=2 --long --icons --git"
+alias cdt='cd "$(mktemp -d)"'
 
 alias kps="keepassxc-cli"
 alias lg="lazygit"
 alias ld="lazydocker"
 
+alias gdoc="stdsym |fzf | xargs go doc "
+
 alias ddgr='ddgr -x -n 5'
+
+alias oct='opencode "$(mktemp -d)"'
+alias oc='opencode'
+alias pitmp='d=$(mktemp -d "${TMPDIR:-/tmp}/pi.XXXXXX") && cd "$d" && pi'
 
 # Git
 bindkey -s '^Xgc' 'git commit -m ""'
