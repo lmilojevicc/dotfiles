@@ -1,0 +1,52 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@slkiser/opencode-quota",
+  ],
+  "permission": {
+    "bash": "ask"
+  },
+  "agent": {
+    "build": {
+      "permission": {
+        "*": "allow",
+        "bash": {
+          "*": "allow",
+          "rm *": "ask",
+          "git reset*--hard*": "ask",
+          "git clean*": "ask",
+          "git push*--force*": "ask",
+          "dd *": "ask",
+          "mkfs*": "ask"
+        }
+      }
+    },
+    "plan": {
+      "permission": {
+        "*": "allow",
+        "bash": {
+          "*": "allow",
+          "rm *": "ask",
+          "git reset*--hard*": "ask",
+          "git clean*": "ask",
+          "git push*--force*": "ask",
+          "dd *": "ask",
+          "mkfs*": "ask"
+        }
+      }
+    }
+  },
+  "mcp": {},
+  "keybinds": {
+    "editor_open": "<leader>e"
+  },
+  "experimental": {
+    "quotaToast": {
+      "enableToast": true,
+      "showSessionTokens": false,
+      "enabledProviders": "auto",
+      "formatStyle": "singleWindow",
+      "percentDisplayMode": "used"
+    }
+  }
+}
