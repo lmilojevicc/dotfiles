@@ -2,6 +2,9 @@
 font-family = Maple Mono NL
 font-size = 16
 font-feature = -calt,-liga,-dlig
+font-thicken = true
+font-thicken-strength = 32
+alpha-blending = linear-corrected
 
 # Theme
 theme = Catppuccin Mocha

@@ -11,9 +11,8 @@ config.animation_fps = 240
 config.front_end = "WebGpu"
 
 -- Font configuration
-config.harfbuzz_features = { "calt=0", "clig=0", "liga=0", "ss01=1", "ss02=1" }
+config.harfbuzz_features = { "calt=0", "clig=0", "liga=0" }
 config.font = wezterm.font_with_fallback({
-	{ family = "Iosevka Based" },
 	{ family = "Maple Mono" },
 })
 config.font_size = 16.0
