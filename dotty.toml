@@ -1,0 +1,71 @@
+version = 1
+
+[packages.aerospace]
+links = [{ source = ".", target = "~/.config/aerospace" }]
+
+[packages.bat]
+links = [{ source = ".", target = "~/.config/bat" }]
+
+[packages.ghostty]
+links = [{ source = ".", target = "~/.config/ghostty" }]
+
+[packages.git]
+links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
+
+[packages.ideavim]
+links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
+
+[packages.k9s]
+links = [{ source = ".", target = "~/.config/k9s" }]
+
+[packages.lazydocker]
+links = [{ source = ".", target = "~/.config/lazydocker" }]
+
+[packages.lazygit]
+links = [{ source = ".", target = "~/.config/lazygit" }]
+
+[packages.opencode]
+links = [{ source = ".", target = "~/.config/opencode" }]
+
+[packages.pi]
+links = [
+  { source = "settings.json", target = "~/.pi/agent/settings.json" },
+  { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
+  { source = "themes", target = "~/.pi/agent/themes" },
+]
+
+[packages.posting]
+links = [{ source = ".", target = "~/.config/posting" }]
+
+[packages.scripts]
+links = [
+  { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
+  { source = "ocli", target = "~/.local/bin/ocli" },
+  { source = "pptx2pdf", target = "~/.local/bin/pptx2pdf" },
+  { source = "sesh-fzf", target = "~/.local/bin/sesh-fzf" },
+  { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
+]
+
+[packages.starship]
+links = [{ source = ".", target = "~/.config/starship" }]
+
+[packages.television]
+links = [{ source = ".", target = "~/.config/television" }]
+
+[packages.tmux]
+links = [{ source = ".", target = "~/.config/tmux" }]
+
+[packages.topgrade]
+links = [{ source = ".", target = "~/.config/topgrade" }]
+
+[packages.wezterm]
+links = [{ source = ".", target = "~/.config/wezterm" }]
+
+[packages.yazi]
+links = [{ source = ".", target = "~/.config/yazi" }]
+
+[packages.zsh]
+links = [{ source = ".zshrc", target = "~/.zshrc" }]
+
+[collections.terminal]
+packages = ["ghostty", "wezterm"]

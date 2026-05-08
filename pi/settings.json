@@ -1,0 +1,34 @@
+{
+  "lastChangelogVersion": "0.74.0",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.5",
+  "defaultThinkingLevel": "xhigh",
+  "hideThinkingBlock": true,
+  "theme": "catppuccin-mocha-blue",
+  "packages": [
+    "npm:pi-rewind",
+    "npm:pi-zentui",
+    "npm:pi-smart-fetch",
+    "npm:pi-ask-user",
+    "npm:@tintinweb/pi-subagents",
+    "npm:@tintinweb/pi-tasks",
+    "git:github.com/fluxgear/pi-thinking-steps",
+    "npm:pi-btw"
+  ],
+  "editorPaddingX": 0,
+  "quietStartup": true,
+  "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
+  "images": {
+    "blockImages": false
+  },
+  "pi-multicodex": {
+    "usageMode": "left",
+    "resetWindow": "7d",
+    "showAccount": true,
+    "showReset": true,
+    "order": "account-first"
+  },
+  "enableInstallTelemetry": false,
+  "doubleEscapeAction": "tree",
+  "collapseChangelog": true
+}

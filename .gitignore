@@ -8,4 +8,4 @@ yazi/plugins/*
 **/*.log
 .DS_Store
 
-opencode/openai-codex-profiles.json
+

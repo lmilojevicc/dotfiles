@@ -10,8 +10,11 @@ git clone https://github.com/lmilojevicc/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 
 # Install all configs
-stow .
+dotty link --all
 
 # Or install specific modules
-stow scripts # This will install add into .local/bin
+dotty link scripts zsh git
+
+# Preview changes before linking
+dotty link --all --dry-run
 ```
