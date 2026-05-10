@@ -15,13 +15,13 @@ hash = "635b0feb9215772d22020eb0abf0bb34"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:full-border"
-rev = "26512c7"
+rev = "1db18bb"
 hash = "eff8ff12fa4e5f035a10d8aeeb4c258d"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:git"
-rev = "26512c7"
-hash = "6849444b7c2df08eace83f3f86fb55a3"
+rev = "1db18bb"
+hash = "c8d30a70659f1b880407e61c564ab4e8"
 
 [[plugin.deps]]
 use = "Reledia/glow"
@@ -30,7 +30,7 @@ hash = "92b5c58159a51c567f82b618cee2b78"
 
 [[plugin.deps]]
 use = "yazi-rs/plugins:smart-paste"
-rev = "26512c7"
+rev = "1db18bb"
 hash = "3f8d49413bc8691b4c652eb417a20178"
 
 [[plugin.deps]]
