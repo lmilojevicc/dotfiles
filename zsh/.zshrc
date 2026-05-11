@@ -11,6 +11,7 @@ export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 
 # PATH
+export PATH="$HOME/go/bin:$PATH"
 export PATH="$DENO_INSTALL/bin:$PATH"
 export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
@@ -18,7 +19,7 @@ export PATH="$HOME/go/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="$HOME/.opencode/bin:$PATH"
-export PATH="$PATH:/Applications/Obsidian.app/Contents/MacOS"
+export PATH="$HOME/.grok/bin:$PATH"
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS=" \
@@ -61,8 +62,9 @@ export _ZO_FZF_OPTS=" \
     --preview 'eza -lh --icons=auto --color=always {2..}' \
     --bind 'alt-p:toggle-preview'"
 
-export LS_COLORS="$(vivid generate catppuccin-mocha)"
-export LS_OPTIONS='-F --color=auto'
+if command -v vivid &>/dev/null; then
+    export LS_COLORS="$(vivid generate catppuccin-mocha)"
+fi
 
 export FX_LINE_NUMBERS=true
 export FX_THEME=3
@@ -70,11 +72,11 @@ export FX_THEME=3
 # Homebrew Setup
 if [[ -f "/opt/homebrew/bin/brew" ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
-    FPATH="$(brew --prefix)/share/zsh/site-functions:${FPATH}"
+    fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
 fi
 
 # Custom completions
-fpath=($HOME/.zsh/completions $fpath)
+fpath=("$HOME/.zsh/completions" $fpath)
 
 # Completion System
 # Prune stale zinit symlinks when plugins remove completion files upstream.
@@ -91,7 +93,6 @@ HISTSIZE=10000
 HISTFILE=~/.zsh_history
 SAVEHIST=$HISTSIZE
 setopt EXTENDED_HISTORY
-setopt INC_APPEND_HISTORY
 setopt HIST_EXPIRE_DUPS_FIRST
 setopt SHARE_HISTORY
 setopt HIST_IGNORE_SPACE
@@ -186,6 +187,8 @@ alias ddgr='ddgr -x -n 5'
 
 alias oct='opencode "$(mktemp -d)"'
 alias oc='opencode'
+alias cct='claude "$(mktemp -d)"'
+
 alias pitmp='d=$(mktemp -d "${TMPDIR:-/tmp}/pi.XXXXXX") && cd "$d" && pi'
 
 # Git
@@ -226,33 +229,38 @@ function b() {
 
 autoload -Uz add-zsh-hook
 function auto_venv() {
-    # If already in a virtualenv, do nothing
-    if [[ -n "$VIRTUAL_ENV" && ! -f "$VIRTUAL_ENV/bin/activate" ]]; then
-        deactivate
-    fi
-
-    [[ -n "$VIRTUAL_ENV" ]] && return
-
     local dir="$PWD"
+    local venv_dir=""
+
     while [[ "$dir" != "/" ]]; do
         if [[ -f "$dir/.venv/bin/activate" ]]; then
-            source "$dir/.venv/bin/activate"
-            return
+            venv_dir="$dir/.venv"
+            break
         fi
         dir="${dir:h}"
     done
+
+    if [[ -n "$VIRTUAL_ENV" && "$VIRTUAL_ENV" != "$venv_dir" ]]; then
+        (($+functions[deactivate])) && deactivate
+    fi
+
+    if [[ -n "$venv_dir" && "$VIRTUAL_ENV" != "$venv_dir" ]]; then
+        source "$venv_dir/bin/activate"
+    fi
 }
 
 if command -v eza &>/dev/null; then
-    _AUTO_LS_CMD="eza --icons=auto --color=always"
+    _AUTO_LS_CMD=(eza --icons=auto --color=always)
 elif command -v lsd &>/dev/null; then
-    _AUTO_LS_CMD="lsd --color=always"
+    _AUTO_LS_CMD=(lsd --color=always)
+elif ls --color=auto &>/dev/null; then
+    _AUTO_LS_CMD=(ls --color=auto)
 else
-    _AUTO_LS_CMD="ls --color=auto"
+    _AUTO_LS_CMD=(ls -G)
 fi
 
 function auto_ls() {
-    eval "$_AUTO_LS_CMD"
+    command "${_AUTO_LS_CMD[@]}"
 }
 
 add-zsh-hook chpwd auto_venv
@@ -288,5 +296,3 @@ fi
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
-
-[[ -f ~/.secrets ]] && source ~/.secrets
