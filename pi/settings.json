@@ -3,17 +3,22 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "xhigh",
-  "hideThinkingBlock": true,
-  "theme": "catppuccin-mocha-blue",
+  "hideThinkingBlock": false,
+  "theme": "catppuccin-mocha",
   "packages": [
-    "npm:pi-rewind",
     "npm:pi-zentui",
-    "npm:pi-smart-fetch",
-    "npm:pi-ask-user",
-    "npm:@tintinweb/pi-subagents",
-    "npm:@tintinweb/pi-tasks",
-    "git:github.com/fluxgear/pi-thinking-steps",
-    "npm:pi-btw"
+    "npm:pi-intercom",
+    "npm:pi-web-access",
+    "npm:pi-subagents",
+    "npm:@aliou/pi-processes",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:@juicesharp/rpiv-todo",
+    "npm:@juicesharp/rpiv-btw",
+    "npm:pi-thinking-steps",
+    "npm:pi-tool-display",
+    "npm:@capyup/pi-goal",
+    "npm:@plannotator/pi-extension",
+    "npm:@howaboua/pi-codex-conversion"
   ],
   "editorPaddingX": 0,
   "quietStartup": true,
@@ -21,14 +26,8 @@
   "images": {
     "blockImages": false
   },
-  "pi-multicodex": {
-    "usageMode": "left",
-    "resetWindow": "7d",
-    "showAccount": true,
-    "showReset": true,
-    "order": "account-first"
-  },
   "enableInstallTelemetry": false,
   "doubleEscapeAction": "tree",
   "collapseChangelog": true
 }
+

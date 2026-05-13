@@ -32,6 +32,7 @@ links = [
   { source = "settings.json", target = "~/.pi/agent/settings.json" },
   { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
   { source = "themes", target = "~/.pi/agent/themes" },
+  { source = "extensions", target = "~/.pi/agent/extensions" },
 ]
 
 [packages.posting]
@@ -40,7 +41,6 @@ links = [{ source = ".", target = "~/.config/posting" }]
 [packages.scripts]
 links = [
   { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
-  { source = "ocli", target = "~/.local/bin/ocli" },
   { source = "pptx2pdf", target = "~/.local/bin/pptx2pdf" },
   { source = "sesh-fzf", target = "~/.local/bin/sesh-fzf" },
   { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
@@ -48,9 +48,6 @@ links = [
 
 [packages.starship]
 links = [{ source = ".", target = "~/.config/starship" }]
-
-[packages.television]
-links = [{ source = ".", target = "~/.config/television" }]
 
 [packages.tmux]
 links = [{ source = ".", target = "~/.config/tmux" }]
