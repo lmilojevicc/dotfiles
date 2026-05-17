@@ -7,10 +7,10 @@ gui:
   showFileIcons: true
   theme:
     activeBorderColor:
-      - "#89b4fa"
+      - "#fab387"
       - bold
     inactiveBorderColor:
-      - "#a6adc8"
+      - "#89b4fa"
     optionsTextColor:
       - "#89b4fa"
     selectedLineBgColor:
