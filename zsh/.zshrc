@@ -1,8 +1,12 @@
 # Environment Variables
 export EDITOR="nvim"
 export MANPAGER="nvim +Man!"
-export XDG_CONFIG_HOME="$HOME/.config"
+
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
@@ -15,7 +19,6 @@ export PATH="$HOME/go/bin:$PATH"
 export PATH="$DENO_INSTALL/bin:$PATH"
 export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
-export PATH="$HOME/go/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="$HOME/.opencode/bin:$PATH"
@@ -35,8 +38,8 @@ export FZF_CTRL_R_OPTS=" \
 export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#89B4FA,info:#A6E3A1,pointer:#F38BA8 \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#A6E3A1,hl+:#F38BA8 \
+    --color=fg:#CDD6F4,header:#fab387,info:#89B4FA,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#89B4FA,hl+:#F38BA8 \
     --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \
@@ -50,8 +53,8 @@ export FZF_DEFAULT_OPTS=" \
 # Custom fzf options for zoxide's 'zi' command
 export _ZO_FZF_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#89B4FA,info:#A6E3A1,pointer:#F38BA8 \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#A6E3A1,hl+:#F38BA8 \
+    --color=fg:#CDD6F4,header:#fab387,info:#89B4FA,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#89B4FA,hl+:#F38BA8 \
     --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \
@@ -249,22 +252,7 @@ function auto_venv() {
     fi
 }
 
-if command -v eza &>/dev/null; then
-    _AUTO_LS_CMD=(eza --icons=auto --color=always)
-elif command -v lsd &>/dev/null; then
-    _AUTO_LS_CMD=(lsd --color=always)
-elif ls --color=auto &>/dev/null; then
-    _AUTO_LS_CMD=(ls --color=auto)
-else
-    _AUTO_LS_CMD=(ls -G)
-fi
-
-function auto_ls() {
-    command "${_AUTO_LS_CMD[@]}"
-}
-
 add-zsh-hook chpwd auto_venv
-add-zsh-hook chpwd auto_ls
 
 # Shell Integrations
 if command -v fzf &>/dev/null; then

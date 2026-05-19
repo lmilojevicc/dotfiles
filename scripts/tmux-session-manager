@@ -127,14 +127,6 @@ delete_item() {
 fzf_with_style() {
   local fzf_opts=(
     --ansi
-    --color=spinner:#F5E0DC,hl:#F38BA8
-    --color=fg:#CDD6F4,header:#94E2D5,info:#CBA6F7,pointer:#F38BA8
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#CBA6F7,hl+:#F38BA8
-    --color=selected-bg:#1e1e2e,current-bg:#1e1e2e
-    --color=border:#313244,label:#CDD6F4
-    --style full
-    --preview-window 'right:55%'
-    --bind 'alt-p:toggle-preview'
   )
 
   if [ -n "$TMUX" ]; then
