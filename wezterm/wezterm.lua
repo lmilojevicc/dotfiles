@@ -13,7 +13,8 @@ config.front_end = "WebGpu"
 -- Font configuration
 config.harfbuzz_features = { "calt=0", "clig=0", "liga=0" }
 config.font = wezterm.font_with_fallback({
-	{ family = "Maple Mono" },
+	{ family = "Maple Mono NF" },
+	{ family = "Symbols Nerd Font Mono" },
 })
 config.font_size = 16.0
 config.freetype_load_target = "Light"
@@ -36,7 +37,7 @@ if is_macos then
 end
 
 -- Cursor settings
-config.default_cursor_style = "BlinkingBar"
+config.default_cursor_style = "SteadyBlock"
 config.cursor_blink_rate = 800
 config.force_reverse_video_cursor = false
 config.cursor_blink_ease_in = "Linear"

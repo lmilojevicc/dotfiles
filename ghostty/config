@@ -1,5 +1,6 @@
 # Font
 font-family = Maple Mono NL
+font-family = IBM Plex Mono
 font-size = 16
 font-feature = -calt,-liga,-dlig
 font-thicken = true
@@ -9,15 +10,10 @@ alpha-blending = linear-corrected
 # Theme
 theme = Catppuccin Mocha
 background = #11111b
-foreground = #cdd6f4
 split-divider-color = #313244
-selection-background = #45475a
-selection-foreground = #cdd6f4
 
 # Cursor settings
-cursor-style = bar
-cursor-style-blink = true
-cursor-invert-fg-bg = true
+cursor-style = block
 mouse-hide-while-typing = true
 
 # Window
