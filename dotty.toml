@@ -30,9 +30,11 @@ links = [{ source = ".", target = "~/.config/opencode" }]
 [packages.pi]
 links = [
   { source = "settings.json", target = "~/.pi/agent/settings.json" },
+  { source = "keybindings.json", target = "~/.pi/agent/keybindings.json" },
   { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
   { source = "themes", target = "~/.pi/agent/themes" },
   { source = "extensions", target = "~/.pi/agent/extensions" },
+  { source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
 ]
 
 [packages.posting]

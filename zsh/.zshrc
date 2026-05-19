@@ -7,6 +7,8 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
+export AGENT_WORK="$HOME/obsidian/agent-repository/"
+
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"

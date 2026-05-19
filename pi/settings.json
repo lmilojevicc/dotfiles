@@ -1,9 +1,8 @@
 {
-  "lastChangelogVersion": "0.74.0",
+  "lastChangelogVersion": "0.75.5",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "xhigh",
-  "hideThinkingBlock": false,
   "theme": "catppuccin-mocha",
   "packages": [
     "npm:pi-zentui",
@@ -15,19 +14,22 @@
     "npm:@juicesharp/rpiv-todo",
     "npm:@juicesharp/rpiv-btw",
     "npm:pi-thinking-steps",
-    "npm:pi-tool-display",
     "npm:@capyup/pi-goal",
     "npm:@plannotator/pi-extension",
-    "npm:@howaboua/pi-codex-conversion"
+    "npm:@howaboua/pi-codex-conversion",
+    "npm:context-mode",
+    "npm:pi-multiloop",
+    "npm:pi-gemini-acp",
+    "npm:pi-annotate",
+    "npm:pi-poster",
+    "git:github.com/MasuRii/pi-tool-display"
   ],
-  "editorPaddingX": 0,
-  "quietStartup": true,
   "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
-  "images": {
-    "blockImages": false
-  },
-  "enableInstallTelemetry": false,
   "doubleEscapeAction": "tree",
-  "collapseChangelog": true
+  "quietStartup": true,
+  "enableInstallTelemetry": false,
+  "collapseChangelog": true,
+  "showHardwareCursor": true,
+  "hideThinkingBlock": false
 }
 
