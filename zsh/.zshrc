@@ -40,8 +40,8 @@ export FZF_CTRL_R_OPTS=" \
 export FZF_DEFAULT_COMMAND="fd --type f --hidden --follow"
 export FZF_DEFAULT_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#fab387,info:#89B4FA,pointer:#F38BA8 \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#89B4FA,hl+:#F38BA8 \
+    --color=fg:#CDD6F4,header:#F5C2E7,info:#94E2D5,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#94E2D5,hl+:#F38BA8 \
     --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \
@@ -55,8 +55,8 @@ export FZF_DEFAULT_OPTS=" \
 # Custom fzf options for zoxide's 'zi' command
 export _ZO_FZF_OPTS=" \
     --color=spinner:#F5E0DC,hl:#F38BA8 \
-    --color=fg:#CDD6F4,header:#fab387,info:#89B4FA,pointer:#F38BA8 \
-    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#89B4FA,hl+:#F38BA8 \
+    --color=fg:#CDD6F4,header:#F5C2E7,info:#94E2D5,pointer:#F38BA8 \
+    --color=marker:#B4BEFE,fg+:#CDD6F4,prompt:#94E2D5,hl+:#F38BA8 \
     --color=selected-bg:#1e1e2e,current-bg:#1e1e2e\
     --color=border:#313244,label:#CDD6F4 \
     --reverse \

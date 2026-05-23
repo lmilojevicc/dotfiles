@@ -5,7 +5,13 @@ ICON_SESSION=""
 ICON_ZOXIDE="󰉖"
 ICON_FD="󰥩"
 
-export ICON_SESSION ICON_ZOXIDE ICON_FD
+FZF_ANSI_COLOR_OPTS="${FZF_ANSI_COLOR_OPTS:---color=fg:-1,bg:-1,fg+:-1,bg+:-1,hl:red,hl+:bright-red,spinner:bright-magenta,header:magenta,info:cyan,pointer:bright-red,prompt:cyan,marker:magenta,border:black,label:bright-white,gutter:-1,selected-bg:-1,current-bg:-1}"
+
+ANSI_SESSION_COLOR="${ANSI_SESSION_COLOR:-2}"
+ANSI_ZOXIDE_COLOR="${ANSI_ZOXIDE_COLOR:-4}"
+ANSI_FD_COLOR="${ANSI_FD_COLOR:-6}"
+
+export ICON_SESSION ICON_ZOXIDE ICON_FD FZF_ANSI_COLOR_OPTS
 
 in_tmux() {
   [ -n "$TMUX" ]
@@ -13,20 +19,26 @@ in_tmux() {
 
 # --- Generators ---
 
+ansi_icon() {
+  local color="$1"
+  local icon="$2"
+  printf '%s%s%s' "$(tput setaf "$color" 2>/dev/null)" "$icon" "$(tput sgr0 2>/dev/null)"
+}
+
 get_sessions() {
-  local icon="$(tput setaf 10)${ICON_SESSION}$(tput sgr0)"
+  local icon="$(ansi_icon "$ANSI_SESSION_COLOR" "$ICON_SESSION")"
   tmux list-sessions -F '#S' 2>/dev/null | while read -r session; do
     echo "${icon} ${session}"
   done
 }
 
 get_zoxide_dirs() {
-  local icon="$(tput setaf 4)${ICON_ZOXIDE}$(tput sgr0)"
+  local icon="$(ansi_icon "$ANSI_ZOXIDE_COLOR" "$ICON_ZOXIDE")"
   zoxide query -l | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
 get_fd_dirs() {
-  local icon="$(tput setaf 6)${ICON_FD}$(tput sgr0)"
+  local icon="$(ansi_icon "$ANSI_FD_COLOR" "$ICON_FD")"
   fd -H -a -d 2 -t d -E .Trash . ~ 2>/dev/null | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
@@ -127,6 +139,8 @@ delete_item() {
 fzf_with_style() {
   local fzf_opts=(
     --ansi
+    "$FZF_ANSI_COLOR_OPTS"
+    --gutter " "
   )
 
   if [ -n "$TMUX" ]; then
