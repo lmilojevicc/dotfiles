@@ -4,26 +4,318 @@
 ICON_SESSION=""
 ICON_ZOXIDE="󰉖"
 ICON_FD="󰥩"
+ICON_AGENT="󰚩"
 
 FZF_ANSI_COLOR_OPTS="${FZF_ANSI_COLOR_OPTS:---color=fg:-1,bg:-1,fg+:-1,bg+:-1,hl:red,hl+:bright-red,spinner:bright-magenta,header:magenta,info:cyan,pointer:bright-red,prompt:cyan,marker:magenta,border:black,label:bright-white,gutter:-1,selected-bg:-1,current-bg:-1}"
 
 ANSI_SESSION_COLOR="${ANSI_SESSION_COLOR:-2}"
 ANSI_ZOXIDE_COLOR="${ANSI_ZOXIDE_COLOR:-4}"
 ANSI_FD_COLOR="${ANSI_FD_COLOR:-6}"
+ANSI_AGENT_COLOR="${ANSI_AGENT_COLOR:-11}"
+TMUX_SESSION_MANAGER_AGENT_TEXT_FALLBACK="${TMUX_SESSION_MANAGER_AGENT_TEXT_FALLBACK:-0}"
 
-export ICON_SESSION ICON_ZOXIDE ICON_FD FZF_ANSI_COLOR_OPTS
+export ICON_SESSION ICON_ZOXIDE ICON_FD ICON_AGENT FZF_ANSI_COLOR_OPTS
 
 in_tmux() {
   [ -n "$TMUX" ]
 }
 
-# --- Generators ---
-
 ansi_icon() {
   local color="$1"
   local icon="$2"
-  printf '%s%s%s' "$(tput setaf "$color" 2>/dev/null)" "$icon" "$(tput sgr0 2>/dev/null)"
+  printf '%s%s\033[0m' "$(tput setaf "$color" 2>/dev/null)" "$icon"
 }
+
+strip_icon() {
+  local clean_line
+  clean_line=$(echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g")
+  echo "${clean_line#* }"
+}
+
+strip_colors() {
+  echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g"
+}
+
+normalize_agent_state() {
+  local state="${1,,}"
+
+  case "$state" in
+  working | busy | running | thinking | processing)
+    echo "working"
+    ;;
+  blocked | permission | permissions | question | confirm | confirmation | waiting | wait)
+    echo "blocked"
+    ;;
+  aborted | abort | cancelled | canceled | interrupted | stopped)
+    echo "aborted"
+    ;;
+  done | complete | completed | finished)
+    echo "done"
+    ;;
+  idle | ready)
+    echo "idle"
+    ;;
+  unknown | "")
+    echo "unknown"
+    ;;
+  *)
+    echo "unknown"
+    ;;
+  esac
+}
+
+semantic_agent_state() {
+  case "$(normalize_agent_state "$1")" in
+  done)
+    echo "idle"
+    ;;
+  working | blocked | aborted | idle | unknown)
+    normalize_agent_state "$1"
+    ;;
+  *)
+    echo "unknown"
+    ;;
+  esac
+}
+
+agent_state_label() {
+  case "$1" in
+  working)
+    echo "working"
+    ;;
+  blocked)
+    echo "blocked"
+    ;;
+  aborted)
+    echo "aborted"
+    ;;
+  done)
+    echo "done"
+    ;;
+  idle)
+    echo "idle"
+    ;;
+  *)
+    echo "unknown"
+    ;;
+  esac
+}
+
+is_shell_command() {
+  case "$1" in
+  "" | sh | bash | zsh | fish | tmux)
+    return 0
+    ;;
+  *)
+    return 1
+    ;;
+  esac
+}
+
+detect_agent_name() {
+  local command="$1"
+  local title="$2"
+  local command_l="${command,,}"
+  local title_l="${title,,}"
+  local command_base="${command_l##*/}"
+
+  command_base="${command_base%.exe}"
+  command_base="${command_base%.cmd}"
+  command_base="${command_base%.bat}"
+  command_base="${command_base%.ps1}"
+  command_base="${command_base%.js}"
+
+  if [[ "$command_base" == "pi" ]] || { [[ "$title" == π* ]] && ! is_shell_command "$command_base"; }; then
+    echo "pi"
+  elif [[ "$command_base" == "claude" ]] || [[ "$command_base" == "claude-code" ]] || { [[ "$title_l" == *"claude code"* ]] && ! is_shell_command "$command_base"; }; then
+    echo "claude"
+  elif [[ "$command_base" == "opencode" ]] || [[ "$command_base" == "open-code" ]] || { [[ "$title_l" == *opencode* ]] && ! is_shell_command "$command_base"; }; then
+    echo "opencode"
+  elif [[ "$command_base" == "codex" ]] || [[ "$command_base" == codex-* ]] || { ! is_shell_command "$command_base" && { [[ "$title_l" == "codex" ]] || [[ "$title_l" == "codex - "* ]]; }; }; then
+    echo "codex"
+  elif [[ "$command_base" == "droid" ]] || [[ "$command_base" == droid-* ]] || { ! is_shell_command "$command_base" && { [[ "$title_l" == "droid" ]] || [[ "$title_l" == "droid - "* ]]; }; }; then
+    echo "droid"
+  elif [[ "$command_base" == "gemini" ]] || { ! is_shell_command "$command_base" && { [[ "$title_l" == "gemini" ]] || [[ "$title_l" == "gemini - "* ]]; }; }; then
+    echo "gemini"
+  elif [[ "$command_base" == "cursor" ]] || [[ "$command_base" == "cursor-agent" ]] || { [[ "$title_l" == *cursor* ]] && ! is_shell_command "$command_base"; }; then
+    echo "cursor"
+  elif [[ "$command_base" == "agy" ]] || [[ "$command_base" == "antigravity" ]] || [[ "$command_base" == "antigravity-cli" ]]; then
+    echo "agy"
+  elif [[ "$command_base" == "cline" ]]; then
+    echo "cline"
+  elif [[ "$command_base" == "copilot" ]] || [[ "$command_base" == "github-copilot" ]] || [[ "$command_base" == "ghcs" ]]; then
+    echo "copilot"
+  elif [[ "$command_base" == "kimi" ]] || [[ "$command_base" == "kimi-code" ]]; then
+    echo "kimi"
+  elif [[ "$command_base" == "kiro" ]] || [[ "$command_base" == "kiro-cli" ]]; then
+    echo "kiro"
+  elif [[ "$command_base" == "amp" ]] || [[ "$command_base" == "amp-local" ]]; then
+    echo "amp"
+  elif [[ "$command_base" == "grok" ]] || [[ "$command_base" == "grok-build" ]]; then
+    echo "grok"
+  elif [[ "$command_base" == "hermes" ]] || [[ "$command_base" == "hermes-agent" ]]; then
+    echo "hermes"
+  elif [[ "$command_base" == "kilo" ]] || [[ "$command_base" == "kilo-code" ]]; then
+    echo "kilo"
+  elif [[ "$command_base" == "qodercli" ]] || [[ "$command_base" == "qoderclicn" ]] || [[ "$command_base" == "qoder" ]] || [[ "$command_base" == "qodercn" ]]; then
+    echo "qodercli"
+  else
+    return 1
+  fi
+}
+
+detect_agent_state() {
+  local pane="$1"
+  local capture
+  local capture_l
+  local recent_capture
+
+  if [ "$TMUX_SESSION_MANAGER_AGENT_TEXT_FALLBACK" != "1" ]; then
+    echo "unknown"
+    return 0
+  fi
+
+  capture=$(tmux capture-pane -p -S -80 -t "$pane" 2>/dev/null || true)
+  capture_l="${capture,,}"
+  recent_capture=$(printf '%s\n' "$capture_l" | tail -20)
+
+  if printf '%s\n' "$recent_capture" | grep -Eiq '(^|[[:space:]])(aborted by user|operation aborted|request aborted|cancelled by user|canceled by user|interrupted by user)([[:space:][:punct:]]|$)|^[[:space:][:punct:]]*(aborted|cancelled|canceled|interrupted)[[:space:][:punct:]]*$'; then
+    echo "aborted"
+  elif printf '%s\n' "$recent_capture" | grep -Eiq '^[^[:alnum:]]*(working|thinking|processing|running|busy)([[:space:].…-]*|$)'; then
+    echo "working"
+  elif printf '%s\n' "$recent_capture" | grep -Eiq 'permission (requested|required|needed|asked)|waiting for (confirmation|input|permission)|confirm(ation)? (required|needed|requested)|question (asked|pending)|^[[:space:][:punct:]]*(blocked|waiting for input|waiting for confirmation)[[:space:][:punct:]]*$'; then
+    echo "blocked"
+  elif [ -n "$capture" ]; then
+    echo "idle"
+  else
+    echo "unknown"
+  fi
+}
+
+agent_pane_visible() {
+  local pane_active="$1"
+  local window_active="$2"
+  local session_attached="$3"
+
+  [ "$pane_active" = "1" ] && [ "$window_active" = "1" ] && [ "${session_attached:-0}" != "0" ]
+}
+
+pane_visible_now() {
+  local pane="$1"
+  local visibility
+
+  visibility=$(tmux display-message -p -t "$pane" '#{pane_active} #{window_active} #{session_attached}' 2>/dev/null || true)
+  agent_pane_visible $visibility
+}
+
+update_agent_status_tracking() {
+  local pane="$1"
+  local detected_state
+  local visible="$3"
+  local semantic_state
+  local previous_state
+  local previous_status
+  local status
+  local now
+
+  detected_state=$(normalize_agent_state "$2")
+  semantic_state=$(semantic_agent_state "$detected_state")
+  previous_state=$(semantic_agent_state "$(tmux show-option -qvpt "$pane" @agent_last_state 2>/dev/null || true)")
+  previous_status=$(normalize_agent_state "$(tmux show-option -qvpt "$pane" @agent_last_status 2>/dev/null || true)")
+
+  case "$detected_state" in
+  done)
+    if [ "$visible" = "1" ]; then
+      status="idle"
+    else
+      status="done"
+    fi
+    ;;
+  idle)
+    if [ "$visible" = "1" ]; then
+      status="idle"
+    elif [ "$previous_status" = "done" ]; then
+      status="done"
+    elif [ "$previous_state" = "working" ] || [ "$previous_state" = "blocked" ]; then
+      status="done"
+    else
+      status="idle"
+    fi
+    ;;
+  working | blocked | aborted | unknown)
+    status="$detected_state"
+    ;;
+  *)
+    status="unknown"
+    ;;
+  esac
+
+  tmux set-option -qpt "$pane" @agent_last_state "$semantic_state" 2>/dev/null || true
+  tmux set-option -qpt "$pane" @agent_last_status "$status" 2>/dev/null || true
+
+  if [ "$visible" = "1" ]; then
+    now=$(date +%s)
+    tmux set-option -qpt "$pane" @agent_last_seen "$now" 2>/dev/null || true
+  fi
+
+  echo "$status"
+}
+
+mark_agent_seen() {
+  local pane="$1"
+  local state
+  local semantic_state
+  local now
+
+  state=$(tmux show-option -qvpt "$pane" @agent_state 2>/dev/null || true)
+  semantic_state=$(semantic_agent_state "$state")
+
+  if [ "$semantic_state" = "idle" ]; then
+    tmux set-option -qpt "$pane" @agent_state "idle" 2>/dev/null || true
+    tmux set-option -qpt "$pane" @agent_last_status "idle" 2>/dev/null || true
+  fi
+
+  tmux set-option -qpt "$pane" @agent_last_state "$semantic_state" 2>/dev/null || true
+  now=$(date +%s)
+  tmux set-option -qpt "$pane" @agent_last_seen "$now" 2>/dev/null || true
+}
+
+current_tmux_pane() {
+  if [ -n "${TMUX_PANE:-}" ]; then
+    echo "$TMUX_PANE"
+    return 0
+  fi
+
+  if [ -n "${TMUX:-}" ]; then
+    tmux display-message -p '#{pane_id}' 2>/dev/null
+    return $?
+  fi
+
+  return 1
+}
+
+resolve_agent_pane() {
+  local pane="$1"
+  local resolved_pane
+
+  if [ -z "$pane" ]; then
+    pane=$(current_tmux_pane || true)
+  fi
+
+  if [ -z "$pane" ]; then
+    echo "tmux-session-manager: --pane is required outside tmux" >&2
+    return 1
+  fi
+
+  if ! resolved_pane=$(tmux display-message -p -t "$pane" '#{pane_id}' 2>/dev/null); then
+    echo "tmux-session-manager: pane not found: $pane" >&2
+    return 1
+  fi
+
+  echo "$resolved_pane"
+}
+
+# --- Generators ---
 
 get_sessions() {
   local icon="$(ansi_icon "$ANSI_SESSION_COLOR" "$ICON_SESSION")"
@@ -42,23 +334,97 @@ get_fd_dirs() {
   fd -H -a -d 2 -t d -E .Trash . ~ 2>/dev/null | sed "s|^$HOME|~|; s|^|${icon} |"
 }
 
+get_agents() {
+  local session_filter="${1:-}"
+  local icon="$(ansi_icon "$ANSI_AGENT_COLOR" "$ICON_AGENT")"
+  local sep=$'\037'
+  local format="#{pane_id}${sep}#{session_name}${sep}#{window_index}${sep}#{window_name}${sep}#{pane_index}${sep}#{pane_current_command}${sep}#{pane_current_path}${sep}#{pane_active}${sep}#{window_active}${sep}#{session_attached}${sep}#{pane_dead}${sep}#{pane_title}${sep}#{@agent_name}${sep}#{@agent_state}${sep}#{@agent_message}${sep}#{@agent_updated}${sep}#{@agent_source}"
+
+  tmux list-panes -a -F "$format" 2>/dev/null |
+    while IFS="$sep" read -r pane_id session_name window_index _window_name pane_index pane_command pane_path pane_active window_active session_attached pane_dead pane_title opt_name opt_state opt_message opt_updated opt_source; do
+      local agent_name="$opt_name"
+      local agent_state="$opt_state"
+      local state_label
+      local path_label
+      local location
+      local suffix=""
+      local visible=0
+
+      [ "$pane_dead" = "1" ] && continue
+      [ -n "$session_filter" ] && [ "$session_name" != "$session_filter" ] && continue
+
+      if [ -z "$agent_name" ]; then
+        agent_name=$(detect_agent_name "$pane_command" "$pane_title" 2>/dev/null) || continue
+      fi
+
+      if [ -n "$agent_state" ]; then
+        agent_state=$(normalize_agent_state "$agent_state")
+      else
+        agent_state=$(detect_agent_state "$pane_id" "$agent_name")
+      fi
+
+      if agent_pane_visible "$pane_active" "$window_active" "$session_attached"; then
+        visible=1
+      fi
+
+      agent_state=$(update_agent_status_tracking "$pane_id" "$agent_state" "$visible")
+
+      state_label=$(agent_state_label "$agent_state")
+      path_label="${pane_path/#$HOME/~}"
+      location="${session_name}:${window_index}.${pane_index}"
+
+      opt_message=${opt_message//$'\n'/ }
+      opt_message=${opt_message//$'\t'/ }
+      opt_source=${opt_source//$'\n'/ }
+      opt_source=${opt_source//$'\t'/ }
+      opt_updated=${opt_updated//$'\n'/ }
+      opt_updated=${opt_updated//$'\t'/ }
+
+      if [ -n "$opt_message" ]; then
+        suffix="$opt_message"
+      elif [ -n "$opt_source" ]; then
+        suffix="$opt_source"
+      elif [ -n "$opt_updated" ]; then
+        suffix="updated ${opt_updated}"
+      fi
+
+      printf '%s [%s]\t%s\t%s\t%s' "$icon" "$state_label" "$agent_name" "$location" "$path_label"
+      if [ -n "$suffix" ]; then
+        printf ' — %s' "$suffix"
+      fi
+      printf '\n'
+    done
+}
+
+current_tmux_session() {
+  if [ -n "${TMUX:-}" ]; then
+    tmux display-message -p '#S' 2>/dev/null
+    return $?
+  fi
+
+  return 1
+}
+
+get_current_session_agents() {
+  local session
+  session=$(current_tmux_session || true)
+
+  if [ -z "$session" ]; then
+    echo "tmux-session-manager: current-session agent filter requires running inside tmux" >&2
+    return 1
+  fi
+
+  get_agents "$session"
+}
+
 get_all() {
   get_sessions
+  get_agents
   get_zoxide_dirs
   get_fd_dirs
 }
 
 # --- Helpers ---
-
-strip_icon() {
-  local clean_line
-  clean_line=$(echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g")
-  echo "${clean_line#* }"
-}
-
-strip_colors() {
-  echo "$1" | sed "s/$(printf '\033')\[[0-9;]*m//g"
-}
 
 switch_to_session() {
   local session="$1"
@@ -67,6 +433,38 @@ switch_to_session() {
   else
     tmux attach-session -t "$session"
   fi
+}
+
+focus_agent_pane() {
+  local pane="$1"
+  local session_id
+  local window_id
+
+  session_id=$(tmux display-message -p -t "$pane" '#{session_id}' 2>/dev/null) || return 1
+  window_id=$(tmux display-message -p -t "$pane" '#{window_id}' 2>/dev/null) || return 1
+
+  if ! tmux select-window -t "$window_id" 2>/dev/null; then
+    tmux display-message -d 2000 "❌ Failed to select agent window for $pane" 2>/dev/null || true
+    return 1
+  fi
+
+  if ! tmux select-pane -t "$pane" 2>/dev/null; then
+    tmux display-message -d 2000 "❌ Failed to select agent pane $pane" 2>/dev/null || true
+    return 1
+  fi
+
+  mark_agent_seen "$pane"
+
+  if in_tmux; then
+    tmux switch-client -t "$session_id"
+  else
+    tmux attach-session -t "$session_id"
+  fi
+}
+
+agent_pane_from_line() {
+  local clean_line="$1"
+  awk '{ for (i = 1; i <= NF; i++) if ($i ~ /:[0-9]+\.[0-9]+$/) { print $i; exit } }' <<<"$clean_line"
 }
 
 create_session_from_dir() {
@@ -131,7 +529,222 @@ delete_item() {
     local session_name
     session_name=$(strip_icon "$raw_line")
     tmux kill-session -t "$session_name" 2>/dev/null
+  elif [[ "$clean_line" == "$ICON_AGENT"* ]]; then
+    local pane_target
+    pane_target=$(agent_pane_from_line "$clean_line")
+    if [ -n "$pane_target" ]; then
+      tmux kill-pane -t "$pane_target" 2>/dev/null
+    fi
   fi
+}
+
+report_agent() {
+  local pane=""
+  local agent_name=""
+  local agent_state=""
+  local message=""
+  local source=""
+  local pane_command=""
+  local pane_title=""
+  local existing=""
+  local message_seen=0
+  local source_seen=0
+  local updated
+  local visible=0
+  local semantic_state
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --pane)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: --pane requires a value" >&2
+        return 2
+      }
+      pane="$2"
+      shift 2
+      ;;
+    --pane=*)
+      pane="${1#*=}"
+      shift
+      ;;
+    --agent | --name)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: $1 requires a value" >&2
+        return 2
+      }
+      agent_name="$2"
+      shift 2
+      ;;
+    --agent=* | --name=*)
+      agent_name="${1#*=}"
+      shift
+      ;;
+    --state | --status)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: $1 requires a value" >&2
+        return 2
+      }
+      agent_state="$2"
+      shift 2
+      ;;
+    --state=* | --status=*)
+      agent_state="${1#*=}"
+      shift
+      ;;
+    --message)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: --message requires a value" >&2
+        return 2
+      }
+      message="$2"
+      message_seen=1
+      shift 2
+      ;;
+    --message=*)
+      message="${1#*=}"
+      message_seen=1
+      shift
+      ;;
+    --source)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: --source requires a value" >&2
+        return 2
+      }
+      source="$2"
+      source_seen=1
+      shift 2
+      ;;
+    --source=*)
+      source="${1#*=}"
+      source_seen=1
+      shift
+      ;;
+    *)
+      echo "tmux-session-manager: unknown --report-agent flag: $1" >&2
+      return 2
+      ;;
+    esac
+  done
+
+  pane=$(resolve_agent_pane "$pane") || return 1
+
+  if [ -z "$agent_name" ]; then
+    existing=$(tmux show-option -qvpt "$pane" @agent_name 2>/dev/null || true)
+    agent_name="$existing"
+  fi
+
+  if [ -z "$agent_name" ]; then
+    pane_command=$(tmux display-message -p -t "$pane" '#{pane_current_command}' 2>/dev/null || true)
+    pane_title=$(tmux display-message -p -t "$pane" '#{pane_title}' 2>/dev/null || true)
+    agent_name=$(detect_agent_name "$pane_command" "$pane_title" 2>/dev/null || true)
+  fi
+
+  if [ -z "$agent_name" ]; then
+    echo "tmux-session-manager: --agent/--name is required when the pane is not recognizable" >&2
+    return 2
+  fi
+
+  if [ -z "$agent_state" ]; then
+    existing=$(tmux show-option -qvpt "$pane" @agent_state 2>/dev/null || true)
+    agent_state="${existing:-unknown}"
+  fi
+
+  agent_state=$(normalize_agent_state "$agent_state")
+  semantic_state=$(semantic_agent_state "$agent_state")
+  if pane_visible_now "$pane"; then
+    visible=1
+  fi
+  update_agent_status_tracking "$pane" "$agent_state" "$visible" >/dev/null
+  updated=$(date +%s)
+
+  tmux set-option -qpt "$pane" @agent_name "$agent_name"
+  tmux set-option -qpt "$pane" @agent_state "$semantic_state"
+  tmux set-option -qpt "$pane" @agent_updated "$updated"
+
+  if [ "$message_seen" = "1" ]; then
+    message=${message//$'\n'/ }
+    message=${message//$'\t'/ }
+
+    if [ -n "$message" ]; then
+      tmux set-option -qpt "$pane" @agent_message "$message"
+    else
+      tmux set-option -qupt "$pane" @agent_message 2>/dev/null || true
+    fi
+  fi
+
+  if [ "$source_seen" = "1" ]; then
+    source=${source//$'\n'/ }
+    source=${source//$'\t'/ }
+
+    if [ -n "$source" ]; then
+      tmux set-option -qpt "$pane" @agent_source "$source"
+    else
+      tmux set-option -qupt "$pane" @agent_source 2>/dev/null || true
+    fi
+  fi
+}
+
+release_agent() {
+  local pane=""
+  local source=""
+  local source_seen=0
+  local existing_source=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --pane)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: --pane requires a value" >&2
+        return 2
+      }
+      pane="$2"
+      shift 2
+      ;;
+    --pane=*)
+      pane="${1#*=}"
+      shift
+      ;;
+    --source)
+      [ "$#" -ge 2 ] || {
+        echo "tmux-session-manager: --source requires a value" >&2
+        return 2
+      }
+      source="$2"
+      source_seen=1
+      shift 2
+      ;;
+    --source=*)
+      source="${1#*=}"
+      source_seen=1
+      shift
+      ;;
+    *)
+      echo "tmux-session-manager: unknown --release-agent flag: $1" >&2
+      return 2
+      ;;
+    esac
+  done
+
+  pane=$(resolve_agent_pane "$pane") || return 1
+
+  if [ "$source_seen" = "1" ]; then
+    source=${source//$'\n'/ }
+    source=${source//$'\t'/ }
+    existing_source=$(tmux show-option -qvpt "$pane" @agent_source 2>/dev/null || true)
+
+    if [ "$existing_source" != "$source" ]; then
+      return 0
+    fi
+  fi
+
+  tmux set-option -qupt "$pane" @agent_name 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_state 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_message 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_updated 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_source 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_last_state 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_last_status 2>/dev/null || true
+  tmux set-option -qupt "$pane" @agent_last_seen 2>/dev/null || true
 }
 
 # --- FZF Logic ---
@@ -155,8 +768,16 @@ fzf_unified_manager() {
   local rename_target=""
 
   local mode_file=$(mktemp)
+  local header_file=$(mktemp)
+  local header_state_file=$(mktemp)
   echo "--get-all" >"$mode_file"
-  trap "rm -f '$mode_file'" EXIT
+  cat >"$header_file" <<'EOF'
+Enter: Switch/Create/Focus | Esc: Quit | ^R: Rename | ^X: Delete
+^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi
+Agents: ^G All | ^O Current Session | Toggles: Alt-p Preview | Alt-h Header
+EOF
+  echo "shown" >"$header_state_file"
+  trap "rm -f '$mode_file' '$header_file' '$header_state_file'" EXIT
 
   while :; do
     if [[ "$mode" == "rename" ]]; then
@@ -179,20 +800,29 @@ fzf_unified_manager() {
     unified_list=$(
       get_all |
         fzf_with_style \
-          --header=$'Enter: Switch/Create | Esc: Quit | ^R: Rename | ^X: Delete \n^A: All | ^T: Sessions | ^Z: Zoxide | ^F: fd | ^Y: Yazi | Alt-p: Toggle Preview' \
+          --header "$(cat "$header_file")" \
           --border-label ' Session Manager ' \
           --prompt='> ' \
+          --bind "alt-p:toggle-preview" \
+          --bind "alt-h:transform-header:[[ \$(cat '$header_state_file') = shown ]] && { echo hidden > '$header_state_file'; printf ''; } || { echo shown > '$header_state_file'; cat '$header_file'; }" \
           --bind "ctrl-t:execute-silent(echo '--get-sessions' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-sessions)" \
+          --bind "ctrl-g:execute-silent(echo '--get-agents' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-agents)" \
+          --bind "ctrl-o:execute-silent(echo '--get-current-session-agents' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-current-session-agents)" \
           --bind "ctrl-z:execute-silent(echo '--get-zoxide' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-zoxide)" \
           --bind "ctrl-f:execute-silent(echo '--get-fd' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-fd)" \
           --bind "ctrl-a:execute-silent(echo '--get-all' > '$mode_file')+reload('${BASH_SOURCE[0]}' --get-all)" \
-          --bind "ctrl-x:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"execute-silent('${BASH_SOURCE[0]}' --delete-item {})+clear-query+reload('${BASH_SOURCE[0]}' \$(cat '$mode_file'))\" || echo \"\"" \
+          --bind "ctrl-x:transform:[[ \"{}\" == *\"$ICON_SESSION\"* || \"{}\" == *\"$ICON_AGENT\"* ]] && echo \"execute-silent('${BASH_SOURCE[0]}' --delete-item {})+clear-query+reload('${BASH_SOURCE[0]}' \$(cat '$mode_file'))\" || echo \"\"" \
           --bind "ctrl-r:transform:[[ \"{}\" == *\"$ICON_SESSION\"* ]] && echo \"accept\" || echo \"\"" \
           --preview '
             line=$(echo {} | sed "s/$(printf "\033")\[[0-9;]*m//g")
             if [[ "$line" == "$ICON_SESSION"* ]]; then
               target=$(echo "$line" | cut -d" " -f2-)
               tmux capture-pane -ep -t "$target" 2>/dev/null
+            elif [[ "$line" == "$ICON_AGENT"* ]]; then
+              target=$(echo "$line" | awk "{ for (i = 1; i <= NF; i++) if (\$i ~ /:[0-9]+\.[0-9]+$/) { print \$i; exit } }")
+              tmux display-message -p -t "$target" "Agent pane #{pane_id} — #{session_name}:#{window_index}.#{pane_index} — #{pane_current_command} — #{pane_current_path}" 2>/dev/null
+              printf "\n"
+              tmux capture-pane -ep -S -200 -t "$target" 2>/dev/null
             elif [[ "$line" == "$ICON_ZOXIDE"* ]] || [[ "$line" == "$ICON_FD"* ]]; then
               target="$(echo "$line" | cut -d" " -f2-)"
               target="${target/#\~/$HOME}"
@@ -229,6 +859,18 @@ fzf_unified_manager() {
         break
         ;;
       esac
+    elif [[ "$clean_selected" == "$ICON_AGENT"* ]]; then
+      pane_id=$(agent_pane_from_line "$clean_selected")
+      case "$key" in
+      enter)
+        focus_agent_pane "$pane_id"
+        break
+        ;;
+      ctrl-y)
+        run_yazi_and_create_session
+        break
+        ;;
+      esac
     elif [[ "$clean_selected" == "$ICON_ZOXIDE"* ]] || [[ "$clean_selected" == "$ICON_FD"* ]]; then
       dir_path=$(strip_icon "$selected")
       dir_path="${dir_path# }"
@@ -253,6 +895,14 @@ case "$1" in
   get_sessions
   exit 0
   ;;
+--get-agents)
+  get_agents
+  exit 0
+  ;;
+--get-current-session-agents | --get-session-agents)
+  get_current_session_agents
+  exit $?
+  ;;
 --get-zoxide)
   get_zoxide_dirs
   exit 0
@@ -268,6 +918,16 @@ case "$1" in
 --delete-item)
   delete_item "$2"
   exit 0
+  ;;
+--report-agent)
+  shift
+  report_agent "$@"
+  exit $?
+  ;;
+--release-agent)
+  shift
+  release_agent "$@"
+  exit $?
   ;;
 esac
 
