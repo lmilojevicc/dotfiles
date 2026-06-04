@@ -517,7 +517,7 @@ class PrefixCommandPaletteComponent implements Component {
 			return `${border("┃")}${" ".repeat(paddingX)}${rendered}${" ".repeat(paddingX)}${border("┃")}`;
 		};
 		const divider = () => row(muted("━".repeat(inner)));
-		const title = ` Prefix palette ${this.config.prefixKey} `;
+		const title = ` Prefix help ${this.config.prefixKey} `;
 		const titleFill = Math.max(1, frameInner - visibleWidth(title));
 		const top = `${border("┏")}${accent(title)}${border("━".repeat(titleFill))}${border("┓")}`;
 		const bottom = border(`┗${"━".repeat(frameInner)}┛`);
@@ -613,7 +613,7 @@ async function configureSetBinding(ctx: ExtensionCommandContext, keyArg?: string
 	if (!key) return;
 
 	if (key === HELP_KEY) {
-		ctx.ui.notify(`${state.config.prefixKey} ${HELP_KEY} is reserved for the prefix command palette`, "warning");
+		ctx.ui.notify(`${state.config.prefixKey} ${HELP_KEY} is reserved for prefix help`, "warning");
 		return;
 	}
 
@@ -745,7 +745,7 @@ function hintText(ui: ExtensionUIContext, config: ResolvedConfig): string {
 	if (!config.showHelp) return `${prefix} prefix`;
 
 	const hints = [
-		`${ui.theme.fg("accent", HELP_KEY)} palette`,
+		`${ui.theme.fg("accent", HELP_KEY)} help`,
 		...config.bindings.map((binding) => `${ui.theme.fg("accent", binding.label)} ${binding.description}`),
 	].join(ui.theme.fg("muted", " · "));
 	return `${prefix} prefix: ${hints}`;
@@ -763,13 +763,13 @@ function activeWidgetLines(ui: ExtensionUIContext, config: ResolvedConfig): stri
 
 	return [
 		`${accent("PREFIX ACTIVE")} ${dim("(")}${accent(config.prefixKey)}${dim(")")} ${muted("— waiting for next key")}`,
-		`${accent(HELP_KEY)} palette${muted(" · ")}${mappings}${overflow}${muted(" · esc cancel")}`,
+		`${accent(HELP_KEY)} help${muted(" · ")}${mappings}${overflow}${muted(" · esc cancel")}`,
 	];
 }
 
 function showPrefixActiveState(ui: ExtensionUIContext, config: ResolvedConfig) {
 	ui.setStatus(STATUS_KEY, hintText(ui, config));
-	ui.setWidget(ACTIVE_WIDGET_KEY, activeWidgetLines(ui, config), { placement: "aboveEditor" });
+	ui.setWidget(ACTIVE_WIDGET_KEY, activeWidgetLines(ui, config), { placement: "belowEditor" });
 }
 
 function clearPrefixActiveState(ui: ExtensionUIContext) {
