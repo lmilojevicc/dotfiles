@@ -186,15 +186,15 @@ alias kps="keepassxc-cli"
 alias lg="lazygit"
 alias ld="lazydocker"
 
-alias gdoc="stdsym |fzf | xargs go doc "
+alias gdoc="stdsym | fzf | xargs go doc "
 
 alias ddgr='ddgr -x -n 5'
 
 alias oct='opencode "$(mktemp -d)"'
 alias oc='opencode'
 alias cct='claude "$(mktemp -d)"'
-
-alias pitmp='d=$(mktemp -d "${TMPDIR:-/tmp}/pi.XXXXXX") && cd "$d" && pi'
+alias cc='claude'
+alias ccd='claude --dangerously-skip-permissions '
 
 # Git
 bindkey -s '^Xgc' 'git commit -m ""'
