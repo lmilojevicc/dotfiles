@@ -12,6 +12,9 @@ links = [{ source = ".", target = "~/.config/ghostty" }]
 [packages.git]
 links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
 
+[packages.herdr]
+links = [{ source = "config.toml", target = "~/.config/herdr/config.toml" }]
+
 [packages.ideavim]
 links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
 
