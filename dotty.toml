@@ -1,73 +1,74 @@
 version = 1
 
 [packages.aerospace]
-links = [{ source = ".", target = "~/.config/aerospace" }]
+  links = [{ source = ".", target = "~/.config/aerospace" }]
 
 [packages.bat]
-links = [{ source = ".", target = "~/.config/bat" }]
+  links = [{ source = ".", target = "~/.config/bat" }]
 
 [packages.ghostty]
-links = [{ source = ".", target = "~/.config/ghostty" }]
+  links = [{ source = ".", target = "~/.config/ghostty" }]
 
 [packages.git]
-links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
+  links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
 
 [packages.herdr]
-links = [{ source = "config.toml", target = "~/.config/herdr/config.toml" }]
+  links = [{ source = "config.toml", target = "~/.config/herdr/config.toml" }]
 
 [packages.ideavim]
-links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
+  links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
 
 [packages.k9s]
-links = [{ source = ".", target = "~/.config/k9s" }]
+  links = [{ source = ".", target = "~/.config/k9s" }]
 
 [packages.lazydocker]
-links = [{ source = ".", target = "~/.config/lazydocker" }]
+  links = [{ source = ".", target = "~/.config/lazydocker" }]
 
 [packages.lazygit]
-links = [{ source = ".", target = "~/.config/lazygit" }]
+  links = [{ source = ".", target = "~/.config/lazygit" }]
 
 [packages.opencode]
-links = [{ source = ".", target = "~/.config/opencode" }]
+  links = [{ source = ".", target = "~/.config/opencode" }]
 
 [packages.pi]
-links = [
-  { source = "settings.json", target = "~/.pi/agent/settings.json" },
-  { source = "keybindings.json", target = "~/.pi/agent/keybindings.json" },
-  { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
-  { source = "themes", target = "~/.pi/agent/themes" },
-  { source = "extensions", target = "~/.pi/agent/extensions" },
-  { source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
-]
+  links = [
+    { source = "settings.json", target = "~/.pi/agent/settings.json" },
+    { source = "keybindings.json", target = "~/.pi/agent/keybindings.json" },
+    { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
+    { source = "themes", target = "~/.pi/agent/themes" },
+    { source = "extensions", target = "~/.pi/agent/extensions" },
+    { source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
+    { source = "mcp.json", target = "~/.pi/agent/mcp.json" },
+  ]
 
 [packages.posting]
-links = [{ source = ".", target = "~/.config/posting" }]
+  links = [{ source = ".", target = "~/.config/posting" }]
 
 [packages.scripts]
-links = [
-  { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
-  { source = "pptx2pdf", target = "~/.local/bin/pptx2pdf" },
-  { source = "sesh-fzf", target = "~/.local/bin/sesh-fzf" },
-  { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
-]
+  links = [
+    { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
+    { source = "pptx2pdf", target = "~/.local/bin/pptx2pdf" },
+    { source = "sesh-fzf", target = "~/.local/bin/sesh-fzf" },
+    { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
+  ]
 
 [packages.starship]
-links = [{ source = ".", target = "~/.config/starship" }]
+  links = [{ source = ".", target = "~/.config/starship" }]
 
 [packages.tmux]
-links = [{ source = ".", target = "~/.config/tmux" }]
+  links = [{ source = ".", target = "~/.config/tmux" }]
 
 [packages.topgrade]
-links = [{ source = ".", target = "~/.config/topgrade" }]
+  links = [{ source = ".", target = "~/.config/topgrade" }]
 
 [packages.wezterm]
-links = [{ source = ".", target = "~/.config/wezterm" }]
+  links = [{ source = ".", target = "~/.config/wezterm" }]
 
 [packages.yazi]
-links = [{ source = ".", target = "~/.config/yazi" }]
+  links = [{ source = ".", target = "~/.config/yazi" }]
 
 [packages.zsh]
-links = [{ source = ".zshrc", target = "~/.zshrc" }]
+  links = [{ source = ".zshrc", target = "~/.zshrc" }]
 
 [collections.terminal]
-packages = ["ghostty", "wezterm"]
+  packages = ["ghostty", "wezterm"]
