@@ -1,21 +1,22 @@
 [misc]
-only = [
-  "tmux",
-  "tldr",
-  "rustup",
-  "cargo",
-  "go",
-  "node",
-  "deno",
-  "bun",
-  "pipx",
-  "yazi",
-  "custom_commands",
-]
-assume_yes = true
-cleanup = true
-no_retry = true
+  only = [
+    "tmux",
+    "tldr",
+    "rustup",
+    "cargo",
+    "go",
+    "node",
+    "deno",
+    "bun",
+    "bun_packages",
+    "pipx",
+    "yazi",
+    "custom_commands",
+  ]
+  assume_yes = true
+  cleanup = true
+  no_retry = true
 
 [commands]
-"Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
-"Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
+  "Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
+  "Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
