@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.79.8",
-  "defaultProvider": "zai",
-  "defaultModel": "glm-5.2",
+  "lastChangelogVersion": "0.80.2",
+  "defaultProvider": "kilo",
+  "defaultModel": "stepfun/step-3.7-flash:free",
   "defaultThinkingLevel": "high",
   "theme": "catppuccin-mocha",
   "packages": [
@@ -16,15 +16,13 @@
     "npm:@narumitw/pi-goal",
     "npm:@howaboua/pi-codex-conversion",
     "npm:pi-multiloop",
-    "npm:pi-gemini-acp",
-    "npm:pi-xai-oauth",
     "npm:pi-mcp-adapter",
-    "npm:pi-peek",
     "git:github.com/MasuRii/pi-tool-display",
     "git:github.com/crustyhacker/pi-thinking-steps",
-    "npm:pi-hermes-memory",
-    "npm:pi-cursor-sdk",
-    "npm:@ff-labs/pi-fff"
+    "npm:@ff-labs/pi-fff",
+    "npm:@offbynan/pi-cursor-provider",
+    "npm:pi-zai-mcp",
+    "npm:pi-free"
   ],
   "skills": [
     ".claude/skills",

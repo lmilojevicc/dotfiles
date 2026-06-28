@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "glm-websearch": {
+      "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+      "auth": "bearer",
+      "bearerTokenEnv": "GLM_API_KEY",
+      "lifecycle": "lazy"
+    },
+    "glm-mcp": {
+      "command": "uvx",
+      "args": ["glm-mcp"],
+      "env": {
+        "GLM_API_KEY": "${GLM_API_KEY}"
+      },
+      "lifecycle": "lazy"
+    }
+  }
+}

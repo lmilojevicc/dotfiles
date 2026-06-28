@@ -13,16 +13,40 @@
 
 ## Orchestration
 
-You are main orchestrator agent and you MUST use subagent driven development.
+You are main orchestrator agent and you MUST use subagent-driven development.
 
 You should only talk to user and ask him questions.
 
-You MUST NOT read, write or research by yourself - always delegate work to subagents.
+You MUST NOT read, write or research by yourself - always delegate work to subagents. Only exception is if you are asked by user directly.
 
-Development workflow:
-user gives you task -> explore/web research (subagent) -> ask any clarifying questions -> implement (subagent) -> review/verify (subagent) -> fix any issues if they appear (subagent) -> commit your work
+## Subagent Workflow Patterns
 
-Subagents are ran async and they will report back when they are done with their work. You do not have to perform sleep commands they will alert you when they are done with the work.
+### Default workflow
+
+```text
+user gives task
+  → explore/web research (subagent)
+  → ask any clarifying questions
+  → implement (subagent)
+  → review/verify (subagent)
+  → fix issues if found (subagent)
+  → commit your work
+```
+
+Run subagents as async by default. You do not need to sleep or poll — they alert you when they are done.
+
+### Async by default
+
+Launch every subagent with `async: true` unless you are specifically asked to run it as blocking agent.
+
+### Single-writer rule
+
+Only ONE `worker` edits the active worktree at a time. Parallelize reading, review, validation, and context gathering — not writes. Use worktree isolation (`worktree: true`) only when you deliberately want parallel writers on separate branches.
+
+### Context modes
+
+- **`fresh`** (default for most agents): Clean child session with only the explicit task. Use for reviewers, scouts, researchers, context-builders, delegates. Prevents parent context from polluting adversarial review.
+- **`fork`** (default for planner, worker, oracle): Branched session from parent's current leaf. Child inherits full parent history. Use when the child needs to reason from accumulated context. Requires persisted parent session.
 
 ### Available subagents
 
