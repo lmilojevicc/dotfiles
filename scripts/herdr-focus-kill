@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Run a command in a Herdr overlay pane and kill it when focus leaves
+# the pane, tab, or workspace.
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: herdr-focus-kill <command> [args...]" >&2
+  exit 1
+fi
+
+my_pane="${HERDR_PANE_ID:?HERDR_PANE_ID is not set (run inside a Herdr pane)}"
+my_workspace="${HERDR_WORKSPACE_ID:?HERDR_WORKSPACE_ID is not set (run inside a Herdr pane)}"
+poll_interval="${HERDR_FOCUS_KILL_POLL:-0.15}"
+
+current_focused_workspace() {
+  herdr workspace list 2>/dev/null \
+    | jq -r '.result.workspaces[] | select(.focused) | .workspace_id' 2>/dev/null \
+    | head -1 \
+    || true
+}
+
+is_overlay_focused() {
+  herdr pane get "$my_pane" 2>/dev/null \
+    | jq -e '.result.pane.focused == true' >/dev/null 2>&1
+}
+
+should_dismiss() {
+  local current_workspace
+
+  if ! is_overlay_focused; then
+    return 0
+  fi
+
+  current_workspace="$(current_focused_workspace)"
+  if [[ -n "$current_workspace" && "$current_workspace" != "$my_workspace" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+"$@" &
+child=$!
+
+cleanup() {
+  kill "$child" 2>/dev/null || true
+}
+
+trap cleanup INT TERM
+
+while kill -0 "$child" 2>/dev/null; do
+  if should_dismiss; then
+    cleanup
+    wait "$child" 2>/dev/null || true
+    exit 0
+  fi
+  sleep "$poll_interval"
+done
+
+wait "$child"

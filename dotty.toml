@@ -48,8 +48,8 @@ version = 1
   links = [
     { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
     { source = "pptx2pdf", target = "~/.local/bin/pptx2pdf" },
-    { source = "sesh-fzf", target = "~/.local/bin/sesh-fzf" },
     { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
+    { source = "herdr-focus-kill", target = "~/.local/bin/herdr-focus-kill" },
   ]
 
 [packages.starship]
