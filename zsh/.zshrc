@@ -7,8 +7,6 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
-export AGENT_WORKSPACE="$HOME/obsidian/agent-repository/"
-
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
@@ -24,7 +22,7 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 export PATH="$HOME/.opencode/bin:$PATH"
-export PATH="$HOME/.grok/bin:$PATH"
+export PATH=$HOME/.mimocode/bin:$PATH
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS=" \
@@ -195,6 +193,7 @@ alias oc='opencode'
 alias cct='claude "$(mktemp -d)"'
 alias cc='claude'
 alias ccd='claude --dangerously-skip-permissions '
+alias cursor='cursor-agent'
 
 # Git
 bindkey -s '^Xgc' 'git commit -m ""'
@@ -286,9 +285,3 @@ fi
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
-
-# >>> grok installer >>>
-export PATH="$HOME/.grok/bin:$PATH"
-fpath=(~/.grok/completions/zsh $fpath)
-autoload -Uz compinit && compinit -C
-# <<< grok installer <<<
