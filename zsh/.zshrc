@@ -188,11 +188,9 @@ alias gdoc="stdsym | fzf | xargs go doc "
 
 alias ddgr='ddgr -x -n 5'
 
-alias oct='opencode "$(mktemp -d)"'
 alias oc='opencode'
-alias cct='claude "$(mktemp -d)"'
-alias cc='claude'
-alias ccd='claude --dangerously-skip-permissions '
+alias cc='claude --dangerously-skip-permissions'
+alias agy='agy --dangerously-skip-permissions'
 alias cursor='cursor-agent'
 
 # Git
