@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Run a command in a dedicated tmux window and kill it when focus leaves the
+# window or session. Generic analog of herdr-focus-kill for tmux; works with
+# any command.
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: tmux-focus-kill <command> [args...]" >&2
+  exit 1
+fi
+
+my_pane="${TMUX_PANE:?TMUX_PANE is not set (run inside a tmux pane)}"
+my_session="$(tmux display-message -p -t "$my_pane" '#{session_name}')"
+poll_interval="${TMUX_FOCUS_KILL_POLL:-0.15}"
+child=""
+
+tmux set-option -g @focus_kill_pid "$$"
+
+pane_exists() {
+  tmux display-message -p -t "$my_pane" '#{pane_id}' >/dev/null 2>&1
+}
+
+window_is_active() {
+  [[ "$(tmux display-message -p -t "$my_pane" '#{window_active}')" == "1" ]]
+}
+
+session_has_client() {
+  tmux list-clients -F '#{client_session}' 2>/dev/null \
+    | grep -qxF "$my_session"
+}
+
+should_dismiss() {
+  if ! pane_exists; then
+    return 0
+  fi
+
+  if ! window_is_active; then
+    return 0
+  fi
+
+  if ! session_has_client; then
+    return 0
+  fi
+
+  return 1
+}
+
+"$@" &
+child=$!
+
+cleanup() {
+  [[ -n "$child" ]] && kill "$child" 2>/dev/null || true
+  tmux kill-pane -t "$my_pane" 2>/dev/null || true
+  local current
+  current="$(tmux show-options -gv @focus_kill_pid 2>/dev/null || true)"
+  if [[ "$current" == "$$" ]]; then
+    tmux set-option -gu @focus_kill_pid 2>/dev/null || true
+  fi
+}
+
+trap cleanup INT TERM EXIT
+
+while kill -0 "$child" 2>/dev/null; do
+  if should_dismiss; then
+    cleanup
+    wait "$child" 2>/dev/null || true
+    exit 0
+  fi
+  sleep "$poll_interval"
+done
+
+wait "$child"
