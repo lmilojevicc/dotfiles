@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.80.2",
-  "defaultProvider": "kilo",
-  "defaultModel": "stepfun/step-3.7-flash:free",
+  "lastChangelogVersion": "0.80.3",
+  "defaultProvider": "zai",
+  "defaultModel": "glm-5.2",
   "defaultThinkingLevel": "high",
   "theme": "catppuccin-mocha",
   "packages": [
@@ -12,17 +12,12 @@
     "npm:@aliou/pi-processes",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
-    "npm:@juicesharp/rpiv-btw",
     "npm:@narumitw/pi-goal",
-    "npm:@howaboua/pi-codex-conversion",
-    "npm:pi-multiloop",
     "npm:pi-mcp-adapter",
     "git:github.com/MasuRii/pi-tool-display",
     "git:github.com/crustyhacker/pi-thinking-steps",
     "npm:@ff-labs/pi-fff",
-    "npm:@offbynan/pi-cursor-provider",
-    "npm:pi-zai-mcp",
-    "npm:pi-free"
+    "npm:pi-zai-mcp"
   ],
   "skills": [
     ".claude/skills",

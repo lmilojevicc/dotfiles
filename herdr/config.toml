@@ -53,8 +53,7 @@ onboarding = false
   [[keys.command]]
     key = "prefix+f"
     type = "pane"
-    command = "$HOME/dotfiles/scripts/herdr-focus-kill seshagy"
-    description = "seshagy session manager (dies on focus leave)"
+    command = "seshagy --ephemeral"
 
 [ui]
   agent_panel_scope = "all"
