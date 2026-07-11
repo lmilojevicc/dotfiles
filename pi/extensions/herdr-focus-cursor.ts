@@ -1,3 +1,11 @@
+// herdr-focus-cursor — hide Pi's fake editor cursor when this herdr pane is
+// not focused, restore it when focus returns. Direct analog of
+// tmux-focus-cursor.ts, gated on herdr instead of tmux.
+//
+// Herdr's per-pane terminal emulator honors DECSET 1004 focus reporting
+// (its per-pane InputState tracks a `focus_reporting` flag), so the same
+// mechanism as tmux works here with no socket/RPC needed. Activates only
+// inside a herdr pane (HERDR_ENV=1); otherwise it does nothing.
 import { CustomEditor, type EditorFactory, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
@@ -7,8 +15,8 @@ const DISABLE_FOCUS_EVENTS = "\x1b[?1004l";
 const FOCUS_IN = "\x1b[I";
 const FOCUS_OUT = "\x1b[O";
 
-const PATCHED = Symbol.for("milo.pi.tmux-focus-cursor.patched");
-const WRAPPED_FACTORY = Symbol.for("milo.pi.tmux-focus-cursor.wrapped-factory");
+const PATCHED = Symbol.for("milo.pi.herdr-focus-cursor.patched");
+const WRAPPED_FACTORY = Symbol.for("milo.pi.herdr-focus-cursor.wrapped-factory");
 
 type PatchableEditor = EditorComponent & {
 	focused?: boolean;
@@ -98,9 +106,9 @@ export default function (pi: ExtensionAPI) {
 	let focusEventsEnabled = false;
 
 	pi.on("session_start", (_event, ctx) => {
-		// Load fully only inside tmux. If we are inside herdr (HERDR_ENV=1),
-		// defer to herdr-focus-cursor — herdr is the focus authority there.
-		if (!ctx.hasUI || !process.env.TMUX || process.env.HERDR_ENV === "1") return;
+		// Load fully only inside a herdr pane. HERDR_ENV=1 is set by herdr's
+		// integration when pi runs in a herdr pane.
+		if (!ctx.hasUI || process.env.HERDR_ENV !== "1") return;
 
 		process.stdout.write(ENABLE_FOCUS_EVENTS);
 		focusEventsEnabled = true;
