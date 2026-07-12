@@ -13,7 +13,10 @@ version = 1
   links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
 
 [packages.herdr]
-  links = [{ source = "config.toml", target = "~/.config/herdr/config.toml" }]
+  links = [
+    { source = "config.toml", target = "~/.config/herdr/config.toml" },
+    { source = "agent-detection", target = "~/.config/herdr/agent-detection" },
+  ]
 
 [packages.ideavim]
   links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
@@ -51,6 +54,12 @@ version = 1
     { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
     { source = "herdr-focus-kill", target = "~/.local/bin/herdr-focus-kill" },
     { source = "tmux-focus-kill", target = "~/.local/bin/tmux-focus-kill" },
+  ]
+
+[packages.skills]
+  links = [
+    { source = "oss-repo-setup", target = "~/.agents/skills/oss-repo-setup" },
+    { source = "oss-repo-setup", target = "~/.claude/skills/oss-repo-setup" },
   ]
 
 [packages.starship]

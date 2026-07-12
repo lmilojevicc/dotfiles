@@ -1,0 +1,92 @@
+# Local override for pi (FORCED — always wins over remote/bundled).
+# Precedence: local override > cached remote > bundled. Remove this file to
+# fall back to the herdr-maintained pi.toml.
+#
+# What this adds over the stock remote pi.toml:
+#   - detects pi-subagents (and similar) background/parallel activity from the
+#     live screen, generalized so it does NOT depend on the agent count.
+#   - detects Pi ask_user_question footers as blocked (approval / user input).
+#
+# States used:
+#   working — base "Working..." indicator OR any live subagent activity signal.
+#   blocked — ask-question tool footer at the bottom of the screen.
+#
+# Note: pi is a lifecycle-authority agent, so the screen manifest is suppressed
+# while the Pi extension's hook reports are fresh (<60s). These rules therefore
+# take effect for long-running background subagents after that window, which is
+# exactly the case the core events cannot see (detached children). Ask-question
+# UIs may also be covered by lifecycle hooks when the extension is active; the
+# blocked rule remains useful as fallback / when hooks are stale.
+
+id = "pi"
+version = "2026.07.12.1"
+min_engine_version = 1
+updated_at = "2026-07-12T00:00:00Z"
+aliases = ["herdr:pi"]
+
+# Pi ask_user_question footer (always at bottom while the tool is open).
+# Matches all observed variants by requiring the stable ends of the hint line
+# plus a navigate token; middle segments (Tab / Space / notes / Esc) are optional.
+#
+# Examples matched:
+#   Enter to select · ↑/↓ to navigate ·  Ctrl+] to collapse
+#   Enter to select · ↑/↓ to navigate · Tab to switch questions · Esc to cancel · Ctrl+] to collapse
+#   Enter to select · ↑/↓ to navigate · Space to toggle · Tab to switch questions · Esc to cancel · Ctrl+] to collapse
+#   Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel · Ctrl+] to collapse
+
+
+# Base rule: Pi's own streaming "Working..." indicator.
+[[rules]]
+  id = "working_literal"
+  state = "working"
+  priority = 100
+  region = "whole_recent"
+  visible_working = true
+  contains = ["Working..."]
+
+# pi-subagents / parallel / series background activity.
+# Count-agnostic: matches "1 agent running" (singular) AND "N agents running"
+# (plural), the async/parallel header regardless of (N), and the per-agent
+# live-detail hint that only appears under a currently-active agent.
+[[rules]]
+  id = "subagents_running"
+  state = "working"
+  priority = 300
+  region = "whole_recent"
+  visible_working = true
+  any = [
+    { contains = [
+      "agent running",
+    ] },
+    { contains = [
+      "agents running",
+    ] },
+    { contains = [
+      "async subagent parallel",
+    ] },
+    { contains = [
+      "async subagent series",
+    ] },
+    { contains = [
+      "press ctrl+o for live detail",
+    ] },
+  ]
+
+[[rules]]
+  id = "ask_question_footer"
+  state = "blocked"
+  priority = 980
+  region = "bottom_non_empty_lines(6)"
+  visible_blocker = true
+  contains = ["enter to select", "ctrl+] to collapse"]
+  any = [
+    { contains = [
+      "↑/↓ to navigate",
+    ] },
+    { contains = [
+      "↑↓ to navigate",
+    ] },
+    { contains = [
+      "to navigate",
+    ] },
+  ]
