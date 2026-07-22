@@ -41,7 +41,6 @@ version = 1
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
     { source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
-    { source = "mcp.json", target = "~/.pi/agent/mcp.json" },
   ]
 
 [packages.posting]

@@ -1,0 +1,22 @@
+{
+  "prefixKey": "ctrl+x",
+  "timeoutMs": 2000,
+  "showHelp": true,
+  "cancelKeys": [
+    "escape",
+    "ctrl+c"
+  ],
+  "replaceDefaults": true,
+  "bindings": {
+    "m": "app.model.select",
+    "r": "pi.reload",
+    "n": "app.session.new",
+    "l": "app.session.resume",
+    "g": "app.session.tree",
+    "f": "app.session.fork",
+    "e": "app.editor.external",
+    "o": "app.tools.expand",
+    "t": "app.thinking.toggle",
+    "p": "pi.peek"
+  }
+}

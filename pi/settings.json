@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.80.3",
-  "defaultProvider": "zai",
-  "defaultModel": "glm-5.2",
+  "lastChangelogVersion": "0.81.1",
+  "defaultProvider": "cpa",
+  "defaultModel": "grok-4.5",
   "defaultThinkingLevel": "high",
   "theme": "catppuccin-mocha",
   "packages": [
@@ -13,11 +13,11 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@juicesharp/rpiv-todo",
     "npm:@narumitw/pi-goal",
-    "npm:pi-mcp-adapter",
     "git:github.com/MasuRii/pi-tool-display",
     "git:github.com/crustyhacker/pi-thinking-steps",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-zai-mcp"
+    "npm:pi-btw",
+    "npm:pi-cliproxyapi-provider"
   ],
   "skills": [
     ".claude/skills",
@@ -30,5 +30,12 @@
   "collapseChangelog": true,
   "showHardwareCursor": false,
   "hideThinkingBlock": false,
-  "editorPaddingX": 1
+  "editorPaddingX": 1,
+  "pi-account-router": {
+    "showFooter": true,
+    "labels": {
+      "xai": "graceyledgas58@outlook.com",
+      "xai-2": "brunohscarlotti@outlook.com"
+    }
+  }
 }

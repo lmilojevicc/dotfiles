@@ -1,18 +1,21 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
 	getAgentDir,
+	getSelectListTheme,
 	ModelSelectorComponent,
 	rawKeyHint,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Model } from "@earendil-works/pi-ai";
+import { modelsAreEqual, type Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
 
 const PATCHED = Symbol.for("milo.pi.model-favorites.patched");
 const FAVORITE_KEY = "ctrl+f";
 const FAVORITES_PATH = join(getAgentDir(), "model-favorites.json");
+const MAX_VISIBLE = 10;
+const FAVORITE_MARK = "★";
 
 type ModelItem = {
 	provider: string;
@@ -55,40 +58,66 @@ type ModelSelectorPrototype = {
 	handleInput: (this: MutableModelSelector, data: string) => void;
 };
 
-function readFavorites(): string[] {
+/** Cache favorites between keystrokes; invalidated on write. */
+let favoritesCache: { ids: string[]; fingerprint: number } | undefined;
+
+function favoritesFingerprint(): number {
 	try {
-		if (!existsSync(FAVORITES_PATH)) return [];
+		if (!existsSync(FAVORITES_PATH)) return 0;
+		const st = statSync(FAVORITES_PATH);
+		return st.mtimeMs + st.size;
+	} catch {
+		return 0;
+	}
+}
+
+function readFavorites(): string[] {
+	const fp = favoritesFingerprint();
+	if (favoritesCache && favoritesCache.fingerprint === fp) return favoritesCache.ids;
+
+	try {
+		if (!existsSync(FAVORITES_PATH)) {
+			favoritesCache = { ids: [], fingerprint: fp };
+			return [];
+		}
 		const parsed = JSON.parse(readFileSync(FAVORITES_PATH, "utf8")) as FavoriteStore;
-		return Array.isArray(parsed.favorites)
+		const ids = Array.isArray(parsed.favorites)
 			? parsed.favorites.filter((value): value is string => typeof value === "string" && value.length > 0)
 			: [];
+		favoritesCache = { ids, fingerprint: fp };
+		return ids;
 	} catch {
+		favoritesCache = { ids: [], fingerprint: fp };
 		return [];
 	}
 }
 
 function writeFavorites(favorites: string[]): void {
 	mkdirSync(dirname(FAVORITES_PATH), { recursive: true });
+	const ids = [...new Set(favorites)];
 	writeFileSync(
 		FAVORITES_PATH,
-		`${JSON.stringify({ favorites: [...new Set(favorites)] } satisfies FavoriteStore, null, "\t")}\n`,
+		`${JSON.stringify({ favorites: ids } satisfies FavoriteStore, null, "\t")}\n`,
 		"utf8",
 	);
+	favoritesCache = undefined;
 }
 
 function fullModelId(model: Pick<Model<any>, "provider" | "id">): string {
 	return `${model.provider}/${model.id}`;
 }
 
-function sameModel(a: Model<any> | undefined, b: Model<any> | undefined): boolean {
-	return !!a && !!b && a.provider === b.provider && a.id === b.id;
-}
-
-function parseFullModelId(value: string): { provider: string; id: string } | undefined {
-	const trimmed = value.trim();
-	const slash = trimmed.indexOf("/");
-	if (slash <= 0 || slash === trimmed.length - 1) return undefined;
-	return { provider: trimmed.slice(0, slash), id: trimmed.slice(slash + 1) };
+/**
+ * Match upstream getModelSelectorSearchText (not a public export):
+ * provider-first ranking so bare ids don't beat provider/id proxies.
+ */
+function getModelSelectorSearchText(item: {
+	id: string;
+	provider: string;
+	name?: string;
+}): string {
+	const name = item.name ? ` ${item.name}` : "";
+	return `${item.provider} ${item.provider}/${item.id} ${item.provider} ${item.id}${name}`;
 }
 
 function favoriteIndexById(): Map<string, number> {
@@ -111,8 +140,8 @@ function sortWithFavorites(items: ModelItem[], currentModel?: Model<any>): Model
 			return aFavoriteIndex - bFavoriteIndex;
 		}
 
-		const aIsCurrent = sameModel(currentModel, a.model);
-		const bIsCurrent = sameModel(currentModel, b.model);
+		const aIsCurrent = modelsAreEqual(currentModel, a.model);
+		const bIsCurrent = modelsAreEqual(currentModel, b.model);
 		if (aIsCurrent && !bIsCurrent) return -1;
 		if (!aIsCurrent && bIsCurrent) return 1;
 
@@ -131,7 +160,9 @@ function selectPreferredModel(selector: MutableModelSelector, preferredModelId?:
 	const favoriteIndex = favoriteIndexById();
 
 	if (preferredModelId) {
-		const preferredIndex = selector.filteredModels.findIndex((item) => fullModelId(item.model) === preferredModelId);
+		const preferredIndex = selector.filteredModels.findIndex(
+			(item) => fullModelId(item.model) === preferredModelId,
+		);
 		if (preferredIndex >= 0) {
 			selector.selectedIndex = preferredIndex;
 			return;
@@ -139,21 +170,40 @@ function selectPreferredModel(selector: MutableModelSelector, preferredModelId?:
 	}
 
 	const currentFavoriteIndex = selector.filteredModels.findIndex(
-		(item) => sameModel(selector.currentModel, item.model) && isFavoriteIn(item.model, favoriteIndex),
+		(item) =>
+			modelsAreEqual(selector.currentModel, item.model) && isFavoriteIn(item.model, favoriteIndex),
 	);
 	if (currentFavoriteIndex >= 0) {
 		selector.selectedIndex = currentFavoriteIndex;
 		return;
 	}
 
-	const firstFavoriteIndex = selector.filteredModels.findIndex((item) => isFavoriteIn(item.model, favoriteIndex));
+	const firstFavoriteIndex = selector.filteredModels.findIndex((item) =>
+		isFavoriteIn(item.model, favoriteIndex),
+	);
 	if (firstFavoriteIndex >= 0) {
 		selector.selectedIndex = firstFavoriteIndex;
 		return;
 	}
 
-	const currentIndex = selector.filteredModels.findIndex((item) => sameModel(selector.currentModel, item.model));
+	const currentIndex = selector.filteredModels.findIndex((item) =>
+		modelsAreEqual(selector.currentModel, item.model),
+	);
 	selector.selectedIndex = currentIndex >= 0 ? currentIndex : 0;
+}
+
+function restoreSelection(selector: MutableModelSelector, previousId?: string): void {
+	if (previousId) {
+		const idx = selector.filteredModels.findIndex((item) => fullModelId(item.model) === previousId);
+		if (idx >= 0) {
+			selector.selectedIndex = idx;
+			return;
+		}
+	}
+	selector.selectedIndex = Math.min(
+		selector.selectedIndex,
+		Math.max(0, selector.filteredModels.length - 1),
+	);
 }
 
 function toggleFavorite(model: Model<any>): boolean {
@@ -169,32 +219,13 @@ function toggleFavorite(model: Model<any>): boolean {
 	return true;
 }
 
-function style(code: number, closeCode: number, text: string): string {
-	return `\x1b[${code}m${text}\x1b[${closeCode}m`;
-}
-
-function bold(text: string): string {
-	return style(1, 22, text);
-}
-
-function dim(text: string): string {
-	return style(2, 22, text);
-}
-
-function accent(text: string): string {
-	return style(36, 39, text);
-}
-
-function success(text: string): string {
-	return style(32, 39, text);
-}
-
-function error(text: string): string {
-	return style(31, 39, text);
+function listTheme() {
+	return getSelectListTheme();
 }
 
 function addSectionHeader(selector: MutableModelSelector, label: string): void {
-	selector.listContainer.addChild(new Text(dim(`  ${label}`), 0, 0));
+	const t = listTheme();
+	selector.listContainer.addChild(new Text(t.description(`  ${label}`), 0, 0));
 }
 
 function renderModelLine(
@@ -203,43 +234,61 @@ function renderModelLine(
 	index: number,
 	favoriteIndex: Map<string, number>,
 ): void {
+	const t = listTheme();
 	const selected = index === selector.selectedIndex;
-	const current = sameModel(selector.currentModel, item.model);
-	const prefix = selected ? accent("→ ") : "  ";
-	const modelText = selected ? accent(item.id) : item.id;
-	const providerBadge = dim(`[${item.provider}]`);
-	const currentMark = current ? success(" ✓") : "";
-	selector.listContainer.addChild(new Text(`${prefix}${modelText} ${providerBadge}${currentMark}`, 0, 0));
+	const current = modelsAreEqual(selector.currentModel, item.model);
+	const favorite = isFavoriteIn(item.model, favoriteIndex);
+
+	const prefix = selected ? t.selectedPrefix("→ ") : "  ";
+	const modelText = selected ? t.selectedText(item.id) : item.id;
+	const providerBadge = t.description(`[${item.provider}]`);
+	const favMark = favorite ? (selected ? t.selectedText(` ${FAVORITE_MARK}`) : t.description(` ${FAVORITE_MARK}`)) : "";
+	const check = current ? (selected ? t.selectedText(" ✓") : t.description(" ✓")) : "";
+
+	selector.listContainer.addChild(
+		new Text(`${prefix}${modelText} ${providerBadge}${favMark}${check}`, 0, 0),
+	);
 }
 
+/**
+ * Sticky section headers based on full filtered list + window overlap.
+ * Model windowing stays maxVisible=10 (headers are extra rows, consistent).
+ */
 function renderFavoriteAwareList(selector: MutableModelSelector): void {
 	selector.listContainer.clear();
+	const t = listTheme();
 	const favoriteIndexByModelId = favoriteIndexById();
+	const models = selector.filteredModels;
+	const favoriteCount = models.filter((item) => isFavoriteIn(item.model, favoriteIndexByModelId)).length;
 
-	const maxVisible = 10;
-	const favoriteCount = selector.filteredModels.filter((item) => isFavoriteIn(item.model, favoriteIndexByModelId)).length;
 	const startIndex = Math.max(
 		0,
-		Math.min(selector.selectedIndex - Math.floor(maxVisible / 2), selector.filteredModels.length - maxVisible),
+		Math.min(selector.selectedIndex - Math.floor(MAX_VISIBLE / 2), models.length - MAX_VISIBLE),
 	);
-	const endIndex = Math.min(startIndex + maxVisible, selector.filteredModels.length);
-	let renderedFavoritesHeader = false;
-	let renderedAllHeader = false;
+	const endIndex = Math.min(startIndex + MAX_VISIBLE, models.length);
 
-	if (selector.filteredModels.length > 0 && favoriteCount === 0) {
-		selector.listContainer.addChild(new Text(dim(`  ${rawKeyHint(FAVORITE_KEY, "favorite")} highlighted model`), 0, 0));
+	if (models.length > 0 && favoriteCount === 0) {
+		selector.listContainer.addChild(
+			new Text(t.description(`  ${rawKeyHint(FAVORITE_KEY, "favorite")} highlighted model`), 0, 0),
+		);
 	}
 
+	// Sticky favorites header when window overlaps favorite region (indices 0..favoriteCount-1 after sort)
+	const windowOverlapsFavorites = favoriteCount > 0 && startIndex < favoriteCount;
+	if (windowOverlapsFavorites) {
+		addSectionHeader(selector, `Favorite models (${favoriteCount})`);
+	}
+
+	// Show "All models" once when the window includes non-favorite rows after favorites.
+	let needsAllHeader = favoriteCount > 0 && favoriteCount < models.length && endIndex > favoriteCount;
+	let renderedAllHeader = false;
+
 	for (let index = startIndex; index < endIndex; index++) {
-		const item = selector.filteredModels[index];
+		const item = models[index];
 		if (!item) continue;
 
 		const favorite = isFavoriteIn(item.model, favoriteIndexByModelId);
-		if (favorite && !renderedFavoritesHeader) {
-			addSectionHeader(selector, `Favorite models (${favoriteCount})`);
-			renderedFavoritesHeader = true;
-		}
-		if (!favorite && favoriteCount > 0 && !renderedAllHeader) {
+		if (!favorite && needsAllHeader && !renderedAllHeader) {
 			addSectionHeader(selector, "All models");
 			renderedAllHeader = true;
 		}
@@ -247,30 +296,37 @@ function renderFavoriteAwareList(selector: MutableModelSelector): void {
 		renderModelLine(selector, item, index, favoriteIndexByModelId);
 	}
 
-	if (startIndex > 0 || endIndex < selector.filteredModels.length) {
+	if (startIndex > 0 || endIndex < models.length) {
 		selector.listContainer.addChild(
-			new Text(dim(`  (${selector.selectedIndex + 1}/${selector.filteredModels.length})`), 0, 0),
+			new Text(t.scrollInfo(`  (${selector.selectedIndex + 1}/${models.length})`), 0, 0),
 		);
 	}
 
 	if (selector.errorMessage) {
+		// SelectListTheme has no error token; keep readable with description styling.
 		for (const line of selector.errorMessage.split("\n")) {
-			selector.listContainer.addChild(new Text(error(line), 0, 0));
+			selector.listContainer.addChild(new Text(t.description(line), 0, 0));
 		}
 		return;
 	}
 
-	if (selector.filteredModels.length === 0) {
-		selector.listContainer.addChild(new Text(dim("  No matching models"), 0, 0));
+	if (models.length === 0) {
+		selector.listContainer.addChild(new Text(t.noMatch("  No matching models"), 0, 0));
 		return;
 	}
 
-	const selected = selector.filteredModels[selector.selectedIndex];
+	const selected = models[selector.selectedIndex];
 	if (!selected) return;
-	const favoriteAction = isFavoriteIn(selected.model, favoriteIndexByModelId) ? "remove favorite" : "add favorite";
+	const favoriteAction = isFavoriteIn(selected.model, favoriteIndexByModelId)
+		? "remove favorite"
+		: "add favorite";
 	selector.listContainer.addChild(new Spacer(1));
-	selector.listContainer.addChild(new Text(dim(`  Model Name: ${selected.model.name}`), 0, 0));
-	selector.listContainer.addChild(new Text(dim(`  ${rawKeyHint(FAVORITE_KEY, favoriteAction)}`), 0, 0));
+	selector.listContainer.addChild(
+		new Text(t.description(`  Model Name: ${selected.model.name}`), 0, 0),
+	);
+	selector.listContainer.addChild(
+		new Text(t.description(`  ${rawKeyHint(FAVORITE_KEY, favoriteAction)}`), 0, 0),
+	);
 }
 
 function patchModelSelector(): void {
@@ -287,17 +343,32 @@ function patchModelSelector(): void {
 		selectPreferredModel(this);
 	};
 
-	proto.sortModels = function sortModelsWithFavorites(this: MutableModelSelector, models: ModelItem[]): ModelItem[] {
+	proto.sortModels = function sortModelsWithFavorites(
+		this: MutableModelSelector,
+		models: ModelItem[],
+	): ModelItem[] {
 		return sortWithFavorites(models, this.currentModel);
 	};
 
-	proto.filterModels = function filterModelsWithFavorites(this: MutableModelSelector, query: string): void {
+	proto.filterModels = function filterModelsWithFavorites(
+		this: MutableModelSelector,
+		query: string,
+	): void {
+		const previousId =
+			this.filteredModels[this.selectedIndex] !== undefined
+				? fullModelId(this.filteredModels[this.selectedIndex]!.model)
+				: undefined;
+
 		reorderSelectorModels(this);
 		const sortedActiveModels = this.activeModels;
+
 		this.filteredModels = query
-			? fuzzyFilter(sortedActiveModels, query, ({ id, provider }) => `${id} ${provider} ${provider}/${id} ${provider} ${id}`)
+			? fuzzyFilter(sortedActiveModels, query, ({ id, provider, model }) =>
+					getModelSelectorSearchText({ id, provider, name: model.name }),
+				)
 			: sortedActiveModels;
-		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+
+		restoreSelection(this, previousId);
 		this.updateList();
 	};
 
@@ -309,10 +380,11 @@ function patchModelSelector(): void {
 		if (matchesKey(data, FAVORITE_KEY) || data === "\x06") {
 			const item = this.filteredModels[this.selectedIndex];
 			if (!item) return;
+			const id = fullModelId(item.model);
 			toggleFavorite(item.model);
 			reorderSelectorModels(this);
 			this.filterModels(this.searchInput.getValue());
-			selectPreferredModel(this, fullModelId(item.model));
+			selectPreferredModel(this, id);
 			this.updateList();
 			this.tui?.requestRender();
 			return;
@@ -326,7 +398,9 @@ function patchModelSelector(): void {
 
 function formatFavorites(): string {
 	const favorites = readFavorites();
-	if (favorites.length === 0) return "No favorite models yet. Open /model and press Ctrl+F on a model.";
+	if (favorites.length === 0) {
+		return "No favorite models yet. Open /model and press Ctrl+F on a model.";
+	}
 	return favorites.map((id, index) => `${index + 1}. ${id}`).join("\n");
 }
 
@@ -354,30 +428,32 @@ function registerFavoritesCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const parsed = parseFullModelId(ref);
-			if (!parsed) {
+			const slash = ref.indexOf("/");
+			if (slash <= 0 || slash === ref.length - 1) {
 				ctx.ui.notify("model-favorites: expected a provider/model id", "warning");
 				return;
 			}
+			const provider = ref.slice(0, slash);
+			const id = ref.slice(slash + 1);
 
-			const model = ctx.modelRegistry.find(parsed.provider, parsed.id);
+			const model = ctx.modelRegistry.find(provider, id);
 			if (!model) {
 				ctx.ui.notify(`model-favorites: unknown model ${ref}`, "warning");
 				return;
 			}
 
-			const id = fullModelId(model);
+			const fullId = fullModelId(model);
 			const favorites = readFavorites();
-			const exists = favorites.includes(id);
+			const exists = favorites.includes(fullId);
 
 			if (action === "remove" || (action === "toggle" && exists)) {
-				writeFavorites(favorites.filter((favorite) => favorite !== id));
-				ctx.ui.notify(`model-favorites: removed ${id}`, "info");
+				writeFavorites(favorites.filter((favorite) => favorite !== fullId));
+				ctx.ui.notify(`model-favorites: removed ${fullId}`, "info");
 				return;
 			}
 
-			if (!exists) writeFavorites([...favorites, id]);
-			ctx.ui.notify(`model-favorites: added ${id}`, "info");
+			if (!exists) writeFavorites([...favorites, fullId]);
+			ctx.ui.notify(`model-favorites: added ${fullId}`, "info");
 		},
 	});
 }

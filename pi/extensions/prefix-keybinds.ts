@@ -35,7 +35,7 @@ type NativeActionInfo = {
 	defaultKeys: string | string[];
 };
 
-type ExtensionAction = "pi.reload";
+type ExtensionAction = "pi.reload" | "pi.peek";
 type PrefixAction = AppKeybinding | ExtensionAction;
 
 const NATIVE_ACTIONS = {
@@ -99,6 +99,7 @@ const NATIVE_ACTIONS = {
 
 const EXTENSION_ACTIONS = {
 	"pi.reload": { defaultKeys: [], description: "Reload extensions, skills, prompts, and themes" },
+	"pi.peek": { defaultKeys: [], description: "Open peek (session scrollback browser)" },
 } satisfies Record<ExtensionAction, NativeActionInfo>;
 
 const PREFIX_ACTIONS = {
@@ -116,6 +117,7 @@ const DEFAULT_BINDINGS: Record<string, PrefixAction> = {
 	e: "app.editor.external",
 	o: "app.tools.expand",
 	t: "app.thinking.toggle",
+	p: "pi.peek",
 };
 
 const PATCHED = Symbol.for("milo.pi.prefix-keybinds.patched");
@@ -362,7 +364,14 @@ function loadState(cwd: string): RuntimeState {
 }
 
 function ensureState(cwd: string): RuntimeState {
-	if (!runtimeState || runtimeState.cwd !== cwd) runtimeState = loadState(cwd);
+	// Always re-read config so edits to prefix-keybinds.json apply without restarting Pi.
+	// Keep last cwd for callers that only care about path; warnings only on path change.
+	const next = loadState(cwd);
+	if (!runtimeState || runtimeState.cwd !== cwd) {
+		runtimeState = next;
+		return runtimeState;
+	}
+	runtimeState = { ...next, warnings: [] };
 	return runtimeState;
 }
 
@@ -778,7 +787,14 @@ function clearPrefixActiveState(ui: ExtensionUIContext) {
 }
 
 function matchesConfiguredKey(data: string, key: string): boolean {
-	return data === key || matchesKey(data, key);
+	if (data === key || matchesKey(data, key)) return true;
+	// Letter bindings: terminals usually send a bare character ("p"), while configs
+	// sometimes use "P" or users press Shift. Compare case-insensitively for single letters.
+	const normalizedKey = key.trim();
+	if (normalizedKey.length === 1 && data.length === 1) {
+		return data.toLowerCase() === normalizedKey.toLowerCase();
+	}
+	return false;
 }
 
 function patchWithPrefix(
@@ -807,21 +823,29 @@ function patchWithPrefix(
 		timeout = setTimeout(clearPrefix, config.timeoutMs);
 	};
 
+	const SLASH_ACTIONS: Partial<Record<ExtensionAction, { command: string; notify?: string }>> = {
+		"pi.reload": { command: "/reload", notify: "Reloading pi resources..." },
+		"pi.peek": { command: "/peek" },
+	};
+
 	const runBinding = (binding: ResolvedBinding) => {
-		if (binding.action === "pi.reload") {
+		const slash = binding.action in SLASH_ACTIONS
+			? SLASH_ACTIONS[binding.action as ExtensionAction]
+			: undefined;
+		if (slash) {
 			const submit = editor.onSubmit;
 			if (!submit) {
-				ui.setEditorText("/reload");
-				ui.notify("Inserted /reload; press Enter to run it", "warning");
+				ui.setEditorText(slash.command);
+				ui.notify(`Inserted ${slash.command}; press Enter to run it`, "warning");
 				return;
 			}
 
-			ui.notify("Reloading pi resources...", "info");
-			void submit("/reload");
+			if (slash.notify) ui.notify(slash.notify, "info");
+			void submit(slash.command);
 			return;
 		}
 
-		const handler = editor.actionHandlers?.get(binding.action);
+		const handler = editor.actionHandlers?.get(binding.action as AppKeybinding);
 		if (!handler) {
 			ui.notify(`${binding.action} is not available in this context`, "warning");
 			return;
@@ -854,7 +878,12 @@ function patchWithPrefix(
 				return;
 			}
 
-			ui.notify(`Unknown ${config.prefixKey} prefix key`, "warning");
+			const pressed = data.length === 1 && data >= " " ? data : data.replace(/\x1b/g, "esc");
+			const available = config.bindings.map((b) => b.key).join(", ") || "(none)";
+			ui.notify(
+				`Unknown key after prefix ${config.prefixKey}: ${JSON.stringify(pressed)}. Bound: ${available}`,
+				"warning",
+			);
 			return;
 		}
 
