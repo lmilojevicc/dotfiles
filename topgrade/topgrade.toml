@@ -1,6 +1,5 @@
 [misc]
   only = [
-    "tmux",
     "tldr",
     "rustup",
     "cargo",
@@ -9,8 +8,8 @@
     "deno",
     "bun",
     "bun_packages",
-    "pipx",
     "yazi",
+    "github_cli_extensions",
     "custom_commands",
   ]
   assume_yes = true
@@ -20,3 +19,7 @@
 [commands]
   "Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
   "Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
+  # Built-in pipx step fails on broken envs after Python upgrades; reinstall-all repairs + upgrades.
+  "pipx tools" = "pipx reinstall-all"
+  # Built-in uv step fails on broken leftover tools (e.g. posting); clean then upgrade all.
+  "uv tools" = "bash -lc 'uv self update; uv tool upgrade --all || { uv tool uninstall posting 2>/dev/null || true; rm -rf \"${HOME}/.local/share/uv/tools/posting\" 2>/dev/null || true; uv tool upgrade --all; }'"
