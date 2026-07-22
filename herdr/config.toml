@@ -1,7 +1,6 @@
 onboarding = false
 
 [keys]
-
   [[keys.command]]
     key = "ctrl+h"
     type = "plugin_action"
@@ -52,9 +51,10 @@ onboarding = false
 
   [[keys.command]]
     key = "prefix+f"
-    type = "pane"
-    command = "seshagy --ephemeral"
+    type = "popup"
+    width = "75%"
+    height = "75%"
+    command = "seshagy"
 
 [ui]
-  agent_panel_scope = "all"
   agent_panel_sort = "spaces"
