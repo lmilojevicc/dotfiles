@@ -56,5 +56,8 @@ onboarding = false
     height = "75%"
     command = "seshagy"
 
+[worktrees]
+  directory = "~/Worktrees"
+
 [ui]
   agent_panel_sort = "spaces"
