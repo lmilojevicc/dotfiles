@@ -52,8 +52,8 @@ function processIsRunning(process: ChildProcess | undefined): boolean {
 }
 
 function notify(ctx: ExtensionContext, message: string, type: "info" | "warning" | "error" = "info") {
-	if (!ctx.hasUI) return;
 	try {
+		if (!ctx.hasUI) return;
 		ctx.ui.notify(message, type);
 	} catch {
 		// The UI context can become stale during reload/shutdown.
@@ -61,8 +61,8 @@ function notify(ctx: ExtensionContext, message: string, type: "info" | "warning"
 }
 
 function setAwakeStatus(ctx: ExtensionContext, enabled: boolean, backendLabel = state().backendLabel) {
-	if (!ctx.hasUI) return;
 	try {
+		if (!ctx.hasUI) return;
 		ctx.ui.setStatus(STATUS_KEY, enabled ? `☕ awake${backendLabel ? `:${backendLabel}` : ""}` : undefined);
 	} catch {
 		// The UI context can become stale during reload/shutdown.

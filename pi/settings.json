@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.81.1",
-  "defaultProvider": "cpa",
-  "defaultModel": "grok-4.5",
-  "defaultThinkingLevel": "high",
+  "lastChangelogVersion": "0.83.0",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.6-sol",
+  "defaultThinkingLevel": "off",
   "theme": "catppuccin-mocha",
   "packages": [
     "npm:pi-zentui",

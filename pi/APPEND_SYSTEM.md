@@ -205,21 +205,21 @@ Non-trivial logic leaves ONE runnable check behind — the smallest thing that f
 
 ## Git
 
-Always develop within worktrees.
+### Worktree Guidelines
 
+- Always develop within worktrees.
 - Canonical clones: `~/Projects/<project>`
 - Durable worktrees: `~/Worktrees/<project>/<worktree>`
-- Infer `<project>` from `basename $(git rev-parse --show-toplevel)` when in the main clone
-- Prefer branch name as `<worktree>` when sensible
+- Infer `<project>` from `basename $(git rev-parse --show-toplevel)` when in the main clone.
+- Prefer branch name as `<worktree>` when sensible.
 
-Don't delegate gh or git actions to subagents unless instructed otherwise.
+### Execution & Conventions
 
-Always use local `git config user.email` & `git config user.name` for commits unless instructed otherwise.
-
-When contributing to another repo always read CONTRIBUTING.md and other relevant files like PR template files and issue templates.
-
-Always check repo commit convention; if scaffolding a project use conventional commits: `type: description`
+- Don't delegate `gh` or `git` commands to subagents.
+- Always use local `git config user.email` & `git config user.name` for commits unless instructed otherwise.
+- When contributing to external repositories, read `CONTRIBUTING.md`, PR templates, and issue templates.
+- Follow existing repo commit conventions; default to conventional commits (`type: description`) for new projects.
 
 ## Release
 
-Never let subagents perform release these actions are performed by agent who communicates with user directly
+- Never delegate release actions to subagents; releases must be performed directly by the main agent communicating with the user.
