@@ -40,7 +40,6 @@ version = 1
     { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
-    { source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
   ]
 
 [packages.posting]
@@ -53,6 +52,7 @@ version = 1
     { source = "tmux-session-manager", target = "~/.local/bin/tmux-session-manager" },
     { source = "herdr-focus-kill", target = "~/.local/bin/herdr-focus-kill" },
     { source = "tmux-focus-kill", target = "~/.local/bin/tmux-focus-kill" },
+    { source = "runner", target = "~/.local/bin/runner" },
   ]
 
 [packages.skills]

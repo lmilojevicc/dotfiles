@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# runner - execute a command completely detached from tmux / terminal process groups
+
+if [ $# -eq 0 ]; then
+    echo "Usage: runner <command> [args...]"
+    exit 1
+fi
+
+python3 -c '
+import sys, subprocess
+subprocess.Popen(
+    sys.argv[1:],
+    start_new_session=True,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL
+)
+' "$@"
