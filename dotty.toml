@@ -30,6 +30,9 @@ version = 1
 [packages.lazygit]
   links = [{ source = ".", target = "~/.config/lazygit" }]
 
+[packages.nvim]
+  links = [{ source = ".", target = "~/.config/nvim" }]
+
 [packages.opencode]
   links = [{ source = ".", target = "~/.config/opencode" }]
 
