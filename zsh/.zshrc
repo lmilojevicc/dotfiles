@@ -180,6 +180,8 @@ alias ldir='eza -lhD --icons=auto'
 alias ltre="eza --tree --level=2 --long --icons --git"
 alias cdt='cd "$(mktemp -d)"'
 
+alias ct='wt switch'
+
 alias kps="keepassxc-cli"
 alias lg="lazygit"
 alias ld="lazydocker"
@@ -193,10 +195,33 @@ alias cc='claude --dangerously-skip-permissions'
 alias agy='agy --dangerously-skip-permissions'
 alias cursor='cursor-agent'
 
+alias cask-clean='brew list --cask | fzf | xargs brew uninstall --zap'
+alias cli-clean='brew leaves --installed-on-request | fzf | xargs brew uninstall --zap'
+
 # Git
 bindkey -s '^Xgc' 'git commit -m ""'
 bindkey -s '^Xgs' 'git status --short\n'
 bindkey -s '^Xgl' 'git log --oneline -n 10\n'
+
+# fzf git worktree switcher (Alt+W)
+fzf-git-worktree-widget() {
+    local selected_path
+    selected_path=$(
+        git worktree list 2>/dev/null | fzf \
+            --height 40% --reverse \
+            --header="Select Git Worktree" \
+            --preview="git -C {1} status -s && echo '' && git -C {1} log --oneline -n 5" \
+            --preview-window="right:33%" | awk '{print $1}'
+    )
+
+    if [[ -n "$selected_path" ]]; then
+        cd "$selected_path"
+    fi
+    zle reset-prompt
+}
+
+zle -N fzf-git-worktree-widget
+bindkey '^[w' fzf-git-worktree-widget # Alt+W
 
 # cd to root of git repo
 function cdr() {
@@ -283,3 +308,5 @@ fi
 
 # bun completions
 [ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
+
+if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi
