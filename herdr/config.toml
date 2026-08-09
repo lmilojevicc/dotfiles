@@ -56,6 +56,18 @@ onboarding = false
     height = "75%"
     command = "seshagy"
 
+  [[keys.command]]
+    key = "prefix+,"
+    type = "plugin_action"
+    command = "herdr-last.toggle-workspace"
+    description = "Toggle to last workspace"
+
+  [[keys.command]]
+    key = "prefix+."
+    type = "plugin_action"
+    command = "herdr-last.toggle-tab"
+    description = "Toggle to last tab"
+
 [worktrees]
   directory = "~/Worktrees"
 
