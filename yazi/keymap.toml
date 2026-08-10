@@ -6,9 +6,6 @@ prepend_keymap = [
 { on = "p", run = "plugin smart-paste", desc = "Paste into the hovered directory or CWD" },
 { on = "O", run = 'shell "open \"$@\""', desc = "Open with default application"},
 
-  # Ouch compress
-{ on = ["c", "a"], run = "plugin ouch", desc = "Compress with ouch" },
-
   # Chage directories
 { on = ["g", "r"], run = 'shell -- ya emit cd "$(git rev-parse --show-toplevel)"', desc = "Go back to root directory of git project" },
 { on = ["g", "h"], run = 'cd ~', desc = "Go to home directory" },
@@ -22,11 +19,5 @@ prepend_keymap = [
 
 { on = ["space"], run = ["select", "arrow 1"], desc = "Select and move down" },
 { on = [ ".", "s" ], run  = "plugin what-size", desc = "Calc size of selection or cwd" },
-
-  # Duckdb
-{ on = "H", run = "plugin duckdb -1", desc = "Scroll one column to the left" },
-{ on = "L", run = "plugin duckdb +1", desc = "Scroll one column to the right" },
-{ on = ["b", "o"], run = "plugin duckdb -open", desc = "open with duckdb" },
-{ on = ["b", "u"], run = "plugin duckdb -ui", desc = "open with duckdb ui" }
 ]
 
