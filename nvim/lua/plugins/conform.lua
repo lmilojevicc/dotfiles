@@ -8,12 +8,16 @@ return {
     local conform = require("conform")
 
     conform.setup({
+      default_format_opts = {
+        lsp_format = "fallback",
+      },
+
       formatters_by_ft = {
         lua = { "stylua" },
         c = { "clang-format" },
         cpp = { "clang-format" },
         java = { "google-java-format" },
-        go = { "gofumpt", "goimports", "golines" },
+        go = { "goimports", "gofumpt", "golines" },
         bash = { "shfmt" },
         zsh = { "shfmt" },
         sh = { "shfmt" },
@@ -26,15 +30,16 @@ return {
         json = { "biome", "prettierd", "prettier", stop_after_first = true },
         graphql = { "biome", "prettierd", "prettier", stop_after_first = true },
         markdown = { "prettierd", "rumdl" },
-        jsx = { "prettierd", "prettier", stop_after_first = true },
-        tsx = { "prettierd", "prettier", stop_after_first = true },
+        jsx = { "biome", "prettierd", "prettier", stop_after_first = true },
+        tsx = { "biome", "prettierd", "prettier", stop_after_first = true },
         sql = { "sqruff", stop_after_first = true },
         yaml = { "yamlfmt" },
         toml = { "taplo" },
-        python = { "ruff_format", "ruff_organize_imports" },
+        python = { "ruff_organize_imports", "ruff_format" },
       },
 
       formatters = {
+        biome = { require_cwd = true },
         taplo = {
           append_args = function(_, ctx)
             -- Prefer project-level taplo config if it exists.
@@ -57,13 +62,18 @@ return {
         if vim.g.disable_autoformat or vim.b[bufnr].disable_autoformat then
           return
         end
-        return { async = true, lsp_fallback = true }
+        return { async = true }
       end,
     })
   end,
 
   -- stylua: ignore
   keys = {
-    { "<leader>fo", function() require("conform").format({ async = true, lsp_fallback = true }) end, { desc = " Format file or selection" } },
+    {
+      "<leader>fo",
+      function() require("conform").format({ async = true }) end,
+      mode = { "n", "v" },
+      desc = " Format file or selection",
+    },
   },
 }

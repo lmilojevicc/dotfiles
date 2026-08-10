@@ -21,21 +21,6 @@ vim.lsp.config("*", {
     map("n", "<leader>rn", vim.lsp.buf.rename, { desc = " LSP Rename" })
     map("n", "gh", vim.lsp.buf.hover, { desc = " LSP Hover" })
     map("n", "K", vim.lsp.buf.signature_help, { desc = "󰊕 LSP Signature help" })
-
-    map("n", "<leader>fo", function()
-      vim.lsp.buf.format({ async = true })
-    end, { desc = "󰷉 LSP Format" })
-    map("v", "<leader>fo", function()
-      local start_row, _ = unpack(vim.api.nvim_buf_get_mark(0, "<"))
-      local end_row, _ = unpack(vim.api.nvim_buf_get_mark(0, ">"))
-      vim.lsp.buf.format({
-        range = {
-          ["start"] = { start_row, 0 },
-          ["end"] = { end_row, 0 },
-        },
-        async = true,
-      })
-    end, { desc = "󰷉 LSP Range Formatting" })
   end,
 })
 

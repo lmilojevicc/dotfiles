@@ -24,7 +24,10 @@ return {
   {
     "mason-org/mason-lspconfig.nvim",
     event = "VeryLazy",
-    dependencies = { "mason-org/mason.nvim" },
+    dependencies = {
+      "mason-org/mason.nvim",
+      "saghen/blink.cmp",
+    },
     opts = {
       ensure_installed = {
         "basedpyright",
@@ -54,7 +57,6 @@ return {
         "zls",
       },
 
-      automatic_installation = true,
       automatic_enable = {
         exclude = {
           "rumdl",
@@ -83,6 +85,7 @@ return {
         "golangci-lint",
         "golines",
         "gomodifytags",
+        "google-java-format",
         "gotests",
         "impl",
         "hadolint",
