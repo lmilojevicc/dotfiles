@@ -20,10 +20,13 @@
  * THE SOFTWARE.
  */
 
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 
 const STATUS_KEY = "codex-enhanced";
+const FAST_CONFIG_BASENAME = "codex-enhanced.json";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
@@ -74,7 +77,10 @@ type ResetResult = {
 };
 
 type UsageState = UsageSnapshot | { error: string } | undefined;
-type MenuTab = "quota" | "resets";
+type MenuTab = "quota" | "resets" | "fast";
+type FastConfig = { fast: boolean };
+type FastConfigWriteResult = { ok: true } | { ok: false; error: string };
+type FastConfigToggleResult = { ok: true; fast: boolean } | { ok: false; error: string };
 type ResetRequestPhase = "pending" | "ambiguous" | "locked";
 type ResetRequestState = {
 	requestId: string;
@@ -84,6 +90,7 @@ type ResetRequestState = {
 };
 type ResetRequestStore = Map<string, ResetRequestState>;
 
+const MENU_TABS: readonly MenuTab[] = ["quota", "resets", "fast"];
 const RESET_REQUEST_STORE = Symbol.for("codex-enhanced.reset-request-store");
 const globalResetState = globalThis as typeof globalThis & { [RESET_REQUEST_STORE]?: ResetRequestStore };
 const resetRequestStateByAccount = globalResetState[RESET_REQUEST_STORE] ??= new Map();
@@ -93,6 +100,56 @@ const weeklyUsageKeyByModel = new WeakMap<object, string>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getFastConfigPath(agentDir: string = getAgentDir()): string {
+	return join(agentDir, FAST_CONFIG_BASENAME);
+}
+
+function readFastConfig(configPath: string = getFastConfigPath()): FastConfig {
+	try {
+		const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+		return { fast: isRecord(parsed) && parsed.fast === true };
+	} catch {
+		return { fast: false };
+	}
+}
+
+function writeFastConfig(fast: boolean, configPath: string = getFastConfigPath()): FastConfigWriteResult {
+	const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.${globalThis.crypto.randomUUID()}.tmp`;
+	try {
+		mkdirSync(dirname(configPath), { recursive: true });
+		let document: Record<string, unknown> = {};
+		try {
+			const existing = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
+			if (isRecord(existing)) document = existing;
+		} catch {
+			// A settings write replaces a missing or unreadable document.
+		}
+		writeFileSync(temporaryPath, `${JSON.stringify({ ...document, fast }, null, 2)}\n`, {
+			encoding: "utf8",
+			mode: 0o600,
+		});
+		renameSync(temporaryPath, configPath);
+		return { ok: true };
+	} catch (error) {
+		try {
+			unlinkSync(temporaryPath);
+		} catch (cleanupError) {
+			if (!isRecord(cleanupError) || cleanupError.code !== "ENOENT") {
+				const writeError = error instanceof Error ? error.message : String(error);
+				const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+				return { ok: false, error: `${writeError}; temporary file cleanup also failed: ${cleanupMessage}` };
+			}
+		}
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+function toggleFastConfig(configPath: string = getFastConfigPath()): FastConfigToggleResult {
+	const fast = !readFastConfig(configPath).fast;
+	const result = writeFastConfig(fast, configPath);
+	return result.ok ? { ok: true, fast } : result;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -187,6 +244,7 @@ function isCanonicalBaseUrl(value: string | undefined, allowCodexPath = false): 
 		const path = url.pathname.replace(/\/+$/, "");
 		return url.protocol === "https:"
 			&& url.hostname === "chatgpt.com"
+			&& url.port === ""
 			&& (path === "/backend-api" || (allowCodexPath && path === "/backend-api/codex"));
 	} catch {
 		return false;
@@ -305,11 +363,20 @@ async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal)
 }
 
 function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-	if (signal.aborted) return Promise.reject(signal.reason);
 	return new Promise<T>((resolve, reject) => {
 		const onAbort = () => reject(signal.reason);
-		signal.addEventListener("abort", onAbort, { once: true });
-		promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+		promise.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			},
+		);
+		if (signal.aborted) onAbort();
+		else signal.addEventListener("abort", onAbort, { once: true });
 	});
 }
 
@@ -460,6 +527,20 @@ function formatResetLines(
 	return lines;
 }
 
+function formatFastLines(theme: Theme, fast: boolean, eligible: boolean): string[] {
+	const value = fast ? theme.fg("accent", "on") : theme.fg("dim", "off");
+	const status = fast
+		? theme.fg(eligible ? "accent" : "dim", `  Globally enabled · subsequent canonical Codex requests without an explicit tier are eligible.${eligible ? "" : " Current model is ineligible."}`)
+		: theme.fg("dim", "  Globally off · outgoing service tier is left untouched.");
+	return [
+		`  ${theme.bold("Fast mode")}  ${value}`,
+		status,
+		...(fast ? [theme.fg("dim", "  Served tier is unobserved; the backend may still serve standard processing.")] : []),
+		theme.fg("dim", "  This setting persists globally across Pi sessions; toggling changes all sessions on their next request."),
+		theme.fg("dim", "  Enter or Space to toggle."),
+	];
+}
+
 function formatUsageText(snapshot: UsageSnapshot): string {
 	const lines = [`Codex usage${snapshot.planType ? ` (${snapshot.planType})` : ""}:`];
 	if (snapshot.resetCredits) lines.push(`- resets available: ${snapshot.resetCredits.availableCount}`);
@@ -498,19 +579,35 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 		const render = () => {
 			if (!viewSignal.aborted) tui.requestRender();
 		};
-		const closeOnShutdown = () => done(undefined);
+		const fastConfigPath = getFastConfigPath();
+		const onFastConfigChange = () => render();
+		let fastConfigWatcherActive = true;
+		watchFile(fastConfigPath, { interval: 250, persistent: false }, onFastConfigChange);
+		const stopFastConfigWatcher = () => {
+			if (!fastConfigWatcherActive) return;
+			fastConfigWatcherActive = false;
+			unwatchFile(fastConfigPath, onFastConfigChange);
+		};
+		const closeOnShutdown = () => {
+			stopFastConfigWatcher();
+			done(undefined);
+		};
 		shutdownSignal.addEventListener("abort", closeOnShutdown, { once: true });
 		const currentResetState = () => resetAccountKey ? resetRequestStateByAccount.get(resetAccountKey) : undefined;
 		const load = (unlockSettledReset = false) => {
 			if (usageLoading) return;
+			const unlockAccountKey = unlockSettledReset ? resetAccountKey : undefined;
+			const stateAtLoad = unlockAccountKey ? resetRequestStateByAccount.get(unlockAccountKey) : undefined;
+			const stateToUnlock = stateAtLoad?.phase === "locked" ? stateAtLoad : undefined;
 			usageLoading = true;
 			resetArmed = false;
 			render();
 			fetchUsage(ctx, viewSignal)
 				.then((usage) => {
 					usageState = usage;
-					const state = currentResetState();
-					if (unlockSettledReset && state?.phase === "locked" && resetAccountKey) resetRequestStateByAccount.delete(resetAccountKey);
+					if (stateToUnlock?.phase === "locked" && unlockAccountKey && resetRequestStateByAccount.get(unlockAccountKey) === stateToUnlock) {
+						resetRequestStateByAccount.delete(unlockAccountKey);
+					}
 				})
 				.catch((error) => {
 					if (!viewSignal.aborted) usageState = { error: error instanceof Error ? error.message : String(error) };
@@ -591,24 +688,37 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 			if (tab === "resets" && !resetAccountKey) void ensureResetAccount();
 			render();
 		};
+		const cycleTab = (offset: number) => {
+			const index = MENU_TABS.indexOf(activeTab);
+			activateTab(MENU_TABS[(index + offset + MENU_TABS.length) % MENU_TABS.length] ?? "quota");
+		};
+		const toggleFast = () => {
+			const result = toggleFastConfig();
+			if (!result.ok) ctx.ui.notify(`Failed to save Fast mode: ${result.error}`, "error");
+			render();
+		};
 
 		load();
 		return {
 			render: (width: number) => {
-				const tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}`;
+				const tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}  ${theme.fg("dim", "/")}  ${activeTab === "fast" ? theme.bold("Fast") : theme.fg("dim", "Fast")}`;
 				const requestState = currentResetState();
 				const footer = activeTab === "quota"
 					? "  Tab next · Shift+Tab previous · R to refresh · Esc to close"
-					: requestState?.phase === "ambiguous"
-						? "  Tab next · Shift+Tab previous · Ctrl+R retry same reset · R refresh usage · Esc to close"
-						: "  Tab next · Shift+Tab previous · R to refresh · Ctrl+R use reset · Esc to close";
+					: activeTab === "fast"
+						? "  Tab next · Shift+Tab previous · Enter/Space toggle · Esc to close"
+						: requestState?.phase === "ambiguous"
+							? "  Tab next · Shift+Tab previous · Ctrl+R retry same reset · R refresh usage · Esc to close"
+							: "  Tab next · Shift+Tab previous · R to refresh · Ctrl+R use reset · Esc to close";
 				return [
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 					tabs,
 					theme.fg("borderMuted", "─".repeat(Math.max(0, width))),
 					...(activeTab === "quota"
 						? formatQuotaLines(theme, usageState, usageLoading)
-						: formatResetLines(theme, usageState, usageLoading, resetAccountLoading, requestState, resetArmed)),
+						: activeTab === "resets"
+							? formatResetLines(theme, usageState, usageLoading, resetAccountLoading, requestState, resetArmed)
+							: formatFastLines(theme, readFastConfig().fast, isCanonicalCodexModel(ctx.model as RuntimeModel | undefined))),
 					"",
 					theme.fg("dim", footer),
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
@@ -617,19 +727,23 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 			invalidate: render,
 			dispose: () => {
 				shutdownSignal.removeEventListener("abort", closeOnShutdown);
+				stopFastConfigWatcher();
 				viewController.abort();
 			},
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+					stopFastConfigWatcher();
 					viewController.abort();
 					done(undefined);
 				} else if (matchesKey(data, "shift+tab")) {
-					activateTab(activeTab === "resets" ? "quota" : "resets");
+					cycleTab(-1);
 				} else if (matchesKey(data, "tab")) {
-					activateTab(activeTab === "quota" ? "resets" : "quota");
+					cycleTab(1);
+				} else if (activeTab === "fast" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
+					toggleFast();
 				} else if (activeTab === "resets" && matchesKey(data, "ctrl+r")) {
 					void startReset();
-				} else if (data.toLowerCase() === "r") {
+				} else if (activeTab !== "fast" && data.toLowerCase() === "r") {
 					load(true);
 				}
 			},
@@ -672,13 +786,19 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 	};
 
 	pi.registerCommand("codex-enhanced", {
-		description: "Open Codex quota and banked reset menu",
+		description: "Open Codex quota, banked reset, and Fast mode menu",
 		handler: async (_args, ctx) => {
 			await openUsage(ctx, shutdownController.signal);
 			void refreshStatus(ctx);
 		},
 	});
 
+	pi.on("before_provider_request", (event, ctx) => {
+		if (!readFastConfig().fast) return undefined;
+		if (!isCanonicalCodexModel(ctx.model as RuntimeModel | undefined)) return undefined;
+		if (!isRecord(event.payload) || Object.hasOwn(event.payload, "service_tier")) return undefined;
+		return { ...event.payload, service_tier: "priority" };
+	});
 	pi.on("session_start", (_event, ctx) => {
 		shutdownController.abort();
 		shutdownController = new AbortController();
