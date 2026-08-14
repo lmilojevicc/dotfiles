@@ -6,7 +6,6 @@ import {
 	ModelSelectorComponent,
 	rawKeyHint,
 	type ExtensionAPI,
-	type ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import { modelsAreEqual, type Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
@@ -396,69 +395,6 @@ function patchModelSelector(): void {
 	proto[PATCHED] = true;
 }
 
-function formatFavorites(): string {
-	const favorites = readFavorites();
-	if (favorites.length === 0) {
-		return "No favorite models yet. Open /model and press Ctrl+F on a model.";
-	}
-	return favorites.map((id, index) => `${index + 1}. ${id}`).join("\n");
-}
-
-function registerFavoritesCommand(pi: ExtensionAPI): void {
-	pi.registerCommand("model-favorites", {
-		description:
-			"List, add, remove, or clear favorite models for /model. Usage: /model-favorites [list|clear|add <provider/model>|remove <provider/model>|toggle <provider/model>]",
-		handler: async (args: string, ctx: ExtensionCommandContext) => {
-			const [action = "list", ...rest] = args.trim().split(/\s+/).filter(Boolean);
-			const ref = rest.join(" ");
-
-			if (action === "list") {
-				ctx.ui.notify(formatFavorites(), "info");
-				return;
-			}
-
-			if (action === "clear") {
-				writeFavorites([]);
-				ctx.ui.notify("model-favorites: cleared favorite models", "info");
-				return;
-			}
-
-			if (!["add", "remove", "toggle"].includes(action)) {
-				ctx.ui.notify("model-favorites: expected list, clear, add, remove, or toggle", "warning");
-				return;
-			}
-
-			const slash = ref.indexOf("/");
-			if (slash <= 0 || slash === ref.length - 1) {
-				ctx.ui.notify("model-favorites: expected a provider/model id", "warning");
-				return;
-			}
-			const provider = ref.slice(0, slash);
-			const id = ref.slice(slash + 1);
-
-			const model = ctx.modelRegistry.find(provider, id);
-			if (!model) {
-				ctx.ui.notify(`model-favorites: unknown model ${ref}`, "warning");
-				return;
-			}
-
-			const fullId = fullModelId(model);
-			const favorites = readFavorites();
-			const exists = favorites.includes(fullId);
-
-			if (action === "remove" || (action === "toggle" && exists)) {
-				writeFavorites(favorites.filter((favorite) => favorite !== fullId));
-				ctx.ui.notify(`model-favorites: removed ${fullId}`, "info");
-				return;
-			}
-
-			if (!exists) writeFavorites([...favorites, fullId]);
-			ctx.ui.notify(`model-favorites: added ${fullId}`, "info");
-		},
-	});
-}
-
-export default function modelFavoritesExtension(pi: ExtensionAPI): void {
+export default function modelFavoritesExtension(_pi: ExtensionAPI): void {
 	patchModelSelector();
-	registerFavoritesCommand(pi);
 }
