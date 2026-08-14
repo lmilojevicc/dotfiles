@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.83.0",
+  "lastChangelogVersion": "0.84.1",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6-sol",
-  "defaultThinkingLevel": "off",
+  "defaultThinkingLevel": "xhigh",
   "theme": "catppuccin-mocha",
   "packages": [
     "npm:pi-zentui",
@@ -16,8 +16,7 @@
     "git:github.com/MasuRii/pi-tool-display",
     "git:github.com/crustyhacker/pi-thinking-steps",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-btw",
-    "npm:pi-cliproxyapi-provider"
+    "npm:pi-btw"
   ],
   "skills": [
     ".claude/skills",
@@ -30,12 +29,7 @@
   "collapseChangelog": true,
   "showHardwareCursor": false,
   "hideThinkingBlock": false,
-  "editorPaddingX": 1,
-  "pi-account-router": {
-    "showFooter": true,
-    "labels": {
-      "xai": "graceyledgas58@outlook.com",
-      "xai-2": "brunohscarlotti@outlook.com"
-    }
-  }
+  "editorPaddingX": 0,
+  "defaultProjectTrust": "ask",
+  "tuiMode": "fullscreen"
 }

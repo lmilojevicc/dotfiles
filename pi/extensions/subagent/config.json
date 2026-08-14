@@ -1,4 +1,5 @@
 {
   "toolDescriptionMode": "compact",
-  "waitTool": false
+  "waitTool": false,
+  "asyncByDefault": true
 }
