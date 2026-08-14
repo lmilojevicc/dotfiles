@@ -29,25 +29,25 @@ onboarding = false
     description = "Navigate right (vim/herdr)"
 
   [[keys.command]]
-    key = "alt+h"
+    key = "ctrl+left"
     type = "plugin_action"
     command = "herdr-splits.resize-left"
     description = "Resize left (vim/herdr)"
 
   [[keys.command]]
-    key = "alt+j"
+    key = "ctrl+down"
     type = "plugin_action"
     command = "herdr-splits.resize-down"
     description = "Resize down (vim/herdr)"
 
   [[keys.command]]
-    key = "alt+k"
+    key = "ctrl+up"
     type = "plugin_action"
     command = "herdr-splits.resize-up"
     description = "Resize up (vim/herdr)"
 
   [[keys.command]]
-    key = "alt+l"
+    key = "ctrl+right"
     type = "plugin_action"
     command = "herdr-splits.resize-right"
     description = "Resize right (vim/herdr)"

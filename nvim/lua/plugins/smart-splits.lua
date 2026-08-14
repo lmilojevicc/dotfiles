@@ -2,9 +2,12 @@ return {
   "mrjones2014/smart-splits.nvim",
   dependencies = { "pogyomo/submode.nvim" },
   cond = vim.env.HERDR_ENV ~= "1",
-  event = "VeryLazy",
   config = function()
     require("smart-splits").setup({
+      default_amount = 3,
+      at_edge = "wrap",
+      ignored_buftypes = { "nofile", "quickfix", "prompt" },
+      move_cursor_same_row = false,
       disable_multiplexer_nav_when_zoomed = false,
       cursor_follows_swapped_bufs = true,
       ignored_filetypes = { "NvimTree", "snacks_layout_box" },
@@ -16,10 +19,10 @@ return {
     map({ "n", "t" }, "<C-k>", require("smart-splits").move_cursor_up, { desc = " Move to Upper Window" })
     map({ "n", "t" }, "<C-l>", require("smart-splits").move_cursor_right, { desc = " Move to Right Window" })
 
-    map({ "n", "t" }, "<A-h>", require("smart-splits").resize_left, { desc = " Resize to Left Window" })
-    map({ "n", "t" }, "<A-j>", require("smart-splits").resize_down, { desc = " Resize to Lower Window" })
-    map({ "n", "t" }, "<A-k>", require("smart-splits").resize_up, { desc = " Resize to Upper Window" })
-    map({ "n", "t" }, "<A-l>", require("smart-splits").resize_right, { desc = " Resize to Right Window" })
+    map({ "n", "t" }, "<C-Left>", require("smart-splits").resize_left, { desc = " Resize to Left Window" })
+    map({ "n", "t" }, "<C-Down>", require("smart-splits").resize_down, { desc = " Resize to Lower Window" })
+    map({ "n", "t" }, "<C-Up>", require("smart-splits").resize_up, { desc = " Resize to Upper Window" })
+    map({ "n", "t" }, "<C-Right>", require("smart-splits").resize_right, { desc = " Resize to Right Window" })
 
     -- Resize mode
     local submode = require("submode")
