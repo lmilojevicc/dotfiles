@@ -42,13 +42,13 @@ import {
 	type UsageSnapshot,
 	type UsageWindow,
 } from "./core.ts";
+import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
 
 const STATUS_KEY = "codex-enhanced";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const RESET_CREDITS_CACHE_MS = 5_000;
 const WEEKLY_USAGE_CACHE_MS = 5 * 60_000;
-const REQUEST_TIMEOUT_MS = 10_000;
 
 type UsageState = UsageSnapshot | { error: string } | undefined;
 type MenuTab = "quota" | "resets" | "fast";
@@ -67,7 +67,6 @@ const globalResetState = globalThis as typeof globalThis & { [RESET_REQUEST_STOR
 const resetRequestStateByAccount = globalResetState[RESET_REQUEST_STORE] ??= new Map();
 let resetCreditsCache: { key: string; expiresAt: number; promise: Promise<ResetCredits | undefined> } | undefined;
 const weeklyUsageCache = new Map<string, { value?: number; expiresAt: number; promise?: Promise<number | undefined> }>();
-const weeklyUsageKeyByModel = new WeakMap<object, string>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -125,9 +124,7 @@ function accountKey(headers: Headers): string | undefined {
 }
 
 async function fetchJson(url: string, options: RequestInit): Promise<unknown> {
-	const response = await fetch(url, options);
-	if (!response.ok) throw new Error(`Codex request failed (${response.status} ${response.statusText})`);
-	return JSON.parse(await response.text()) as unknown;
+	return await fetchBoundedJson(url, options);
 }
 
 async function fetchDetailedResetCredits(headers: Headers, signal?: AbortSignal): Promise<ResetCredits | undefined> {
@@ -156,19 +153,19 @@ async function fetchUsage(ctx: ExtensionContext, signal?: AbortSignal): Promise<
 	const model = ctx.model as RuntimeModel | undefined;
 	if (!model) throw new Error("No active model selected.");
 	if (model.provider !== "openai-codex") throw new Error("Codex usage is only available for OpenAI Codex subscription models.");
-	return fetchUsageWithHeaders(await buildHeaders(ctx, model), signal);
+	const boundedSignal = requestSignal(signal);
+	const headers = await withAbort(buildHeaders(ctx, model), boundedSignal);
+	return fetchUsageWithHeaders(headers, boundedSignal);
 }
 
 async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal): Promise<number | undefined> {
 	const model = ctx.model as RuntimeModel | undefined;
 	if (!isCanonicalCodexModel(model)) return undefined;
-	const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-	const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+	const combinedSignal = requestSignal(signal);
 	try {
 		const headers = await withAbort(buildHeaders(ctx, model), combinedSignal);
 		const key = accountKey(headers);
 		if (!key) return undefined;
-		weeklyUsageKeyByModel.set(model as object, key);
 		const cached = weeklyUsageCache.get(key);
 		if (cached && cached.expiresAt > Date.now()) return cached.value;
 		if (cached?.promise) return cached.promise;
@@ -189,27 +186,8 @@ async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal)
 		weeklyUsageCache.set(key, entry);
 		return promise;
 	} catch {
-		const previousKey = weeklyUsageKeyByModel.get(model as object);
-		return previousKey ? weeklyUsageCache.get(previousKey)?.value : undefined;
+		return undefined;
 	}
-}
-
-function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const onAbort = () => reject(signal.reason);
-		promise.then(
-			(value) => {
-				signal.removeEventListener("abort", onAbort);
-				resolve(value);
-			},
-			(error) => {
-				signal.removeEventListener("abort", onAbort);
-				reject(error);
-			},
-		);
-		if (signal.aborted) onAbort();
-		else signal.addEventListener("abort", onAbort, { once: true });
-	});
 }
 
 function createRedeemRequestId(): string {
@@ -220,7 +198,8 @@ async function resolveResetAccount(ctx: ExtensionContext, signal?: AbortSignal):
 	const model = ctx.model as RuntimeModel | undefined;
 	if (!model) throw new Error("No active model selected.");
 	if (model.provider !== "openai-codex") throw new Error("Codex reset credits are only available for OpenAI Codex subscription models.");
-	const headers = await withOptionalAbort(buildHeaders(ctx, model), signal);
+	const boundedSignal = requestSignal(signal);
+	const headers = await withAbort(buildHeaders(ctx, model), boundedSignal);
 	const key = accountKey(headers);
 	if (!key) throw new Error("Canonical OpenAI Codex subscription auth is required.");
 	return { key, headers };
@@ -241,10 +220,6 @@ async function consumeResetCredit(headers: Headers, redeemRequestId: string, sig
 		if (key) weeklyUsageCache.delete(key);
 	}
 	return result;
-}
-
-function withOptionalAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-	return signal ? withAbort(promise, signal) : promise;
 }
 
 function usageBar(percent: number | undefined): string {
@@ -307,6 +282,33 @@ function formatResetResult(result: ResetResult): string {
 	if (result.outcome === "nothing_to_reset") return "No active Codex limit to reset.";
 	if (result.outcome === "no_credit") return "No banked resets available.";
 	return "Reset response was not recognized; refreshed usage.";
+}
+
+function runResetRequest(
+	state: ResetRequestState,
+	headers: Headers,
+	signal: AbortSignal | undefined,
+	consume: typeof consumeResetCredit = consumeResetCredit,
+): Promise<ResetResult> {
+	state.phase = "pending";
+	state.message = undefined;
+	const promise = consume(headers, state.requestId, signal)
+		.then((result) => {
+			state.phase = "locked";
+			state.message = {
+				kind: result.outcome === "reset" || result.outcome === "already_redeemed" ? "info" : "error",
+				text: formatResetResult(result),
+			};
+			return result;
+		})
+		.catch((error) => {
+			state.phase = "ambiguous";
+			state.message = { kind: "error", text: error instanceof Error ? error.message : String(error) };
+			throw error;
+		})
+		.finally(() => { state.promise = undefined; });
+	state.promise = promise;
+	return promise;
 }
 
 function visibleUsageLimits(snapshot: UsageSnapshot): UsageLimit[] {
@@ -493,23 +495,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 
 			resetArmed = false;
 			const state: ResetRequestState = existing ?? { requestId: createRedeemRequestId(), phase: "pending" };
-			state.phase = "pending";
-			state.message = undefined;
-			state.promise = consumeResetCredit(account.headers, state.requestId, shutdownSignal)
-				.then((result) => {
-					state.phase = "locked";
-					state.message = {
-						kind: result.outcome === "reset" || result.outcome === "already_redeemed" ? "info" : "error",
-						text: formatResetResult(result),
-					};
-					return result;
-				})
-				.catch((error) => {
-					state.phase = "ambiguous";
-					state.message = { kind: "error", text: error instanceof Error ? error.message : String(error) };
-					throw error;
-				})
-				.finally(() => { state.promise = undefined; });
+			runResetRequest(state, account.headers, shutdownSignal);
 			resetRequestStateByAccount.set(account.key, state);
 			watchReset(state);
 			render();
@@ -591,6 +577,11 @@ function setStatus(ctx: ExtensionContext, weeklyLeft?: number): void {
 		// UI contexts may become stale during reload or shutdown.
 	}
 }
+
+export const __testing = Object.freeze({
+	fetchWeeklyUsageLeft,
+	runResetRequest,
+});
 
 export default function codexEnhanced(pi: ExtensionAPI) {
 	let generation = 0;

@@ -5,7 +5,8 @@ export const FOCUS_IN = "\x1b[I";
 export const FOCUS_OUT = "\x1b[O";
 
 const PATCHED = Symbol.for("milo.pi.terminal-focus-cursor.patched");
-const WRAPPED_FACTORY = Symbol.for("milo.pi.terminal-focus-cursor.wrapped-factory");
+const EDITOR_FACTORY_LAYERS = Symbol.for("milo.pi.editor-factory-layers.v1");
+const FOCUS_LAYER_ID = "terminal-focus-cursor";
 const INVERSE_VIDEO_SPAN = /\x1b\[7m([\s\S]*?)\x1b\[(?:0|27)m/g;
 
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
@@ -16,9 +17,47 @@ type PatchableEditor = EditorComponent & {
 	[PATCHED]?: true;
 };
 
-type WrappedEditorFactory = EditorFactory & {
-	[WRAPPED_FACTORY]?: { baseFactory: EditorFactory | undefined };
+type EditorLayerBuilder = (baseFactory: EditorFactory | undefined) => EditorFactory;
+type EditorLayerMetadata = {
+	version: 1;
+	baseFactory: EditorFactory | undefined;
+	layers: Map<string, EditorLayerBuilder>;
 };
+type LayeredEditorFactory = EditorFactory & {
+	[EDITOR_FACTORY_LAYERS]?: unknown;
+};
+
+function editorLayerMetadata(factory: EditorFactory | undefined): EditorLayerMetadata | undefined {
+	const metadata = (factory as LayeredEditorFactory | undefined)?.[EDITOR_FACTORY_LAYERS];
+	if (!metadata || typeof metadata !== "object") return undefined;
+	const candidate = metadata as Partial<EditorLayerMetadata>;
+	if (candidate.version !== 1 || !(candidate.layers instanceof Map)) return undefined;
+	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function") return undefined;
+	for (const [id, layer] of candidate.layers) {
+		if (typeof id !== "string" || typeof layer !== "function") return undefined;
+	}
+	return candidate as EditorLayerMetadata;
+}
+
+function installEditorLayer(
+	currentFactory: EditorFactory | undefined,
+	layerId: string,
+	layer: EditorLayerBuilder,
+): EditorFactory {
+	const currentMetadata = editorLayerMetadata(currentFactory);
+	const baseFactory = currentMetadata?.baseFactory ?? currentFactory;
+	const layers = new Map(currentMetadata?.layers ?? []);
+	layers.set(layerId, layer);
+
+	let rebuiltFactory = baseFactory;
+	for (const buildLayer of layers.values()) rebuiltFactory = buildLayer(rebuiltFactory);
+	if (!rebuiltFactory) throw new Error("Editor layer did not produce a factory.");
+	Object.defineProperty(rebuiltFactory, EDITOR_FACTORY_LAYERS, {
+		configurable: true,
+		value: { version: 1, baseFactory, layers } satisfies EditorLayerMetadata,
+	});
+	return rebuiltFactory;
+}
 
 export interface EditorUI {
 	getEditorComponent(): EditorFactory | undefined;
@@ -45,6 +84,8 @@ export interface EditorFocus {
 export function isFocusEvent(data: string): boolean {
 	return data === FOCUS_IN || data === FOCUS_OUT;
 }
+
+export const __testing = Object.freeze({ installEditorLayer });
 
 export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocusDependencies): EditorFocus {
 	let paneFocused = true;
@@ -110,16 +151,15 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 			if (installTimer !== undefined) scheduler.clearTimeout(installTimer);
 			installTimer = scheduler.setTimeout(() => {
 				installTimer = undefined;
-				const previousFactory = ui.getEditorComponent() as WrappedEditorFactory | undefined;
-				const baseFactory = previousFactory?.[WRAPPED_FACTORY]?.baseFactory ?? previousFactory;
-				const focusCursorFactory = ((nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
-					const nextEditor = baseFactory
-						? baseFactory(nextTui, theme, keybindings)
-						: createDefaultEditor(nextTui, theme, keybindings);
-					return patchEditor(nextEditor as PatchableEditor, nextTui);
-				}) as WrappedEditorFactory;
-				focusCursorFactory[WRAPPED_FACTORY] = { baseFactory };
-				ui.setEditorComponent(focusCursorFactory);
+				const previousFactory = ui.getEditorComponent();
+				const focusLayer: EditorLayerBuilder = (baseFactory) =>
+					(nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
+						const nextEditor = baseFactory
+							? baseFactory(nextTui, theme, keybindings)
+							: createDefaultEditor(nextTui, theme, keybindings);
+						return patchEditor(nextEditor as PatchableEditor, nextTui);
+					};
+				ui.setEditorComponent(installEditorLayer(previousFactory, FOCUS_LAYER_ID, focusLayer));
 			}, 0);
 		},
 		cleanup() {

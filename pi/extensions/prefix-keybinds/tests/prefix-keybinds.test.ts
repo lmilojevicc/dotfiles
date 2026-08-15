@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { __testing } from "../index.ts";
+import prefixKeybindsExtension, { __testing } from "../index.ts";
+import { __testing as focusTesting } from "../../terminal-focus-cursor/editor-focus.ts";
 
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(join(path, ".."), { recursive: true });
@@ -138,6 +139,131 @@ test("editor wrapper dispatches bindings and forwards ordinary input", () => {
 	assert.equal(dispatched, 1);
 	assert.equal(ui.notifications.length, 0);
 	patched.dispose?.();
+});
+
+test("atomic persistence preserves permissions and cleans failed temporary files", () => {
+	const root = mkdtempSync(join(tmpdir(), "prefix-keybinds-persist-"));
+	try {
+		const target = join(root, "prefix.json");
+		writeFileSync(target, "old\n", { mode: 0o640 });
+		chmodSync(target, 0o640);
+		const next = { ...config(), loadedPaths: [target] };
+		const previousUmask = process.umask(0o077);
+		try {
+			assert.equal(__testing.persistConfig(root, next), target);
+		} finally {
+			process.umask(previousUmask);
+		}
+		assert.equal(statSync(target).mode & 0o777, 0o640, "existing mode survives a restrictive umask");
+		assert.equal(JSON.parse(readFileSync(target, "utf8")).prefixKey, "ctrl+x");
+		assert.deepEqual(readdirSync(root).filter((name) => name.includes(".tmp")), []);
+
+		const blocked = join(root, "blocked.json");
+		mkdirSync(blocked);
+		writeFileSync(join(blocked, "old.txt"), "old content");
+		assert.throws(() => __testing.persistConfig(root, { ...next, loadedPaths: [blocked] }));
+		assert.equal(readFileSync(join(blocked, "old.txt"), "utf8"), "old content");
+		assert.deepEqual(readdirSync(root).filter((name) => name.startsWith("blocked.json.") && name.endsWith(".tmp")), []);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("managed editor layers replace stale closures without growing chains in either order", () => {
+	for (const order of ["prefix-first", "focus-first"] as const) {
+		const calls: string[] = [];
+		const base = () => {
+			calls.push("base");
+			return {};
+		};
+		let factory = base as never;
+		const observedContexts: object[] = [];
+		const install = (session: number) => {
+			const context = { ui: { session }, cwd: `/session-${session}`, config: { session } };
+			const prefixLayer = (next: any) => (...args: any[]) => {
+				calls.push(`prefix:${session}`);
+				observedContexts.push(context);
+				return next?.(...args) ?? {};
+			};
+			const focusLayer = (next: any) => (...args: any[]) => {
+				calls.push(`focus:${session}`);
+				observedContexts.push(context);
+				return next?.(...args) ?? {};
+			};
+			if (order === "prefix-first") {
+				factory = __testing.installEditorLayer(factory, "prefix-keybinds", prefixLayer) as never;
+				factory = focusTesting.installEditorLayer(factory, "terminal-focus-cursor", focusLayer) as never;
+			} else {
+				factory = focusTesting.installEditorLayer(factory, "terminal-focus-cursor", focusLayer) as never;
+				factory = __testing.installEditorLayer(factory, "prefix-keybinds", prefixLayer) as never;
+			}
+		};
+
+		install(1);
+		(factory as any)({}, {}, {});
+		calls.length = 0;
+		install(2);
+		(factory as any)({}, {}, {});
+		const expectedOrder = order === "prefix-first"
+			? ["focus:2", "prefix:2", "base"]
+			: ["prefix:2", "focus:2", "base"];
+		assert.deepEqual(calls, expectedOrder, "layer execution order remains stable after replacement");
+		assert.equal(calls.some((value) => value.endsWith(":1")), false);
+		assert.equal(observedContexts.length, 4);
+		assert.equal(observedContexts.slice(-2).every((context: any) => context.cwd === "/session-2"), true);
+		const metadata = (factory as any)[Symbol.for("milo.pi.editor-factory-layers.v1")];
+		assert.equal(metadata.baseFactory, base);
+		assert.deepEqual(
+			[...metadata.layers.keys()],
+			order === "prefix-first"
+				? ["prefix-keybinds", "terminal-focus-cursor"]
+				: ["terminal-focus-cursor", "prefix-keybinds"],
+		);
+	}
+});
+
+test("session shutdown cancels deferred prefix installation", () => {
+	const handlers = new Map<string, Function>();
+	const originalSetTimeout = globalThis.setTimeout;
+	const originalClearTimeout = globalThis.clearTimeout;
+	let nextId = 0;
+	const pending = new Map<number, () => void>();
+	(globalThis as any).setTimeout = (callback: () => void) => {
+		const id = ++nextId;
+		pending.set(id, callback);
+		return id;
+	};
+	(globalThis as any).clearTimeout = (id: number) => pending.delete(id);
+	let installations = 0;
+	try {
+		prefixKeybindsExtension({
+			registerCommand() {},
+			on(event: string, handler: Function) { handlers.set(event, handler); },
+		} as never);
+		const ctx = {
+			hasUI: true,
+			cwd: process.cwd(),
+			ui: {
+				getEditorComponent: () => undefined,
+				setEditorComponent: () => installations++,
+				notify() {}, setStatus() {}, setWidget() {},
+				theme: { fg: (_color: string, value: string) => value },
+			},
+		};
+		handlers.get("session_start")?.({}, ctx);
+		assert.equal(pending.size, 1);
+		handlers.get("session_start")?.({}, { ...ctx, hasUI: false });
+		assert.equal(pending.size, 0, "a repeated non-UI start cancels the old deferred install");
+		handlers.get("session_start")?.({}, ctx);
+		assert.equal(pending.size, 1);
+		handlers.get("session_shutdown")?.({}, ctx);
+		assert.equal(pending.size, 0);
+		for (const callback of pending.values()) callback();
+		assert.equal(installations, 0);
+	} finally {
+		globalThis.setTimeout = originalSetTimeout;
+		globalThis.clearTimeout = originalClearTimeout;
+	}
 });
 
 test("editor wrapper cancels, times out, and composes original disposal", async () => {

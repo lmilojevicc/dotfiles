@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -67,6 +67,26 @@ test("persists toggles in a temporary agent directory", () => {
 
 		assert.equal(toggleFavorite(model, agentDir), false);
 		assert.deepEqual(readFavorites(agentDir), []);
+	});
+});
+
+test("atomic persistence preserves permissions and cleans failed temporary files", () => {
+	withAgentDir((agentDir) => {
+		const path = join(agentDir, "model-favorites.json");
+		writeFileSync(path, `${JSON.stringify({ favorites: [] })}\n`, { mode: 0o640 });
+		chmodSync(path, 0o640);
+		assert.equal(toggleFavorite({ provider: "provider", id: "model" }, agentDir), true);
+		assert.equal(statSync(path).mode & 0o777, 0o640);
+		assert.deepEqual(readdirSync(agentDir).filter((name) => name.includes(".tmp")), []);
+	});
+
+	withAgentDir((agentDir) => {
+		const path = join(agentDir, "model-favorites.json");
+		mkdirSync(path);
+		writeFileSync(join(path, "old.txt"), "old content");
+		assert.throws(() => toggleFavorite({ provider: "provider", id: "model" }, agentDir));
+		assert.equal(readFileSync(join(path, "old.txt"), "utf8"), "old content");
+		assert.deepEqual(readdirSync(agentDir).filter((name) => name.startsWith("model-favorites.json.") && name.endsWith(".tmp")), []);
 	});
 });
 

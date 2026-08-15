@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const FAVORITES_BASENAME = "model-favorites.json";
@@ -60,13 +60,30 @@ export function readFavorites(agentDir: string): string[] {
 
 function writeFavorites(favorites: string[], agentDir: string): void {
 	const path = favoritesPath(agentDir);
+	const temporaryPath = `${path}.${process.pid}.${globalThis.crypto.randomUUID()}.tmp`;
 	mkdirSync(dirname(path), { recursive: true });
 	const ids = [...new Set(favorites)];
-	writeFileSync(
-		path,
-		`${JSON.stringify({ favorites: ids } satisfies FavoriteStore, null, "\t")}\n`,
-		"utf8",
-	);
+	let mode = 0o666;
+	try {
+		mode = statSync(path).mode & 0o777;
+	} catch {
+		// New files retain writeFileSync's previous default permissions, subject to umask.
+	}
+	try {
+		writeFileSync(
+			temporaryPath,
+			`${JSON.stringify({ favorites: ids } satisfies FavoriteStore, null, "\t")}\n`,
+			{ encoding: "utf8", mode },
+		);
+		renameSync(temporaryPath, path);
+	} catch (error) {
+		try {
+			unlinkSync(temporaryPath);
+		} catch {
+			// The temporary file may not have been created.
+		}
+		throw error;
+	}
 	favoritesCache.delete(path);
 }
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -121,7 +121,8 @@ const DEFAULT_BINDINGS: Record<string, PrefixAction> = {
 };
 
 const PATCHED = Symbol.for("milo.pi.prefix-keybinds.patched");
-const WRAPPED_FACTORY = Symbol.for("milo.pi.prefix-keybinds.wrapped-factory");
+const EDITOR_FACTORY_LAYERS = Symbol.for("milo.pi.editor-factory-layers.v1");
+const PREFIX_LAYER_ID = "prefix-keybinds";
 
 type RawBinding =
 	| PrefixAction
@@ -180,9 +181,47 @@ type PrefixEditor = EditorComponent & {
 	[PATCHED]?: true;
 };
 
-type PrefixEditorFactory = EditorFactory & {
-	[WRAPPED_FACTORY]?: { baseFactory?: EditorFactory };
+type EditorLayerBuilder = (baseFactory: EditorFactory | undefined) => EditorFactory;
+type EditorLayerMetadata = {
+	version: 1;
+	baseFactory: EditorFactory | undefined;
+	layers: Map<string, EditorLayerBuilder>;
 };
+type LayeredEditorFactory = EditorFactory & {
+	[EDITOR_FACTORY_LAYERS]?: unknown;
+};
+
+function editorLayerMetadata(factory: EditorFactory | undefined): EditorLayerMetadata | undefined {
+	const metadata = (factory as LayeredEditorFactory | undefined)?.[EDITOR_FACTORY_LAYERS];
+	if (!metadata || typeof metadata !== "object") return undefined;
+	const candidate = metadata as Partial<EditorLayerMetadata>;
+	if (candidate.version !== 1 || !(candidate.layers instanceof Map)) return undefined;
+	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function") return undefined;
+	for (const [id, layer] of candidate.layers) {
+		if (typeof id !== "string" || typeof layer !== "function") return undefined;
+	}
+	return candidate as EditorLayerMetadata;
+}
+
+function installEditorLayer(
+	currentFactory: EditorFactory | undefined,
+	layerId: string,
+	layer: EditorLayerBuilder,
+): EditorFactory {
+	const currentMetadata = editorLayerMetadata(currentFactory);
+	const baseFactory = currentMetadata?.baseFactory ?? currentFactory;
+	const layers = new Map(currentMetadata?.layers ?? []);
+	layers.set(layerId, layer);
+
+	let rebuiltFactory = baseFactory;
+	for (const buildLayer of layers.values()) rebuiltFactory = buildLayer(rebuiltFactory);
+	if (!rebuiltFactory) throw new Error("Editor layer did not produce a factory.");
+	Object.defineProperty(rebuiltFactory, EDITOR_FACTORY_LAYERS, {
+		configurable: true,
+		value: { version: 1, baseFactory, layers } satisfies EditorLayerMetadata,
+	});
+	return rebuiltFactory;
+}
 
 let runtimeState: RuntimeState | undefined;
 let prefixPaletteOpen = false;
@@ -401,8 +440,29 @@ function rawConfigFromResolved(config: ResolvedConfig): RawConfig {
 
 function persistConfig(cwd: string, config: ResolvedConfig): string {
 	const path = configWritePath(cwd, config.loadedPaths);
+	const temporaryPath = `${path}.${process.pid}.${globalThis.crypto.randomUUID()}.tmp`;
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(rawConfigFromResolved(config), null, 2)}\n`);
+	let existingMode: number | undefined;
+	try {
+		existingMode = statSync(path).mode & 0o777;
+	} catch {
+		// New files retain writeFileSync's previous default permissions, subject to umask.
+	}
+	try {
+		writeFileSync(temporaryPath, `${JSON.stringify(rawConfigFromResolved(config), null, 2)}\n`, {
+			encoding: "utf8",
+			mode: existingMode ?? 0o666,
+		});
+		if (existingMode !== undefined) chmodSync(temporaryPath, existingMode);
+		renameSync(temporaryPath, path);
+	} catch (error) {
+		try {
+			unlinkSync(temporaryPath);
+		} catch {
+			// The temporary file may not have been created.
+		}
+		throw error;
+	}
 	runtimeState = { cwd, config: { ...config, loadedPaths: [path] }, warnings: [] };
 	return path;
 }
@@ -915,11 +975,14 @@ function patchWithPrefix(
 
 export const __testing = Object.freeze({
 	configWritePath,
+	installEditorLayer,
 	loadConfig,
 	patchWithPrefix,
+	persistConfig,
 });
 
 export default function (pi: ExtensionAPI) {
+	let installTimer: ReturnType<typeof setTimeout> | undefined;
 	pi.registerCommand("prefix-keybinds", {
 		description: "Show or configure prefix keybindings",
 		getArgumentCompletions: commandCompletions,
@@ -932,6 +995,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		if (installTimer !== undefined) clearTimeout(installTimer);
+		installTimer = undefined;
 		if (!ctx.hasUI) return;
 
 		runtimeState = loadState(ctx.cwd);
@@ -941,21 +1006,23 @@ export default function (pi: ExtensionAPI) {
 
 		// Defer so UI/theme extensions that install an editor during session_start
 		// (for example pi-zentui) run first; then wrap whatever editor is active.
-		setTimeout(() => {
-			const previousFactory = ctx.ui.getEditorComponent() as PrefixEditorFactory | undefined;
-			const baseFactory = previousFactory?.[WRAPPED_FACTORY]?.baseFactory ?? previousFactory;
-
-			const prefixFactory = ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
-				const editor = baseFactory ? baseFactory(tui, theme, keybindings) : new CustomEditor(tui, theme, keybindings);
-				return patchWithPrefix(editor as PrefixEditor, ctx.ui, () => ensureState(ctx.cwd).config);
-			}) as PrefixEditorFactory;
-			prefixFactory[WRAPPED_FACTORY] = { baseFactory };
-
-			ctx.ui.setEditorComponent(prefixFactory);
+		installTimer = setTimeout(() => {
+			installTimer = undefined;
+			const previousFactory = ctx.ui.getEditorComponent() as EditorFactory | undefined;
+			const prefixLayer: EditorLayerBuilder = (baseFactory) =>
+				(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
+					const editor = baseFactory
+						? baseFactory(tui, theme, keybindings)
+						: new CustomEditor(tui, theme, keybindings);
+					return patchWithPrefix(editor as PrefixEditor, ctx.ui, () => ensureState(ctx.cwd).config);
+				};
+			ctx.ui.setEditorComponent(installEditorLayer(previousFactory, PREFIX_LAYER_ID, prefixLayer));
 		}, 0);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		if (installTimer !== undefined) clearTimeout(installTimer);
+		installTimer = undefined;
 		clearPrefixActiveState(ctx.ui);
 	});
 }

@@ -22,4 +22,4 @@ Pi discovers these packages through the `~/.pi/agent/extensions` directory symli
 
 - `herdr-agent-state.ts` and `seshagy-agent-state.ts` are generated third-party files; do not edit them.
 - `pi-tool-display/` and `subagent/` are configuration-only directories, not locally managed packages.
-- Keep Awake is intentionally excluded: it is user-deleted and is not a managed package.
+- Keep Awake is outside this migration; its deletion remains a separate user working-tree change.

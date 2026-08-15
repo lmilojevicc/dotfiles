@@ -9,14 +9,17 @@ import test from "node:test";
 type Deferred = {
 	promise: Promise<unknown>;
 	resolve: (value: unknown) => void;
+	reject: (error: unknown) => void;
 };
 
 function deferred(): Deferred {
 	let resolve!: (value: unknown) => void;
-	const promise = new Promise<unknown>((done) => {
+	let reject!: (error: unknown) => void;
+	const promise = new Promise<unknown>((done, fail) => {
 		resolve = done;
+		reject = fail;
 	});
-	return { promise, resolve };
+	return { promise, resolve, reject };
 }
 
 const successfulTitle = {
@@ -35,6 +38,7 @@ test("background naming returns immediately and ignores stale completions", asyn
 		const loaderUrl = pathToFileURL(join(dirname(piExecutable), "core/extensions/loader.js")).href;
 		const { createExtensionRuntime, loadExtensions } = await import(loaderUrl);
 		const completions: Deferred[] = [];
+		const notifications: string[] = [];
 		let sessionName: string | undefined;
 		const runtime = createExtensionRuntime();
 		runtime.getSessionName = () => sessionName;
@@ -49,7 +53,8 @@ test("background naming returns immediately and ignores stale completions", asyn
 		const handlers = loaded.extensions[0].handlers;
 		const model = { provider: "test", id: "fast", name: "Fast" };
 		const ctx = {
-			hasUI: false,
+			hasUI: true,
+			ui: { notify: (message: string) => notifications.push(message) },
 			model,
 			modelRegistry: {
 				getAvailable: () => [model],
@@ -92,6 +97,14 @@ test("background naming returns immediately and ignores stale completions", asyn
 		completions[2].resolve(successfulTitle);
 		await new Promise((resolve) => setImmediate(resolve));
 		assert.equal(sessionName, undefined, "completion from an invalidated session was ignored");
+
+		invoke("session_start", {}, ctx);
+		invoke("before_agent_start", { prompt: "Rejected prompt" }, ctx);
+		const secret = "secret-token\u001b[31m";
+		completions[3].reject(new Error(secret));
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.equal(notifications.at(-1), "Session auto-rename failed.");
+		assert.equal(notifications.some((message) => message.includes(secret)), false);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;

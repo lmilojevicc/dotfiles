@@ -224,8 +224,8 @@ async function configureModel(
 			`Session auto-rename model set to ${selectedId}. It applies to the first prompt in a new /new session.`,
 			"info",
 		);
-	} catch (error) {
-		notifyWarning(ctx, `Could not save ${CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`);
+	} catch {
+		notifyWarning(ctx, "Could not save session auto-rename configuration.");
 	}
 }
 
@@ -265,9 +265,9 @@ export default function sessionAutoRename(pi: ExtensionAPI): void {
 		activeController = controller;
 
 		void generateTitle(event.prompt, ctx, config, token, () => sessionToken, controller.signal, pi)
-			.catch((error) => {
+			.catch(() => {
 				if (!controller.signal.aborted && token === sessionToken) {
-					notifyWarning(ctx, `Session auto-rename failed: ${error instanceof Error ? error.message : String(error)}`);
+					notifyWarning(ctx, "Session auto-rename failed.");
 				}
 			})
 			.finally(() => {

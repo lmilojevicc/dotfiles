@@ -154,6 +154,21 @@ async function readWithSignal(
   });
 }
 
+function cancelAndReleaseReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    void reader.cancel().catch(() => undefined);
+  } catch {
+    // Cleanup failures are intentionally opaque.
+  } finally {
+    try { reader.releaseLock(); } catch { /* pending reads release after cancellation */ }
+  }
+}
+
+function cancelBody(body: ReadableStream<Uint8Array> | null): void {
+  if (!body) return;
+  try { void body.cancel().catch(() => undefined); } catch { /* opaque cleanup failure */ }
+}
+
 async function readBoundedJson(response: Response, signal: AbortSignal, validate: JsonValidator): Promise<JsonObject> {
   if (!response.body) throw new UsageProtocolError("Command Code returned invalid usage data.");
   const reader = response.body.getReader();
@@ -177,8 +192,8 @@ async function readBoundedJson(response: Response, signal: AbortSignal, validate
     }
     text += decoder.decode();
   } finally {
-    if (!complete) await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
+    if (!complete) cancelAndReleaseReader(reader);
+    else reader.releaseLock();
   }
   try {
     const result = object(JSON.parse(text));
@@ -213,7 +228,7 @@ async function getJson(
     throw new CommandCodeUsageError("Unable to reach Command Code.");
   }
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
+    cancelBody(response.body);
     throw new UsageHttpError(response.status);
   }
   return await readBoundedJson(response, signal, validate);

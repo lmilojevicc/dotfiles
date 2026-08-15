@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,7 +36,7 @@ function plain(text: string): string {
 }
 
 test("searchable picker scrolls, filters, cancels, and preserves model identity", async () => {
-	const agentDir = mkdtempSync(join(tmpdir(), "pi-session-auto-rename-picker-"));
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-session-auto-rename-secret\u001b[31m-picker-"));
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	const configuredId = fullId(entries[18]);
@@ -187,7 +187,15 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 
 		ctx.modelRegistry.getAvailable = () => duplicateModels;
 		await command.handler("provider-a/shared", { ...ctx, mode: "rpc" } as never);
-		assert.equal(JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model, "provider-a/shared");
+		const configPath = join(agentDir, "session-auto-rename.json");
+		assert.equal(JSON.parse(readFileSync(configPath, "utf8")).model, "provider-a/shared");
+
+		rmSync(configPath);
+		mkdirSync(configPath);
+		await command.handler("provider-b/shared", { ...ctx, mode: "rpc" } as never);
+		assert.equal(notifications.at(-1), "Could not save session auto-rename configuration.");
+		assert.equal(notifications.at(-1)?.includes(agentDir), false);
+		assert.equal(notifications.at(-1)?.includes("\u001b"), false);
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
