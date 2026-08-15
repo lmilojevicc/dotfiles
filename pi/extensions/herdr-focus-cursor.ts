@@ -6,12 +6,12 @@
 // (its per-pane InputState tracks a `focus_reporting` flag), so the same
 // mechanism as tmux works here with no socket/RPC needed. Activates only
 // inside a herdr pane (HERDR_ENV=1); otherwise it does nothing.
-import { CustomEditor, type EditorFactory, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionAPI, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
-import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import { FocusEventScanner } from "./herdr-focus-cursor/focus-events.ts";
 
-const ENABLE_FOCUS_EVENTS = "\x1b[?1004h";
-const DISABLE_FOCUS_EVENTS = "\x1b[?1004l";
+type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
+
 const FOCUS_IN = "\x1b[I";
 const FOCUS_OUT = "\x1b[O";
 
@@ -102,16 +102,26 @@ function patchEditor(editor: PatchableEditor, tui: TUI, state: FocusState): Patc
 
 export default function (pi: ExtensionAPI) {
 	const state: FocusState = { paneFocused: true };
+	const focusEventScanner = new FocusEventScanner();
 	let unsubscribeInput: (() => void) | undefined;
-	let focusEventsEnabled = false;
+	let rawInputListener: ((data: string | Buffer) => void) | undefined;
+	let installEditorTimer: NodeJS.Timeout | undefined;
 
 	pi.on("session_start", (_event, ctx) => {
 		// Load fully only inside a herdr pane. HERDR_ENV=1 is set by herdr's
 		// integration when pi runs in a herdr pane.
-		if (!ctx.hasUI || process.env.HERDR_ENV !== "1") return;
+		if (ctx.mode !== "tui" || process.env.HERDR_ENV !== "1") return;
 
-		process.stdout.write(ENABLE_FOCUS_EVENTS);
-		focusEventsEnabled = true;
+		// Fullscreen owns DECSET 1004 but consumes its focus reports before
+		// extensions. Observe raw stdin first so state changes before consumption.
+		if (rawInputListener) process.stdin.removeListener("data", rawInputListener);
+		focusEventScanner.reset();
+		rawInputListener = (data) => {
+			for (const focused of focusEventScanner.scan(data.toString())) {
+				setPaneFocused(state, focused);
+			}
+		};
+		process.stdin.prependListener("data", rawInputListener);
 
 		unsubscribeInput?.();
 		unsubscribeInput = ctx.ui.onTerminalInput((data) => {
@@ -123,7 +133,9 @@ export default function (pi: ExtensionAPI) {
 
 		// Defer so UI/theme/editor extensions that run during session_start can
 		// install first; then patch whatever editor factory is currently active.
-		setTimeout(() => {
+		if (installEditorTimer) clearTimeout(installEditorTimer);
+		installEditorTimer = setTimeout(() => {
+			installEditorTimer = undefined;
 			const previousFactory = ctx.ui.getEditorComponent() as WrappedEditorFactory | undefined;
 			const baseFactory = previousFactory?.[WRAPPED_FACTORY]?.baseFactory ?? previousFactory;
 
@@ -143,12 +155,12 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		unsubscribeInput?.();
 		unsubscribeInput = undefined;
+		if (installEditorTimer) clearTimeout(installEditorTimer);
+		installEditorTimer = undefined;
+		if (rawInputListener) process.stdin.removeListener("data", rawInputListener);
+		rawInputListener = undefined;
+		focusEventScanner.reset();
 		state.editor = undefined;
 		state.tui = undefined;
-
-		if (focusEventsEnabled) {
-			process.stdout.write(DISABLE_FOCUS_EVENTS);
-			focusEventsEnabled = false;
-		}
 	});
 }
