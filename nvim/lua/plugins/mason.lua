@@ -34,7 +34,6 @@ return {
         "bashls",
         "biome",
         "clangd",
-        "cmake",
         "cssls",
         "docker_language_server",
         "emmet_language_server",
