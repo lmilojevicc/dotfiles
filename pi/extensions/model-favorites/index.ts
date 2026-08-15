@@ -1,5 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import {
 	getAgentDir,
 	getSelectListTheme,
@@ -9,10 +7,15 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { modelsAreEqual, type Model } from "@earendil-works/pi-ai";
 import { fuzzyFilter, matchesKey, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	applyPrototypePatchOnce,
+	fullModelId,
+	readFavorites,
+	sortWithFavorites,
+	toggleFavorite,
+} from "./favorites.ts";
 
-const PATCHED = Symbol.for("milo.pi.model-favorites.patched");
 const FAVORITE_KEY = "ctrl+f";
-const FAVORITES_PATH = join(getAgentDir(), "model-favorites.json");
 const MAX_VISIBLE = 10;
 const FAVORITE_MARK = "★";
 
@@ -20,10 +23,6 @@ type ModelItem = {
 	provider: string;
 	id: string;
 	model: Model<any>;
-};
-
-type FavoriteStore = {
-	favorites?: string[];
 };
 
 type MutableModelSelector = {
@@ -49,62 +48,12 @@ type MutableModelSelector = {
 };
 
 type ModelSelectorPrototype = {
-	[PATCHED]?: true;
 	loadModels: (this: MutableModelSelector) => Promise<void>;
 	sortModels: (this: MutableModelSelector, models: ModelItem[]) => ModelItem[];
 	filterModels: (this: MutableModelSelector, query: string) => void;
 	updateList: (this: MutableModelSelector) => void;
 	handleInput: (this: MutableModelSelector, data: string) => void;
 };
-
-/** Cache favorites between keystrokes; invalidated on write. */
-let favoritesCache: { ids: string[]; fingerprint: number } | undefined;
-
-function favoritesFingerprint(): number {
-	try {
-		if (!existsSync(FAVORITES_PATH)) return 0;
-		const st = statSync(FAVORITES_PATH);
-		return st.mtimeMs + st.size;
-	} catch {
-		return 0;
-	}
-}
-
-function readFavorites(): string[] {
-	const fp = favoritesFingerprint();
-	if (favoritesCache && favoritesCache.fingerprint === fp) return favoritesCache.ids;
-
-	try {
-		if (!existsSync(FAVORITES_PATH)) {
-			favoritesCache = { ids: [], fingerprint: fp };
-			return [];
-		}
-		const parsed = JSON.parse(readFileSync(FAVORITES_PATH, "utf8")) as FavoriteStore;
-		const ids = Array.isArray(parsed.favorites)
-			? parsed.favorites.filter((value): value is string => typeof value === "string" && value.length > 0)
-			: [];
-		favoritesCache = { ids, fingerprint: fp };
-		return ids;
-	} catch {
-		favoritesCache = { ids: [], fingerprint: fp };
-		return [];
-	}
-}
-
-function writeFavorites(favorites: string[]): void {
-	mkdirSync(dirname(FAVORITES_PATH), { recursive: true });
-	const ids = [...new Set(favorites)];
-	writeFileSync(
-		FAVORITES_PATH,
-		`${JSON.stringify({ favorites: ids } satisfies FavoriteStore, null, "\t")}\n`,
-		"utf8",
-	);
-	favoritesCache = undefined;
-}
-
-function fullModelId(model: Pick<Model<any>, "provider" | "id">): string {
-	return `${model.provider}/${model.id}`;
-}
 
 /**
  * Match upstream getModelSelectorSearchText (not a public export):
@@ -120,38 +69,20 @@ function getModelSelectorSearchText(item: {
 }
 
 function favoriteIndexById(): Map<string, number> {
-	return new Map(readFavorites().map((id, index) => [id, index]));
+	return new Map(readFavorites(getAgentDir()).map((id, index) => [id, index]));
 }
 
 function isFavoriteIn(model: Model<any> | undefined, favoriteIndex: Map<string, number>): boolean {
 	return !!model && favoriteIndex.has(fullModelId(model));
 }
 
-function sortWithFavorites(items: ModelItem[], currentModel?: Model<any>): ModelItem[] {
-	const favoriteIndex = favoriteIndexById();
-	return [...items].sort((a, b) => {
-		const aFavoriteIndex = favoriteIndex.get(fullModelId(a.model));
-		const bFavoriteIndex = favoriteIndex.get(fullModelId(b.model));
-
-		if (aFavoriteIndex !== undefined || bFavoriteIndex !== undefined) {
-			if (aFavoriteIndex === undefined) return 1;
-			if (bFavoriteIndex === undefined) return -1;
-			return aFavoriteIndex - bFavoriteIndex;
-		}
-
-		const aIsCurrent = modelsAreEqual(currentModel, a.model);
-		const bIsCurrent = modelsAreEqual(currentModel, b.model);
-		if (aIsCurrent && !bIsCurrent) return -1;
-		if (!aIsCurrent && bIsCurrent) return 1;
-
-		const providerOrder = a.provider.localeCompare(b.provider);
-		return providerOrder !== 0 ? providerOrder : a.id.localeCompare(b.id);
-	});
+function sortSelectorModels(items: ModelItem[], currentModel?: Model<any>): ModelItem[] {
+	return sortWithFavorites(items, currentModel, readFavorites(getAgentDir()));
 }
 
 function reorderSelectorModels(selector: MutableModelSelector): void {
-	selector.allModels = sortWithFavorites(selector.allModels, selector.currentModel);
-	selector.scopedModelItems = sortWithFavorites(selector.scopedModelItems, selector.currentModel);
+	selector.allModels = sortSelectorModels(selector.allModels, selector.currentModel);
+	selector.scopedModelItems = sortSelectorModels(selector.scopedModelItems, selector.currentModel);
 	selector.activeModels = selector.scope === "scoped" ? selector.scopedModelItems : selector.allModels;
 }
 
@@ -203,19 +134,6 @@ function restoreSelection(selector: MutableModelSelector, previousId?: string): 
 		selector.selectedIndex,
 		Math.max(0, selector.filteredModels.length - 1),
 	);
-}
-
-function toggleFavorite(model: Model<any>): boolean {
-	const id = fullModelId(model);
-	const favorites = readFavorites();
-	const index = favorites.indexOf(id);
-	if (index >= 0) {
-		writeFavorites([...favorites.slice(0, index), ...favorites.slice(index + 1)]);
-		return false;
-	}
-
-	writeFavorites([...favorites, id]);
-	return true;
 }
 
 function listTheme() {
@@ -328,10 +246,7 @@ function renderFavoriteAwareList(selector: MutableModelSelector): void {
 	);
 }
 
-function patchModelSelector(): void {
-	const proto = ModelSelectorComponent.prototype as unknown as ModelSelectorPrototype;
-	if (proto[PATCHED]) return;
-
+function patchModelSelectorPrototype(proto: ModelSelectorPrototype): void {
 	const originalLoadModels = proto.loadModels;
 	const originalHandleInput = proto.handleInput;
 
@@ -346,7 +261,7 @@ function patchModelSelector(): void {
 		this: MutableModelSelector,
 		models: ModelItem[],
 	): ModelItem[] {
-		return sortWithFavorites(models, this.currentModel);
+		return sortSelectorModels(models, this.currentModel);
 	};
 
 	proto.filterModels = function filterModelsWithFavorites(
@@ -380,7 +295,7 @@ function patchModelSelector(): void {
 			const item = this.filteredModels[this.selectedIndex];
 			if (!item) return;
 			const id = fullModelId(item.model);
-			toggleFavorite(item.model);
+			toggleFavorite(item.model, getAgentDir());
 			reorderSelectorModels(this);
 			this.filterModels(this.searchInput.getValue());
 			selectPreferredModel(this, id);
@@ -391,8 +306,11 @@ function patchModelSelector(): void {
 
 		originalHandleInput.call(this, data);
 	};
+}
 
-	proto[PATCHED] = true;
+function patchModelSelector(): void {
+	const proto = ModelSelectorComponent.prototype as unknown as ModelSelectorPrototype;
+	applyPrototypePatchOnce(proto, () => patchModelSelectorPrototype(proto));
 }
 
 export default function modelFavoritesExtension(_pi: ExtensionAPI): void {
