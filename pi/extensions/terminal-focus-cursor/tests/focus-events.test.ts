@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 
-import { FocusEventScanner } from "../extensions/herdr-focus-cursor/focus-events.ts";
+import { FocusEventScanner } from "../focus-events.ts";
 
 const FOCUS_IN = "\x1b[I";
 const FOCUS_OUT = "\x1b[O";
