@@ -440,13 +440,22 @@ function parseFormattedMappingKey(value: string | undefined): string | undefined
 
 class PrefixCommandPaletteComponent implements Component {
 	private selected = 0;
+	private readonly done: (binding: ResolvedBinding | undefined) => void;
+	private readonly tui: TUI;
+	private readonly theme: Theme;
+	private readonly config: ResolvedConfig;
 
 	constructor(
-		private readonly done: (binding: ResolvedBinding | undefined) => void,
-		private readonly tui: TUI,
-		private readonly theme: Theme,
-		private readonly config: ResolvedConfig,
-	) {}
+		done: (binding: ResolvedBinding | undefined) => void,
+		tui: TUI,
+		theme: Theme,
+		config: ResolvedConfig,
+	) {
+		this.done = done;
+		this.tui = tui;
+		this.theme = theme;
+		this.config = config;
+	}
 
 	invalidate(): void {}
 
@@ -903,6 +912,12 @@ function patchWithPrefix(
 	editor[PATCHED] = true;
 	return editor;
 }
+
+export const __testing = Object.freeze({
+	configWritePath,
+	loadConfig,
+	patchWithPrefix,
+});
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("prefix-keybinds", {
