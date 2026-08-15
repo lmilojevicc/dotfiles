@@ -147,7 +147,7 @@ function structuredErrorText(value: unknown, depth = 0): string {
     .join(" ");
 }
 
-function isTerminalAccountError(value: unknown): boolean {
+export function isTerminalAccountError(value: unknown): boolean {
   return TERMINAL_ACCOUNT_ERROR.test(structuredErrorText(value));
 }
 

@@ -17,6 +17,14 @@ cmd login
 
 The extension reads `~/.commandcode/auth.json` on each credential resolution. It never copies the API key into Pi's auth storage.
 
+## Installation
+
+From the repository root, install the local Pi package:
+
+```sh
+pi install ./pi/extensions/command-code
+```
+
 ## Usage command
 
 Run the following Pi command to open a responsive, dismissible account-usage view:
@@ -65,13 +73,14 @@ Requests identify themselves with the audited Command Code client contract: `Use
 
 ## Tests
 
+From the repository root:
+
 ```sh
-npm install --ignore-scripts
+cd pi/extensions/command-code
 npm test
-npm run typecheck
 ```
 
-Tests are local and mocked; they make no network calls and use no real credentials.
+Tests use Node's built-in test runner and Pi peer stubs, so they require no package installation. They are local and mocked; they make no network calls and use no real credentials.
 
 ## Optional paid smoke test
 
