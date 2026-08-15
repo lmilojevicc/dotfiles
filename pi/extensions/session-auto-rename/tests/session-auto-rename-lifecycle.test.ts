@@ -42,7 +42,7 @@ test("background naming returns immediately and ignores stale completions", asyn
 			sessionName = name;
 		};
 
-		const extensionPath = fileURLToPath(new URL("../extensions/session-auto-rename/index.ts", import.meta.url));
+		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
 		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
 		assert.deepEqual(loaded.errors, []);
 		assert.equal(loaded.extensions.length, 1);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeTitle } from "../extensions/session-auto-rename/title.ts";
+import { normalizeTitle } from "../title.ts";
 
 test("removes reasoning blocks and keeps the first nonblank title line", () => {
 	assert.equal(

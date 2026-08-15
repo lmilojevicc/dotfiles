@@ -47,7 +47,7 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		const loaderUrl = pathToFileURL(join(dirname(piExecutable), "core/extensions/loader.js")).href;
 		const { createExtensionRuntime, loadExtensions } = await import(loaderUrl);
 		const runtime = createExtensionRuntime();
-		const extensionPath = fileURLToPath(new URL("../extensions/session-auto-rename/index.ts", import.meta.url));
+		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
 		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
 		assert.deepEqual(loaded.errors, []);
 		const command = loaded.extensions[0]?.commands.get("session-auto-rename");
