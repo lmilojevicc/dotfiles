@@ -3,6 +3,12 @@ version = 1
 [packages.aerospace]
   links = [{ source = ".", target = "~/.config/aerospace" }]
 
+[packages.agent-instructions]
+  links = [
+    { source = "GEMINI.md", target = "~/.gemini/GEMINI.md" },
+    { source = "CLAUDE.md", target = "~/.claude/CLAUDE.md" },
+  ]
+
 [packages.bat]
   links = [{ source = ".", target = "~/.config/bat" }]
 
@@ -34,7 +40,7 @@ version = 1
   links = [{ source = ".", target = "~/.config/nvim" }]
 
 [packages.opencode]
-  links = [{ source = ".", target = "~/.config/opencode" }]
+  links = []
 
 [packages.pi]
   links = [
