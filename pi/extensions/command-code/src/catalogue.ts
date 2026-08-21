@@ -5,6 +5,23 @@ export const PROVIDER_NAME = "Command Code";
 export const COMMAND_CODE_API = "command-code" as const;
 export const COMMAND_CODE_BASE_URL = "https://api.commandcode.ai";
 export const GATEWAY_DEFAULT_MAX_TOKENS = 64_000;
+export const COMMAND_CODE_PRICING_METADATA = Object.freeze({
+  sourceUrl: "https://commandcode.ai/docs/resources/pricing-limits",
+  retrievedAt: "2026-08-21T12:52:28Z",
+  units: "USD per 1,000,000 tokens",
+  ratePolicy: "currently advertised primary flat token rate",
+  omittedCharges: Object.freeze([
+    "routing, ZDR, and provider-specific variation",
+    "temporary deals, time-of-day pricing, and long-context tiers",
+    "media, web-search, reasoning, fixed-request, and alternate cache charges",
+  ]),
+  verifiedFreeModelIds: Object.freeze([
+    "poolside/laguna-s-2.1-free",
+    "stealth/ox-alpha",
+  ]),
+  unknownPriceModelIds: Object.freeze([] as string[]),
+});
+export const COMMAND_CODE_UNKNOWN_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
 type Effort = Exclude<ModelThinkingLevel, "off">;
 type Seed = readonly [
@@ -20,11 +37,14 @@ type Seed = readonly [
 ];
 
 // Command Code 1.31.0 bundled fallback catalogue. Context windows come from the
-// Provider API. The five entries marked OpenRouter below use inferred output
-// limits where Command Code publishes none. Source retrieval date: 2026-08-21.
+// Provider API. Prices are Command Code's advertised primary rates in
+// COMMAND_CODE_PRICING_METADATA units, except IDs explicitly marked unknown.
+// Conditional charges are not representable by Pi's flat cost fields. The five
+// entries marked OpenRouter below use inferred
+// output limits only, never OpenRouter pricing.
 const seeds: readonly Seed[] = [
-  ["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro (latest)", 1_000_000, ["high", "max"], 0.435, 0.87, 0.003625],
-  ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash (latest)", 1_000_000, ["high", "max"], 0.14, 0.28, 0.0028],
+  ["deepseek/deepseek-v4-pro", "DeepSeek V4 Pro (latest)", 1_000_000, ["high", "max"], 0.66, 1.98, 0.022],
+  ["deepseek/deepseek-v4-flash", "DeepSeek V4 Flash (latest)", 1_000_000, ["high", "max"], 0.22, 0.66, 0.007],
   ["moonshotai/Kimi-K3", "Kimi K3", 1_000_000, [], 3, 15, 0.3],
   ["moonshotai/Kimi-K2.7-Code", "Kimi K2.7 Code", 256_000, [], 0.95, 4, 0.19],
   ["moonshotai/Kimi-K2.7-Code-Highspeed", "Kimi K2.7 Code HighSpeed", 262_000, [], 1.9, 8, 0.38],
@@ -67,14 +87,14 @@ const seeds: readonly Seed[] = [
   ["claude-opus-4-7", "Claude Opus 4.7", 1_000_000, ["low", "medium", "high", "xhigh", "max"], 5, 25, 0.5, 6.25],
   ["claude-haiku-4-5-20251001", "Claude Haiku 4.5", 200_000, [], 1, 5, 0.1, 1.25],
   ["gpt-5.6-sol", "GPT-5.6 Sol", 1_050_000, ["low", "medium", "high", "xhigh", "max"], 5, 30, 0.5, 6.25],
-  ["gpt-5.6-terra", "GPT-5.6 Terra", 1_050_000, ["low", "medium", "high", "xhigh", "max"], 1, 6, 0.1, 1.25],
-  ["gpt-5.6-luna", "GPT-5.6 Luna", 1_050_000, ["low", "medium", "high", "xhigh", "max"], 0.1, 0.6, 0.01, 0.125],
+  ["gpt-5.6-terra", "GPT-5.6 Terra", 1_050_000, ["low", "medium", "high", "xhigh", "max"], 2, 12, 0.2, 2.5],
+  ["gpt-5.6-luna", "GPT-5.6 Luna", 1_050_000, ["low", "medium", "high", "xhigh", "max"], 0.2, 1.2, 0.02, 0.25],
   // OpenRouter: https://openrouter.ai/api/v1/models/openai/gpt-5.5-20260423/endpoints
   ["gpt-5.5", "GPT-5.5", 400_000, ["low", "medium", "high", "xhigh"], 5, 30, 0.5, 0, 128_000],
   ["gpt-5.4", "GPT-5.4", 400_000, ["low", "medium", "high", "xhigh"], 2.5, 15, 0.25],
   ["gpt-5.3-codex", "GPT-5.3 Codex", 400_000, ["low", "medium", "high", "xhigh"], 2, 8, 0.5],
   ["gpt-5.4-mini", "GPT-5.4 Mini", 400_000, ["low", "medium", "high"], 0.75, 4.5, 0.075],
-  ["google/gemini-3.7-flash", "Gemini 3.7 Flash", 1_048_576, [], 0.75, 3.75, 0.075],
+  ["google/gemini-3.7-flash", "Gemini 3.7 Flash", 1_048_576, [], 0.75, 3.75, 0.075, 0.04167],
   ["google/gemini-3.6-flash", "Gemini 3.6 Flash", 1_000_000, ["low", "medium", "high"], 1.5, 7.5, 0.15],
   ["google/gemini-3.5-flash", "Gemini 3.5 Flash", 1_000_000, ["low", "medium", "high"], 1.5, 9, 0.15],
   ["google/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", 1_000_000, ["low", "medium", "high"], 0.3, 2.5, 0.03],
@@ -108,7 +128,9 @@ export const COMMAND_CODE_MODELS: readonly Model<typeof COMMAND_CODE_API>[] = se
     reasoning: efforts.length > 0,
     thinkingLevelMap: thinkingMap(efforts),
     input: ["text"],
-    cost: { input, output, cacheRead, cacheWrite },
+    cost: COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds.some((unknownId) => unknownId === id)
+      ? COMMAND_CODE_UNKNOWN_COST
+      : { input, output, cacheRead, cacheWrite },
     contextWindow,
     maxTokens,
   }),
@@ -183,7 +205,7 @@ export function mergeCommandCodeCatalogue(
       baseUrl: COMMAND_CODE_BASE_URL,
       reasoning: false,
       input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: COMMAND_CODE_UNKNOWN_COST,
       contextWindow: live.contextWindow,
       maxTokens: Math.min(GATEWAY_DEFAULT_MAX_TOKENS, live.contextWindow),
     };
@@ -299,6 +321,20 @@ export function validateBundledCatalogue(): void {
   }
   if (!COMMAND_CODE_MODELS.some((model) => model.id === "deepseek/deepseek-v4-flash")) {
     throw new Error("Command Code fallback catalogue is missing DeepSeek V4 Flash");
+  }
+
+  const verifiedFreeIds = new Set(COMMAND_CODE_PRICING_METADATA.verifiedFreeModelIds);
+  const unknownPriceIds = new Set(COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds);
+  const zeroPricedIds = COMMAND_CODE_MODELS
+    .filter((model) => Object.values(model.cost).every((cost) => cost === 0))
+    .map((model) => model.id);
+  const classifiedZeroIds = new Set([...verifiedFreeIds, ...unknownPriceIds]);
+  if (verifiedFreeIds.size !== COMMAND_CODE_PRICING_METADATA.verifiedFreeModelIds.length
+    || unknownPriceIds.size !== COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds.length
+    || classifiedZeroIds.size !== verifiedFreeIds.size + unknownPriceIds.size
+    || zeroPricedIds.length !== classifiedZeroIds.size
+    || zeroPricedIds.some((id) => !classifiedZeroIds.has(id))) {
+    throw new Error("Command Code free/unknown pricing metadata does not match the bundled catalogue");
   }
 }
 

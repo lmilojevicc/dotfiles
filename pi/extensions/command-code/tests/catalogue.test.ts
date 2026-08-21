@@ -4,6 +4,8 @@ import {
   COMMAND_CODE_API,
   COMMAND_CODE_CATALOGUE_LIMITS,
   COMMAND_CODE_MODELS,
+  COMMAND_CODE_PRICING_METADATA,
+  COMMAND_CODE_UNKNOWN_COST,
   GATEWAY_DEFAULT_MAX_TOKENS,
   PROVIDER_ID,
   mergeCommandCodeCatalogue,
@@ -12,6 +14,66 @@ import {
   validateBundledCatalogue,
   validateCatalogue,
 } from "../src/catalogue.ts";
+
+const expectedSnapshotCosts = new Map<string, readonly [number, number, number, number]>([
+  ["deepseek/deepseek-v4-pro", [0.66, 1.98, 0.022, 0]],
+  ["deepseek/deepseek-v4-flash", [0.22, 0.66, 0.007, 0]],
+  ["moonshotai/Kimi-K3", [3, 15, 0.3, 0]],
+  ["moonshotai/Kimi-K2.7-Code", [0.95, 4, 0.19, 0]],
+  ["moonshotai/Kimi-K2.7-Code-Highspeed", [1.9, 8, 0.38, 0]],
+  ["moonshotai/Kimi-K2.6", [0.95, 4, 0.16, 0]],
+  ["moonshotai/Kimi-K2.5", [0.6, 3, 0.1, 0]],
+  ["zai-org/GLM-5.3", [1.4, 4.4, 0.26, 0]],
+  ["zai-org/GLM-5.2", [1.4, 4.4, 0.26, 0]],
+  ["zai-org/GLM-5.2-Fast", [3, 10.25, 0.5, 0]],
+  ["zai-org/GLM-5.1", [1.4, 4.4, 0.26, 0]],
+  ["zai-org/GLM-5", [1, 3.2, 0.2, 0]],
+  ["MiniMaxAI/MiniMax-M3", [0.3, 1.2, 0.06, 0]],
+  ["MiniMaxAI/MiniMax-M2.7", [0.3, 1.2, 0.06, 0]],
+  ["MiniMaxAI/MiniMax-M2.5", [0.3, 1.2, 0.03, 0]],
+  ["xiaomi/mimo-v2.5-pro", [0.435, 0.87, 0.0036, 0]],
+  ["xiaomi/mimo-v2.5", [0.14, 0.28, 0.0028, 0]],
+  ["Qwen/Qwen3.8-Max", [2, 6, 0.25, 2.5]],
+  ["Qwen/Qwen3.8-27B", [0.4, 3, 0.04, 0]],
+  ["Qwen/Qwen3.7-Max", [2.5, 7.5, 0.5, 3.13]],
+  ["Qwen/Qwen3.7-Plus", [0.4, 1.6, 0.08, 0.5]],
+  ["Qwen/Qwen3.7-Flash", [0.03, 0.13, 0.006, 0.038]],
+  ["Qwen/Qwen3.6-Max-Preview", [1.3, 7.8, 0.26, 1.63]],
+  ["Qwen/Qwen3.6-Plus", [0.5, 3, 0.1, 0]],
+  ["stepfun/Step-3.7-Flash", [0.2, 1.15, 0.04, 0]],
+  ["stepfun/Step-3.5-Flash", [0.1, 0.3, 0.02, 0]],
+  ["tencent/hy3-paid", [0.14, 0.58, 0.035, 0]],
+  ["nvidia/nemotron-3-ultra-550b-a55b", [0.6, 2.4, 0.12, 0]],
+  ["thinkingmachines/inkling", [1, 4.05, 0.17, 0]],
+  ["thinkingmachines/inkling-small", [0.5, 1.2, 0.1, 0]],
+  ["poolside/laguna-s-2.1-free", [0, 0, 0, 0]],
+  ["claude-sonnet-5", [2, 10, 0.2, 2.5]],
+  ["claude-sonnet-4-6", [3, 15, 0.3, 3.75]],
+  ["claude-fable-5", [10, 50, 1, 12.5]],
+  ["claude-opus-5", [5, 25, 0.5, 6.25]],
+  ["claude-opus-4-8", [5, 25, 0.5, 6.25]],
+  ["claude-opus-4-7", [5, 25, 0.5, 6.25]],
+  ["claude-haiku-4-5-20251001", [1, 5, 0.1, 1.25]],
+  ["gpt-5.6-sol", [5, 30, 0.5, 6.25]],
+  ["gpt-5.6-terra", [2, 12, 0.2, 2.5]],
+  ["gpt-5.6-luna", [0.2, 1.2, 0.02, 0.25]],
+  ["gpt-5.5", [5, 30, 0.5, 0]],
+  ["gpt-5.4", [2.5, 15, 0.25, 0]],
+  ["gpt-5.3-codex", [2, 8, 0.5, 0]],
+  ["gpt-5.4-mini", [0.75, 4.5, 0.075, 0]],
+  ["google/gemini-3.7-flash", [0.75, 3.75, 0.075, 0.04167]],
+  ["google/gemini-3.6-flash", [1.5, 7.5, 0.15, 0]],
+  ["google/gemini-3.5-flash", [1.5, 9, 0.15, 0]],
+  ["google/gemini-3.5-flash-lite", [0.3, 2.5, 0.03, 0]],
+  ["google/gemini-3.1-flash-lite", [0.25, 1.5, 0.03, 0]],
+  ["sakana/fugu-ultra", [5, 30, 0.5, 0]],
+  ["stealth/ox-alpha", [0, 0, 0, 0]],
+  ["meta/muse-spark-1.1", [1.25, 4.25, 0.15, 0]],
+  ["meta/muse-spark-1.2", [1.25, 4.25, 0.15, 0]],
+  ["meta/muse-spark-1.2-contributor", [0.1, 0.2, 0.002, 0]],
+  ["xai/grok-4.5", [2, 6, 0.5, 0]],
+  ["xai/grok-4.6", [2, 6, 0.5, 0]],
+]);
 
 function liveModel(id: string, name: string, contextLength: number): Record<string, unknown> {
   return {
@@ -72,27 +134,71 @@ test("bundled fallback catalogue projects the current audited model set", () => 
   validateBundledCatalogue();
 });
 
-test("live catalogue overlay preserves known metadata and safely defaults new IDs", () => {
+test("bundled prices match the audited Command Code snapshot", () => {
+  assert.equal(COMMAND_CODE_PRICING_METADATA.sourceUrl, "https://commandcode.ai/docs/resources/pricing-limits");
+  assert.equal(COMMAND_CODE_PRICING_METADATA.retrievedAt, "2026-08-21T12:52:28Z");
+  assert.equal(COMMAND_CODE_PRICING_METADATA.units, "USD per 1,000,000 tokens");
+  assert.equal(COMMAND_CODE_PRICING_METADATA.ratePolicy, "currently advertised primary flat token rate");
+  assert.deepEqual(COMMAND_CODE_PRICING_METADATA.omittedCharges, [
+    "routing, ZDR, and provider-specific variation",
+    "temporary deals, time-of-day pricing, and long-context tiers",
+    "media, web-search, reasoning, fixed-request, and alternate cache charges",
+  ]);
+  assert.equal(expectedSnapshotCosts.size, 57);
+  assert.deepEqual([...expectedSnapshotCosts.keys()], COMMAND_CODE_MODELS.map((model) => model.id));
+
+  for (const model of COMMAND_CODE_MODELS) {
+    const expected = expectedSnapshotCosts.get(model.id);
+    assert.ok(expected, `missing expected Command Code price for ${model.id}`);
+    assert.deepEqual(
+      [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite],
+      expected,
+      `Command Code price drift for ${model.id}`,
+    );
+  }
+});
+
+test("verified free fallback models remain distinct from future unknown-price placeholders", () => {
+  assert.deepEqual(COMMAND_CODE_PRICING_METADATA.verifiedFreeModelIds, [
+    "poolside/laguna-s-2.1-free",
+    "stealth/ox-alpha",
+  ]);
+  assert.deepEqual(COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds, []);
+
+  const paidModels = COMMAND_CODE_MODELS.filter((model) => Object.values(model.cost).some((cost) => cost > 0));
+  assert.equal(paidModels.length, 55);
+  for (const id of COMMAND_CODE_PRICING_METADATA.verifiedFreeModelIds) {
+    const cost = COMMAND_CODE_MODELS.find((model) => model.id === id)?.cost;
+    assert.deepEqual(cost, COMMAND_CODE_UNKNOWN_COST);
+    assert.notStrictEqual(cost, COMMAND_CODE_UNKNOWN_COST);
+  }
+});
+
+test("live catalogue overlay preserves paid and free prices while safely defaulting new IDs", () => {
   const parsed = parseCommandCodeCatalogue(livePayload(
     liveModel("CLAUDE-SONNET-5", "Live Sonnet", 900_000),
+    liveModel("POOLSIDE/LAGUNA-S-2.1-FREE", "Live Laguna", 200_000),
     liveModel("vendor/new-model", "New Model", 123_456),
   ));
   assert.ok(parsed);
 
   const models = mergeCommandCodeCatalogue(parsed);
-  const known = models[0];
-  const added = models[1];
-  assert.ok(known);
-  assert.equal(known.id, "CLAUDE-SONNET-5");
-  assert.equal(known.name, "Live Sonnet");
-  assert.equal(known.contextWindow, 900_000);
-  assert.equal(known.reasoning, true);
-  assert.equal(known.cost.input, 2);
+  const knownPaid = models[0];
+  const knownFree = models[1];
+  const added = models[2];
+  assert.ok(knownPaid);
+  assert.equal(knownPaid.id, "CLAUDE-SONNET-5");
+  assert.equal(knownPaid.name, "Live Sonnet");
+  assert.equal(knownPaid.contextWindow, 900_000);
+  assert.equal(knownPaid.reasoning, true);
+  assert.equal(knownPaid.cost.input, 2);
+  assert.deepEqual(knownFree?.cost, COMMAND_CODE_UNKNOWN_COST);
+  assert.notStrictEqual(knownFree?.cost, COMMAND_CODE_UNKNOWN_COST);
   assert.ok(added);
   assert.equal(added.id, "vendor/new-model");
   assert.equal(added.reasoning, false);
   assert.deepEqual(added.input, ["text"]);
-  assert.deepEqual(added.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  assert.strictEqual(added.cost, COMMAND_CODE_UNKNOWN_COST);
   assert.equal(added.maxTokens, GATEWAY_DEFAULT_MAX_TOKENS);
 });
 
