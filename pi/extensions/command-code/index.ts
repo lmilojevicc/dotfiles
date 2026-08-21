@@ -8,6 +8,7 @@ import {
   COMMAND_CODE_MODELS,
   PROVIDER_ID,
   PROVIDER_NAME,
+  resolveCommandCodeModels,
 } from "./src/catalogue.ts";
 import { streamCommandCode } from "./src/stream.ts";
 import {
@@ -17,35 +18,41 @@ import {
   renderCommandCodeUsage,
 } from "./src/usage.ts";
 
-export const commandCodeProvider: Provider<typeof COMMAND_CODE_API> = createProvider({
-  id: PROVIDER_ID,
-  name: PROVIDER_NAME,
-  baseUrl: COMMAND_CODE_BASE_URL,
-  auth: {
-    apiKey: {
-      name: "Command Code credentials",
-      async check({ signal }) {
-        signal.throwIfAborted();
-        try {
-          await readCommandCodeApiKey();
+export function createCommandCodeProvider(
+  models: typeof COMMAND_CODE_MODELS = COMMAND_CODE_MODELS,
+): Provider<typeof COMMAND_CODE_API> {
+  return createProvider({
+    id: PROVIDER_ID,
+    name: PROVIDER_NAME,
+    baseUrl: COMMAND_CODE_BASE_URL,
+    auth: {
+      apiKey: {
+        name: "Command Code credentials",
+        async check({ signal }) {
           signal.throwIfAborted();
-          return { type: "api_key", source: COMMAND_CODE_AUTH_PATH };
-        } catch (error) {
-          if (error instanceof CommandCodeAuthError) return undefined;
-          throw error;
-        }
-      },
-      async resolve({ signal }) {
-        signal.throwIfAborted();
-        const apiKey = await readCommandCodeApiKey();
-        signal.throwIfAborted();
-        return { auth: { apiKey }, source: COMMAND_CODE_AUTH_PATH };
+          try {
+            await readCommandCodeApiKey();
+            signal.throwIfAborted();
+            return { type: "api_key", source: COMMAND_CODE_AUTH_PATH };
+          } catch (error) {
+            if (error instanceof CommandCodeAuthError) return undefined;
+            throw error;
+          }
+        },
+        async resolve({ signal }) {
+          signal.throwIfAborted();
+          const apiKey = await readCommandCodeApiKey();
+          signal.throwIfAborted();
+          return { auth: { apiKey }, source: COMMAND_CODE_AUTH_PATH };
+        },
       },
     },
-  },
-  models: COMMAND_CODE_MODELS,
-  api: { stream: streamCommandCode, streamSimple: streamCommandCode },
-});
+    models,
+    api: { stream: streamCommandCode, streamSimple: streamCommandCode },
+  });
+}
+
+export const commandCodeProvider = createCommandCodeProvider();
 
 type UsageDependencies = {
   readApiKey(): Promise<string>;
@@ -222,8 +229,9 @@ export function createCommandCodeUsageHandler(
   };
 }
 
-export default function commandCodeExtension(pi: ExtensionAPI): void {
-  pi.registerProvider(commandCodeProvider);
+export default async function commandCodeExtension(pi: ExtensionAPI): Promise<void> {
+  const models = await resolveCommandCodeModels();
+  pi.registerProvider(models === COMMAND_CODE_MODELS ? commandCodeProvider : createCommandCodeProvider(models));
   pi.registerCommand("command-code-usage", {
     description: "Show Command Code plan and usage limits",
     handler: createCommandCodeUsageHandler(),

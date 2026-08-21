@@ -1,11 +1,11 @@
 # Command Code provider for Pi
 
-Local Pi extension registering the `command-code` provider and the 53 models bundled with Command Code CLI 1.22.0.
+Local Pi extension registering the `command-code` provider with Command Code's live model catalogue and an offline 57-model fallback.
 
 ## Requirements
 
 - Pi 0.84.2 or compatible
-- Command Code CLI 1.22.0 or compatible
+- Command Code CLI with a compatible `~/.commandcode/auth.json` credential file
 - Node.js 22.19+
 - A Command Code account with access to the selected model
 
@@ -53,19 +53,21 @@ Long adjacent text/reasoning deltas are adaptively coalesced before Pi renders t
 
 ## Catalogue and protocol caveat
 
-Command Code does not publish a supported machine-readable model endpoint or public gateway schema. This extension therefore uses a bundled, offline snapshot from Command Code CLI 1.22.0 and a clean-room implementation of its observed NDJSON gateway protocol. It performs no catalogue scraping or refresh.
+At startup the extension requests Command Code's official unauthenticated `GET /provider/v1/models` endpoint with a three-second timeout and a 256 KiB response limit. Valid live IDs, names, ordering, and context windows are overlaid on the checked-in rich metadata. HTTP, network, timeout, oversized, or schema failures silently use the complete 57-model fallback captured from Command Code 1.31.0 on 2026-08-21.
 
-Five context/output limits absent from Command Code's table use current OpenRouter metadata as **inferred compatibility metadata**, not as Command Code guarantees:
+The catalogue is refreshed only when the extension starts; restart Pi to pick up later server changes. Future live IDs that are not in the fallback are exposed with limited metadata: text-only input, no reasoning controls, and the gateway's 64,000-token default output limit clamped to the live context window. Their zero cost is an unknown-price placeholder because the endpoint does not publish pricing, not a conservative pricing estimate. Curated metadata is added to the fallback as it becomes available. The four models added in this snapshot use rates from their official Command Code model pages, but remain text-only with reasoning controls disabled because the gateway's image and reasoning-effort contracts are not published.
+
+Five max-output limits absent from Command Code's API use current OpenRouter metadata as **inferred compatibility metadata**, not as Command Code guarantees. Context values come from Command Code's Provider API:
 
 | Command Code ID | Context | Max output | OpenRouter source |
 |---|---:|---:|---|
-| `zai-org/GLM-5.1` | 204,800 | 131,072 | `z-ai/glm-5.1` |
-| `MiniMaxAI/MiniMax-M2.7` | 204,800 | 131,072 | `minimax/minimax-m2.7` |
-| `Qwen/Qwen3.6-Max-Preview` | 262,144 | 65,536 | `qwen/qwen3.6-max-preview` |
-| `Qwen/Qwen3.6-Plus` | 1,000,000 | 65,536 | `qwen/qwen3.6-plus` |
-| `gpt-5.5` | 1,050,000 | 128,000 | `openai/gpt-5.5` |
+| `zai-org/GLM-5.1` | 200,000 | 131,072 | `z-ai/glm-5.1` |
+| `MiniMaxAI/MiniMax-M2.7` | 200,000 | 131,072 | `minimax/minimax-m2.7` |
+| `Qwen/Qwen3.6-Max-Preview` | 200,000 | 65,536 | `qwen/qwen3.6-max-preview` |
+| `Qwen/Qwen3.6-Plus` | 200,000 | 65,536 | `qwen/qwen3.6-plus` |
+| `gpt-5.5` | 400,000 | 128,000 | `openai/gpt-5.5` |
 
-All 53 catalogue entries are currently text-only in this extension; image blocks are replaced with an omission notice rather than sent to an incompatible model. Provider-executed tools remain provider-side and are never exposed to Pi as client tool calls.
+All catalogue entries are currently text-only in this extension; image blocks are replaced with an omission notice rather than sent to an incompatible model. Provider-executed tools remain provider-side and are never exposed to Pi as client tool calls.
 
 Model availability still depends on the user's Command Code plan. Server changes may break this undocumented integration. The gateway's observed `permissionMode: "standard"` and `mode: "agent"` values remain fixed compatibility values because no supported mapping for alternatives is documented.
 
