@@ -39,8 +39,6 @@ version = 1
 [packages.nvim]
   links = [{ source = ".", target = "~/.config/nvim" }]
 
-[packages.opencode]
-  links = []
 
 [packages.pi]
   links = [
@@ -62,6 +60,7 @@ version = 1
     { source = "herdr-focus-kill", target = "~/.local/bin/herdr-focus-kill" },
     { source = "tmux-focus-kill", target = "~/.local/bin/tmux-focus-kill" },
     { source = "runner", target = "~/.local/bin/runner" },
+    { source = "screenshot-mode", target = "~/.local/bin/screenshot-mode" },
   ]
 
 [packages.skills]

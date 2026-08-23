@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# screenshot-mode — toggle the three "screenshot" settings on/off.
+#
+#   screenshot-mode [on|off]
+#
+# With no argument it auto-detects the current state and flips it.
+# Affects:
+#   - herdr:   hide_tab_bar_when_single_tab (true screenshot / unset normal)
+#   - ghostty: background-opacity (0.8 screenshot / unset normal)
+#   - nvim:    lualine statusline bg ("NONE" screenshot / colors.base normal)
+set -euo pipefail
+
+HERDR_CONF="$HOME/dotfiles/herdr/config.toml"
+GHOSTTY_CONF="$HOME/dotfiles/ghostty/config"
+NVIM_CONF="$HOME/dotfiles/nvim/lua/plugins/catppuccin.lua"
+
+# --- detect current state from the files themselves ---
+state() {
+  # The herdr key is the canonical mode marker.
+  if grep -q '^[[:space:]]*hide_tab_bar_when_single_tab = true' "$HERDR_CONF" 2>/dev/null; then
+    echo on
+  else
+    echo off
+  fi
+}
+
+set_state() {
+  local target="$1"
+
+  # herdr: omit the key in normal mode because false is the default.
+  if [[ "$target" == on ]]; then
+    if grep -q '^[[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=' "$HERDR_CONF"; then
+      sed -i '' 's/^\([[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=[[:space:]]*\).*/\1true/' "$HERDR_CONF"
+    else
+      sed -i '' 's/^\[ui\]/[ui]\n  hide_tab_bar_when_single_tab = true/' "$HERDR_CONF"
+    fi
+  else
+    sed -i '' '/^[[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=/d' "$HERDR_CONF"
+  fi
+
+  # ghostty: omit the key in normal mode because 1.0 is the default. Always
+  # rebuild the small marked block so a manually removed key is restored.
+  if [[ "$target" == on ]]; then
+    perl -0pi -e '
+      s/\n# Screenshot setting\n/\n/g;
+      s/^background-opacity[[:space:]]*=.*\n//mg;
+      s/\n+(# Cursor settings)/\n\n# Screenshot setting\nbackground-opacity = 0.8\n\n$1/;
+    ' "$GHOSTTY_CONF"
+    grep -q '^background-opacity = 0.8$' "$GHOSTTY_CONF" || \
+      printf '\n# Screenshot setting\nbackground-opacity = 0.8\n' >> "$GHOSTTY_CONF"
+  else
+    perl -0pi -e '
+      s/\n# Screenshot setting\n/\n/g;
+      s/^background-opacity[[:space:]]*=.*\n//mg;
+      s/\n+(# Cursor settings)/\n\n$1/;
+    ' "$GHOSTTY_CONF"
+  fi
+
+  # nvim lualine statusline bg
+  if [[ "$target" == on ]]; then
+    sed -i '' 's/a = { fg = colors.blue, bg = colors.base }/a = { fg = colors.blue, bg = "NONE" }/' "$NVIM_CONF"
+  else
+    sed -i '' 's/a = { fg = colors.blue, bg = "NONE" }/a = { fg = colors.blue, bg = colors.base }/' "$NVIM_CONF"
+  fi
+}
+
+reload() {
+  # herdr hot-reloads via API
+  herdr server reload-config >/dev/null 2>&1 || true
+  # ghostty live-reloads its config file automatically
+}
+
+main() {
+  local arg="${1:-}"
+  local target
+
+  case "$arg" in
+    on|off) target="$arg" ;;
+    "")     target="$(state)"; [[ "$target" == on ]] && target=off || target=on ;;
+    *)      echo "usage: screenshot-mode [on|off]" >&2; exit 1 ;;
+  esac
+
+  set_state "$target"
+  reload
+
+  if [[ "$target" == on ]]; then
+    echo "screenshot mode ON  (restart nvim to apply transparency)"
+  else
+    echo "screenshot mode OFF (restart nvim to apply transparency)"
+  fi
+}
+
+main "$@"
