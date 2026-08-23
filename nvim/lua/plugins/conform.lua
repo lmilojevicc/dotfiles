@@ -29,7 +29,7 @@ return {
         css = { "biome", "prettierd", "prettier", stop_after_first = true },
         json = { "biome", "prettierd", "prettier", stop_after_first = true },
         graphql = { "biome", "prettierd", "prettier", stop_after_first = true },
-        markdown = { "prettierd", "rumdl" },
+        markdown = { "prettierd", "rumdl", "injected" },
         jsx = { "biome", "prettierd", "prettier", stop_after_first = true },
         tsx = { "biome", "prettierd", "prettier", stop_after_first = true },
         sql = { "sqruff", stop_after_first = true },
