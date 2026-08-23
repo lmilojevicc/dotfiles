@@ -77,7 +77,13 @@ onboarding = false
 [ui]
   agent_panel_sort = "spaces"
   prompt_new_tab_name = false
+  sidebar_collapsed_mode = "hidden"
+
 
 [theme]
-name = "catppuccin"
-auto_switch = false
+  name = "catppuccin"
+  auto_switch = false
+
+  [theme.custom]
+    panel_bg = "transparent"
+    active_row_bg = "transparent"
