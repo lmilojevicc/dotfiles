@@ -119,12 +119,12 @@ function internalSearchState(service: SkillSearchService): { issued: Map<string,
 	return service as unknown as { issued: Map<string, unknown>; activeSearches: Set<unknown> };
 }
 
-async function fixture(repositories: Array<{ repository: string; branch?: string }>, states: Record<string, RepositoryState>, repositoryTimeoutMs = LIMITS.repositoryMs) {
+async function fixture(repositories: Array<{ repository: string; branch?: string }>, states: Record<string, RepositoryState>) {
 	const directory = await mkdtemp(join(tmpdir(), "skill-search-service-"));
 	const agentDir = join(directory, "agent");
 	for (const repository of repositories) await addRepository(configPath(agentDir), repository.repository, repository.branch);
 	const remote = createRemote(states);
-	const service = new SkillSearchService(configPath(agentDir), new GitHubClient(remote.fetch), directory, repositoryTimeoutMs);
+	const service = new SkillSearchService(configPath(agentDir), new GitHubClient(remote.fetch), directory);
 	return { directory, agentDir, service, remote };
 }
 
@@ -168,6 +168,33 @@ test("search discovers nested skills, returns full descriptions, ranks metadata,
 		assert.equal(result.matches[0].revision, "a".repeat(40));
 		assert.equal(result.errors.length, 0);
 		assert.equal((await readdir(context.directory)).some((name) => name.startsWith("pi-skill-search-")), false, "search must not materialize files");
+	} finally {
+		await context.service.cleanup();
+		await rm(context.directory, { recursive: true, force: true });
+	}
+});
+
+test("search discovers a uniquely matching 501st skill without a per-repository count cap", async () => {
+	const files = Object.fromEntries(Array.from({ length: 501 }, (_, index) => {
+		const sequence = String(index).padStart(4, "0");
+		const isTarget = index === 500;
+		return [
+			`catalog/skill-${sequence}/SKILL.md`,
+			{
+				data: isTarget
+					? "---\nname: target-skill\ndescription: Unique needle capability.\n---\n"
+					: `---\nname: helper-${index}\ndescription: General helper number ${index}.\n---\n`,
+			},
+		];
+	}));
+	const first = snapshot("a", files);
+	const context = await fixture([{ repository: "acme/skills" }], { "acme/skills": { current: "one", snapshots: { one: first } } });
+	try {
+		const result = await context.service.search("needle capability", undefined, 1);
+		assert.equal(result.matches.length, 1, "result count must respect the requested limit");
+		assert.equal(result.matches[0].name, "target-skill");
+		assert.equal(result.matches[0].path, "catalog/skill-0500/SKILL.md");
+		assert.deepEqual(result.errors, []);
 	} finally {
 		await context.service.cleanup();
 		await rm(context.directory, { recursive: true, force: true });
@@ -332,8 +359,43 @@ test("tree truncation and rate limits surface safe repository errors while other
 	}
 });
 
-test("repository refresh deadline includes SKILL.md metadata downloads", async () => {
-	const first = snapshot("a", { "demo/SKILL.md": { data: "---\nname: demo\ndescription: Slow metadata.\n---\n" } });
+test("repository refresh has no aggregate deadline when each request meets its timeout", async () => {
+	const first = snapshot("a", { "demo/SKILL.md": { data: "---\nname: demo\ndescription: Slow but bounded metadata.\n---\n" } });
+	const baseRemote = createRemote({ "acme/skills": { current: "one", snapshots: { one: first } } });
+	const fetch: FetchLike = async (input, init) => {
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(resolve, 20);
+			const abort = () => {
+				clearTimeout(timer);
+				reject(new DOMException("Aborted", "AbortError"));
+			};
+			if (init?.signal?.aborted) abort();
+			else init?.signal?.addEventListener("abort", abort, { once: true });
+		});
+		return baseRemote.fetch(input, init);
+	};
+	const directory = await mkdtemp(join(tmpdir(), "skill-search-no-aggregate-timeout-"));
+	const agentDir = join(directory, "agent");
+	await addRepository(configPath(agentDir), "acme/skills");
+	const service = new SkillSearchService(configPath(agentDir), new GitHubClient(fetch, 100), directory);
+	const mutableLimits = LIMITS as unknown as Record<string, number>;
+	const previousRepositoryTimeout = mutableLimits.repositoryTimeoutMs;
+	// The removed implementation read this key for one aggregate deadline; current code must ignore it.
+	mutableLimits.repositoryTimeoutMs = 45;
+	try {
+		const result = await service.search("bounded metadata", undefined, 10);
+		assert.equal(result.matches[0]?.name, "demo");
+		assert.deepEqual(result.errors, []);
+	} finally {
+		if (previousRepositoryTimeout === undefined) delete mutableLimits.repositoryTimeoutMs;
+		else mutableLimits.repositoryTimeoutMs = previousRepositoryTimeout;
+		await service.cleanup();
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+test("stalled SKILL.md metadata is bounded by the per-request timeout", async () => {
+	const first = snapshot("a", { "demo/SKILL.md": { data: "---\nname: demo\ndescription: Stalled metadata.\n---\n" } });
 	const baseRemote = createRemote({ "acme/skills": { current: "one", snapshots: { one: first } } });
 	const fetch: FetchLike = async (input, init) => {
 		if (String(input).includes("raw.githubusercontent.com") && String(input).endsWith("/SKILL.md")) {
@@ -343,14 +405,14 @@ test("repository refresh deadline includes SKILL.md metadata downloads", async (
 		}
 		return baseRemote.fetch(input, init);
 	};
-	const directory = await mkdtemp(join(tmpdir(), "skill-search-timeout-"));
+	const directory = await mkdtemp(join(tmpdir(), "skill-search-request-timeout-"));
 	const agentDir = join(directory, "agent");
 	await addRepository(configPath(agentDir), "acme/skills");
-	const service = new SkillSearchService(configPath(agentDir), new GitHubClient(fetch), directory, 25);
+	const service = new SkillSearchService(configPath(agentDir), new GitHubClient(fetch, 25), directory);
 	try {
-		const result = await service.search("slow", undefined, 10);
+		const result = await service.search("stalled", undefined, 10);
 		assert.equal(result.matches.length, 0);
-		assert.match(result.errors[0]?.error ?? "", /Refreshing acme\/skills timed out/);
+		assert.match(result.errors[0]?.error ?? "", /blob demo\/SKILL\.md timed out/);
 	} finally {
 		await service.cleanup();
 		await rm(directory, { recursive: true, force: true });
@@ -396,7 +458,6 @@ test("session cleanup during the initial config read prevents search registratio
 		configPath(agentDir),
 		new GitHubClient(remote.fetch),
 		directory,
-		LIMITS.repositoryMs,
 		async (path) => {
 			signalStarted();
 			await released;
@@ -433,7 +494,6 @@ test("caller cancellation during the final config read prevents ID issuance", as
 		configPath(agentDir),
 		new GitHubClient(remote.fetch),
 		directory,
-		LIMITS.repositoryMs,
 		async (path) => {
 			configReads += 1;
 			if (configReads === 2) {

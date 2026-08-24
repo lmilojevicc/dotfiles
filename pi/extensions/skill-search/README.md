@@ -62,7 +62,7 @@ Opaque IDs expire with the Pi session. Removing an approval invalidates matching
 
 ## Transport and safety
 
-The extension uses the GitHub REST recursive-tree API and immutable `raw.githubusercontent.com` blob URLs. It does not clone repositories or extract archives. Requests use fixed hosts, no credentials/cookies, manual redirect handling, cancellation, timeouts, bounded streaming, and Git blob SHA verification.
+The extension uses the GitHub REST recursive-tree API and immutable `raw.githubusercontent.com` blob URLs. It does not clone repositories or extract archives. Requests use fixed hosts, no credentials/cookies, manual redirect handling, cancellation, timeouts, bounded streaming, and Git blob SHA verification. Approved repository refreshes have no aggregate deadline: every individual request remains bounded, and the caller can cancel a long-running search.
 
 Materialization rejects:
 
@@ -80,13 +80,11 @@ Default limits:
 | --- | ---: |
 | Tree response | 8 MiB |
 | Tree entries | 25,000 |
-| Skills per repository | 500 |
 | `SKILL.md` download | 256 KiB |
 | Files per selected skill | 512 |
 | One file | 10 MiB |
 | Selected skill total | 50 MiB |
 | One HTTP request | 15 seconds |
-| Repository refresh | 30 seconds |
 | Materialization | 60 seconds |
 | Repository concurrency | 2 |
 | Blob concurrency | 4 |

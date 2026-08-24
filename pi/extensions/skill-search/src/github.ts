@@ -4,13 +4,11 @@ import { validateBranch } from "./config.ts";
 export const LIMITS = {
 	treeBytes: 8 * 1024 * 1024,
 	treeEntries: 25_000,
-	skillsPerRepository: 500,
 	skillMarkdownBytes: 256 * 1024,
 	skillFiles: 512,
 	fileBytes: 10 * 1024 * 1024,
 	skillBytes: 50 * 1024 * 1024,
 	requestMs: 15_000,
-	repositoryMs: 30_000,
 	materializationMs: 60_000,
 } as const;
 
@@ -110,12 +108,14 @@ function validateSha(value: unknown, label: string): string {
 
 export class GitHubClient {
 	private readonly fetchImpl: FetchLike;
+	private readonly requestTimeoutMs: number;
 
-	constructor(fetchImpl: FetchLike = globalThis.fetch) {
+	constructor(fetchImpl: FetchLike = globalThis.fetch, requestTimeoutMs = LIMITS.requestMs) {
 		this.fetchImpl = fetchImpl;
+		this.requestTimeoutMs = requestTimeoutMs;
 	}
 
-	private async request(url: URL, maximum: number, label: string, signal?: AbortSignal, timeoutMs = LIMITS.requestMs): Promise<Uint8Array> {
+	private async request(url: URL, maximum: number, label: string, signal?: AbortSignal, timeoutMs = this.requestTimeoutMs): Promise<Uint8Array> {
 		if (url.protocol !== "https:" || (url.hostname !== "api.github.com" && url.hostname !== "raw.githubusercontent.com")) {
 			throw new Error("Refusing an unexpected GitHub host.");
 		}
@@ -157,54 +157,46 @@ export class GitHubClient {
 
 	async resolve(repository: string, configuredBranch: string | undefined, signal?: AbortSignal): Promise<RepositorySnapshot> {
 		const [owner, name] = repository.split("/");
-		const outer = composeSignal(signal, LIMITS.repositoryMs);
-		try {
-			let branch = configuredBranch;
-			if (!branch) {
-				const metadata = await this.json(new URL(`https://api.github.com/repos/${owner}/${name}`), 1024 * 1024, "repository metadata", outer.signal);
-				if (!isRecord(metadata) || typeof metadata.default_branch !== "string" || !metadata.default_branch) {
-					throw new Error("GitHub returned an invalid default branch.");
-				}
-				branch = validateBranch(metadata.default_branch);
+		let branch = configuredBranch;
+		if (!branch) {
+			const metadata = await this.json(new URL(`https://api.github.com/repos/${owner}/${name}`), 1024 * 1024, "repository metadata", signal);
+			if (!isRecord(metadata) || typeof metadata.default_branch !== "string" || !metadata.default_branch) {
+				throw new Error("GitHub returned an invalid default branch.");
 			}
-			const commitData = await this.json(
-				new URL(`https://api.github.com/repos/${owner}/${name}/commits/${encodeURIComponent(branch)}`),
-				1024 * 1024,
-				"branch resolution",
-				outer.signal,
-			);
-			if (!isRecord(commitData) || !isRecord(commitData.commit) || !isRecord(commitData.commit.tree)) {
-				throw new Error("GitHub returned invalid commit metadata.");
-			}
-			const commit = validateSha(commitData.sha, "commit SHA");
-			const treeSha = validateSha(commitData.commit.tree.sha, "tree SHA");
-			const treeData = await this.json(
-				new URL(`https://api.github.com/repos/${owner}/${name}/git/trees/${treeSha}?recursive=1`),
-				LIMITS.treeBytes,
-				"repository tree",
-				outer.signal,
-			);
-			if (!isRecord(treeData) || treeData.truncated === true || !Array.isArray(treeData.tree)) {
-				if (isRecord(treeData) && treeData.truncated === true) throw new Error("GitHub returned a truncated repository tree.");
-				throw new Error("GitHub returned an invalid repository tree.");
-			}
-			if (treeData.tree.length > LIMITS.treeEntries) throw new Error(`Repository tree exceeds ${LIMITS.treeEntries} entries.`);
-			const tree: GitTreeEntry[] = treeData.tree.map((raw) => {
-				if (!isRecord(raw) || typeof raw.path !== "string" || typeof raw.mode !== "string" || typeof raw.type !== "string") {
-					throw new Error("GitHub returned an invalid tree entry.");
-				}
-				const size = raw.size === undefined ? undefined : raw.size;
-				if (size !== undefined && (!Number.isSafeInteger(size) || (size as number) < 0)) throw new Error("GitHub returned an invalid blob size.");
-				return { path: raw.path, mode: raw.mode, type: raw.type, sha: validateSha(raw.sha, "object SHA"), size: size as number | undefined };
-			});
-			return { repository, branch, commit, tree };
-		} catch (error) {
-			if (outer.timedOut()) throw new Error(`Refreshing ${repository} timed out.`);
-			if (signal?.aborted) throw abortError();
-			throw error;
-		} finally {
-			outer.cleanup();
+			branch = validateBranch(metadata.default_branch);
 		}
+		const commitData = await this.json(
+			new URL(`https://api.github.com/repos/${owner}/${name}/commits/${encodeURIComponent(branch)}`),
+			1024 * 1024,
+			"branch resolution",
+			signal,
+		);
+		if (!isRecord(commitData) || !isRecord(commitData.commit) || !isRecord(commitData.commit.tree)) {
+			throw new Error("GitHub returned invalid commit metadata.");
+		}
+		const commit = validateSha(commitData.sha, "commit SHA");
+		const treeSha = validateSha(commitData.commit.tree.sha, "tree SHA");
+		const treeData = await this.json(
+			new URL(`https://api.github.com/repos/${owner}/${name}/git/trees/${treeSha}?recursive=1`),
+			LIMITS.treeBytes,
+			"repository tree",
+			signal,
+		);
+		if (!isRecord(treeData) || treeData.truncated === true || !Array.isArray(treeData.tree)) {
+			if (isRecord(treeData) && treeData.truncated === true) throw new Error("GitHub returned a truncated repository tree.");
+			throw new Error("GitHub returned an invalid repository tree.");
+		}
+		if (treeData.tree.length > LIMITS.treeEntries) throw new Error(`Repository tree exceeds ${LIMITS.treeEntries} entries.`);
+		const tree: GitTreeEntry[] = treeData.tree.map((raw) => {
+			if (!isRecord(raw) || typeof raw.path !== "string" || typeof raw.mode !== "string" || typeof raw.type !== "string") {
+				throw new Error("GitHub returned an invalid tree entry.");
+			}
+			const size = raw.size === undefined ? undefined : raw.size;
+			if (size !== undefined && (!Number.isSafeInteger(size) || (size as number) < 0)) throw new Error("GitHub returned an invalid blob size.");
+			return { path: raw.path, mode: raw.mode, type: raw.type, sha: validateSha(raw.sha, "object SHA"), size: size as number | undefined };
+		});
+		if (signal?.aborted) throw abortError();
+		return { repository, branch, commit, tree };
 	}
 
 	async blob(repository: string, commit: string, path: string, expectedSha: string, maximum: number, signal?: AbortSignal): Promise<Uint8Array> {

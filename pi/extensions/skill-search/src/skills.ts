@@ -121,9 +121,6 @@ function validateTreePath(path: string): string[] {
 
 function skillCandidates(snapshot: RepositorySnapshot): GitTreeEntry[] {
 	const candidates = snapshot.tree.filter((entry) => entry.path === "SKILL.md" || entry.path.endsWith("/SKILL.md"));
-	if (candidates.length > LIMITS.skillsPerRepository) {
-		throw new Error(`Repository contains more than ${LIMITS.skillsPerRepository} skills.`);
-	}
 	for (const entry of candidates) {
 		validateTreePath(entry.path);
 		if (entry.type !== "blob" || (entry.mode !== "100644" && entry.mode !== "100755")) {
@@ -270,7 +267,7 @@ async function createExactDirectories(stage: string, files: readonly Materialize
 	}
 }
 
-function composeSignal(parents: readonly (AbortSignal | undefined)[], timeoutMs: number): { signal: AbortSignal; cleanup: () => void; timedOut: () => boolean } {
+function composeSignal(parents: readonly (AbortSignal | undefined)[], timeoutMs?: number): { signal: AbortSignal; cleanup: () => void; timedOut: () => boolean } {
 	const controller = new AbortController();
 	let timedOut = false;
 	const listeners: Array<{ signal: AbortSignal; listener: () => void }> = [];
@@ -283,15 +280,15 @@ function composeSignal(parents: readonly (AbortSignal | undefined)[], timeoutMs:
 			listeners.push({ signal: parent, listener });
 		}
 	}
-	const timer = setTimeout(() => {
+	const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
 		timedOut = true;
 		controller.abort(abortError("Timed out."));
 	}, timeoutMs);
-	timer.unref?.();
+	timer?.unref?.();
 	return {
 		signal: controller.signal,
 		cleanup: () => {
-			clearTimeout(timer);
+			if (timer !== undefined) clearTimeout(timer);
 			for (const entry of listeners) entry.signal.removeEventListener("abort", entry.listener);
 		},
 		timedOut: () => timedOut,
@@ -317,7 +314,6 @@ export class SkillSearchService {
 	private readonly configurationPath: string;
 	private readonly github: GitHubClient;
 	private readonly temporaryBase: string;
-	private readonly repositoryTimeoutMs: number;
 	private readonly configurationReader: (path: string) => Promise<SkillRepositoryConfig>;
 	private sessionRootPromise?: Promise<string>;
 
@@ -325,13 +321,11 @@ export class SkillSearchService {
 		configurationPath: string,
 		github: GitHubClient,
 		temporaryBase: string = tmpdir(),
-		repositoryTimeoutMs = LIMITS.repositoryMs,
 		configurationReader: (path: string) => Promise<SkillRepositoryConfig> = readConfig,
 	) {
 		this.configurationPath = configurationPath;
 		this.github = github;
 		this.temporaryBase = temporaryBase;
-		this.repositoryTimeoutMs = repositoryTimeoutMs;
 		this.configurationReader = configurationReader;
 	}
 
@@ -361,7 +355,7 @@ export class SkillSearchService {
 		const discovered: Array<Omit<SkillSearchMatch, "skillId" | "score"> & { issued: IssuedSkill }> = [];
 		try {
 			await mapLimit(repositories, 2, async (approved) => {
-				const operation = composeSignal([signal, active.controller.signal], this.repositoryTimeoutMs);
+				const operation = composeSignal([signal, active.controller.signal]);
 				try {
 					const snapshot = await this.github.resolve(approved.repository, approved.branch, operation.signal);
 					const candidates = skillCandidates(snapshot);
@@ -402,8 +396,7 @@ export class SkillSearchService {
 				} catch (error) {
 					if (active.controller.signal.aborted) throw active.controller.signal.reason ?? abortError();
 					if (signal?.aborted) throw signal.reason ?? abortError();
-					const message = operation.timedOut() ? `Refreshing ${approved.repository} timed out.` : safeError(error);
-					errors.push({ repository: approved.repository, error: message });
+					errors.push({ repository: approved.repository, error: safeError(error) });
 				} finally {
 					operation.cleanup();
 				}
