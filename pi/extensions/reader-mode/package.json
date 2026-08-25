@@ -1,0 +1,17 @@
+{
+	"name": "pi-extension-reader-mode",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node --experimental-strip-types --import ./tests/register-loader.mjs --test tests/reader-mode.test.ts",
+		"test:real-pi": "node --experimental-strip-types ./tests/real-pi-smoke.mjs"
+	},
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "0.84.2"
+	}
+}

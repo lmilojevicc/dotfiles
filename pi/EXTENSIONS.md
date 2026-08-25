@@ -14,6 +14,7 @@
 | [terminal-focus-cursor](extensions/terminal-focus-cursor/README.md) | Hide the editor cursor when its terminal pane is unfocused | TUI under Herdr (`HERDR_ENV=1`) or tmux (`TMUX`) | `npm test` |
 | [model-favorites](extensions/model-favorites/README.md) | Favorite and order models in the selector | `Ctrl+F` on a highlighted model | `npm test` |
 | [prefix-keybinds](extensions/prefix-keybinds/README.md) | Configurable prefix-key command layer | Configured prefix then mapped key; `/prefix-keybinds` | `npm test` |
+| [reader-mode](extensions/reader-mode/README.md) | Experimental private-internals centered session column | `/reader` | `npm test` |
 | [session-auto-rename](extensions/session-auto-rename/README.md) | Name a new unnamed session from its first prompt | Automatic on the first prompt; `/session-auto-rename` selects the model | `npm test` |
 | [skill-search](extensions/skill-search/README.md) | Search and temporarily read skills from user-approved public GitHub repositories | `search_skills`, `read_skill`, `/skill-repos` | `npm test` |
 
