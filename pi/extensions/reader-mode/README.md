@@ -11,7 +11,9 @@ The default maximum is 110 columns. Terminals at or below the maximum render nor
 - `/reader off` disables it and retains the current width.
 - `/reader <positive integer>` sets the maximum width and enables it.
 
-Invalid or compound arguments do not change state. State is appended as Pi custom session entries (`dotfiles.reader-mode`) and restored from the latest entry on session start, reload, switch, or resume. The extension does not create a global preferences file.
+Invalid or compound arguments do not change state. State is appended as Pi custom session entries (`dotfiles.reader-mode`) and restored from the latest entry on session start, reload, switch, or resume after the extension has observed the interactive root layout. The extension does not create a global preferences file.
+
+A first installation through `/reload` happens after Pi has already mounted that layout, and Pi 0.84.2 exposes no safe way for the extension to remount it. Until a patched mount is observed, `/reader on`, an enabling `/reader` toggle, and `/reader <width>` show an acknowledgement dialog on every attempt. Confirming, dismissing, or letting it time out does not change or persist state, wrap existing roots, request a render, or trigger a private action. Restart Pi or switch TUI mode in `/settings`, then rerun the desired `/reader` command. Before observation, `/reader off` is an idempotent silent no-op because reader mode is already off; non-TUI and no-UI command contexts are also inert.
 
 ## Private-internals warning
 
@@ -19,7 +21,7 @@ Invalid or compound arguments do not change state. State is appended as Pi custo
 
 The patch checks Pi's public `VERSION` before changing the prototype, then checks the method and mounted layout shapes as defense in depth. Centering uses the renderer terminal width, not the transcript's scrollbar-adjusted width, so fullscreen `auto`, `always`, and `hidden` scrollbar layouts share a left edge. Rendered margins are inserted after leading OSC 133 A/B/C prompt markers, and exact empty image-reservation rows remain empty.
 
-A process-global Symbol prevents duplicate wrapping and method identities are restored on final session shutdown when Pi's lifecycle permits. Pi reuses its mounted component tree during extension reload and session replacement, so an accepted runtime's non-final shutdown leaves the patch installed but disabled and explicitly releases ownership for the next extension runtime to reclaim. Reload ownership and renderer mode switches are supported for that same `InteractiveMode` object.
+A process-global Symbol prevents duplicate wrapping and method identities are restored on final session shutdown when Pi's lifecycle permits. Pi reuses its mounted component tree during extension reload and session replacement, so an accepted runtime's non-final shutdown leaves the patch installed but disabled and explicitly releases ownership for the next extension runtime to reclaim. Reload of an extension that has already observed the layout remains supported, as do renderer mode switches for that same `InteractiveMode` object.
 
 **Intentional limitation:** exactly one `InteractiveMode` instance is supported per process. If a genuinely second instance mounts, reader mode fails closed process-wide: all wrapped render methods and the original prototype method are restored, the second instance is left unpatched, and a small permanent tombstone prevents any extension runtime from reclaiming the patch until Pi restarts. Commands and lifecycle handlers then remain inert and report a bounded error without changing session state. This explicit fail-safe avoids process-global state crossing between concurrent sessions. If the guarded seam, version, ownership, or layout changes, reader mode stays off and reports an error rather than applying a partial Markdown/editor-only layout.
 

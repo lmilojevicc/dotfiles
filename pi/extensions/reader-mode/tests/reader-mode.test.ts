@@ -107,6 +107,132 @@ function createExtensionRuntime(initialEntries: TestEntry[] = []) {
 	};
 }
 
+function createLateInstallRuntime(confirmResults: boolean[] = []) {
+	const mode = new InteractiveMode() as any;
+	mode.fullscreenLayoutRoot = { kind: "fullscreen-root" };
+	const children: unknown[] = [];
+	const renderer = {
+		viewport: true,
+		layoutRoot: undefined as unknown,
+		renders: 0,
+		terminal: { columns: 140 },
+		addChild: (component: unknown) => children.push(component),
+		setLayoutRoot(root: unknown) { this.layoutRoot = root; },
+		requestRender() { this.renders += 1; },
+	};
+	const components = Array.from({ length: 7 }, (_, index) => ({
+		render: (width: number) => [`late-region-${index}:${width}`],
+	}));
+	mode.mountInteractiveTui(renderer, components);
+	const originalRenders = components.map((component) => component.render);
+
+	const handlers = new Map<string, Handler>();
+	const commands = new Map<string, { handler: Handler }>();
+	const appended: Array<{ customType: string; data: unknown }> = [];
+	const notifications: Array<{ message: string; level: string }> = [];
+	const confirmations: Array<{ title: string; message: string; options: { timeout: number } }> = [];
+	readerModeExtension({
+		on: (event: string, handler: Handler) => handlers.set(event, handler),
+		registerCommand: (name: string, options: { handler: Handler }) => commands.set(name, options),
+		appendEntry: (customType: string, data: unknown) => appended.push({ customType, data }),
+	} as any);
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			notify: (message: string, level: string) => notifications.push({ message, level }),
+			confirm: async (title: string, message: string, options: { timeout: number }) => {
+				confirmations.push({ title, message, options });
+				return confirmResults.shift() ?? false;
+			},
+		},
+		sessionManager: {
+			getBranch: () => [customEntry({ enabled: true, width: 70 })],
+		},
+	};
+	return {
+		appended,
+		components,
+		confirmations,
+		ctx,
+		handlers,
+		mode,
+		notifications,
+		originalRenders,
+		renderer,
+		reader(args: string, commandContext: any = ctx) {
+			return commands.get("reader")?.handler(args, commandContext);
+		},
+		start(reason = "startup") { handlers.get("session_start")?.({ reason }, ctx); },
+		shutdown(reason = "quit") { handlers.get("session_shutdown")?.({ reason }, ctx); },
+	};
+}
+
+test("late install confirm, cancel, and timeout acknowledgements are inert until a real remount", async () => {
+	const runtime = createLateInstallRuntime([
+		true,
+		false,
+		false, // The host returns false when the acknowledgement times out.
+		false,
+		false,
+	]);
+	runtime.start();
+	assert.deepEqual(runtime.notifications, [], "late TUI session start does not report a seam failure");
+
+	for (const input of ["on", "on", "on", "", "90"]) await runtime.reader(input);
+	assert.deepEqual(runtime.confirmations, Array.from({ length: 5 }, () => ({
+		title: "Reader mode needs a TUI remount",
+		message: "Automatic remounting is unsafe in Pi 0.84.2. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.",
+		options: { timeout: 15_000 },
+	})));
+	assert.deepEqual(runtime.appended, [], "acknowledgements never persist reader state");
+	assert.equal(runtime.renderer.renders, 0, "acknowledgements never invalidate the renderer");
+	assert.deepEqual(runtime.components.map((component) => component.render), runtime.originalRenders);
+	assert.deepEqual(runtime.components[0]!.render(140), ["late-region-0:140"]);
+
+	await runtime.reader("off");
+	assert.equal(runtime.confirmations.length, 5, "off is an idempotent no-op before observation");
+	assert.deepEqual(runtime.appended, []);
+	assert.deepEqual(runtime.notifications, []);
+
+	await runtime.reader("on 90");
+	assert.equal(runtime.confirmations.length, 5, "invalid syntax is reported instead of warning");
+	assert.deepEqual(runtime.notifications, [{
+		message: "Usage: /reader [on|off|<positive integer width>]",
+		level: "error",
+	}]);
+
+	runtime.mode.mountInteractiveTui(runtime.renderer, runtime.components);
+	assert.notDeepEqual(runtime.components.map((component) => component.render), runtime.originalRenders);
+	await runtime.reader("on");
+	assert.deepEqual(runtime.appended, [{
+		customType: READER_STATE_ENTRY,
+		data: { enabled: true, width: DEFAULT_READER_WIDTH },
+	}]);
+	assert.equal(runtime.renderer.renders, 1);
+	for (let index = 0; index < runtime.components.length; index++) {
+		assert.deepEqual(runtime.components[index]!.render(140), [`               late-region-${index}:110`]);
+	}
+	runtime.shutdown();
+});
+
+test("late install is inert when the command has no TUI UI", async () => {
+	const runtime = createLateInstallRuntime();
+	const failUi = {
+		notify() { assert.fail("late enabling must not notify without a TUI UI"); },
+		confirm() { assert.fail("late enabling must not open a confirmation without a TUI UI"); },
+	};
+
+	await runtime.reader("on", { ...runtime.ctx, mode: "rpc", ui: failUi });
+	await runtime.reader("", { ...runtime.ctx, hasUI: false, ui: failUi });
+	await runtime.reader("80", { ...runtime.ctx, hasUI: false, ui: undefined });
+	assert.deepEqual(runtime.confirmations, []);
+	assert.deepEqual(runtime.appended, []);
+	assert.equal(runtime.renderer.renders, 0);
+	assert.deepEqual(runtime.components.map((component) => component.render), runtime.originalRenders);
+	runtime.shutdown();
+});
+
 test("off is byte-for-byte unchanged; on centers all seven root regions", () => {
 	const runtime = createRuntime();
 	runtime.start();

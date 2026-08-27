@@ -10,6 +10,9 @@ export const DEFAULT_READER_WIDTH = 110;
 export const READER_STATE_ENTRY = "dotfiles.reader-mode";
 export const SUPPORTED_PI_VERSION = "0.84.2";
 const PATCH_KEY = Symbol.for("dotfiles.reader-mode.layout-patch.v1");
+const LATE_INSTALL_WARNING_TITLE = "Reader mode needs a TUI remount";
+const LATE_INSTALL_WARNING_MESSAGE =
+	"Automatic remounting is unsafe in Pi 0.84.2. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.";
 
 type ReaderState = {
 	enabled: boolean;
@@ -304,7 +307,7 @@ export default function readerModeExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("reader", {
 		description: "Toggle reader mode or set its maximum width",
-		handler: (args, ctx) => {
+		handler: async (args, ctx) => {
 			if (!installation.ok) {
 				if (installation.tombstoned) notifyTombstone(ctx, installation.error);
 				else notifyFailure(ctx, installation.error);
@@ -317,16 +320,20 @@ export default function readerModeExtension(pi: ExtensionAPI): void {
 				else notifyFailure(ctx, ownershipFailure);
 				return;
 			}
-			if (record.error || !record.layoutObserved) {
-				notifyFailure(
-					ctx,
-					record.error ?? "Reader mode disabled: the interactive root layout was not observed",
-				);
+			if (record.error) {
+				notifyFailure(ctx, record.error);
 				return;
 			}
 			const result = parseReaderCommand(args, record.state);
 			if (!result.ok) {
 				notifyFailure(ctx, result.error);
+				return;
+			}
+			if (!record.layoutObserved) {
+				// Before the mount seam has been observed, state is still the disabled default.
+				// "off" is therefore an idempotent no-op; enabling requires a real host remount.
+				if (!result.state.enabled || ctx.mode !== "tui" || !ctx.hasUI) return;
+				await ctx.ui.confirm(LATE_INSTALL_WARNING_TITLE, LATE_INSTALL_WARNING_MESSAGE, { timeout: 15_000 });
 				return;
 			}
 			record.state = result.state;
@@ -349,10 +356,11 @@ export default function readerModeExtension(pi: ExtensionAPI): void {
 		}
 		if (record.owner !== owner) return;
 		record.ownerReleased = false;
-		if (record.error || !record.layoutObserved) {
-			notifyFailure(ctx, record.error ?? "Reader mode disabled: the interactive root layout was not observed");
+		if (record.error) {
+			notifyFailure(ctx, record.error);
 			return;
 		}
+		if (!record.layoutObserved) return;
 		record.state = restoreReaderState(ctx.sessionManager.getBranch());
 		render(record);
 	});
