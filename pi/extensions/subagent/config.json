@@ -1,5 +1,6 @@
 {
   "toolDescriptionMode": "compact",
   "waitTool": false,
-  "asyncByDefault": true
+  "asyncByDefault": true,
+  "artifactDir": "session"
 }
