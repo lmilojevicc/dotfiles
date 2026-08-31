@@ -43,6 +43,7 @@ version = 1
 [packages.pi]
   links = [
     { source = "settings.json", target = "~/.pi/agent/settings.json" },
+    { source = "mcp.json", target = "~/.config/mcp/mcp.json" },
     { source = "keybindings.json", target = "~/.pi/agent/keybindings.json" },
     { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
     { source = "themes", target = "~/.pi/agent/themes" },
