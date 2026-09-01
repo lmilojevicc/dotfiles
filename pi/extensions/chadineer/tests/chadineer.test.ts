@@ -10,6 +10,8 @@ import chadineerExtension, {
 	restoreChadineerState,
 } from "../index.ts";
 
+const promptFile = readFileSync(new URL("../PROMPT.md", import.meta.url), "utf8").trim();
+
 type Handler = (...args: any[]) => any;
 type TestEntry = {
 	type: "custom";
@@ -137,12 +139,12 @@ test("status reports without mutation and invalid or extra arguments only show u
 	]);
 });
 
-test("enabled mode appends the canonical prompt after prior prompt modifications", () => {
+test("enabled mode appends the Markdown prompt after prior prompt modifications", () => {
 	const runtime = createRuntime();
 	runtime.start();
 	runtime.command("on");
 	assert.deepEqual(runtime.before("base plus earlier extension"), {
-		systemPrompt: `base plus earlier extension\n\n${CHADINEER_PROMPT}`,
+		systemPrompt: `base plus earlier extension\n\n${promptFile}`,
 	});
 });
 
@@ -188,6 +190,13 @@ test("missing or wholly malformed branch state falls back off", () => {
 	runtime.start();
 	assert.equal(runtime.statuses.has(CHADINEER_STATUS_KEY), false);
 	assert.equal(runtime.before(), undefined);
+});
+
+test("loads the canonical prompt from Markdown without duplicating it inline", () => {
+	const indexSource = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+	assert.equal(CHADINEER_PROMPT, promptFile);
+	assert.doesNotMatch(indexSource, /## Chadineer development guidelines/);
+	assert.doesNotMatch(indexSource, /Prefer the simplest adequate solution/);
 });
 
 test("bundled prompt retains required outcomes and excludes brittle slogans", () => {

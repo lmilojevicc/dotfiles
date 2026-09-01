@@ -10,7 +10,7 @@ Chadineer is an opt-in Pi extension that adds concise development guidelines to 
 
 New sessions start with Chadineer off. State changes are stored in Pi session history and restored independently for each active branch. While enabled, the footer shows `chadineer`.
 
-The prompt is bundled in the extension and appended during `before_agent_start`, so other extensions' earlier system-prompt changes are preserved. No prompt text is added to conversation history.
+The editable prompt lives in [`PROMPT.md`](PROMPT.md) and is appended during `before_agent_start`, so other extensions' earlier system-prompt changes are preserved. It is loaded once when the extension runtime initializes; run `/reload` after editing it. No prompt text is added to conversation history.
 
 ## Test
 
