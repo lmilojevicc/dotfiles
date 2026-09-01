@@ -240,8 +240,8 @@ test("bundled prompt retains required outcomes and excludes brittle slogans", ()
 
 test("static append-system prompt no longer includes the migrated guidelines", () => {
 	const appendSystem = readFileSync(new URL("../../../APPEND_SYSTEM.md", import.meta.url), "utf8");
+	assert.equal(appendSystem.includes(CHADINEER_PROMPT), false);
 	assert.doesNotMatch(appendSystem, /^## General development guidelines$/m);
 	assert.doesNotMatch(appendSystem, /Can it be one line\? Make it one line\./);
-	assert.match(appendSystem, /^## Orchestration$/m);
-	assert.match(appendSystem, /^## Git$/m);
+	assert.doesNotMatch(appendSystem, /Non-trivial logic leaves ONE runnable check behind/);
 });
