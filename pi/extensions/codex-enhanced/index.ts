@@ -24,15 +24,17 @@ import { unwatchFile, watchFile } from "node:fs";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
-	getFastConfigPath as resolveFastConfigPath,
+	getConfigPath as resolveConfigPath,
 	injectFastServiceTier,
 	isCanonicalBaseUrl,
 	isCanonicalCodexModel,
 	parseResetCredits,
 	parseResetResult,
 	parseUsagePayload,
-	readFastConfig as readFastConfigFile,
+	readConfig as readConfigFile,
+	selectResetCredit,
 	toggleFastConfig as toggleFastConfigFile,
+	toggleResponsesCompactConfig as toggleResponsesCompactConfigFile,
 	weeklyUsageLeft,
 	type ResetCredit,
 	type ResetCredits,
@@ -42,6 +44,14 @@ import {
 	type UsageSnapshot,
 	type UsageWindow,
 } from "./core.ts";
+import {
+	applyCompactedHistory,
+	captureRequestShape,
+	compactOnServer,
+	reconstructCompactedHistory,
+	withCurrentActiveTools,
+	type RequestShape,
+} from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
 
 const STATUS_KEY = "codex-enhanced";
@@ -50,18 +60,20 @@ const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const RESET_CREDITS_CACHE_MS = 5_000;
 const WEEKLY_USAGE_CACHE_MS = 5 * 60_000;
 
-type UsageState = UsageSnapshot | { error: string } | undefined;
-type MenuTab = "quota" | "resets" | "fast";
+type AccountUsageSnapshot = UsageSnapshot & { accountKey: string };
+type UsageState = AccountUsageSnapshot | { error: string } | undefined;
+type MenuTab = "quota" | "resets" | "fast" | "compaction";
 type ResetRequestPhase = "pending" | "ambiguous" | "locked";
 type ResetRequestState = {
 	requestId: string;
+	creditId: string;
 	phase: ResetRequestPhase;
 	promise?: Promise<ResetResult>;
 	message?: { kind: "info" | "error"; text: string };
 };
 type ResetRequestStore = Map<string, ResetRequestState>;
 
-const MENU_TABS: readonly MenuTab[] = ["quota", "resets", "fast"];
+const MENU_TABS: readonly MenuTab[] = ["quota", "resets", "fast", "compaction"];
 const RESET_REQUEST_STORE = Symbol.for("codex-enhanced.reset-request-store");
 const globalResetState = globalThis as typeof globalThis & { [RESET_REQUEST_STORE]?: ResetRequestStore };
 const resetRequestStateByAccount = globalResetState[RESET_REQUEST_STORE] ??= new Map();
@@ -72,16 +84,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getFastConfigPath(): string {
-	return resolveFastConfigPath(getAgentDir());
+function getConfigPath(): string {
+	return resolveConfigPath(getAgentDir());
 }
 
-function readFastConfig(configPath: string = getFastConfigPath()) {
-	return readFastConfigFile(configPath);
+function readConfig(configPath: string = getConfigPath()) {
+	return readConfigFile(configPath);
 }
 
-function toggleFastConfig(configPath: string = getFastConfigPath()) {
+function toggleFastConfig(configPath: string = getConfigPath()) {
 	return toggleFastConfigFile(configPath);
+}
+
+function toggleResponsesCompactConfig(configPath: string = getConfigPath()) {
+	return toggleResponsesCompactConfigFile(configPath);
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -100,8 +116,7 @@ function extractAccountId(token: string): string | undefined {
 	}
 }
 
-async function buildHeaders(ctx: ExtensionContext, model: RuntimeModel): Promise<Headers> {
-	if (!isCanonicalCodexModel(model)) throw new Error("Codex usage requires the canonical ChatGPT subscription endpoint.");
+async function buildHeaders(ctx: ExtensionContext): Promise<Headers> {
 	const resolved = await ctx.modelRegistry.getProviderAuth("openai-codex");
 	const token = resolved?.auth.apiKey;
 	if (!token || !isCanonicalBaseUrl(resolved?.auth.baseUrl, true)) {
@@ -136,7 +151,9 @@ async function fetchDetailedResetCredits(headers: Headers, signal?: AbortSignal)
 	return promise;
 }
 
-async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, includeDetailedResetCredits = true): Promise<UsageSnapshot> {
+async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, includeDetailedResetCredits = true): Promise<AccountUsageSnapshot> {
+	const key = accountKey(headers);
+	if (!key) throw new Error("Canonical OpenAI Codex subscription auth is required.");
 	const snapshot = parseUsagePayload(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/usage`, { method: "GET", headers, signal }));
 	if (includeDetailedResetCredits && (!snapshot.resetCredits || snapshot.resetCredits.availableCount > 0)) {
 		try {
@@ -146,24 +163,19 @@ async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, inc
 			// Reset-credit details are additive; basic quota data is still useful.
 		}
 	}
-	return snapshot;
+	return { ...snapshot, accountKey: key };
 }
 
-async function fetchUsage(ctx: ExtensionContext, signal?: AbortSignal): Promise<UsageSnapshot> {
-	const model = ctx.model as RuntimeModel | undefined;
-	if (!model) throw new Error("No active model selected.");
-	if (model.provider !== "openai-codex") throw new Error("Codex usage is only available for OpenAI Codex subscription models.");
+async function fetchUsage(ctx: ExtensionContext, signal?: AbortSignal): Promise<AccountUsageSnapshot> {
 	const boundedSignal = requestSignal(signal);
-	const headers = await withAbort(buildHeaders(ctx, model), boundedSignal);
+	const headers = await withAbort(buildHeaders(ctx), boundedSignal);
 	return fetchUsageWithHeaders(headers, boundedSignal);
 }
 
 async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal): Promise<number | undefined> {
-	const model = ctx.model as RuntimeModel | undefined;
-	if (!isCanonicalCodexModel(model)) return undefined;
 	const combinedSignal = requestSignal(signal);
 	try {
-		const headers = await withAbort(buildHeaders(ctx, model), combinedSignal);
+		const headers = await withAbort(buildHeaders(ctx), combinedSignal);
 		const key = accountKey(headers);
 		if (!key) return undefined;
 		const cached = weeklyUsageCache.get(key);
@@ -195,23 +207,32 @@ function createRedeemRequestId(): string {
 }
 
 async function resolveResetAccount(ctx: ExtensionContext, signal?: AbortSignal): Promise<{ key: string; headers: Headers }> {
-	const model = ctx.model as RuntimeModel | undefined;
-	if (!model) throw new Error("No active model selected.");
-	if (model.provider !== "openai-codex") throw new Error("Codex reset credits are only available for OpenAI Codex subscription models.");
 	const boundedSignal = requestSignal(signal);
-	const headers = await withAbort(buildHeaders(ctx, model), boundedSignal);
+	const headers = await withAbort(buildHeaders(ctx), boundedSignal);
 	const key = accountKey(headers);
 	if (!key) throw new Error("Canonical OpenAI Codex subscription auth is required.");
 	return { key, headers };
 }
 
-async function consumeResetCredit(headers: Headers, redeemRequestId: string, signal?: AbortSignal): Promise<ResetResult> {
+async function consumeResetCredit(
+	headers: Headers,
+	creditId: string,
+	redeemRequestId: string,
+	signal?: AbortSignal,
+): Promise<ResetResult> {
+	if (!creditId?.trim()) throw new Error("No usable reset credit ID is available. Refresh reset credits before retrying.");
+	const accountId = headers.get("chatgpt-account-id")?.trim();
+	if (!accountId) throw new Error("Canonical OpenAI Codex subscription auth is required.");
 	headers.set("content-type", "application/json");
 	resetCreditsCache = undefined;
 	const result = parseResetResult(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits/consume`, {
 		method: "POST",
 		headers,
-		body: JSON.stringify({ redeem_request_id: redeemRequestId }),
+		body: JSON.stringify({
+			credit_id: creditId,
+			redeem_request_id: redeemRequestId,
+			account_id: accountId,
+		}),
 		signal,
 	}));
 	resetCreditsCache = undefined;
@@ -292,7 +313,7 @@ function runResetRequest(
 ): Promise<ResetResult> {
 	state.phase = "pending";
 	state.message = undefined;
-	const promise = consume(headers, state.requestId, signal)
+	const promise = consume(headers, state.creditId, state.requestId, signal)
 		.then((result) => {
 			state.phase = "locked";
 			state.message = {
@@ -309,6 +330,39 @@ function runResetRequest(
 		.finally(() => { state.promise = undefined; });
 	state.promise = promise;
 	return promise;
+}
+
+type ResetAction =
+	| { kind: "refresh" }
+	| { kind: "wait" }
+	| { kind: "locked" }
+	| { kind: "none" }
+	| { kind: "arm" }
+	| { kind: "error" }
+	| { kind: "redeem"; state: ResetRequestState };
+
+function decideResetAction(
+	accountKeyValue: string,
+	usageState: UsageState,
+	armedAccountKey: string | undefined,
+	existing: ResetRequestState | undefined,
+): ResetAction {
+	if (!usageState || "error" in usageState || usageState.accountKey !== accountKeyValue) return { kind: "refresh" };
+	if (existing?.phase === "pending") return { kind: "wait" };
+	if (existing?.phase === "locked") return { kind: "locked" };
+	if (existing) return { kind: "redeem", state: existing };
+	if ((usageState.resetCredits?.availableCount ?? 0) < 1) return { kind: "none" };
+	if (armedAccountKey !== accountKeyValue) return { kind: "arm" };
+	const credit = selectResetCredit(usageState.resetCredits?.credits ?? []);
+	if (!credit?.id) return { kind: "error" };
+	return {
+		kind: "redeem",
+		state: {
+			requestId: createRedeemRequestId(),
+			creditId: credit.id,
+			phase: "pending",
+		},
+	};
 }
 
 function visibleUsageLimits(snapshot: UsageSnapshot): UsageLimit[] {
@@ -375,6 +429,20 @@ function formatFastLines(theme: Theme, fast: boolean, eligible: boolean): string
 	];
 }
 
+function formatCompactionLines(theme: Theme, enabled: boolean, eligible: boolean): string[] {
+	const value = enabled ? theme.fg("accent", "on") : theme.fg("dim", "off");
+	const status = enabled
+		? theme.fg(eligible ? "accent" : "dim", `  Globally enabled · Pi compaction uses OpenAI's encrypted Responses compaction item for canonical Codex sessions.${eligible ? "" : " Current model is ineligible."}`)
+		: theme.fg("dim", "  Globally off · Pi uses its normal local compaction.");
+	return [
+		`  ${theme.bold("Server compaction")}  ${value}`,
+		status,
+		theme.fg("dim", "  The menu is always accessible; this setting only applies to canonical OpenAI Codex Responses models."),
+		theme.fg("dim", "  Remote failures fall back to Pi's local compaction without replacing session history."),
+		theme.fg("dim", "  Enter or Space to toggle."),
+	];
+}
+
 function formatUsageText(snapshot: UsageSnapshot): string {
 	const lines = [`Codex usage${snapshot.planType ? ` (${snapshot.planType})` : ""}:`];
 	if (snapshot.resetCredits) lines.push(`- resets available: ${snapshot.resetCredits.availableCount}`);
@@ -408,35 +476,38 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 		let usageLoading = false;
 		let resetAccountLoading = false;
 		let resetAccountKey: string | undefined;
-		let resetArmed = false;
+		let resetArmedAccountKey: string | undefined;
 
 		const render = () => {
 			if (!viewSignal.aborted) tui.requestRender();
 		};
-		const fastConfigPath = getFastConfigPath();
-		const onFastConfigChange = () => render();
-		let fastConfigWatcherActive = true;
-		watchFile(fastConfigPath, { interval: 250, persistent: false }, onFastConfigChange);
-		const stopFastConfigWatcher = () => {
-			if (!fastConfigWatcherActive) return;
-			fastConfigWatcherActive = false;
-			unwatchFile(fastConfigPath, onFastConfigChange);
+		const configPath = getConfigPath();
+		const onConfigChange = () => render();
+		let configWatcherActive = true;
+		watchFile(configPath, { interval: 250, persistent: false }, onConfigChange);
+		const stopConfigWatcher = () => {
+			if (!configWatcherActive) return;
+			configWatcherActive = false;
+			unwatchFile(configPath, onConfigChange);
 		};
 		const closeOnShutdown = () => {
-			stopFastConfigWatcher();
+			stopConfigWatcher();
 			done(undefined);
 		};
 		shutdownSignal.addEventListener("abort", closeOnShutdown, { once: true });
 		const currentResetState = () => resetAccountKey ? resetRequestStateByAccount.get(resetAccountKey) : undefined;
-		const load = (unlockSettledReset = false) => {
+		const load = (unlockSettledReset = false, account?: { key: string; headers: Headers }) => {
 			if (usageLoading) return;
 			const unlockAccountKey = unlockSettledReset ? resetAccountKey : undefined;
 			const stateAtLoad = unlockAccountKey ? resetRequestStateByAccount.get(unlockAccountKey) : undefined;
 			const stateToUnlock = stateAtLoad?.phase === "locked" ? stateAtLoad : undefined;
 			usageLoading = true;
-			resetArmed = false;
+			resetArmedAccountKey = undefined;
 			render();
-			fetchUsage(ctx, viewSignal)
+			const usagePromise = account
+				? fetchUsageWithHeaders(account.headers, requestSignal(viewSignal))
+				: fetchUsage(ctx, viewSignal);
+			usagePromise
 				.then((usage) => {
 					usageState = usage;
 					if (stateToUnlock?.phase === "locked" && unlockAccountKey && resetRequestStateByAccount.get(unlockAccountKey) === stateToUnlock) {
@@ -481,20 +552,29 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 			const account = await ensureResetAccount();
 			if (!account || viewSignal.aborted) return;
 			const existing = resetRequestStateByAccount.get(account.key);
-			if (existing?.phase === "pending") {
-				watchReset(existing);
+			const action = decideResetAction(account.key, usageState, resetArmedAccountKey, existing);
+			if (action.kind === "refresh") {
+				load(false, account);
 				return;
 			}
-			if (existing?.phase === "locked") return;
-			if (!existing && (!usageState || "error" in usageState || (usageState.resetCredits?.availableCount ?? 0) < 1)) return;
-			if (!existing && !resetArmed) {
-				resetArmed = true;
+			if (action.kind === "wait") {
+				if (existing) watchReset(existing);
+				return;
+			}
+			if (action.kind === "locked" || action.kind === "none") return;
+			if (action.kind === "arm") {
+				resetArmedAccountKey = account.key;
+				render();
+				return;
+			}
+			if (action.kind === "error") {
+				usageState = { error: "No usable reset credit ID is available. Press R to refresh reset credits." };
 				render();
 				return;
 			}
 
-			resetArmed = false;
-			const state: ResetRequestState = existing ?? { requestId: createRedeemRequestId(), phase: "pending" };
+			resetArmedAccountKey = undefined;
+			const state = action.state;
 			runResetRequest(state, account.headers, shutdownSignal);
 			resetRequestStateByAccount.set(account.key, state);
 			watchReset(state);
@@ -502,7 +582,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 		};
 		const activateTab = (tab: MenuTab) => {
 			activeTab = tab;
-			resetArmed = false;
+			resetArmedAccountKey = undefined;
 			if (tab === "resets" && !resetAccountKey) void ensureResetAccount();
 			render();
 		};
@@ -512,22 +592,29 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 		};
 		const toggleFast = () => {
 			const result = toggleFastConfig();
-			if (!result.ok) ctx.ui.notify(`Failed to save Fast mode: ${result.error}`, "error");
+			if ("error" in result) ctx.ui.notify(`Failed to save Fast mode: ${result.error}`, "error");
+			render();
+		};
+		const toggleCompaction = () => {
+			const result = toggleResponsesCompactConfig();
+			if ("error" in result) ctx.ui.notify(`Failed to save server compaction: ${result.error}`, "error");
 			render();
 		};
 
 		load();
 		return {
 			render: (width: number) => {
-				const tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}  ${theme.fg("dim", "/")}  ${activeTab === "fast" ? theme.bold("Fast") : theme.fg("dim", "Fast")}`;
+				const tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}  ${theme.fg("dim", "/")}  ${activeTab === "fast" ? theme.bold("Fast") : theme.fg("dim", "Fast")}  ${theme.fg("dim", "/")}  ${activeTab === "compaction" ? theme.bold("Compaction") : theme.fg("dim", "Compaction")}`;
 				const requestState = currentResetState();
 				const footer = activeTab === "quota"
 					? "  Tab next · Shift+Tab previous · R to refresh · Esc to close"
-					: activeTab === "fast"
+					: activeTab === "fast" || activeTab === "compaction"
 						? "  Tab next · Shift+Tab previous · Enter/Space toggle · Esc to close"
 						: requestState?.phase === "ambiguous"
 							? "  Tab next · Shift+Tab previous · Ctrl+R retry same reset · R refresh usage · Esc to close"
 							: "  Tab next · Shift+Tab previous · R to refresh · Ctrl+R use reset · Esc to close";
+				const config = readConfig();
+				const eligible = isCanonicalCodexModel(ctx.model as RuntimeModel | undefined);
 				return [
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 					tabs,
@@ -535,8 +622,10 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 					...(activeTab === "quota"
 						? formatQuotaLines(theme, usageState, usageLoading)
 						: activeTab === "resets"
-							? formatResetLines(theme, usageState, usageLoading, resetAccountLoading, requestState, resetArmed)
-							: formatFastLines(theme, readFastConfig().fast, isCanonicalCodexModel(ctx.model as RuntimeModel | undefined))),
+							? formatResetLines(theme, usageState, usageLoading, resetAccountLoading, requestState, resetArmedAccountKey === resetAccountKey)
+							: activeTab === "fast"
+								? formatFastLines(theme, config.fast, eligible)
+								: formatCompactionLines(theme, config.compaction.responsesCompactEnabled, eligible)),
 					"",
 					theme.fg("dim", footer),
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
@@ -545,12 +634,12 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 			invalidate: render,
 			dispose: () => {
 				shutdownSignal.removeEventListener("abort", closeOnShutdown);
-				stopFastConfigWatcher();
+				stopConfigWatcher();
 				viewController.abort();
 			},
 			handleInput: (data: string) => {
 				if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
-					stopFastConfigWatcher();
+					stopConfigWatcher();
 					viewController.abort();
 					done(undefined);
 				} else if (matchesKey(data, "shift+tab")) {
@@ -559,14 +648,34 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal): Pr
 					cycleTab(1);
 				} else if (activeTab === "fast" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
 					toggleFast();
+				} else if (activeTab === "compaction" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
+					toggleCompaction();
 				} else if (activeTab === "resets" && matchesKey(data, "ctrl+r")) {
 					void startReset();
-				} else if (activeTab !== "fast" && data.toLowerCase() === "r") {
+				} else if ((activeTab === "quota" || activeTab === "resets") && data.toLowerCase() === "r") {
 					load(true);
 				}
 			},
 		};
 	});
+}
+
+async function runCompactionHook(
+	event: Parameters<typeof compactOnServer>[0],
+	ctx: ExtensionContext,
+	shape: RequestShape,
+) {
+	if (event.signal.aborted) return { cancel: true } as const;
+	try {
+		const compaction = await compactOnServer(event, ctx, shape);
+		if (event.signal.aborted) return { cancel: true } as const;
+		return compaction ? { compaction } : undefined;
+	} catch (error) {
+		if (event.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+			return { cancel: true } as const;
+		}
+		throw error;
+	}
 }
 
 function setStatus(ctx: ExtensionContext, weeklyLeft?: number): void {
@@ -579,7 +688,12 @@ function setStatus(ctx: ExtensionContext, weeklyLeft?: number): void {
 }
 
 export const __testing = Object.freeze({
+	consumeResetCredit,
+	decideResetAction,
+	fetchUsage,
 	fetchWeeklyUsageLeft,
+	resolveResetAccount,
+	runCompactionHook,
 	runResetRequest,
 });
 
@@ -587,6 +701,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 	let generation = 0;
 	let shutdownController = new AbortController();
 	let lastContext: ExtensionContext | undefined;
+	const requestShapeBySession = new Map<string, RequestShape>();
 
 	const clearStatus = (ctx?: ExtensionContext) => {
 		generation += 1;
@@ -595,29 +710,44 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 	const refreshStatus = async (ctx: ExtensionContext) => {
 		lastContext = ctx;
 		const currentGeneration = ++generation;
-		if (!ctx.hasUI || !isCanonicalCodexModel(ctx.model as RuntimeModel | undefined)) {
-			setStatus(ctx);
-			return;
-		}
+		if (!ctx.hasUI) return;
 		const weeklyLeft = await fetchWeeklyUsageLeft(ctx, shutdownController.signal);
 		if (currentGeneration !== generation || shutdownController.signal.aborted) return;
-		if (!isCanonicalCodexModel(ctx.model as RuntimeModel | undefined)) {
-			setStatus(ctx);
-			return;
-		}
 		setStatus(ctx, weeklyLeft);
 	};
 
 	pi.registerCommand("codex-enhanced", {
-		description: "Open Codex quota, banked reset, and Fast mode menu",
+		description: "Open Codex quota, resets, Fast mode, and server compaction settings",
 		handler: async (_args, ctx) => {
 			await openUsage(ctx, shutdownController.signal);
 			void refreshStatus(ctx);
 		},
 	});
 
-	pi.on("before_provider_request", (event, ctx) =>
-		injectFastServiceTier(event.payload, ctx.model as RuntimeModel | undefined, readFastConfig().fast));
+	pi.on("before_provider_request", (event, ctx) => {
+		const model = ctx.model as RuntimeModel | undefined;
+		let payload = event.payload;
+		if (isCanonicalCodexModel(model) && model.id) {
+			const history = reconstructCompactedHistory(ctx.sessionManager.getBranch() as never, model);
+			const replayed = history ? applyCompactedHistory(payload, history) : undefined;
+			if (replayed) payload = replayed;
+		}
+		const fastPayload = injectFastServiceTier(payload, model, readConfig().fast);
+		if (fastPayload) payload = fastPayload;
+		if (isCanonicalCodexModel(model) && model.id) {
+			const shape = captureRequestShape(payload);
+			if (shape) requestShapeBySession.set(ctx.sessionManager.getSessionId(), shape);
+		}
+		return payload === event.payload ? undefined : payload;
+	});
+	pi.on("session_before_compact", async (event, ctx) => {
+		if (!readConfig().compaction.responsesCompactEnabled) return undefined;
+		return runCompactionHook(
+			event,
+			ctx,
+			withCurrentActiveTools(pi, requestShapeBySession.get(ctx.sessionManager.getSessionId())),
+		);
+	});
 	pi.on("session_start", (_event, ctx) => {
 		shutdownController.abort();
 		shutdownController = new AbortController();
@@ -633,6 +763,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		shutdownController.abort();
+		requestShapeBySession.delete(ctx.sessionManager.getSessionId());
 		clearStatus(ctx);
 		if (lastContext && lastContext !== ctx) setStatus(lastContext);
 		lastContext = undefined;

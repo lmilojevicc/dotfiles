@@ -4,15 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-	getFastConfigPath,
+	getConfigPath,
 	injectFastServiceTier,
 	isCanonicalCodexModel,
 	parseResetResult,
 	parseUsagePayload,
-	readFastConfig,
+	readConfig,
+	selectResetCredit,
 	toggleFastConfig,
+	toggleResponsesCompactConfig,
 	weeklyUsageLeft,
 	writeFastConfig,
+	writeResponsesCompactConfig,
 } from "../core.ts";
 
 const canonicalModel = {
@@ -46,7 +49,7 @@ test("parses quota windows, reset credits, and weekly usage", () => {
 		}],
 		rate_limit_reset_credits: {
 			available_count: "2",
-			credits: [{ status: "available", expires_at: "2030-01-01T00:00:00Z" }, null],
+			credits: [{ id: "credit-1", status: "available", expires_at: "2030-01-01T00:00:00Z" }, null],
 		},
 	});
 
@@ -64,7 +67,7 @@ test("parses quota windows, reset credits, and weekly usage", () => {
 	});
 	assert.deepEqual(snapshot.resetCredits, {
 		availableCount: 2,
-		credits: [{ status: "available", expiresAt: "2030-01-01T00:00:00Z" }],
+		credits: [{ id: "credit-1", status: "available", expiresAt: "2030-01-01T00:00:00Z" }],
 	});
 	assert.equal(weeklyUsageLeft(snapshot), 60);
 });
@@ -86,24 +89,56 @@ test("normalizes a lone weekly window and parses reset outcomes safely", () => {
 	});
 });
 
-test("reads, writes, and toggles Fast mode in an isolated agent state directory", () => {
+test("migrates the Fast-only config and preserves unknown fields for both toggles", () => {
 	const agentDir = mkdtempSync(join(tmpdir(), "codex-enhanced-"));
 	try {
-		const configPath = getFastConfigPath(agentDir);
+		const configPath = getConfigPath(agentDir);
 		assert.equal(configPath, join(agentDir, "codex-enhanced.json"));
-		assert.deepEqual(readFastConfig(configPath), { fast: false });
+		assert.deepEqual(readConfig(configPath), {
+			fast: false,
+			compaction: { responsesCompactEnabled: false },
+		});
 
-		writeFileSync(configPath, `${JSON.stringify({ retained: "value", fast: false })}\n`);
+		writeFileSync(configPath, `${JSON.stringify({ retained: "value", fast: false, compaction: { future: 7 } })}\n`);
 		assert.deepEqual(writeFastConfig(true, configPath), { ok: true });
-		assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), { retained: "value", fast: true });
+		assert.deepEqual(writeResponsesCompactConfig(true, configPath), { ok: true });
+		assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+			retained: "value",
+			fast: true,
+			compaction: { future: 7, responsesCompactEnabled: true },
+		});
 		assert.deepEqual(toggleFastConfig(configPath), { ok: true, fast: false });
-		assert.deepEqual(readFastConfig(configPath), { fast: false });
+		assert.deepEqual(toggleResponsesCompactConfig(configPath), { ok: true, responsesCompactEnabled: false });
+		assert.deepEqual(readConfig(configPath), {
+			fast: false,
+			compaction: { responsesCompactEnabled: false },
+		});
 
 		writeFileSync(configPath, "not json");
-		assert.deepEqual(readFastConfig(configPath), { fast: false });
+		assert.deepEqual(readConfig(configPath), {
+			fast: false,
+			compaction: { responsesCompactEnabled: false },
+		});
 	} finally {
 		rmSync(agentDir, { recursive: true, force: true });
 	}
+});
+
+test("selects the soonest-expiring usable reset credit deterministically", () => {
+	const now = Date.parse("2030-01-01T00:00:00Z");
+	assert.equal(selectResetCredit([
+		{ id: "later", status: "available", expiresAt: "2030-01-03T00:00:00Z" },
+		{ id: "tie-b", status: "available", expiresAt: "2030-01-02T00:00:00Z" },
+		{ id: "tie-a", status: "available", expiresAt: "2030-01-02T00:00:00Z" },
+		{ id: "expired", status: "available", expiresAt: "2029-12-31T00:00:00Z" },
+		{ id: "used", status: "consumed", expiresAt: "2030-01-01T01:00:00Z" },
+		{ status: "available", expiresAt: "2030-01-01T01:00:00Z" },
+	], now)?.id, "tie-a");
+	assert.equal(selectResetCredit([{ status: "available" }], now), undefined);
+	assert.equal(selectResetCredit([
+		{ id: "malformed", status: "available", expiresAt: "not-a-timestamp" },
+		{ id: "finite", status: "available", expiresAt: "2030-01-01T01:00:00Z" },
+	], now)?.id, "finite");
 });
 
 test("injects priority only for eligible requests without an explicit tier", () => {

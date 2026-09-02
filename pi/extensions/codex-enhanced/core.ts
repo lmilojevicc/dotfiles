@@ -1,11 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-const FAST_CONFIG_BASENAME = "codex-enhanced.json";
+const CONFIG_BASENAME = "codex-enhanced.json";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
 
 export type RuntimeModel = {
+	id?: string;
 	provider: string;
 	api: string;
 	baseUrl?: string;
@@ -25,6 +26,7 @@ export type UsageLimit = {
 };
 
 export type ResetCredit = {
+	id?: string;
 	status?: string;
 	expiresAt?: string;
 };
@@ -47,28 +49,47 @@ export type ResetResult = {
 	windowsReset?: number;
 };
 
-type FastConfig = { fast: boolean };
-type FastConfigWriteResult = { ok: true } | { ok: false; error: string };
-type FastConfigToggleResult = { ok: true; fast: boolean } | { ok: false; error: string };
+export type CodexEnhancedConfig = {
+	fast: boolean;
+	compaction: { responsesCompactEnabled: boolean };
+};
+
+type ConfigWriteResult = { ok: true } | { ok: false; error: string };
+type ConfigToggleResult<K extends "fast" | "responsesCompactEnabled"> = ({ ok: true } & Record<K, boolean>) | { ok: false; error: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function getFastConfigPath(agentDir: string): string {
-	return join(agentDir, FAST_CONFIG_BASENAME);
+export function getConfigPath(agentDir: string): string {
+	return join(agentDir, CONFIG_BASENAME);
 }
 
-export function readFastConfig(configPath: string): FastConfig {
+/** @deprecated Use getConfigPath. */
+export const getFastConfigPath = getConfigPath;
+
+export function readConfig(configPath: string): CodexEnhancedConfig {
 	try {
 		const parsed = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
-		return { fast: isRecord(parsed) && parsed.fast === true };
+		const compaction = isRecord(parsed) && isRecord(parsed.compaction) ? parsed.compaction : {};
+		return {
+			fast: isRecord(parsed) && parsed.fast === true,
+			compaction: { responsesCompactEnabled: compaction.responsesCompactEnabled === true },
+		};
 	} catch {
-		return { fast: false };
+		return { fast: false, compaction: { responsesCompactEnabled: false } };
 	}
 }
 
-export function writeFastConfig(fast: boolean, configPath: string): FastConfigWriteResult {
+/** @deprecated Use readConfig. */
+export function readFastConfig(configPath: string): Pick<CodexEnhancedConfig, "fast"> {
+	return { fast: readConfig(configPath).fast };
+}
+
+function writeConfigValue(
+	configPath: string,
+	update: (document: Record<string, unknown>) => Record<string, unknown>,
+): ConfigWriteResult {
 	const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.${globalThis.crypto.randomUUID()}.tmp`;
 	try {
 		mkdirSync(dirname(configPath), { recursive: true });
@@ -79,7 +100,7 @@ export function writeFastConfig(fast: boolean, configPath: string): FastConfigWr
 		} catch {
 			// A settings write replaces a missing or unreadable document.
 		}
-		writeFileSync(temporaryPath, `${JSON.stringify({ ...document, fast }, null, 2)}\n`, {
+		writeFileSync(temporaryPath, `${JSON.stringify(update(document), null, 2)}\n`, {
 			encoding: "utf8",
 			mode: 0o600,
 		});
@@ -99,10 +120,30 @@ export function writeFastConfig(fast: boolean, configPath: string): FastConfigWr
 	}
 }
 
-export function toggleFastConfig(configPath: string): FastConfigToggleResult {
-	const fast = !readFastConfig(configPath).fast;
+export function writeFastConfig(fast: boolean, configPath: string): ConfigWriteResult {
+	return writeConfigValue(configPath, (document) => ({ ...document, fast }));
+}
+
+export function writeResponsesCompactConfig(enabled: boolean, configPath: string): ConfigWriteResult {
+	return writeConfigValue(configPath, (document) => ({
+		...document,
+		compaction: {
+			...(isRecord(document.compaction) ? document.compaction : {}),
+			responsesCompactEnabled: enabled,
+		},
+	}));
+}
+
+export function toggleFastConfig(configPath: string): ConfigToggleResult<"fast"> {
+	const fast = !readConfig(configPath).fast;
 	const result = writeFastConfig(fast, configPath);
-	return result.ok ? { ok: true, fast } : result;
+	return "error" in result ? result : { ok: true, fast };
+}
+
+export function toggleResponsesCompactConfig(configPath: string): ConfigToggleResult<"responsesCompactEnabled"> {
+	const responsesCompactEnabled = !readConfig(configPath).compaction.responsesCompactEnabled;
+	const result = writeResponsesCompactConfig(responsesCompactEnabled, configPath);
+	return "error" in result ? result : { ok: true, responsesCompactEnabled };
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -140,7 +181,26 @@ function parseRateLimit(value: unknown): Pick<UsageLimit, "primary" | "secondary
 
 function parseResetCredit(value: unknown): ResetCredit | undefined {
 	if (!isRecord(value)) return undefined;
-	return { status: stringValue(value.status), expiresAt: stringValue(value.expires_at) };
+	return { id: stringValue(value.id), status: stringValue(value.status), expiresAt: stringValue(value.expires_at) };
+}
+
+function resetCreditExpiry(expiresAt: string | undefined): number {
+	if (!expiresAt) return Number.POSITIVE_INFINITY;
+	const parsed = Date.parse(expiresAt);
+	return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+export function selectResetCredit(credits: ResetCredit[], now = Date.now()): ResetCredit | undefined {
+	return credits
+		.filter((credit) => credit.id
+			&& (!credit.status || credit.status === "available")
+			&& resetCreditExpiry(credit.expiresAt) > now)
+		.sort((left, right) => {
+			const expiryOrder = resetCreditExpiry(left.expiresAt) - resetCreditExpiry(right.expiresAt);
+			return Number.isNaN(expiryOrder) || expiryOrder === 0
+				? (left.id ?? "").localeCompare(right.id ?? "")
+				: expiryOrder;
+		})[0];
 }
 
 export function parseResetCredits(value: unknown): ResetCredits | undefined {
