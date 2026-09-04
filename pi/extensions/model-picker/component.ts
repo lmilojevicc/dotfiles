@@ -3,12 +3,16 @@ import {
 	Input, matchesKey, truncateToWidth, visibleWidth,
 	type Component, type Focusable, type KeybindingsManager,
 } from "@earendil-works/pi-tui";
-import { modelKey, modelLabel, providerCounts, searchModels, searchTier, type PickerModel } from "./domain.ts";
+import { modelKey, modelLabel, orderModels, providerCounts, searchModels, searchTier, type PickerModel } from "./domain.ts";
+import { favoriteKey, favoritesError } from "./favorites.ts";
 
 type Options = {
 	models: readonly PickerModel[];
 	current?: PickerModel;
 	scoped: boolean;
+	favorites?: readonly string[];
+	favoriteError?: string;
+	onToggleFavorite?: (model: PickerModel) => readonly string[];
 	theme: Pick<Theme, "fg" | "bg" | "bold">;
 	keybindings: KeybindingsManager;
 	getHeight: () => number;
@@ -39,14 +43,23 @@ export class ModelPickerComponent implements Component, Focusable {
 	private renderedHeight = 0;
 	private visibleSelection: string | undefined;
 	private _focused = false;
+	private favorites: readonly string[];
+	private favoriteError: string | undefined;
 
 	constructor(options: Options) {
 		this.options = options;
-		this.matches = [...options.models];
+		this.favorites = options.favorites ?? [];
+		this.favoriteError = options.favoriteError;
+		this.matches = orderModels(options.models, this.favorites, options.current);
 		this.results = this.matches;
 		this.counts = providerCounts(options.models, this.matches);
-		this.selected = Math.max(0, this.results.findIndex((model) => options.current && modelKey(model) === modelKey(options.current)));
+		const currentIndex = this.results.findIndex((model) => options.current && modelKey(model) === modelKey(options.current));
+		const favoriteIndex = this.results.findIndex((model) => this.isFavorite(model));
+		this.selected = currentIndex >= 0 && this.isFavorite(this.results[currentIndex]) ? currentIndex :
+			favoriteIndex >= 0 ? favoriteIndex : Math.max(0, currentIndex);
 	}
+
+	private isFavorite(model: PickerModel): boolean { return this.favorites.includes(favoriteKey(model)); }
 
 	get focused(): boolean { return this._focused; }
 	set focused(value: boolean) { this._focused = value; this.input.focused = value; }
@@ -92,7 +105,16 @@ export class ModelPickerComponent implements Component, Focusable {
 		else if (kb.matches(data, "tui.select.down")) this.move(1);
 		else if (kb.matches(data, "tui.select.pageUp")) this.move(-this.pageSize, true);
 		else if (kb.matches(data, "tui.select.pageDown")) this.move(this.pageSize, true);
-		else {
+		else if (matchesKey(data, "ctrl+f")) {
+			const model = this.getSelectedModel();
+			if (this.pane === "models" && model && this.visibleSelection === modelKey(model) && this.options.onToggleFavorite) {
+				try {
+					this.favorites = this.options.onToggleFavorite(model);
+					this.favoriteError = undefined;
+					this.filter(false);
+				} catch (error) { this.favoriteError = favoritesError(error); }
+			}
+		} else {
 			const previous = this.getQuery();
 			// Left/right, home/end, deletion and printable input stay with Pi's Input.
 			this.input.handleInput(data);
@@ -104,7 +126,7 @@ export class ModelPickerComponent implements Component, Focusable {
 
 	private filter(queryChanged: boolean): void {
 		const previous = this.getSelectedModel();
-		this.matches = searchModels(this.options.models, this.getQuery());
+		this.matches = searchModels(orderModels(this.options.models, this.favorites, this.options.current), this.getQuery(), this.favorites);
 		this.counts = providerCounts(this.options.models, this.matches);
 		this.results = this.scope === undefined ? this.matches : this.matches.filter((model) => model.provider === this.scope);
 		const index = previous ? this.results.findIndex((model) => modelKey(model) === modelKey(previous)) : -1;
@@ -136,21 +158,19 @@ export class ModelPickerComponent implements Component, Focusable {
 		const clip = (line: string, size = width) => truncateToWidth(line, size, "");
 		const scope = text(this.scope ?? "All");
 		const count = this.results.length;
-		const title = theme.fg("accent", theme.bold(`Model picker · ${scope} (${count})`));
-		const searchPrefix = width > 12 ? theme.fg("muted", "Search: ") : "";
-		const search = clip(searchPrefix + this.input.render(Math.max(1, width - visibleWidth(searchPrefix)))[0]);
-		const detailed = height >= 8;
 		const twoPane = width >= 64 && height >= 8;
-		const header = width < 64
-			? `${this.options.scoped ? "[session] " : ""}${scope} · ${this.pane === "providers" ? "Providers" : "Models"} · Tab`
-			: `> ${this.pane === "providers" ? "Providers" : "Models"} · ${count} ${this.getQuery().trim() ? "matches" : "models"} · ${scope}${this.options.scoped ? " · session scope" : ""}`;
+		const session = this.options.scoped ? " [session]" : "";
+		const heading = twoPane ? `Model picker${session}` : this.pane === "models" ? `${clip(scope, Math.max(0, width - visibleWidth(session)))}${session}` : session.trim();
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelKey = kb.getKeys("tui.select.cancel")[0] ?? "unbound";
 		const cancelHint = `${cancelKey === "escape" ? "Esc" : cancelKey} ${this.getQuery() ? "clear" : "close"}`;
 		const confirmHint = `${confirmKey === "enter" ? "Enter" : confirmKey} ${this.pane === "providers" ? "back" : "save"}`;
+		const favoriteHint = this.options.onToggleFavorite && this.pane === "models" &&
+			!(["up", "down", "pageUp", "pageDown", "confirm", "cancel"] as const).some((action) => kb.matches("\x06", `tui.select.${action}`))
+			? " · Ctrl+F favorite" : "";
 		const footerCandidates = [
-			`${kb.getKeys("tui.select.up")[0] ?? "unbound"}/${kb.getKeys("tui.select.down")[0] ?? "unbound"} · Tab pane · ${confirmKey} ${this.pane === "providers" ? "models" : "switch + save"} · ${cancelHint} · * current`,
-			`Tab · ${confirmKey} ${this.pane === "providers" ? "models" : "save"} · ${cancelHint}`,
+			`Tab pane${favoriteHint} · ${confirmHint} · ${cancelHint}`,
+			`Tab · ${confirmHint} · ${cancelHint}`,
 			`${confirmHint} ${cancelHint}`,
 		];
 		const footer = footerCandidates.find((hint) => visibleWidth(hint) <= width);
@@ -160,10 +180,13 @@ export class ModelPickerComponent implements Component, Focusable {
 		}
 		this.usable = true;
 		const lines: string[] = [];
-		if (height >= 4 + footerLines.length) lines.push(title);
-		lines.push(theme.fg("muted", header));
+		// At minimum height, report a favorites error in the search prefix, not instead of a row/control.
+		const errorRow = !!this.favoriteError && height >= 4 + footerLines.length;
+		const searchPrefix = this.favoriteError && !errorRow ? theme.fg("warning", "Favorites error: ") : theme.fg("muted", "Search: ");
+		const search = clip(searchPrefix + this.input.render(Math.max(1, width - visibleWidth(searchPrefix)))[0]);
+		if (heading) lines.push(theme.fg("accent", twoPane ? theme.bold(heading) : heading));
 		lines.push(search);
-		const reserved = footerLines.length + (detailed ? 2 : 0);
+		const reserved = footerLines.length + Number(errorRow);
 		const itemRows = twoPane ? Math.max(count, this.counts.size + 1) : this.pane === "providers" ? this.counts.size + 1 : count;
 		const rows = Math.max(1, Math.min(12, height - lines.length - reserved, itemRows));
 		this.pageSize = rows;
@@ -184,7 +207,7 @@ export class ModelPickerComponent implements Component, Focusable {
 			const model = this.results[index];
 			if (!model) return index === 0 ? theme.fg("warning", this.options.models.length ? "No matching models" : "No models available") : "";
 			const current = this.options.current && modelKey(model) === modelKey(this.options.current);
-			const label = clip(`${index === this.selected ? ">" : " "}${current ? "*" : " "} ${text(modelLabel(model))}`, size);
+			const label = clip(`${index === this.selected ? ">" : " "}${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ${text(this.scope === undefined ? modelLabel(model) : model.id)}`, size);
 			return index === this.selected && this.pane === "models"
 				? theme.bg("selectedBg", theme.fg("accent", label)) : current ? theme.fg("success", label) : label;
 		};
@@ -194,11 +217,7 @@ export class ModelPickerComponent implements Component, Focusable {
 				lines.push(left + " ".repeat(Math.max(0, providerWidth - visibleWidth(left))) + theme.fg("borderMuted", " │ ") + modelLine(resultStart + row, width - providerWidth - 3));
 			} else lines.push(this.pane === "providers" ? providerLine(providerStart + row) : modelLine(resultStart + row, width));
 		}
-		if (detailed) {
-			const model = this.getSelectedModel();
-			lines.push(theme.fg("muted", model ? `${this.selected + 1}/${count} · ${text(model.name)} · ${model.contextWindow.toLocaleString("en-US")} context · ${model.maxTokens.toLocaleString("en-US")} output` : "Change provider or search to browse models"));
-			lines.push(theme.fg("dim", model ? `${model.reasoning ? "Reasoning · " : ""}${model.input.join(" + ")} · $${model.cost.input} in / $${model.cost.output} out per 1M tokens${model.cost.tiers?.length ? " (base rates; tiered)" : ""}` : "Available catalogue only; configure providers with /login or models.json"));
-		}
+		if (errorRow) lines.push(theme.fg("warning", text(this.favoriteError!)));
 		lines.push(...footerLines.map((line) => theme.fg("dim", line)));
 		if (this.pane === "models" && this.getSelectedModel()) this.visibleSelection = modelKey(this.getSelectedModel()!);
 		return lines.slice(0, height).map((line) => clip(line));

@@ -25,6 +25,8 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 	writeFileSync(join(root, "prefix.json"), '{"prefixKey":"ctrl+q"}');
 	mkdirSync(join(root, "project"));
 	writeFileSync(join(root, "settings.json"), '{"theme":"dark"}');
+	const favoriteBytes = '{"favorites":["provider/model-05","provider/model-17","unavailable/model"],"extra":true}\n';
+	writeFileSync(join(root, "model-favorites.json"), favoriteBytes);
 	const bus = createEventBus();
 	const loaded = await discoverAndLoadExtensions(prefix ? [pickerPath, prefixPath] : [pickerPath], join(root, "project"), root, bus);
 	assert.deepEqual(loaded.errors, []);
@@ -108,7 +110,7 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 	const activatePrefix = async () => {
 		input("\x11"); input("m"); await render();
 	};
-	return { root, bus, loaded, context, host, editor, draft, terminal, tui, notifications, notified, entries, lifecycle, render, screen,
+	return { root, favoriteBytes, bus, loaded, context, host, editor, draft, terminal, tui, notifications, notified, entries, lifecycle, render, screen,
 		input: (data: string) => input(data), resize: () => resize(), activatePrefix,
 		component: () => component!, completion: () => completion, submissions: () => submissions, changes: () => editorChanges };
 }
@@ -120,7 +122,7 @@ test("actual host overlay composition keeps search, cursor and selected row visi
 	const assertVisible = () => {
 		const lines = f.screen();
 		assert.match(lines.join("\n"), /Search:/);
-		assert.match(lines.join("\n"), /provider\/model-17/);
+		assert.match(lines.join("\n"), /★\* provider\/model-17/);
 		assert.ok(lines.every((line) => visibleWidth(line) <= f.terminal.columns));
 		const state = f.tui.captureRenderState();
 		const cursorRow = state.hardwareCursorRow - state.previousViewportTop;
@@ -143,7 +145,7 @@ test("actual host overlay composition keeps search, cursor and selected row visi
 });
 
 for (const state of ["streaming", "compacting"] as const) {
-	for (const outcome of ["cancel", "confirm", "switch-error", "open-error"] as const) {
+	for (const outcome of ["cancel", "confirm", "switch-error", "open-error", "favorite-toggle"] as const) {
 		test(`real prefix event + host overlay preserves expanded draft while ${state}: ${outcome}`, async (t) => {
 			const f = await hostFixture(t, true);
 			f.host.session.isStreaming = state === "streaming";
@@ -156,11 +158,17 @@ for (const state of ["streaming", "compacting"] as const) {
 			await f.activatePrefix();
 			assert.equal(f.editor.getExpandedText(), f.draft);
 			if (outcome !== "open-error") {
-				f.input(outcome === "cancel" ? "\x1b" : "\r");
+				if (outcome === "favorite-toggle") {
+					f.input("\x06"); await f.render();
+					assert.equal(f.editor.getExpandedText(), f.draft);
+				}
+				f.input(outcome === "cancel" || outcome === "favorite-toggle" ? "\x1b" : "\r");
 				await f.completion(); await tick();
 			}
 			// Wait for persistence/error reporting, not just the modal's close callback.
-			if (outcome !== "cancel") await f.notified;
+			if (outcome !== "cancel" && outcome !== "favorite-toggle") await f.notified;
+			if (outcome === "favorite-toggle") assert.deepEqual(JSON.parse(readFileSync(join(f.root, "model-favorites.json"), "utf8")).favorites, ["provider/model-05", "unavailable/model"]);
+			else assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
 			assert.equal(f.submissions(), 0, "the installed host submit/clear branch must never run");
 			assert.equal(f.changes(), 0, "neither opening nor closing/restoring may touch the editor");
 			assert.equal(f.editor.getExpandedText(), f.draft);

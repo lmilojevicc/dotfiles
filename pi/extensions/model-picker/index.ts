@@ -1,7 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ModelPickerComponent } from "./component.ts";
 import { catalogue, modelLabel, type PickerModel } from "./domain.ts";
 import { switchAndSave } from "./persistence.ts";
+import { favoritesError, readFavorites, toggleFavorite } from "./favorites.ts";
 
 export default function modelPicker(pi: ExtensionAPI): void {
 	let opening = false;
@@ -21,10 +22,15 @@ export default function modelPicker(pi: ExtensionAPI): void {
 		const started = generation;
 		try {
 			const models = catalogue(ctx);
+			const agentDir = getAgentDir();
+			let favorites: string[] = [], favoriteError: string | undefined;
+			try { favorites = readFavorites(agentDir).favorites; }
+			catch (error) { favoriteError = favoritesError(error); }
 			const selected = await ctx.ui.custom<PickerModel | undefined>((tui, theme, keybindings, done) => {
 				cancelPicker = () => done(undefined);
 				return new ModelPickerComponent({
 					models, current: ctx.model, scoped: ctx.scopedModels.length > 0,
+					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir),
 					theme, keybindings,
 					getHeight: () => Math.max(1, Math.min(20, tui.terminal.rows)),
 					getWidth: () => tui.terminal.columns,

@@ -14,13 +14,13 @@
 | [command-code](extensions/command-code/README.md) | Command Code provider, model catalogue, and account usage | Select a `command-code/...` model; `/command-code-usage` | `npm test` |
 | [terminal-focus-cursor](extensions/terminal-focus-cursor/README.md) | Hide the editor cursor when its terminal pane is unfocused | TUI under Herdr (`HERDR_ENV=1`) or tmux (`TMUX`) | `npm test` |
 | [tasks](extensions/tasks/README.md) | Session-branch-native task tracking with atomic batches, management menus, and a read-only board | `todo`; `/tasks`, `/todos`, or `/tasks-board`; `Ctrl+Shift+T` | `npm test` |
-| [model-picker](extensions/model-picker/README.md) | Browse providers/models; switch session and save global default | `/model-picker`; configured prefix then `m` | `npm test` |
+| [model-picker](extensions/model-picker/README.md) | Browse/favorite models; switch session and save global default | `/model-picker`; configured prefix then `m` | `npm test` |
 | [prefix-keybinds](extensions/prefix-keybinds/README.md) | Configurable prefix-key command layer | Configured prefix then mapped key; `/prefix-keybinds` | `npm test` |
 | [reader-mode](extensions/reader-mode/README.md) | Experimental private-internals centered session column | `/reader` | `npm test` |
 | [session-auto-rename](extensions/session-auto-rename/README.md) | Name a new unnamed session from its first prompt | Automatic on the first prompt; `/session-auto-rename` selects the model | `npm test` |
 | [skill-search](extensions/skill-search/README.md) | Search and temporarily read skills from user-approved public GitHub repositories | `search_skills`, `read_skill`, `/skill-repos` | `npm test` |
 
-Pi discovers these packages through the `~/.pi/agent/extensions` directory symlink. After package or entrypoint changes, a full Pi restart is recommended. Replacing the removed model-favorites extension requires a full restart to remove its old in-process patches; model-picker leaves native `/model` unchanged and never touches legacy preference data.
+Pi discovers these packages through the `~/.pi/agent/extensions` directory symlink. After package or entrypoint changes, a full Pi restart is recommended. Replacing the removed model-favorites extension requires a full restart to remove its old in-process patches; model-picker leaves native `/model` unchanged and reuses legacy favorites only in its own picker (writes only on an explicit favorite toggle).
 
 ## Other extension-directory content
 
