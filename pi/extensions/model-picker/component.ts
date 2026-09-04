@@ -6,6 +6,10 @@ import {
 import { modelKey, modelLabel, orderModels, providerCounts, searchModels, searchTier, type PickerModel } from "./domain.ts";
 import { favoriteKey, favoritesError } from "./favorites.ts";
 
+type PickerScope = { kind: "all" } | { kind: "favorites" } | { kind: "provider"; provider: string };
+const scopeLabel = (scope: PickerScope): string =>
+	scope.kind === "provider" ? scope.provider : scope.kind === "favorites" ? "Favorites" : "All";
+
 type Options = {
 	models: readonly PickerModel[];
 	current?: PickerModel;
@@ -15,8 +19,11 @@ type Options = {
 	onToggleFavorite?: (model: PickerModel) => readonly string[];
 	theme: Pick<Theme, "fg" | "bg" | "bold">;
 	keybindings: KeybindingsManager;
+	/** Available overlay height, after host insets/caps. render(width) owns layout width. */
 	getHeight: () => number;
+	/** Raw terminal dimensions, used only to reject input before a resize repaint. */
 	getWidth?: () => number;
+	getTerminalHeight?: () => number;
 	onChange: () => void;
 	onSelect: (model: PickerModel) => void;
 	onCancel: () => void;
@@ -24,8 +31,11 @@ type Options = {
 
 // Registry labels are data, never terminal control sequences or additional lines.
 const text = (value: string): string => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
-const windowStart = (index: number, length: number, rows: number): number =>
-	Math.max(0, Math.min(index - Math.floor(rows / 2), length - rows));
+// Retain the viewport, moving only enough to reveal selection or clamp a resized/tail page.
+const windowStart = (offset: number, index: number, length: number, rows: number): number => {
+	const start = Math.max(0, Math.min(offset, length - rows));
+	return index < start ? index : index >= start + rows ? index - rows + 1 : start;
+};
 
 export class ModelPickerComponent implements Component, Focusable {
 	private readonly options: Options;
@@ -33,14 +43,18 @@ export class ModelPickerComponent implements Component, Focusable {
 	private matches: PickerModel[];
 	private results: PickerModel[];
 	private counts: Map<string, number>;
-	private scope: string | undefined;
+	private scope: PickerScope = { kind: "all" };
+	private readonly scopes: PickerScope[];
 	private pane: "providers" | "models" = "models";
 	private selected = 0;
 	private pageSize = 8;
 	private disposed = false;
 	private usable = false;
-	private renderedWidth = 0;
+	private renderedTerminalWidth: number | undefined;
+	private renderedTerminalHeight: number | undefined;
 	private renderedHeight = 0;
+	private resultOffset = 0;
+	private providerOffset = 0;
 	private visibleSelection: string | undefined;
 	private _focused = false;
 	private favorites: readonly string[];
@@ -53,6 +67,7 @@ export class ModelPickerComponent implements Component, Focusable {
 		this.matches = orderModels(options.models, this.favorites, options.current);
 		this.results = this.matches;
 		this.counts = providerCounts(options.models, this.matches);
+		this.scopes = [this.scope, { kind: "favorites" }, ...[...this.counts.keys()].map((provider): PickerScope => ({ kind: "provider", provider }))];
 		const currentIndex = this.results.findIndex((model) => options.current && modelKey(model) === modelKey(options.current));
 		const favoriteIndex = this.results.findIndex((model) => this.isFavorite(model));
 		this.selected = currentIndex >= 0 && this.isFavorite(this.results[currentIndex]) ? currentIndex :
@@ -65,7 +80,7 @@ export class ModelPickerComponent implements Component, Focusable {
 	set focused(value: boolean) { this._focused = value; this.input.focused = value; }
 	getQuery(): string { return this.input.getValue(); }
 	getSelectedModel(): PickerModel | undefined { return this.results[this.selected]; }
-	getScope(): string | undefined { return this.scope; }
+	getScope(): PickerScope { return this.scope; }
 	getPane(): "providers" | "models" { return this.pane; }
 
 	handleInput(data: string): void {
@@ -73,7 +88,8 @@ export class ModelPickerComponent implements Component, Focusable {
 		const kb = this.options.keybindings;
 		// Never navigate or save an invisible layout; Escape remains available to leave.
 		if (!this.usable || this.options.getHeight() !== this.renderedHeight ||
-			(this.options.getWidth && this.options.getWidth() !== this.renderedWidth)) {
+			this.options.getWidth?.() !== this.renderedTerminalWidth ||
+			this.options.getTerminalHeight?.() !== this.renderedTerminalHeight) {
 			if (kb.matches(data, "tui.select.cancel")) {
 				this.dispose();
 				this.options.onCancel();
@@ -111,7 +127,13 @@ export class ModelPickerComponent implements Component, Focusable {
 				try {
 					this.favorites = this.options.onToggleFavorite(model);
 					this.favoriteError = undefined;
-					this.filter(false);
+					// Refresh membership only. Re-ranking is reserved for query/scope changes or reopen.
+					if (this.scope.kind === "favorites") {
+						this.results = this.matches.filter((item) => this.isFavorite(item));
+						const index = this.results.findIndex((item) => modelKey(item) === modelKey(model));
+						this.selected = index >= 0 ? index : Math.max(0, Math.min(this.selected, this.results.length - 1));
+					}
+					this.visibleSelection = undefined;
 				} catch (error) { this.favoriteError = favoritesError(error); }
 			}
 		} else {
@@ -128,99 +150,127 @@ export class ModelPickerComponent implements Component, Focusable {
 		const previous = this.getSelectedModel();
 		this.matches = searchModels(orderModels(this.options.models, this.favorites, this.options.current), this.getQuery(), this.favorites);
 		this.counts = providerCounts(this.options.models, this.matches);
-		this.results = this.scope === undefined ? this.matches : this.matches.filter((model) => model.provider === this.scope);
+		const scope = this.scope;
+		this.results = scope.kind === "all" ? this.matches : this.matches.filter((model) =>
+			scope.kind === "favorites" ? this.isFavorite(model) : model.provider === scope.provider);
 		const index = previous ? this.results.findIndex((model) => modelKey(model) === modelKey(previous)) : -1;
 		// Keep identity while navigating scopes; a stronger search tier wins over a weak old highlight.
 		this.selected = index >= 0 && (!queryChanged || searchTier(this.results[index], this.getQuery()) === searchTier(this.results[0], this.getQuery()))
 			? index : 0;
+		this.resultOffset = 0;
+		this.visibleSelection = undefined;
 	}
 
 	private move(delta: number, page = false): void {
-		const providers = [undefined, ...this.counts.keys()];
+		const providers = this.scopes;
 		const length = this.pane === "providers" ? providers.length : this.results.length;
 		if (!length) return;
 		const current = this.pane === "providers" ? providers.indexOf(this.scope) : this.selected;
 		const next = page ? Math.max(0, Math.min(length - 1, current + delta)) : (current + delta + length) % length;
-		if (this.pane === "providers") {
+		if (this.pane === "providers" && next !== current) {
 			this.scope = providers[next];
 			this.filter(false);
-		} else this.selected = next;
+		} else if (this.pane === "models") this.selected = next;
 	}
 
 	render(width: number): string[] {
 		this.usable = false;
-		this.renderedWidth = width;
+		// Overlay width is not terminal width. Guard stale input against raw terminal dimensions.
+		this.renderedTerminalWidth = this.options.getWidth?.();
+		this.renderedTerminalHeight = this.options.getTerminalHeight?.();
 		this.renderedHeight = this.options.getHeight();
 		this.visibleSelection = undefined;
 		if (width <= 0) return [];
-		const height = Math.max(1, Math.floor(this.options.getHeight()));
+		const height = Math.max(1, Math.min(22, Math.floor(this.renderedHeight)));
 		const { theme, keybindings: kb } = this.options;
-		const clip = (line: string, size = width) => truncateToWidth(line, size, "");
-		const scope = text(this.scope ?? "All");
-		const count = this.results.length;
-		const twoPane = width >= 64 && height >= 8;
-		const session = this.options.scoped ? " [session]" : "";
-		const heading = twoPane ? `Model picker${session}` : this.pane === "models" ? `${clip(scope, Math.max(0, width - visibleWidth(session)))}${session}` : session.trim();
+		const clip = (line: string, size = width) => truncateToWidth(line, Math.max(0, size), "");
+		const fill = (line: string, size: number) => {
+			const value = clip(line, size);
+			return value + " ".repeat(Math.max(0, size - visibleWidth(value)));
+		};
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelKey = kb.getKeys("tui.select.cancel")[0] ?? "unbound";
 		const cancelHint = `${cancelKey === "escape" ? "Esc" : cancelKey} ${this.getQuery() ? "clear" : "close"}`;
 		const confirmHint = `${confirmKey === "enter" ? "Enter" : confirmKey} ${this.pane === "providers" ? "back" : "save"}`;
-		const favoriteHint = this.options.onToggleFavorite && this.pane === "models" &&
-			!(["up", "down", "pageUp", "pageDown", "confirm", "cancel"] as const).some((action) => kb.matches("\x06", `tui.select.${action}`))
-			? " · Ctrl+F favorite" : "";
-		const footerCandidates = [
-			`Tab pane${favoriteHint} · ${confirmHint} · ${cancelHint}`,
-			`Tab · ${confirmHint} · ${cancelHint}`,
-			`${confirmHint} ${cancelHint}`,
-		];
-		const footer = footerCandidates.find((hint) => visibleWidth(hint) <= width);
-		const footerLines = footer ? [footer] : [confirmHint, cancelHint];
-		if (width < 20 || height < 3 + footerLines.length || footerLines.some((line) => visibleWidth(line) > width)) {
+		const framed = width >= 24 && height >= 9;
+		const contentWidth = width - (framed ? 4 : 0);
+		const twoPane = width >= 64 && height >= 8;
+		const footerBudget = framed && height >= 10 ? 2 : 1;
+		// Pack whole hints, with primary actions first; never truncate a binding or its action.
+		const footerLines = visibleWidth(`${confirmHint} · ${cancelHint}`) <= contentWidth
+			? [`${confirmHint} · ${cancelHint}`]
+			: visibleWidth(`${confirmHint} ${cancelHint}`) <= contentWidth
+				? [`${confirmHint} ${cancelHint}`] : [confirmHint, cancelHint];
+		const hints = ["Tab pane"];
+		if (this.options.onToggleFavorite && this.pane === "models" &&
+			!(["up", "down", "pageUp", "pageDown", "confirm", "cancel"] as const).some((action) => kb.matches("\x06", `tui.select.${action}`))) hints.push("Ctrl+F favorite");
+		for (const hint of hints) {
+			const next = `${footerLines.at(-1)} · ${hint}`;
+			if (visibleWidth(next) <= contentWidth) footerLines[footerLines.length - 1] = next;
+			else if (footerLines.length < footerBudget && visibleWidth(hint) <= contentWidth) footerLines.push(hint);
+		}
+		const overhead = 2 + footerLines.length + (framed ? 4 : 0);
+		if (width < 20 || height < overhead + 1 || footerLines.some((line) => visibleWidth(line) > contentWidth)) {
 			return [theme.fg("warning", clip("Resize required")), ...(height > 1 ? [theme.fg("dim", clip(`${cancelKey === "escape" ? "Esc" : cancelKey} close`))] : [])];
 		}
 		this.usable = true;
+		const session = this.options.scoped ? " [session]" : "";
+		const heading = clip(twoPane || this.pane === "providers" ? "Model picker" : text(scopeLabel(this.scope)),
+			contentWidth - visibleWidth(session) - (framed ? 2 : 0)) + session;
+		const title = (framed ? theme.fg("accent", "● ") : "") + theme.bold(heading);
+		const compactError = !!this.favoriteError && (!framed || contentWidth < 60);
+		const searchPrefix = compactError ? theme.fg("warning", "Favorites error: ") : theme.fg("muted", "Search: ");
+		const search = searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
+		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
 		const lines: string[] = [];
-		// At minimum height, report a favorites error in the search prefix, not instead of a row/control.
-		const errorRow = !!this.favoriteError && height >= 4 + footerLines.length;
-		const searchPrefix = this.favoriteError && !errorRow ? theme.fg("warning", "Favorites error: ") : theme.fg("muted", "Search: ");
-		const search = clip(searchPrefix + this.input.render(Math.max(1, width - visibleWidth(searchPrefix)))[0]);
-		if (heading) lines.push(theme.fg("accent", twoPane ? theme.bold(heading) : heading));
-		lines.push(search);
-		const reserved = footerLines.length + Number(errorRow);
-		const itemRows = twoPane ? Math.max(count, this.counts.size + 1) : this.pane === "providers" ? this.counts.size + 1 : count;
-		const rows = Math.max(1, Math.min(12, height - lines.length - reserved, itemRows));
+		if (framed) lines.push(theme.fg("border", `╭${"─".repeat(width - 2)}╮`));
+		const header = title + (this.favoriteError && !compactError ? theme.fg("warning", ` · ${text(this.favoriteError)}`) : "");
+		lines.push(framed ? bordered(header) : clip(header), framed ? bordered(search) : clip(search));
+		// Catalogue-based height is stable even when Favorites empties or counts change.
+		const rows = Math.max(1, Math.min(12, height - overhead, Math.max(this.options.models.length, this.scopes.length)));
 		this.pageSize = rows;
-		const providers = [undefined, ...this.counts.keys()];
-		const providerIndex = providers.indexOf(this.scope);
-		const providerStart = windowStart(providerIndex, providers.length, rows);
-		const resultStart = windowStart(this.selected, this.results.length, rows);
-		const providerWidth = twoPane ? Math.min(26, Math.floor(width / 3)) : width;
+		const providers = this.scopes;
+		this.providerOffset = windowStart(this.providerOffset, providers.indexOf(this.scope), providers.length, rows);
+		this.resultOffset = windowStart(this.resultOffset, this.selected, this.results.length, rows);
+		const providerWidth = twoPane ? Math.min(26, Math.floor(contentWidth / 3)) : contentWidth;
+		const rule = (top: boolean) => {
+			if (!twoPane) return theme.fg("border", `├${"─".repeat(width - 2)}┤`);
+			const left = providerWidth + 2, right = width - left - 3;
+			return theme.fg("border", "├") + theme.fg(!top && this.pane === "providers" ? "borderAccent" : "border", "─".repeat(left)) +
+				theme.fg("borderMuted", top ? "┬" : "┴") + theme.fg(!top && this.pane === "models" ? "borderAccent" : "border", "─".repeat(right)) + theme.fg("border", "┤");
+		};
+		if (framed) lines.push(rule(true));
 		const providerLine = (index: number): string => {
 			if (index >= providers.length) return "";
 			const provider = providers[index];
 			const active = provider === this.scope;
-			const suffix = ` (${provider === undefined ? this.matches.length : this.counts.get(provider)})`;
-			const label = clip(`${active ? "> " : "  "}${text(provider ?? "All")}`, Math.max(0, providerWidth - visibleWidth(suffix))) + suffix;
-			return active ? theme.fg("accent", label) : theme.fg("muted", label);
+			const count = provider.kind === "all" ? this.matches.length : provider.kind === "favorites"
+				? this.matches.filter((model) => this.isFavorite(model)).length : this.counts.get(provider.provider);
+			const suffix = ` (${count})`;
+			const label = clip(`${active ? "› " : "  "}${text(scopeLabel(provider))}`, providerWidth - visibleWidth(suffix)) + suffix;
+			return active ? theme.fg("accent", theme.bold(label)) : theme.fg("muted", label);
 		};
 		const modelLine = (index: number, size: number): string => {
 			const model = this.results[index];
-			if (!model) return index === 0 ? theme.fg("warning", this.options.models.length ? "No matching models" : "No models available") : "";
+			if (!model) return index === 0 ? clip(theme.fg("warning", this.scope.kind === "favorites" && !this.options.models.some((item) => this.isFavorite(item))
+				? "No favorites yet" : this.options.models.length ? "No matching models" : "No models available"), size) : "";
 			const current = this.options.current && modelKey(model) === modelKey(this.options.current);
-			const label = clip(`${index === this.selected ? ">" : " "}${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ${text(this.scope === undefined ? modelLabel(model) : model.id)}`, size);
-			return index === this.selected && this.pane === "models"
-				? theme.bg("selectedBg", theme.fg("accent", label)) : current ? theme.fg("success", label) : label;
+			const active = index === this.selected && this.pane === "models";
+			const label = text(this.scope.kind === "provider" ? model.id : modelLabel(model));
+			return clip((active ? theme.fg("accent", "›") : " ") + `${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ` +
+				(active ? theme.bold(label) : current ? theme.fg("success", label) : label), size);
 		};
 		for (let row = 0; row < rows; row++) {
-			if (twoPane) {
-				const left = clip(providerLine(providerStart + row), providerWidth);
-				lines.push(left + " ".repeat(Math.max(0, providerWidth - visibleWidth(left))) + theme.fg("borderMuted", " │ ") + modelLine(resultStart + row, width - providerWidth - 3));
-			} else lines.push(this.pane === "providers" ? providerLine(providerStart + row) : modelLine(resultStart + row, width));
+			const body = twoPane
+				? fill(providerLine(this.providerOffset + row), providerWidth) + theme.fg("borderMuted", " │ ") + modelLine(this.resultOffset + row, contentWidth - providerWidth - 3)
+				: this.pane === "providers" ? providerLine(this.providerOffset + row) : modelLine(this.resultOffset + row, contentWidth);
+			lines.push(framed ? bordered(body) : clip(body));
 		}
-		if (errorRow) lines.push(theme.fg("warning", text(this.favoriteError!)));
-		lines.push(...footerLines.map((line) => theme.fg("dim", line)));
+		if (framed) lines.push(rule(false));
+		lines.push(...footerLines.map((line) => framed ? bordered(theme.fg("dim", line)) : theme.fg("dim", line)));
+		if (framed) lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
 		if (this.pane === "models" && this.getSelectedModel()) this.visibleSelection = modelKey(this.getSelectedModel()!);
-		return lines.slice(0, height).map((line) => clip(line));
+		return lines.map((line) => clip(line));
 	}
 
 	invalidate(): void { this.input.invalidate(); }

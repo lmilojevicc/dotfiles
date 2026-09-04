@@ -32,13 +32,16 @@ export default function modelPicker(pi: ExtensionAPI): void {
 					models, current: ctx.model, scoped: ctx.scopedModels.length > 0,
 					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir),
 					theme, keybindings,
-					getHeight: () => Math.max(1, Math.min(20, tui.terminal.rows)),
+					// Reserve vertical inset here, not via host margin: Pi can place a fixed
+					// top margin outside a one-row terminal after resize.
+					getHeight: () => Math.max(1, Math.min(22, Math.floor(tui.terminal.rows * 0.85), tui.terminal.rows - 2)),
 					getWidth: () => tui.terminal.columns,
+					getTerminalHeight: () => tui.terminal.rows,
 					onChange: () => tui.requestRender(),
 					onSelect: done,
 					onCancel: () => done(undefined),
 				});
-			}, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" } });
+			}, { overlay: true, overlayOptions: { width: "95%", maxHeight: "85%", margin: { left: 1, right: 1 }, anchor: "center" } });
 			cancelPicker = undefined;
 			if (!selected || started !== generation) return;
 			const result = await switchAndSave(pi, ctx, selected);

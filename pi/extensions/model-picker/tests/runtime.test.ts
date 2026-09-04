@@ -89,7 +89,7 @@ test("real installed TUI renders, navigates, resizes and cancels cached scoped p
 		assert.equal(component.getSelectedModel().provider, "beta");
 		assert.match(component.render(90).join("\n"), /\[session\]/);
 		assert.match(component.render(90).join("\n"), /Favorites: Fix JSON/);
-		input("\t"); input("\x1b[B"); input("\t");
+		input("\t"); input("\x1b[B"); input("\x1b[B"); input("\t");
 		assert.equal(component.getSelectedModel().provider, "alpha");
 		terminal.columns = 25; terminal.rows = 12; resize(); await tick();
 		assert.ok(component.render(25).every((line: string) => visibleWidth(line) <= 25));
@@ -205,7 +205,7 @@ test("real open restores legacy order inside session catalogue; toggles reread d
 	writeFileSync(path, JSON.stringify({ favorites: ["alpha/vendor/shared", "beta/vendor/shared"] }));
 	const reopened = command("", { ...context, model: b } as never);
 	assert.equal(component.getSelectedModel(), b, "current favorite wins preselection even when not first");
-	assert.match(component.render(100).join("\n"), />★\* beta\/vendor\/shared/);
+	assert.match(component.render(100).join("\n"), /›★\* beta\/vendor\/shared/);
 	component.handleInput("\x1b"); await reopened;
 });
 

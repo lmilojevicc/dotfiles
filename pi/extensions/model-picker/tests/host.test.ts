@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createEventBus, CustomEditor, discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
-import { Container, Text, TuiMainScreen, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { Container, CURSOR_MARKER, Text, TuiMainScreen, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { model } from "./fixtures.ts";
+import type { ModelPickerComponent } from "../component.ts";
+import type { PickerModel } from "../domain.ts";
+import { favoriteKey } from "../favorites.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const pickerPath = fileURLToPath(new URL("../index.ts", import.meta.url));
@@ -16,7 +20,9 @@ const { InteractiveMode } = await import(new URL("./modes/interactive/interactiv
 const { KeybindingsManager } = await import(new URL("./core/keybindings.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 const themes = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
-async function hostFixture(t: test.TestContext, prefix = false) {
+async function hostFixture(t: test.TestContext, prefix = false, options: {
+	models?: PickerModel[]; favorites?: string[]; scoped?: boolean; current?: PickerModel;
+} = {}) {
 	const root = mkdtempSync(join(tmpdir(), "picker-host-regression-"));
 	const previous = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, PI_PREFIX_KEYBINDS_CONFIG: process.env.PI_PREFIX_KEYBINDS_CONFIG };
 	process.env.HOME = root;
@@ -25,7 +31,7 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 	writeFileSync(join(root, "prefix.json"), '{"prefixKey":"ctrl+q"}');
 	mkdirSync(join(root, "project"));
 	writeFileSync(join(root, "settings.json"), '{"theme":"dark"}');
-	const favoriteBytes = '{"favorites":["provider/model-05","provider/model-17","unavailable/model"],"extra":true}\n';
+	const favoriteBytes = JSON.stringify({ favorites: options.favorites ?? ["provider/model-05", "provider/model-17", "unavailable/model"], extra: true }) + "\n";
 	writeFileSync(join(root, "model-favorites.json"), favoriteBytes);
 	const bus = createEventBus();
 	const loaded = await discoverAndLoadExtensions(prefix ? [pickerPath, prefixPath] : [pickerPath], join(root, "project"), root, bus);
@@ -65,15 +71,17 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 	const submit = editor.onSubmit!;
 	editor.onSubmit = (text) => { submissions++; return submit(text); };
 	editor.onChange = () => { editorChanges++; };
-	const entries = Array.from({ length: 30 }, (_, i) => model("provider", `model-${String(i).padStart(2, "0")}`));
+	const entries = options.models ?? Array.from({ length: 30 }, (_, i) => model("provider", `model-${String(i).padStart(2, "0")}`));
 	let component: Component | undefined;
+	let renderedLines: string[] = [], renderedWidth = 0;
 	let completion: Promise<unknown> | undefined;
 	let factory: any = () => editor;
 	const notifications: string[] = [];
 	let onNotice: () => void = () => {};
 	const notified = new Promise<void>((resolve) => { onNotice = resolve; });
 	const context = {
-		mode: "tui", hasUI: true, cwd: join(root, "project"), model: entries[17], scopedModels: [],
+		mode: "tui", hasUI: true, cwd: join(root, "project"), model: options.current ?? entries[17],
+		scopedModels: options.scoped ? entries.map((model) => ({ model })) : [],
 		isProjectTrusted: () => false,
 		modelRegistry: { getAvailable: () => entries },
 		ui: {
@@ -82,6 +90,8 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 				assert.equal((options as { overlay: boolean }).overlay, true);
 				completion = InteractiveMode.prototype.showExtensionCustom.call(host, (...args: unknown[]) => {
 					component = make(...args);
+					const render = component!.render.bind(component);
+					component!.render = (width) => { renderedWidth = width; renderedLines = render(width); return renderedLines; };
 					return component;
 				}, options);
 				return completion;
@@ -112,7 +122,8 @@ async function hostFixture(t: test.TestContext, prefix = false) {
 	};
 	return { root, favoriteBytes, bus, loaded, context, host, editor, draft, terminal, tui, notifications, notified, entries, lifecycle, render, screen,
 		input: (data: string) => input(data), resize: () => resize(), activatePrefix,
-		component: () => component!, completion: () => completion, submissions: () => submissions, changes: () => editorChanges };
+		frameLines: () => renderedLines, renderedWidth: () => renderedWidth,
+		component: () => component! as ModelPickerComponent, completion: () => completion, submissions: () => submissions, changes: () => editorChanges };
 }
 
 test("actual host overlay composition keeps search, cursor and selected row visible above ten below-editor lines", async (t) => {
@@ -131,9 +142,19 @@ test("actual host overlay composition keeps search, cursor and selected row visi
 	};
 	assertVisible();
 	assert.match(f.tui.render(80).join("\n"), /below-editor widget 9/);
-	f.terminal.columns = 25; f.terminal.rows = 4; f.resize(); await f.render();
+	assert.equal(f.renderedWidth(), 76, "95% inset width, not terminal columns");
+	const wide = f.screen().map(stripVTControlCharacters);
+	assert.ok(wide.find((line) => line.includes("╭"))!.indexOf("╭") > 0);
+	assert.ok(f.frameLines().length <= 20, "85% of 24 rows");
+	f.terminal.columns = 25; f.terminal.rows = 6; f.resize(); await f.render();
 	assertVisible();
-	assert.match(f.screen().at(-1)!, /Enter save Esc close/);
+	assert.match(f.screen().join("\n"), /Enter save.*Esc close/);
+	f.terminal.rows = 4; f.resize(); await f.render();
+	assert.match(f.screen().join("\n"), /Resize required/);
+	const favoriteBytes = readFileSync(join(f.root, "model-favorites.json"), "utf8");
+	f.input("\x06"); f.input("\r"); f.input(down);
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), favoriteBytes);
+	assert.equal(f.component().getSelectedModel(), f.entries[17]);
 	f.terminal.rows = 1; f.resize(); await f.render();
 	assert.match(f.screen().join("\n"), /Resize required/);
 	f.input("\x1b[B"); f.input("\r");
@@ -227,5 +248,232 @@ test("real event bus without picker listener warns without touching draft", asyn
 	assert.match(f.notifications.at(-1)!, /unavailable/);
 	assert.equal(f.submissions(), 0);
 	assert.equal(f.changes(), 0);
+	assert.equal(f.editor.getExpandedText(), f.draft);
+});
+
+const down = "\x1b[B", up = "\x1b[A";
+async function enterFavorites(f: Awaited<ReturnType<typeof hostFixture>>) {
+	f.input("\t"); f.input(down); f.input("\t"); await f.render();
+	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+}
+const frame = (f: Awaited<ReturnType<typeof hostFixture>>) =>
+	f.frameLines().map((line) => stripVTControlCharacters(line.replaceAll(CURSOR_MARKER, ""))).join("\n");
+
+test("Favorites sidebar order/counts, query and session intersection survive provider-name collisions", async (t) => {
+	const a = model("alpha", "vendor/shared"), b = model("opencode", "vendor/shared");
+	const collision = model("favorites", "vendor/shared"), all = model("All", "other");
+	const f = await hostFixture(t, false, {
+		models: [a, b, collision, all], scoped: true, current: a,
+		favorites: ["outside/model", favoriteKey(b), favoriteKey(a)],
+	});
+	f.context.modelRegistry.getAvailable = () => { throw Error("must not expand session catalogue"); };
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render();
+	const sidebar = () => frame(f).split("\n").filter((line) => line.includes(" │ ")).map((line) => line.split(" │ ")[0].replace(/^│ /, "").trim());
+	assert.deepEqual(sidebar(), ["› All (4)", "Favorites (2)", "All (1)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	f.input("shared"); await f.render();
+	assert.deepEqual(sidebar(), ["› All (3)", "Favorites (2)", "All (0)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	await enterFavorites(f);
+	assert.equal(f.component().getQuery(), "shared");
+	assert.equal(f.component().getSelectedModel(), a, "preserve matching current identity when entering Favorites");
+	let rendered = frame(f);
+	assert.ok(rendered.indexOf("opencode/vendor/shared") < rendered.indexOf("alpha/vendor/shared"), "stored order, not current order");
+	assert.doesNotMatch(rendered, /outside|favorites\/vendor\/shared/);
+	assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= 80));
+	assert.ok(rendered.split("\n").length <= 24);
+	t.diagnostic(`Favorites wide 80x24:\n${rendered}`);
+	f.terminal.columns = 40; f.terminal.rows = 8; f.resize(); await f.render();
+	rendered = frame(f);
+	assert.equal((rendered.match(/Favorites/g) ?? []).length, 1);
+	assert.match(rendered, /^Favorites \[session\]/);
+	assert.match(rendered, /opencode\/vendor\/shared/);
+	assert.match(rendered, /alpha\/vendor\/shared/);
+	assert.ok(rendered.split("\n").every((line) => visibleWidth(line) <= 40));
+	assert.ok(rendered.split("\n").length <= 8);
+	t.diagnostic(`Favorites narrow 40x8:\n${rendered}`);
+	f.input("\t"); f.input(down); // actual provider named All
+	assert.deepEqual(f.component().getScope(), { kind: "provider", provider: "All" });
+	assert.equal(f.component().getSelectedModel(), undefined);
+	f.input(down); f.input(down); f.input("\t"); await f.render();
+	assert.deepEqual(f.component().getScope(), { kind: "provider", provider: "favorites" });
+	assert.equal(f.component().getSelectedModel(), collision);
+	assert.match(frame(f), /vendor\/shared/);
+	assert.doesNotMatch(frame(f), /favorites\/vendor\/shared|★/);
+	f.input("\t"); for (let i = 0; i < 4; i++) f.input(up);
+	f.input("\t"); await f.render();
+	assert.deepEqual(f.component().getScope(), { kind: "all" });
+	assert.equal(f.component().getSelectedModel(), b, "empty intermediate scope resets to first favorite, then All retains it");
+	assert.equal(f.component().getQuery(), "shared");
+	assert.match(frame(f), /favorites\/vendor\/shared/);
+	f.input("\x1b"); f.input("\x1b"); await running;
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
+});
+
+test("Favorites keeps search tiers primary and stored order within a tier", async (t) => {
+	const weak = model("alpha", "s-h-a-r-e-d-long"), exact = model("beta", "shared"), other = model("opencode", "vendor/shared");
+	const f = await hostFixture(t, false, { models: [weak, exact, other], favorites: [weak, other, exact].map(favoriteKey) });
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render(); await enterFavorites(f);
+	assert.equal(f.component().getSelectedModel(), weak);
+	f.input("shared"); await f.render();
+	assert.equal(f.component().getSelectedModel(), exact);
+	const rendered = frame(f);
+	assert.ok(rendered.indexOf("beta/shared") < rendered.indexOf("alpha/s-h-a-r-e-d-long"));
+	assert.ok(rendered.indexOf("alpha/s-h-a-r-e-d-long") < rendered.indexOf("opencode/vendor/shared"));
+	assert.match(rendered, /Favorites \(3\)/);
+	f.input("\x1b"); f.input("\x1b"); await running;
+});
+
+test("Favorites removal chooses next then previous, stays empty, and guards unpainted toggles/confirmation", async (t) => {
+	const a = model("alpha", "vendor/shared"), b = model("beta", "vendor/shared"), c = model("opencode", "vendor/shared");
+	const f = await hostFixture(t, false, { models: [a, b, c], favorites: [a, b, c].map(favoriteKey), current: b });
+	let switches = 0;
+	f.loaded.runtime.setModel = async () => { switches++; return true; };
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render(); await enterFavorites(f);
+	f.input("shared"); await f.render();
+	for (const [removed, next, count] of [[b, c, 2], [c, a, 1], [a, undefined, 0]] as const) {
+		assert.equal(f.component().getSelectedModel(), removed);
+		f.input("\x06");
+		assert.equal(f.component().getSelectedModel(), next);
+		const saved = readFileSync(join(f.root, "model-favorites.json"), "utf8");
+		f.input("\x06"); f.input("\r"); // no new paint: neither action may use the old identity
+		assert.equal(switches, 0);
+		assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), saved);
+		await f.render();
+		assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+		assert.equal(f.component().getQuery(), "shared");
+		assert.match(frame(f), new RegExp(`Favorites \\(${count}\\)`));
+		assert.doesNotMatch(frame(f), new RegExp(`${removed.provider}/vendor/shared`));
+	}
+	assert.match(frame(f), /No favorites yet/);
+	f.input("\x06"); f.input("\r"); await f.render();
+	assert.equal(switches, 0);
+	assert.deepEqual(JSON.parse(readFileSync(join(f.root, "model-favorites.json"), "utf8")).favorites, []);
+	f.input("\x1b"); f.input("\x1b"); await running;
+	assert.equal(f.editor.getExpandedText(), f.draft);
+});
+
+test("Favorites adjacent selection confirms only after paint and persists the paired global default", async (t) => {
+	const a = model("alpha", "shared"), b = model("beta", "shared");
+	const f = await hostFixture(t, false, { models: [a, b], favorites: [a, b].map(favoriteKey) });
+	const switched: PickerModel[] = [];
+	f.loaded.runtime.setModel = async (chosen) => { switched.push(chosen); return true; };
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render(); await enterFavorites(f);
+	f.input("\x06"); f.input("\r");
+	assert.deepEqual(switched, []);
+	await f.render(); f.input("\r"); await running;
+	assert.deepEqual(switched, [b]);
+	const settings = JSON.parse(readFileSync(join(f.root, "settings.json"), "utf8"));
+	assert.equal(settings.defaultProvider, "beta"); assert.equal(settings.defaultModel, "shared");
+	assert.equal(settings.theme, "dark");
+});
+
+test("Favorites write failure preserves star, row, query, scope and count", async (t) => {
+	const a = model("alpha", "shared");
+	const f = await hostFixture(t, false, { models: [a], favorites: [favoriteKey(a)] });
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render(); await enterFavorites(f);
+	f.input("shared"); await f.render();
+	const path = join(f.root, "model-favorites.json");
+	chmodSync(path, 0o400);
+	f.input("\x06"); await f.render();
+	assert.equal(readFileSync(path, "utf8"), f.favoriteBytes);
+	assert.equal(f.component().getSelectedModel(), a);
+	assert.equal(f.component().getQuery(), "shared");
+	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+	assert.match(frame(f), /Favorites \(1\)/);
+	assert.match(frame(f), /›★  alpha\/shared/);
+	assert.match(frame(f), /Favorites:.*read-only/);
+	chmodSync(path, 0o600);
+	f.input("\x06"); await f.render();
+	assert.match(frame(f), /No favorites yet/);
+	assert.doesNotMatch(frame(f), /read-only|★/);
+	f.input("\x1b"); f.input("\x1b"); await running;
+});
+
+for (const favorites of [[], ["unavailable/model"], ["alpha/shared"]]) test(`Favorites empty versus query-no-match: ${JSON.stringify(favorites)}`, async (t) => {
+	const f = await hostFixture(t, false, { models: [model("alpha", "shared"), model("beta", "other")], favorites });
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render(); await enterFavorites(f);
+	if (!favorites.includes("alpha/shared")) assert.match(frame(f), /No favorites yet/);
+	f.input("other"); await f.render();
+	assert.equal(f.component().getSelectedModel(), undefined);
+	assert.match(frame(f), /All \(1\)/); assert.match(frame(f), /Favorites \(0\)/);
+	assert.match(frame(f), favorites.includes("alpha/shared") ? /No matching models/ : /No favorites yet/);
+	f.input("\x06"); f.input("\r");
+	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+	f.input("\x1b"); f.input("\x1b"); await running;
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
+});
+
+test("actual inset host guards raw resize before repaint, then reveals selection with correct page stride", async (t) => {
+	const f = await hostFixture(t);
+	let switches = 0;
+	f.loaded.runtime.setModel = async () => { switches++; return true; };
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render();
+	const selected = f.component().getSelectedModel();
+	const bytes = readFileSync(join(f.root, "model-favorites.json"), "utf8");
+	// Both heights produce a 22-row component cap: raw rows must still guard stale input.
+	f.terminal.rows = 40; f.resize(); await f.render();
+	f.terminal.rows = 41;
+	for (const key of [down, "\x06", "\r", "query", "\t"]) f.input(key);
+	assert.equal(f.component().getSelectedModel(), selected);
+	assert.equal(f.component().getQuery(), "");
+	assert.equal(f.component().getPane(), "models");
+	assert.equal(switches, 0);
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), bytes);
+	f.resize(); await f.render();
+	// Width is also raw columns, not the 95% rendered width.
+	f.terminal.columns = 40;
+	f.input(down); f.input("\x06"); f.input("\r");
+	assert.equal(f.component().getSelectedModel(), selected);
+	assert.equal(switches, 0);
+	f.terminal.rows = 16; f.resize(); await f.render();
+	assert.equal(f.renderedWidth(), 38);
+	assert.ok(f.frameLines().length <= 13);
+	assert.match(f.screen().join("\n"), /model-17/);
+	assert.match(f.screen().join("\n"), /Enter save.*Esc close/);
+	const pageRows = f.frameLines().filter((line) => /model-\d+/.test(line)).length;
+	f.input("\x1b[6~"); await f.render();
+	// Favorites model-05/model-17 precede model-00,01,02,... in this fixture.
+	assert.equal(f.component().getSelectedModel(), f.entries[pageRows - 1]);
+	const state = f.tui.captureRenderState();
+	assert.match(f.screen()[state.hardwareCursorRow - state.previousViewportTop], /Search:/);
+	f.input("\x1b"); await running;
+	f.component().handleInput?.("\x06"); f.component().handleInput?.("\r");
+	assert.equal(switches, 0);
+	assert.equal(f.editor.getExpandedText(), f.draft);
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), bytes);
+});
+
+test("actual centered overlay does not shift on scrolled favorite toggles or emptying Favorites", async (t) => {
+	const f = await hostFixture(t);
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render();
+	f.input("\x1b[6~"); f.input("\x1b[6~"); await f.render();
+	const modelRows = () => f.screen().map((line, row) => ({ line: stripVTControlCharacters(line), row }))
+		.filter(({ line }) => /provider\/model-\d+/.test(line))
+		.map(({ line, row }) => ({ line: line.split(" │ ").at(-1)!.replaceAll("★", " "), row }));
+	const before = modelRows();
+	for (let i = 0; i < 3; i++) {
+		f.input("\x06"); await f.render();
+		assert.deepEqual(modelRows(), before, "host-composited row positions and sequence stay fixed");
+	}
+	await enterFavorites(f);
+	const top = () => f.screen().findIndex((line) => line.includes("╭"));
+	const bottom = () => f.screen().findIndex((line) => line.includes("╰"));
+	const bounds = [top(), bottom()];
+	while (f.component().getSelectedModel()) {
+		f.input("\x06"); await f.render();
+		assert.deepEqual([top(), bottom()], bounds, "empty membership must not move the centered overlay");
+	}
+	assert.match(f.screen().join("\n"), /No favorites yet/);
+	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+	f.input(down); f.input("\r"); f.input("\x06");
+	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
+	f.input("\x1b"); await running;
 	assert.equal(f.editor.getExpandedText(), f.draft);
 });

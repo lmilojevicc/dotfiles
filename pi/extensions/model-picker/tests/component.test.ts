@@ -26,7 +26,7 @@ test("initial provider-qualified current preselection and marker differ from hig
 	component.handleInput(down);
 	const render = component.render(100).join("\n");
 	assert.match(render, /  \* beta\/shared/);
-	assert.match(render, />   alpha\/shared/);
+	assert.match(render, /›   alpha\/shared/);
 	assert.equal(component.getSelectedModel(), entries[0]);
 });
 
@@ -34,11 +34,12 @@ test("scope changes preserve query and identity; zero-match scope stays explicit
 	const { component } = setup();
 	component.handleInput("shared");
 	component.handleInput(tab);
+	component.handleInput(down); // Favorites
 	component.handleInput(down); // alpha
-	assert.equal(component.getScope(), "alpha");
+	assert.deepEqual(component.getScope(), { kind: "provider", provider: "alpha" });
 	assert.equal(component.getSelectedModel(), entries[0]);
 	component.handleInput(down); // beta
-	assert.equal(component.getScope(), "beta");
+	assert.deepEqual(component.getScope(), { kind: "provider", provider: "beta" });
 	assert.equal(component.getSelectedModel(), entries[1]);
 	assert.equal(component.getQuery(), "shared");
 	component.handleInput(escape);
@@ -64,6 +65,7 @@ test("Tab and Shift+Tab focus panes; provider confirm only returns to models", (
 	const { component, selected } = setup();
 	component.handleInput(tab);
 	assert.equal(component.getPane(), "providers");
+	component.handleInput(down); // Favorites
 	component.handleInput(down);
 	component.handleInput("\r");
 	assert.equal(component.getPane(), "models");
@@ -83,16 +85,16 @@ test("arrows and page keys scroll focused provider/results windows", () => {
 	const { component } = setup({ models: many, current: many[0], getHeight: () => 10 });
 	component.render(80);
 	component.handleInput("\x1b[6~");
-	assert.equal(component.getSelectedModel(), many[7]);
+	assert.equal(component.getSelectedModel(), many[3], "three physical body rows after frame and footer");
 	for (let i = 0; i < 20; i++) component.handleInput(down);
-	assert.match(component.render(80).join("\n"), /p27\/model-27/);
+	assert.match(component.render(80).join("\n"), /p23\/model-23/);
 	assert.doesNotMatch(component.render(80).join("\n"), /p00\/model-0/);
 	component.handleInput(tab);
 	component.handleInput(up); // wraps All -> last provider
-	assert.equal(component.getScope(), "p29");
-	assert.match(component.render(80).join("\n"), /> p29 \(1\)/);
+	assert.deepEqual(component.getScope(), { kind: "provider", provider: "p29" });
+	assert.match(component.render(80).join("\n"), /› p29 \(1\)/);
 	component.handleInput("\x1b[5~");
-	assert.equal(component.getScope(), "p22");
+	assert.deepEqual(component.getScope(), { kind: "provider", provider: "p26" });
 });
 
 test("injected native selection bindings and hints are honored", () => {
@@ -172,13 +174,16 @@ test("narrow/short layouts keep active pane navigable and all Unicode lines with
 	}
 });
 
-test("compact rendering avoids empty padding and keeps pane/save/cancel hints visible", () => {
+test("compact rounded frame packs primary hints before secondary hints", () => {
 	const { component } = setup();
 	const lines = component.render(35);
-	assert.match(lines.at(-1)!, /Tab(?: pane)? · Enter save · Esc close/);
-	assert.ok(lines.length < 12);
+	assert.match(lines[0], /^╭─/);
+	assert.match(lines.at(-1)!, /^╰─/);
+	assert.match(lines.join("\n"), /Enter save · Esc close/);
+	assert.match(lines.join("\n"), /Tab pane/);
+	assert.ok(lines.length <= 12);
 	component.handleInput(tab);
-	assert.match(component.render(35).at(-1)!, /Tab(?: pane)? · Enter back · Esc close/);
+	assert.match(component.render(35).join("\n"), /Enter back · Esc close/);
 });
 
 for (const width of [20, 21, 25, 35]) test(`compact hints retain confirm/cancel actions and active scope at width ${width}`, () => {
@@ -186,8 +191,8 @@ for (const width of [20, 21, 25, 35]) test(`compact hints retain confirm/cancel 
 	let lines = component.render(width);
 	assert.match(lines.join("\n"), /All/);
 	assert.match(lines.at(-1)!, /[Ee]nter save.*Esc close/);
-	assert.match(lines.join("\n"), /> \* beta\/shared/);
-	component.handleInput(tab); component.handleInput(down);
+	assert.match(lines.join("\n"), /› \* beta\/shared/);
+	component.handleInput(tab); component.handleInput(down); component.handleInput(down);
 	lines = component.render(width);
 	assert.match(lines.join("\n"), /alpha/);
 	assert.match(lines.at(-1)!, /[Ee]nter (back|models).*Esc close/);
@@ -210,7 +215,7 @@ for (const height of [1, 2, 3, 4]) test(`height ${height} shows selection and co
 			assert.deepEqual(selected, []);
 		} else {
 			assert.match(lines.join("\n"), /Search:/);
-			assert.match(lines.join("\n"), /> \* beta\/shared/);
+			assert.match(lines.join("\n"), /› \* beta\/shared/);
 			assert.match(lines.at(-1)!, /[Ee]nter.*save.*Esc close/);
 		}
 	}
@@ -224,7 +229,7 @@ test("confirmation waits for the selected model to render, including return from
 	component.render(20);
 	component.handleInput(down); component.handleInput("\r");
 	assert.deepEqual(selected, []);
-	assert.match(component.render(20).join("\n"), />   alpha\/shared/);
+	assert.match(component.render(20).join("\n"), /›   alpha\/shared/);
 	component.handleInput(tab); component.render(20); component.handleInput("\r"); component.handleInput("\r");
 	assert.deepEqual(selected, []);
 	height = 1;
@@ -273,7 +278,7 @@ test("legacy favorites order, distinct current marker and opening preferences", 
 	}
 });
 
-test("add/remove/readd stars retain highlighted tuple, query and provider after reorder", () => {
+test("add/remove/readd stars retain highlighted tuple, query and provider without reorder", () => {
 	let saved = ["unavailable/model", "alpha/shared"];
 	const { component } = setup({ favorites: saved, onToggleFavorite: (item) => {
 		const id = favoriteKey(item);
@@ -281,16 +286,16 @@ test("add/remove/readd stars retain highlighted tuple, query and provider after 
 		return saved;
 	} });
 	component.handleInput("shared");
-	component.handleInput(tab); component.handleInput(down); component.handleInput(down); component.handleInput(tab);
-	assert.equal(component.getScope(), "beta");
+	component.handleInput(tab); component.handleInput(down); component.handleInput(down); component.handleInput(down); component.handleInput(tab);
+	assert.deepEqual(component.getScope(), { kind: "provider", provider: "beta" });
 	assert.equal(component.getSelectedModel(), entries[1]);
 	for (const favorite of [true, false, true]) {
 		component.render(100); component.handleInput("\x06");
 		assert.equal(component.getSelectedModel(), entries[1]);
-		assert.equal(component.getScope(), "beta");
+		assert.deepEqual(component.getScope(), { kind: "provider", provider: "beta" });
 		assert.equal(component.getQuery(), "shared");
 		const render = component.render(100).join("\n");
-		assert.equal(/>★\* shared/.test(render), favorite);
+		assert.equal(/›★\* shared/.test(render), favorite);
 		assert.doesNotMatch(render, /beta\/shared/);
 	}
 	assert.deepEqual(saved, ["unavailable/model", "alpha/shared", "beta/shared"]);
@@ -298,10 +303,10 @@ test("add/remove/readd stars retain highlighted tuple, query and provider after 
 
 test("failed favorite toggle never changes stars, highlight, query or scope; browsing and save still work", () => {
 	const { component, selected } = setup({ onToggleFavorite: () => { throw Error("read-only"); } });
-	component.handleInput("shared"); component.handleInput(tab); component.handleInput(down); component.handleInput(tab);
+	component.handleInput("shared"); component.handleInput(tab); component.handleInput(down); component.handleInput(down); component.handleInput(tab);
 	component.render(100); component.handleInput("\x06");
 	assert.equal(component.getSelectedModel(), entries[0]);
-	assert.equal(component.getQuery(), "shared"); assert.equal(component.getScope(), "alpha");
+	assert.equal(component.getQuery(), "shared"); assert.deepEqual(component.getScope(), { kind: "provider", provider: "alpha" });
 	const lines = component.render(100).join("\n");
 	assert.match(lines, /Favorites: read-only/); assert.doesNotMatch(lines, /★/);
 	component.handleInput("\r"); assert.deepEqual(selected, [entries[0]]);
@@ -326,7 +331,7 @@ for (const action of ["up", "down", "pageUp", "pageDown", "confirm", "cancel"]) 
 	let calls = 0;
 	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, { [`tui.select.${action}`]: "ctrl+f" });
 	const { component, selected, cancelled } = setup({ keybindings, onToggleFavorite: () => { calls++; return []; } });
-	assert.doesNotMatch(component.render(120).at(-1)!, /Ctrl\+F favorite/);
+	assert.doesNotMatch(component.render(120).join("\n"), /Ctrl\+F favorite/);
 	component.handleInput("\x06");
 	assert.equal(calls, 0);
 	if (action === "confirm") assert.deepEqual(selected, [entries[1]]);
@@ -338,13 +343,13 @@ test("simplified rows omit repeated scope, headings, names, capabilities, prices
 	const { component } = setup({ scoped: true, favorites: ["beta/shared"], onToggleFavorite: () => [] });
 	const all = component.render(100).join("\n");
 	assert.match(all, /beta\/shared/); assert.match(all, /Ctrl\+F favorite/);
-	component.handleInput(tab); component.handleInput(down); component.handleInput(down); component.handleInput(tab);
+	component.handleInput(tab); component.handleInput(down); component.handleInput(down); component.handleInput(down); component.handleInput(tab);
 	for (const width of [25, 63, 64, 100]) {
 		const lines = component.render(width), rendered = lines.join("\n");
 		assert.doesNotMatch(rendered, /Providers|Models|Matches|matches|models|Change provider|browse models|configure|context|output|Reasoning|image|per 1M|First|Second|beta\//);
 		assert.equal((rendered.match(/\[session\]/g) ?? []).length, 1);
 		assert.equal((rendered.match(/beta/g) ?? []).length, 1);
-		assert.match(rendered, />★\* shared/);
+		assert.match(rendered, /›★\* shared/);
 	}
 });
 
@@ -354,7 +359,7 @@ test("minimum layout preserves scope/session, cursor, visible row and save/cance
 	assert.match(lines[0], /All \[session\]/);
 	assert.match(lines[1], /Favorites error:/);
 	assert.ok(lines[1].includes(CURSOR_MARKER));
-	assert.match(lines[2], />★\* beta\/shared/);
+	assert.match(lines[2], /›★\* beta\/shared/);
 	assert.match(lines[3], /Enter save Esc close/);
 	component.handleInput("\r"); assert.deepEqual(selected, [entries[1]]);
 });
