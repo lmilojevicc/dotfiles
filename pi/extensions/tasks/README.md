@@ -4,14 +4,14 @@ Private Pi 0.84.4 extension for session-branch-native task tracking.
 
 - One model tool: `todo` (`create`, `update`, `batch`, `list`, `get`, `delete`, `clear`)
 - Human commands: `/tasks` and `/todos` (alias), using Pi-native task and settings menus
-- `/tasks-board`: open a live, read-only floating inspector; search/filter locally and inspect task details without changing task truth or display settings
+- `/tasks-board`: open a live floating inspector; search/filter locally, inspect task details, and delete the selected task after confirmation
 - `Ctrl+Shift+T`: toggle the above-editor widget between its configured limit and show-all
 - Upstream-compatible display settings in global `<agent-dir>/tasks-config.json` and project `.pi/tasks-config.json`
 - Stable numeric IDs, optimistic revisions, one active task, validated dependency DAG, and atomic batches
 - Tool-result snapshots for model changes and custom session entries for interactive changes
 - Legacy `@juicesharp/rpiv-todo` snapshot replay
 
-The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `Tab` between wide panes, `/` search, `f` filter, `c` local completed visibility, page keys for detail scrolling, and `Esc`/`q` to close. It adapts from split panes at 96+ columns to compact one-pane layouts at 36+ columns. `/tasks` remains the management surface.
+The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `Tab` between wide panes, `/` search, `f` filter, `c` local completed visibility, lowercase `d` for confirmed deletion, page keys for detail scrolling, and `Esc`/`q` to close. Search editing treats `d` as ordinary query text. It adapts from split panes at 96+ columns to compact one-pane layouts at 36+ columns. The board remains inspection-first; `/tasks` provides all other human task management.
 
 The above-editor widget leaves one blank row after nonempty Tasks content so adjacent telemetry remains visually separate. The sole `in_progress` task uses the upstream 11-frame spinner at 150 ms. Its elapsed time and `↑`/`↓` counters are ephemeral, session-scoped presentation data. The counters are the parent assistant turn's full input/output usage attributed while that task is active; they are not execution or subagent telemetry. Activity starts fresh after reload, session/branch changes, or a different task starts, and is preserved across compaction only while the same task remains active.
 

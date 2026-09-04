@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { CURSOR_MARKER, KeybindingsManager, setKeybindings, stripTerminalSequences, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_TASKS_CONFIG } from "../src/config/tasks-config.ts";
 import type { TaskSnapshot } from "../src/domain/types.ts";
+import { taskActivity } from "../src/state/activity.ts";
+import { commitSnapshot, getSnapshot, resetStore, setForeground } from "../src/state/store.ts";
+import { applyHumanMutation } from "../src/ui/controller.ts";
 import {
+	disposeTasksBoard,
 	openTasksBoard,
 	renderTasksBoard,
 	TASKS_BOARD_OVERLAY_OPTIONS,
@@ -20,7 +24,7 @@ function boardSnapshot(): TaskSnapshot {
 	return snapshot([
 		{ ...task(1, "completed", [], "Finished task"), description: "Archived description", createdAt: Date.UTC(2026, 0, 1), updatedAt: Date.UTC(2026, 0, 2) },
 		{ ...task(2, "in_progress", [], "Assess pi-subagents integration"), activeForm: "Assessing pi-subagents integration", description: "Compare the live Fleet/status hierarchy; keep task truth separate.", metadata: { z: 2, a: 1 }, createdAt: Date.UTC(2026, 0, 3), updatedAt: Date.UTC(2026, 0, 4) },
-		{ ...task(3, "pending", [2], "Add read-only Tasks board"), owner: "milo", createdAt: Date.UTC(2026, 0, 5), updatedAt: Date.UTC(2026, 0, 6) },
+		{ ...task(3, "pending", [2], "Add Tasks board"), owner: "milo", createdAt: Date.UTC(2026, 0, 5), updatedAt: Date.UTC(2026, 0, 6) },
 		task(4, "pending", [], "Test narrow terminal layouts"),
 	]);
 }
@@ -67,9 +71,10 @@ test("wide, medium, small, tiny, and short layouts obey geometry and exact fallb
 
 test("headers, controls, footers, detail order, telemetry attribution, and spinner are source-faithful", () => {
 	const wide = stripped(render(120));
-	assert.equal(wide[1], "│ ● Tasks · live, read-only                                                    4 tasks (1 done, 1 in progress, 2 open) │");
+	assert.equal(wide[1], "│ ● Tasks · live inspection                                                    4 tasks (1 done, 1 in progress, 2 open) │");
 	assert.equal(wide[2], "│ Search: / to search                                                               Filter: All · Completed: collapsed │");
-	assert.ok(wide.at(-2)?.includes("↑↓/jk task · Tab pane · / search · f filter · c completed · PgUp/PgDn scroll · Esc close"));
+	assert.ok(wide.slice(-3).some((line) => line.includes("↑↓/jk task · Tab pane · / search · c completed · f filter · d delete")));
+	assert.ok(wide.at(-2)?.includes("PgUp/PgDn scroll · Esc close"));
 	const detail = [
 		...stripped(render(80, 28, { pane: "detail" })),
 		...stripped(render(80, 28, { pane: "detail", detailOffset: 8 })),
@@ -103,19 +108,19 @@ test("sanitizes hostile content, applies search roles, and remains width-safe", 
 
 function makeComponent(initial = boardSnapshot()) {
 	let current = initial;
-	let done = 0;
+	const results: any[] = [];
 	let requests = 0;
 	const tui: any = { terminal: { rows: 28 }, requestRender: () => { requests++; } };
 	const component = new TasksBoardComponent({
 		tui,
 		theme: plainTheme,
 		keybindings,
-		done: () => { done++; },
+		done: (result) => { results.push(result); },
 		source: { getSnapshot: () => current, getActivity: () => ({ activeTaskId: 2, metrics: { startedAt: 0, inputTokens: 9_000, outputTokens: 4_700 } }), getConfig: () => DEFAULT_TASKS_CONFIG },
 		now: () => 464_000,
 	});
 	component.focused = true;
-	return { component, setSnapshot: (value: TaskSnapshot) => { current = value; }, done: () => done, requests: () => requests };
+	return { component, setSnapshot: (value: TaskSnapshot) => { current = value; }, done: () => results.length, results, requests: () => requests };
 }
 
 test("search covers id, active form, description, and owner without metadata stringification", () => {
@@ -126,6 +131,50 @@ test("search covers id, active form, description, and owner without metadata str
 	assert.match(stripped(render(80, 28, { query: "Archived", searching: true })).join("\n"), /1 matches/, "completed matches are revealed");
 	assert.match(stripped(render(80, 28, { query: "missing", searching: true })).join("\n"), /0 matches/);
 	assert.match(stripped(render(80, 28, { query: "\\\"z\\\":2", searching: true })).join("\n"), /0 matches/, "metadata is not searched");
+});
+
+test("lowercase d yields a typed delete action from list and detail while uppercase D does nothing", () => {
+	for (const pane of ["list", "detail"] as const) {
+		const harness = makeComponent();
+		harness.component.state.selectedId = 3;
+		harness.component.state.pane = pane;
+		harness.component.state.filter = "Open";
+		harness.component.state.collapseCompleted = false;
+		harness.component.state.query = "";
+		harness.component.render(pane === "detail" ? 50 : 120);
+		harness.component.state.listOffset = 2;
+		harness.component.state.detailOffset = 4;
+		harness.component.handleInput("D");
+		assert.equal(harness.results.length, 0, `${pane} has no uppercase alias`);
+		harness.component.handleInput("d");
+		assert.deepEqual(harness.results, [{
+			action: "delete",
+			id: 3,
+			subject: "Add Tasks board",
+			expectedRevision: 0,
+			fallbackId: 4,
+			viewState: {
+				selectedId: 3,
+				filter: "Open",
+				collapseCompleted: false,
+				query: "",
+				pane,
+				listOffset: 0,
+				detailOffset: 4,
+			},
+		}]);
+	}
+});
+
+test("search edit treats d as ordinary text and never yields a board action", () => {
+	const harness = makeComponent();
+	harness.component.render(80);
+	harness.component.handleInput("/");
+	harness.component.handleInput("d");
+	assert.equal(harness.component.state.query, "d");
+	assert.equal(harness.component.state.searching, true);
+	assert.equal(harness.results.length, 0);
+	harness.component.dispose();
 });
 
 test("selection follows stable IDs across filtering, search, reorder, and deletion", () => {
@@ -188,7 +237,7 @@ test("rendering and local controls do not mutate task snapshots or display confi
 	assert.equal(JSON.stringify(config), beforeConfig);
 });
 
-test("wide Tab switches pane focus with a non-color marker and no mutating controls", () => {
+test("wide Tab switches pane focus with a non-color marker and only the approved delete control", () => {
 	const harness = makeComponent();
 	const initial = harness.component.render(120).join("\n");
 	assert.equal(harness.component.state.pane, "list");
@@ -198,7 +247,8 @@ test("wide Tab switches pane focus with a non-color marker and no mutating contr
 	assert.equal(harness.component.state.pane, "detail");
 	assert.match(detailFocused, /› Details/);
 	assert.notEqual(initial, detailFocused, "focus must remain byte-distinct with a no-color theme");
-	assert.doesNotMatch(initial.toLocaleLowerCase(), /\b(start|complete|delete|clear|steer|stop|inspect)\b/);
+	assert.match(initial, /d delete/);
+	assert.doesNotMatch(initial.toLocaleLowerCase(), /\b(start|complete|clear|steer|stop|launch)\b/);
 	harness.component.dispose();
 });
 
@@ -541,10 +591,32 @@ test("blocker IDs survive subject-first truncation at wide and 50 columns", () =
 	}
 });
 
-test("narrow measured footer preserves every essential list action", () => {
-	for (const width of [36, 50, 60]) {
-		const output = stripTerminalSequences(render(width).join("\n"));
-		for (const meaning of ["task", "details", "search", "filter", "completed", "close"]) assert.match(output, new RegExp(meaning), `${width}: ${meaning}`);
+test("wide, medium, and small measured footers preserve every essential list action", () => {
+	for (const width of [120, 80, 60, 50, 36]) {
+		const lines = render(width);
+		const output = stripTerminalSequences(lines.join("\n"));
+		for (const meaning of ["task", width >= 92 ? "pane" : "details", "search", "filter", "completed", "d delete", "close"]) {
+			assert.match(output, new RegExp(meaning), `${width}: ${meaning}`);
+		}
+		assert.ok(lines.every((line) => visibleWidth(line) === width), `footer width ${width}`);
+	}
+	for (const width of [80, 50, 36]) {
+		const output = stripTerminalSequences(render(width, 28, { pane: "detail" }).join("\n"));
+		assert.match(output, /d delete/, `detail ${width}`);
+	}
+});
+
+test("submitted search footers put clear-search precedence before close or list at every width", () => {
+	for (const width of [120, 80, 60, 50, 36]) {
+		const output = stripTerminalSequences(render(width, 28, { query: "Task", searching: false }).join("\n"));
+		assert.match(output, /Esc clear search/, `${width}: clear search`);
+		assert.ok(output.indexOf("Esc clear search") < output.indexOf("q close"), `${width}: clear precedes close`);
+	}
+	for (const width of [80, 50, 36]) {
+		const output = stripTerminalSequences(render(width, 28, { query: "Task", searching: false, pane: "detail" }).join("\n"));
+		assert.match(output, /Esc clear search/, `${width}: detail clear search`);
+		assert.ok(output.indexOf("Esc clear search") < output.indexOf("Backspace list"), `${width}: clear precedes list`);
+		assert.doesNotMatch(output, /Esc list/, `${width}: Escape clears before returning to list`);
 	}
 });
 
@@ -559,10 +631,10 @@ test("selected completed rows are bold before dim strikethrough", () => {
 	assert.match(output, /<dim><s><b>#1 Done<\/b><\/s><\/dim>/);
 });
 
-test("empty and no-result states use actionable read-only copy", () => {
+test("empty and no-result states use actionable inspection-first copy", () => {
 	const empty = renderTasksBoard({ snapshot: snapshot(), config: DEFAULT_TASKS_CONFIG, state: state({ selectedId: undefined }), theme: plainTheme, keybindings, width: 80, terminalRows: 28 });
 	assert.match(empty.join("\n"), /No tasks in this session\./);
-	assert.match(empty.join("\n"), /Use \/tasks to create one; this board is read-only\./);
+	assert.match(empty.join("\n"), /Use \/tasks to create and manage tasks\./);
 	assert.match(render(80, 28, { query: "missing" }).join("\n"), /No tasks match "missing"\./);
 	assert.match(render(80, 28, { filter: "Completed", collapseCompleted: false, query: "impossible" }).join("\n"), /Esc clears search\./);
 	const completed = snapshot([task(1, "completed"), task(2, "completed")]);
@@ -596,27 +668,332 @@ test("live spinner timer uses 150 ms, unrefs, invalidates, and is cleared exactl
 	}
 });
 
+interface BoardScenario {
+	components: TasksBoardComponent[];
+	results: any[];
+	confirmCalls: any[];
+	notices: any[];
+	entries: any[];
+	refreshes: number;
+}
+
+async function runBoardScenario(
+	initial: TaskSnapshot,
+	drivers: Array<(component: TasksBoardComponent) => void>,
+	confirmations: boolean[],
+	activity = false,
+	onConfirm?: (pi: any, ctx: any) => void,
+): Promise<BoardScenario> {
+	resetStore();
+	const session = "tasks-board-session";
+	commitSnapshot(session, initial);
+	setForeground(session);
+	if (activity) taskActivity.reset(session, initial, 10);
+	const components: TasksBoardComponent[] = [];
+	const results: any[] = [];
+	const confirmCalls: any[] = [];
+	const notices: any[] = [];
+	const entries: any[] = [];
+	let refreshes = 0;
+	const pi: any = { appendEntry: (...args: any[]) => entries.push(args) };
+	const ctx: any = {
+		mode: "tui",
+		sessionManager: { getSessionId: () => session },
+		ui: {
+			custom: (factory: any, options: any) => {
+				assert.deepEqual(options, { overlay: true, overlayOptions: TASKS_BOARD_OVERLAY_OPTIONS });
+				return new Promise((resolve) => {
+					const component = factory(
+						{ terminal: { rows: 28 }, requestRender() {} },
+						plainTheme,
+						keybindings,
+						(result: any) => { results.push(result); resolve(result); },
+					);
+					components.push(component);
+					const driver = drivers.shift();
+					assert.ok(driver, "unexpected board reopen");
+					driver(component);
+				});
+			},
+			confirm: async (...args: any[]) => {
+				confirmCalls.push(args);
+				onConfirm?.(pi, ctx);
+				onConfirm = undefined;
+				return confirmations.shift() ?? false;
+			},
+			notify: (...args: any[]) => notices.push(args),
+		},
+	};
+	await openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG, () => { refreshes++; });
+	assert.equal(drivers.length, 0);
+	return { components, results, confirmCalls, notices, entries, refreshes };
+}
+
+test("cancelled board deletion reopens with stable selection and preserved serializable view state", async () => {
+	let yielded: any;
+	const source = snapshot([
+		{ ...task(1), description: "one ".repeat(100) },
+		{ ...task(2), description: "two ".repeat(100) },
+		task(3),
+	], 9);
+	const scenario = await runBoardScenario(source, [
+		(component) => {
+			component.state.selectedId = 2;
+			component.state.filter = "Open";
+			component.state.collapseCompleted = true;
+			component.state.query = "Task";
+			component.state.pane = "detail";
+			component.render(50);
+			component.state.listOffset = 1;
+			component.state.detailOffset = 5;
+			component.handleInput("d");
+		},
+		(component) => {
+			yielded = scenarioResult(component, 50);
+			component.close();
+		},
+	], [false]);
+	const requested = scenario.results[0];
+	assert.equal(requested.action, "delete");
+	assert.deepEqual(yielded, requested.viewState);
+	assert.equal(getSnapshot("tasks-board-session").revision, 9);
+	assert.equal(scenario.entries.length, 0);
+	assert.equal(scenario.refreshes, 0);
+	assert.deepEqual(scenario.confirmCalls[0]?.slice(0, 2), ["Delete task", "Delete #2 Task 2?"]);
+	assert.equal(scenario.confirmCalls[0]?.[2]?.signal instanceof AbortSignal, true);
+});
+
+function scenarioResult(component: TasksBoardComponent, width: number): any {
+	component.render(width);
+	return {
+		...(component.state.selectedId === undefined ? {} : { selectedId: component.state.selectedId }),
+		filter: component.state.filter,
+		collapseCompleted: component.state.collapseCompleted,
+		query: component.state.query,
+		pane: component.state.pane,
+		listOffset: component.state.listOffset,
+		detailOffset: component.state.detailOffset,
+	};
+}
+
+test("confirmed board deletion commits once, appends the human snapshot, refreshes activity/widget, and selects the next visible task", async () => {
+	const source = snapshot([task(1), task(2, "in_progress"), task(3)], 7);
+	const scenario = await runBoardScenario(source, [
+		(component) => {
+			component.render(80);
+			component.state.selectedId = 2;
+			component.state.filter = "All";
+			component.state.collapseCompleted = true;
+			component.state.query = "Task";
+			component.handleInput("d");
+		},
+		(component) => {
+			component.render(80);
+			assert.equal(component.state.selectedId, 3);
+			assert.equal(component.state.filter, "All");
+			assert.equal(component.state.collapseCompleted, true);
+			assert.equal(component.state.query, "Task");
+			assert.match(stripTerminalSequences(component.render(80).join("\n")), /›[^\n]*#3\D/);
+			component.close();
+		},
+	], [true], true);
+	const committed = getSnapshot("tasks-board-session");
+	assert.equal(committed.revision, 8);
+	assert.equal(committed.tasks.find((entry) => entry.id === 2)?.status, "deleted");
+	assert.equal(scenario.entries.length, 1);
+	assert.equal(scenario.entries[0][0], "pi-tasks-state");
+	assert.equal(scenario.entries[0][1], committed);
+	assert.equal(scenario.refreshes, 1);
+	assert.deepEqual(taskActivity.get("tasks-board-session"), {});
+});
+
+test("confirmation rejects selected-task changes and unrelated revision advances without deleting or refreshing", async () => {
+	for (const change of [
+		{ name: "selected rename", apply: (pi: any, ctx: any) => applyHumanMutation(pi, ctx, { action: "update", id: 1, subject: "Renamed while confirming" }) },
+		{ name: "unrelated update", apply: (pi: any, ctx: any) => applyHumanMutation(pi, ctx, { action: "update", id: 2, subject: "Unrelated change" }) },
+	]) {
+		const source = snapshot([task(1), task(2)], 4);
+		let reopenedRevision = 0;
+		const scenario = await runBoardScenario(source, [
+			(component) => {
+				component.render(80);
+				component.state.selectedId = 1;
+				component.handleInput("d");
+			},
+			(component) => {
+				reopenedRevision = scenarioResult(component, 80).selectedId === 1
+					? getSnapshot("tasks-board-session").revision
+					: 0;
+				component.close();
+			},
+		], [true], false, change.apply);
+		const current = getSnapshot("tasks-board-session");
+		assert.equal(scenario.results[0]?.expectedRevision, 4, change.name);
+		assert.equal(reopenedRevision, 5, change.name);
+		assert.notEqual(current.tasks.find((entry) => entry.id === 1)?.status, "deleted", change.name);
+		assert.equal(scenario.entries.length, 1, `${change.name}: only the intervening mutation appends`);
+		assert.equal(scenario.refreshes, 0, `${change.name}: rejected delete does not refresh`);
+		assert.match(scenario.notices[0]?.[0] ?? "", /Tasks changed while delete confirmation was open; #1 was not deleted/, change.name);
+		assert.equal(scenario.notices[0]?.[1], "warning", change.name);
+	}
+});
+
+test("dependency-gated board deletion notifies and reopens unchanged", async () => {
+	const source = snapshot([task(1), task(2, "pending", [1])], 4);
+	let reopened: any;
+	const scenario = await runBoardScenario(source, [
+		(component) => {
+			component.render(50);
+			component.state.selectedId = 1;
+			component.state.filter = "Open";
+			component.state.collapseCompleted = true;
+			component.state.pane = "detail";
+			component.state.detailOffset = 3;
+			component.handleInput("d");
+		},
+		(component) => {
+			reopened = scenarioResult(component, 50);
+			component.close();
+		},
+	], [true]);
+	assert.deepEqual(reopened, scenario.results[0].viewState);
+	assert.equal(getSnapshot("tasks-board-session"), source);
+	assert.equal(scenario.entries.length, 0);
+	assert.equal(scenario.refreshes, 0);
+	assert.match(scenario.notices[0]?.[0] ?? "", /Could not delete #1: #1 is required by #2/);
+	assert.equal(scenario.notices[0]?.[1], "error");
+});
+
+test("successful deletion resets a scrolled detail before opening the fallback task", async () => {
+	const source = snapshot([
+		{ ...task(1), description: "first ".repeat(100) },
+		{ ...task(2), description: "second ".repeat(100) },
+	], 3);
+	await runBoardScenario(source, [
+		(component) => {
+			component.render(50);
+			component.state.pane = "detail";
+			component.state.detailOffset = 7;
+			component.handleInput("d");
+		},
+		(component) => {
+			component.render(50);
+			assert.equal(component.state.selectedId, 2);
+			assert.equal(component.state.detailOffset, 0);
+			assert.match(stripTerminalSequences(component.render(50).join("\n")), /Details  #2 · lines 1–/);
+			component.close();
+		},
+	], [true]);
+});
+
+test("deleting the only query match keeps clear-search precedence in the no-results footer", async () => {
+	const source = snapshot([task(1, "pending", [], "Unique needle"), task(2, "pending", [], "Other")], 2);
+	await runBoardScenario(source, [
+		(component) => {
+			component.render(50);
+			component.state.query = "needle";
+			component.render(50);
+			component.handleInput("d");
+		},
+		(component) => {
+			const output = stripTerminalSequences(component.render(50).join("\n"));
+			assert.match(output, /No tasks match "needle"\./);
+			assert.match(output, /Esc clear search/);
+			assert.ok(output.indexOf("Esc clear search") < output.indexOf("q close"));
+			component.close();
+		},
+	], [true]);
+});
+
+test("deleting the only visible task reopens the board empty without hard-deleting its snapshot record", async () => {
+	const source = snapshot([task(1)], 2);
+	await runBoardScenario(source, [
+		(component) => { component.render(80); component.handleInput("d"); },
+		(component) => {
+			assert.equal(component.state.selectedId, undefined);
+			assert.match(component.render(80).join("\n"), /No tasks in this session\./);
+			component.close();
+		},
+	], [true]);
+	const committed = getSnapshot("tasks-board-session");
+	assert.equal(committed.tasks.length, 1);
+	assert.equal(committed.tasks[0]?.status, "deleted");
+});
+
+test("disposing during confirmation aborts the board run and ignores both late confirmation resolutions", async () => {
+	for (const lateResult of [true, false]) {
+		resetStore();
+		const session = `dispose-confirm-${lateResult}`;
+		const source = snapshot([task(1)], 6);
+		commitSnapshot(session, source);
+		setForeground(session);
+		const entries: any[] = [];
+		const notices: any[] = [];
+		let refreshes = 0;
+		let customCalls = 0;
+		let resolveConfirm!: (value: boolean) => void;
+		let confirmStarted!: (signal: AbortSignal) => void;
+		const started = new Promise<AbortSignal>((resolve) => { confirmStarted = resolve; });
+		const confirmation = new Promise<boolean>((resolve) => { resolveConfirm = resolve; });
+		const pi: any = { appendEntry: (...args: any[]) => entries.push(args) };
+		const ctx: any = {
+			mode: "tui",
+			sessionManager: { getSessionId: () => session },
+			ui: {
+				custom: (factory: any) => new Promise((resolve) => {
+					customCalls++;
+					const component = factory(
+						{ terminal: { rows: 28 }, requestRender() {} },
+						plainTheme,
+						keybindings,
+						resolve,
+					);
+					component.render(80);
+					component.handleInput("d");
+				}),
+				confirm: (_title: string, _message: string, options: { signal: AbortSignal }) => {
+					confirmStarted(options.signal);
+					return confirmation;
+				},
+				notify: (...args: any[]) => notices.push(args),
+			},
+		};
+		const opening = openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG, () => { refreshes++; });
+		const signal = await started;
+		disposeTasksBoard();
+		disposeTasksBoard();
+		assert.equal(signal.aborted, true, `${lateResult}: signal aborted`);
+		resolveConfirm(lateResult);
+		await opening;
+		assert.equal(customCalls, 1, `${lateResult}: board does not reopen`);
+		assert.equal(getSnapshot(session), source, `${lateResult}: task state unchanged`);
+		assert.equal(entries.length, 0, `${lateResult}: no append`);
+		assert.equal(refreshes, 0, `${lateResult}: no refresh`);
+		assert.equal(notices.length, 0, `${lateResult}: shutdown is silent`);
+	}
+});
+
 test("command uses public overlay options, single-open guard, and non-TUI fallback", async () => {
 	const notices: Array<[string, string]> = [];
 	let release: (() => void) | undefined;
 	let component: TasksBoardComponent | undefined;
 	const custom = (factory: any, options: any) => {
 		assert.deepEqual(options, { overlay: true, overlayOptions: TASKS_BOARD_OVERLAY_OPTIONS });
-		return new Promise<void>((resolve) => {
-			release = resolve;
+		return new Promise<any>((resolve) => {
 			component = factory({ terminal: { rows: 28 }, requestRender() {} }, plainTheme, keybindings, resolve);
+			release = () => component?.close();
 		});
 	};
-	const ctx: any = { mode: "tui", ui: { custom, notify: (message: string, type: string) => notices.push([message, type]) } };
-	const first = openTasksBoard(ctx, () => DEFAULT_TASKS_CONFIG);
+	const pi: any = {};
+	const ctx: any = { mode: "tui", sessionManager: { getSessionId: () => "session" }, ui: { custom, notify: (message: string, type: string) => notices.push([message, type]) } };
+	const first = openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG);
 	await Promise.resolve();
-	await openTasksBoard(ctx, () => DEFAULT_TASKS_CONFIG);
+	await openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG);
 	assert.deepEqual(notices, [["Tasks board is already open.", "info"]]);
-	component?.dispose();
 	release?.();
 	await first;
 	let customCalled = false;
-	await openTasksBoard({ mode: "rpc", ui: { custom: () => { customCalled = true; }, notify: (message: string, type: string) => notices.push([message, type]) } } as any, () => DEFAULT_TASKS_CONFIG);
+	await openTasksBoard(pi, { mode: "rpc", ui: { custom: () => { customCalled = true; }, notify: (message: string, type: string) => notices.push([message, type]) } } as any, () => DEFAULT_TASKS_CONFIG);
 	assert.equal(customCalled, false);
 	assert.deepEqual(notices.at(-1), ["/tasks-board requires TUI mode; task data remains available through the todo tool.", "warning"]);
 });

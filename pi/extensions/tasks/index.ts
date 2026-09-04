@@ -16,8 +16,8 @@ export default function tasksExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("tasks", { description: "Manage tasks — view, create, clear completed", handler });
 	pi.registerCommand("todos", { description: "Manage tasks — view, create, clear completed (alias for /tasks)", handler });
 	pi.registerCommand("tasks-board", {
-		description: "Inspect tasks in a live read-only board",
-		handler: async (_args, ctx) => openTasksBoard(ctx, () => widget.getConfig()),
+		description: "Inspect tasks and confirm deletions in a live board",
+		handler: async (_args, ctx) => openTasksBoard(pi, ctx, () => widget.getConfig(), () => widget.refresh()),
 	});
 	pi.registerShortcut("ctrl+shift+t", {
 		description: "Toggle the Tasks widget between compact and expanded",

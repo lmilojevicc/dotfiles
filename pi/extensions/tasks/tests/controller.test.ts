@@ -23,11 +23,14 @@ function harness(responses: Array<string | undefined> = [], mode = "tui") {
 	return { ctx, calls, pi, entries };
 }
 
-test("human mutations append full snapshots only on commit", () => {
+test("human mutations append full snapshots only on commit and preserve explicit revision expectations", () => {
 	const { ctx, pi, entries } = harness();
 	assert.equal(applyHumanMutation(pi, ctx, { action: "create", subject: "One" }).changed, true);
 	assert.equal(entries[0][0], "pi-tasks-state");
 	assert.equal(applyHumanMutation(pi, ctx, { action: "update", id: 1, status: "pending" }).changed, false);
+	const stale = applyHumanMutation(pi, ctx, { action: "update", id: 1, subject: "Stale", expectedRevision: 0 });
+	assert.deepEqual(stale, { changed: false, error: "expected revision 0, current revision is 1" });
+	assert.equal(getSnapshot("session").tasks[0]?.subject, "One");
 	assert.equal(entries.length, 1);
 });
 

@@ -1,4 +1,4 @@
-import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	decodeKittyPrintable,
 	Input,
@@ -17,6 +17,7 @@ import type { TaskDisplayConfig } from "../config/tasks-config.js";
 import type { Task, TaskSnapshot } from "../domain/types.js";
 import { taskActivity, type SessionActivity } from "../state/activity.js";
 import { foregroundSnapshot, getForeground } from "../state/store.js";
+import { applyHumanMutation } from "./controller.js";
 import { sanitizeSearchInput, sanitizeTerminalText } from "./sanitize.js";
 import { resolveTaskGlyphs } from "./task-glyphs.js";
 import { sortTasks } from "./task-sort.js";
@@ -52,6 +53,16 @@ export interface TasksBoardState {
 	error?: string;
 	staleWarning?: boolean;
 }
+
+/** Serializable state retained while the board yields to a public Pi prompt. */
+export type TasksBoardViewState = Pick<
+	TasksBoardState,
+	"selectedId" | "filter" | "collapseCompleted" | "query" | "pane" | "listOffset" | "detailOffset"
+>;
+
+export type TasksBoardResult =
+	| { action: "close" }
+	| { action: "delete"; id: number; subject: string; expectedRevision: number; fallbackId?: number; viewState: TasksBoardViewState };
 
 interface BoardProjection {
 	all: Task[];
@@ -436,7 +447,7 @@ function listPage(
 
 function bodyEmpty(projection: BoardProjection, state: TasksBoardState, theme: Theme): string[] {
 	if (projection.visible.length) return [];
-	if (!projection.all.length) return [theme.bold("No tasks in this session."), theme.fg("dim", "Use /tasks to create one; this board is read-only.")];
+	if (!projection.all.length) return [theme.bold("No tasks in this session."), theme.fg("dim", "Use /tasks to create and manage tasks.")];
 	if (matchingQuery(state.query)) return [theme.bold(`No tasks match \"${sanitizeSearchInput(state.query)}\".`), theme.fg("dim", "Esc clears search.")];
 	if (state.filter !== "All") return [theme.bold(`No tasks match Filter: ${state.filter}.`), theme.fg("dim", "Press f to change the filter.")];
 	if (projection.completed.length === projection.all.length && state.collapseCompleted) {
@@ -485,18 +496,19 @@ function footerLines(width: number, state: TasksBoardState, keybindings: Keybind
 	const down = keyLabel(keybindings, "tui.select.down", "↓");
 	const pgUp = keyLabel(keybindings, "tui.select.pageUp", "PgUp");
 	const pgDown = keyLabel(keybindings, "tui.select.pageDown", "PgDn");
-	if (state.error) return packFooter(["r retry", `${cancel} close`], width);
-	if (empty) return packFooter([`${cancel} close`, "/tasks manages tasks"], width);
-	if (state.searching) return packFooter(["Type to filter", `${submit} keep`, "Backspace delete", `${cancel} clear`], width);
+	const hasQuery = Boolean(state.query);
+	if (state.error) return packFooter(hasQuery ? [`${cancel} clear search`, "r retry", "q close"] : ["r retry", `${cancel} close`], width);
+	if (empty) return packFooter(hasQuery ? [`${cancel} clear search`, "/tasks manages tasks", "q close"] : [`${cancel} close`, "/tasks manages tasks"], width);
+	if (state.searching) return packFooter(["Type to filter", `${submit} keep`, "Backspace delete", `${cancel} clear search`], width);
 	if (state.pane === "detail" && width < 92) {
-		return packFooter([`${up}${down}/jk scroll`, `${pgUp}/${pgDown} page`, "←/Backspace list", `${cancel} list`], width);
+		return packFooter([...(hasQuery ? [`${cancel} clear search`] : []), `${up}${down}/jk scroll`, `${pgUp}/${pgDown} page`, "d delete", "←/Backspace list", ...(hasQuery ? [] : [`${cancel} list`])], width);
 	}
-	const items = [`${up}${down}/jk task`];
+	const items = [...(hasQuery ? [`${cancel} clear search`] : []), `${up}${down}/jk task`];
 	if (width >= 92) items.push("Tab pane");
 	else items.push(`${select} details`);
-	items.push("/ search", "f filter", "c completed");
+	items.push("/ search", "c completed", "f filter", "d delete");
 	if (width >= 92) items.push(`${pgUp}/${pgDown} scroll`);
-	items.push(`${cancel} close`);
+	items.push(hasQuery ? "q close" : `${cancel} close`);
 	return packFooter(items, width);
 }
 
@@ -547,7 +559,7 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 	const { contentRows, innerWidth: inner } = geometry;
 	const lines: string[] = [];
 	lines.push(theme.fg("border", `╭${"─".repeat(inner)}╮`));
-	const title = small ? `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "read-only")}` : `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "live, read-only")}`;
+	const title = small ? `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "inspect")}` : `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "live inspection")}`;
 	const right = small ? `${projection.all.length} ${projection.all.length === 1 ? "task" : "tasks"}` : counts(projection.all);
 	lines.push(bordered(` ${sides(title, theme.fg("muted", right), inner - 2)} `, width, theme));
 	lines.push(bordered(` ${controlLine(state, projection, theme, inner - 2, options.searchInput)} `, width, theme));
@@ -618,8 +630,9 @@ export interface TasksBoardComponentOptions {
 	tui: TUI;
 	theme: Theme;
 	keybindings: KeybindingsManager;
-	done: () => void;
+	done: (result: TasksBoardResult) => void;
 	source: TasksBoardSource;
+	initialState?: TasksBoardViewState;
 	now?: () => number;
 }
 
@@ -627,7 +640,7 @@ export class TasksBoardComponent implements Component, Focusable {
 	private readonly tui: TUI;
 	private readonly theme: Theme;
 	private readonly keybindings: KeybindingsManager;
-	private readonly done: () => void;
+	private readonly done: (result: TasksBoardResult) => void;
 	private readonly source: TasksBoardSource;
 	private readonly now: () => number;
 	private readonly searchInput = new Input();
@@ -651,7 +664,19 @@ export class TasksBoardComponent implements Component, Focusable {
 		this.source = options.source;
 		this.now = options.now ?? Date.now;
 		const config = this.source.getConfig();
-		this.state = { filter: "All", collapseCompleted: config.collapseCompleted, query: "", searching: false, pane: "list", listOffset: 0, detailOffset: 0, frame: 0 };
+		this.state = {
+			filter: "All",
+			collapseCompleted: config.collapseCompleted,
+			query: "",
+			searching: false,
+			pane: "list",
+			listOffset: 0,
+			detailOffset: 0,
+			frame: 0,
+			...options.initialState,
+		};
+		this.projectionState = JSON.stringify([this.state.query, this.state.filter, this.state.collapseCompleted]);
+		this.searchInput.setValue(this.state.query);
 		this.searchInput.onSubmit = () => { this.state.searching = false; this.searchInput.focused = false; this.searchIngress.reset(); this.changed(); };
 		this.searchInput.onEscape = () => this.clearSearch();
 	}
@@ -728,6 +753,34 @@ export class TasksBoardComponent implements Component, Focusable {
 		this.searchInput.focused = false;
 		this.state.listOffset = 0;
 		this.changed();
+	}
+
+	private viewState(): TasksBoardViewState {
+		return {
+			...(this.state.selectedId === undefined ? {} : { selectedId: this.state.selectedId }),
+			filter: this.state.filter,
+			collapseCompleted: this.state.collapseCompleted,
+			query: this.state.query,
+			pane: this.state.pane,
+			listOffset: this.state.listOffset,
+			detailOffset: this.state.detailOffset,
+		};
+	}
+
+	private requestDelete(): void {
+		const projection = this.read();
+		const index = projection?.visible.findIndex((task) => task.id === this.state.selectedId) ?? -1;
+		if (!projection || index < 0) return;
+		const selected = projection.visible[index]!;
+		const fallbackId = projection.visible[index + 1]?.id ?? projection.visible[index - 1]?.id;
+		this.finish({
+			action: "delete",
+			id: selected.id,
+			subject: sanitizeTerminalText(selected.subject),
+			expectedRevision: this.lastSnapshot!.revision,
+			...(fallbackId === undefined ? {} : { fallbackId }),
+			viewState: this.viewState(),
+		});
 	}
 
 	private geometry(projection: BoardProjection): BoardGeometry {
@@ -816,6 +869,7 @@ export class TasksBoardComponent implements Component, Focusable {
 			this.changed(); return;
 		}
 		if (data === "c") { this.state.collapseCompleted = !this.state.collapseCompleted; this.state.listOffset = 0; this.changed(); return; }
+		if (data === "d") { this.requestDelete(); return; }
 		if (data === "r" && this.state.error) { this.state.error = undefined; this.changed(); return; }
 		if (this.lastWidth >= 96 && matchesKey(data, Key.tab)) { this.state.pane = this.state.pane === "list" ? "detail" : "list"; this.changed(); return; }
 		if (this.keybindings.matches(data, "tui.select.confirm") && this.state.pane === "list") { this.state.pane = "detail"; this.changed(); return; }
@@ -841,10 +895,14 @@ export class TasksBoardComponent implements Component, Focusable {
 
 	invalidate(): void { this.searchInput.invalidate(); }
 
-	close(): void {
+	private finish(result: TasksBoardResult): void {
 		if (this.disposed) return;
 		this.dispose();
-		this.done();
+		this.done(result);
+	}
+
+	close(): void {
+		this.finish({ action: "close" });
 	}
 
 	dispose(): void {
@@ -856,8 +914,14 @@ export class TasksBoardComponent implements Component, Focusable {
 
 let boardOpen = false;
 let activeBoard: TasksBoardComponent | undefined;
+let activeBoardRun: AbortController | undefined;
 
-export async function openTasksBoard(ctx: ExtensionCommandContext, getConfig: () => TaskDisplayConfig): Promise<void> {
+export async function openTasksBoard(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	getConfig: () => TaskDisplayConfig,
+	refresh: () => void = () => {},
+): Promise<void> {
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify("/tasks-board requires TUI mode; task data remains available through the todo tool.", "warning");
 		return;
@@ -867,30 +931,66 @@ export async function openTasksBoard(ctx: ExtensionCommandContext, getConfig: ()
 		return;
 	}
 	boardOpen = true;
+	const run = new AbortController();
+	activeBoardRun = run;
+	let initialState: TasksBoardViewState | undefined;
 	try {
-		await ctx.ui.custom<void>((tui, theme, keybindings, done) => {
-			activeBoard = new TasksBoardComponent({
-				tui,
-				theme,
-				keybindings,
-				done,
-				source: {
-					getSnapshot: foregroundSnapshot,
-					getActivity: () => taskActivity.get(getForeground()),
-					getConfig,
-				},
-			});
-			return activeBoard;
-		}, { overlay: true, overlayOptions: TASKS_BOARD_OVERLAY_OPTIONS });
+		while (!run.signal.aborted) {
+			const result = await ctx.ui.custom<TasksBoardResult>((tui, theme, keybindings, done) => {
+				activeBoard = new TasksBoardComponent({
+					tui,
+					theme,
+					keybindings,
+					done,
+					source: {
+						getSnapshot: foregroundSnapshot,
+						getActivity: () => taskActivity.get(getForeground()),
+						getConfig,
+					},
+					...(initialState === undefined ? {} : { initialState }),
+				});
+				return activeBoard;
+			}, { overlay: true, overlayOptions: TASKS_BOARD_OVERLAY_OPTIONS });
+			activeBoard?.dispose();
+			activeBoard = undefined;
+			if (run.signal.aborted || result.action === "close") return;
+
+			initialState = result.viewState;
+			const confirmed = await ctx.ui.confirm("Delete task", `Delete #${result.id} ${result.subject}?`, { signal: run.signal });
+			if (run.signal.aborted) return;
+			if (!confirmed) continue;
+
+			const mutation = applyHumanMutation(pi, ctx, { action: "delete", id: result.id, expectedRevision: result.expectedRevision });
+			if (mutation.error) {
+				if (mutation.error.startsWith("expected revision ")) {
+					ctx.ui.notify(`Tasks changed while delete confirmation was open; #${result.id} was not deleted. Review the current tasks and try again.`, "warning");
+				} else {
+					ctx.ui.notify(`Could not delete #${result.id}: ${sanitizeTerminalText(mutation.error)}`, "error");
+				}
+				continue;
+			}
+			if (!mutation.changed) {
+				ctx.ui.notify(`Task #${result.id} is no longer available to delete.`, "warning");
+				continue;
+			}
+			refresh();
+			initialState = {
+				...result.viewState,
+				detailOffset: 0,
+				...(result.fallbackId === undefined ? { selectedId: undefined } : { selectedId: result.fallbackId }),
+			};
+		}
 	} catch (error) {
-		ctx.ui.notify(`Could not open Tasks board: ${sanitizeTerminalText(error instanceof Error ? error.message : error)}`, "error");
+		if (!run.signal.aborted) ctx.ui.notify(`Could not open Tasks board: ${sanitizeTerminalText(error instanceof Error ? error.message : error)}`, "error");
 	} finally {
 		activeBoard?.dispose();
 		activeBoard = undefined;
+		if (activeBoardRun === run) activeBoardRun = undefined;
 		boardOpen = false;
 	}
 }
 
 export function disposeTasksBoard(): void {
+	activeBoardRun?.abort();
 	activeBoard?.close();
 }

@@ -14,7 +14,8 @@ export interface HumanMutationResult { changed: boolean; error?: string }
 
 export function applyHumanMutation(pi: ExtensionAPI, ctx: ExtensionCommandContext, input: TodoInput): HumanMutationResult {
 	const id = sessionId(ctx);
-	const result = reduceTasks(getSnapshot(id), { ...input, expectedRevision: getSnapshot(id).revision });
+	const current = getSnapshot(id);
+	const result = reduceTasks(current, { ...input, expectedRevision: input.expectedRevision ?? current.revision });
 	if (result.error) return { changed: false, error: result.error.message };
 	if (!result.committed) return { changed: false };
 	commitSnapshot(id, result.state, true);
