@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
 function isolateAgentDir(t: test.TestContext, root: string): void {
@@ -176,6 +177,51 @@ test("real dark/light themes keep highlighted Unicode rows and Input cursor with
 	}
 });
 
+for (const name of ["dark", "light"]) test(`real ${name} theme aligns separate selection/favorite/current marker cells`, async () => {
+	const { ModelPickerComponent } = await import("../component.ts");
+	const themes = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+	const theme = themes.getThemeByName(name);
+	assert.ok(theme);
+	assert.equal(visibleWidth("❯"), 1);
+	assert.equal(visibleWidth("★"), 1);
+	const target = model("p", "target"), other = model("p", "other");
+	for (const width of [20, 25, 63, 64, 100]) for (const active of [false, true]) for (const favorite of [false, true]) for (const current of [false, true]) {
+		const component = new ModelPickerComponent({ models: [target, other], current: current ? target : undefined,
+			favorites: favorite ? ["p/target"] : [], scoped: false, theme, keybindings: keys(),
+			getHeight: () => 16, onChange() {}, onSelect() {}, onCancel() {},
+		});
+		component.render(width);
+		if ((component.getSelectedModel() === target) !== active) component.handleInput("\x1b[B");
+		const lines = component.render(width);
+		assert.ok(lines.some((line) => line.includes("\x1b[")), "exercise actual theme styling");
+		assert.ok(lines.every((line) => visibleWidth(line) <= width), `${name}, width ${width}`);
+		const plain = lines.map(stripVTControlCharacters);
+		const bodies = plain.map((line) => width >= 24 ? line.slice(2, -2) : line);
+		const rows = bodies.map((line) => width >= 64 ? line.split(" │ ").at(-1)! : line);
+		const targetRow = rows.find((line) => line.includes("p/target"))!;
+		const otherRow = rows.find((line) => line.includes("p/other"))!;
+		const prefix = `${active ? "❯" : " "} ${favorite ? "★" : " "}${current ? "*" : " "} `;
+		assert.equal(targetRow.slice(0, 5), prefix);
+		assert.equal(otherRow.slice(0, 5), `${active ? " " : "❯"}    `);
+		for (const [row, label] of [[targetRow, "p/target"], [otherRow, "p/other"]]) {
+			assert.equal(visibleWidth(row.slice(0, row.indexOf(label))), 5, "fixed model label column");
+		}
+		assert.doesNotMatch(plain.join("\n"), /❯[★*]|›/, "cursor never fuses with status markers");
+		component.handleInput("\t");
+		const providerLines = component.render(width);
+		assert.ok(providerLines.every((line) => visibleWidth(line) <= width));
+		const providers = providerLines.map(stripVTControlCharacters)
+			.map((line) => width >= 24 ? line.slice(2, -2) : line)
+			.map((line) => width >= 64 ? line.split(" │ ")[0] : line);
+		for (const label of ["All", "Favorites", "p"]) {
+			const row = providers.find((line) => line.includes(`${label} (`))!;
+			assert.equal(row.slice(0, 2), label === "All" ? "❯ " : "  ");
+			assert.equal(visibleWidth(row.slice(0, row.indexOf(label))), 2, "fixed provider label column");
+		}
+		component.dispose();
+	}
+});
+
 test("real open restores legacy order inside session catalogue; toggles reread disk and reopen reflects changes", async (t) => {
 	const root = mkdtempSync(join(tmpdir(), "picker-legacy-open-"));
 	isolateAgentDir(t, root); t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -205,7 +251,7 @@ test("real open restores legacy order inside session catalogue; toggles reread d
 	writeFileSync(path, JSON.stringify({ favorites: ["alpha/vendor/shared", "beta/vendor/shared"] }));
 	const reopened = command("", { ...context, model: b } as never);
 	assert.equal(component.getSelectedModel(), b, "current favorite wins preselection even when not first");
-	assert.match(component.render(100).join("\n"), /›★\* beta\/vendor\/shared/);
+	assert.match(component.render(100).join("\n"), /❯ ★\* beta\/vendor\/shared/);
 	component.handleInput("\x1b"); await reopened;
 });
 

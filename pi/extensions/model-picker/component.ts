@@ -247,7 +247,7 @@ export class ModelPickerComponent implements Component, Focusable {
 			const count = provider.kind === "all" ? this.matches.length : provider.kind === "favorites"
 				? this.matches.filter((model) => this.isFavorite(model)).length : this.counts.get(provider.provider);
 			const suffix = ` (${count})`;
-			const label = clip(`${active ? "› " : "  "}${text(scopeLabel(provider))}`, providerWidth - visibleWidth(suffix)) + suffix;
+			const label = clip(`${active ? "❯ " : "  "}${text(scopeLabel(provider))}`, providerWidth - visibleWidth(suffix)) + suffix;
 			return active ? theme.fg("accent", theme.bold(label)) : theme.fg("muted", label);
 		};
 		const modelLine = (index: number, size: number): string => {
@@ -257,7 +257,7 @@ export class ModelPickerComponent implements Component, Focusable {
 			const current = this.options.current && modelKey(model) === modelKey(this.options.current);
 			const active = index === this.selected && this.pane === "models";
 			const label = text(this.scope.kind === "provider" ? model.id : modelLabel(model));
-			return clip((active ? theme.fg("accent", "›") : " ") + `${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ` +
+			return clip((active ? theme.fg("accent", "❯") : " ") + ` ${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ` +
 				(active ? theme.bold(label) : current ? theme.fg("success", label) : label), size);
 		};
 		for (let row = 0; row < rows; row++) {

@@ -25,8 +25,8 @@ test("initial provider-qualified current preselection and marker differ from hig
 	assert.equal(component.getSelectedModel(), entries[1]);
 	component.handleInput(down);
 	const render = component.render(100).join("\n");
-	assert.match(render, /  \* beta\/shared/);
-	assert.match(render, /›   alpha\/shared/);
+	assert.match(render, /   \* beta\/shared/);
+	assert.match(render, /❯    alpha\/shared/);
 	assert.equal(component.getSelectedModel(), entries[0]);
 });
 
@@ -92,7 +92,7 @@ test("arrows and page keys scroll focused provider/results windows", () => {
 	component.handleInput(tab);
 	component.handleInput(up); // wraps All -> last provider
 	assert.deepEqual(component.getScope(), { kind: "provider", provider: "p29" });
-	assert.match(component.render(80).join("\n"), /› p29 \(1\)/);
+	assert.match(component.render(80).join("\n"), /❯ p29 \(1\)/);
 	component.handleInput("\x1b[5~");
 	assert.deepEqual(component.getScope(), { kind: "provider", provider: "p26" });
 });
@@ -191,7 +191,7 @@ for (const width of [20, 21, 25, 35]) test(`compact hints retain confirm/cancel 
 	let lines = component.render(width);
 	assert.match(lines.join("\n"), /All/);
 	assert.match(lines.at(-1)!, /[Ee]nter save.*Esc close/);
-	assert.match(lines.join("\n"), /› \* beta\/shared/);
+	assert.match(lines.join("\n"), /❯  \* beta\/shared/);
 	component.handleInput(tab); component.handleInput(down); component.handleInput(down);
 	lines = component.render(width);
 	assert.match(lines.join("\n"), /alpha/);
@@ -215,7 +215,7 @@ for (const height of [1, 2, 3, 4]) test(`height ${height} shows selection and co
 			assert.deepEqual(selected, []);
 		} else {
 			assert.match(lines.join("\n"), /Search:/);
-			assert.match(lines.join("\n"), /› \* beta\/shared/);
+			assert.match(lines.join("\n"), /❯  \* beta\/shared/);
 			assert.match(lines.at(-1)!, /[Ee]nter.*save.*Esc close/);
 		}
 	}
@@ -229,7 +229,7 @@ test("confirmation waits for the selected model to render, including return from
 	component.render(20);
 	component.handleInput(down); component.handleInput("\r");
 	assert.deepEqual(selected, []);
-	assert.match(component.render(20).join("\n"), /›   alpha\/shared/);
+	assert.match(component.render(20).join("\n"), /❯    alpha\/shared/);
 	component.handleInput(tab); component.render(20); component.handleInput("\r"); component.handleInput("\r");
 	assert.deepEqual(selected, []);
 	height = 1;
@@ -295,7 +295,7 @@ test("add/remove/readd stars retain highlighted tuple, query and provider withou
 		assert.deepEqual(component.getScope(), { kind: "provider", provider: "beta" });
 		assert.equal(component.getQuery(), "shared");
 		const render = component.render(100).join("\n");
-		assert.equal(/›★\* shared/.test(render), favorite);
+		assert.equal(/❯ ★\* shared/.test(render), favorite);
 		assert.doesNotMatch(render, /beta\/shared/);
 	}
 	assert.deepEqual(saved, ["unavailable/model", "alpha/shared", "beta/shared"]);
@@ -349,7 +349,7 @@ test("simplified rows omit repeated scope, headings, names, capabilities, prices
 		assert.doesNotMatch(rendered, /Providers|Models|Matches|matches|models|Change provider|browse models|configure|context|output|Reasoning|image|per 1M|First|Second|beta\//);
 		assert.equal((rendered.match(/\[session\]/g) ?? []).length, 1);
 		assert.equal((rendered.match(/beta/g) ?? []).length, 1);
-		assert.match(rendered, /›★\* shared/);
+		assert.match(rendered, /❯ ★\* shared/);
 	}
 });
 
@@ -359,7 +359,7 @@ test("minimum layout preserves scope/session, cursor, visible row and save/cance
 	assert.match(lines[0], /All \[session\]/);
 	assert.match(lines[1], /Favorites error:/);
 	assert.ok(lines[1].includes(CURSOR_MARKER));
-	assert.match(lines[2], /›★\* beta\/shared/);
+	assert.match(lines[2], /❯ ★\* beta\/shared/);
 	assert.match(lines[3], /Enter save Esc close/);
 	component.handleInput("\r"); assert.deepEqual(selected, [entries[1]]);
 });

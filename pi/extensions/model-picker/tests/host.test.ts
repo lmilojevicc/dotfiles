@@ -270,9 +270,9 @@ test("Favorites sidebar order/counts, query and session intersection survive pro
 	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
 	await f.render();
 	const sidebar = () => frame(f).split("\n").filter((line) => line.includes(" │ ")).map((line) => line.split(" │ ")[0].replace(/^│ /, "").trim());
-	assert.deepEqual(sidebar(), ["› All (4)", "Favorites (2)", "All (1)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	assert.deepEqual(sidebar(), ["❯ All (4)", "Favorites (2)", "All (1)", "alpha (1)", "favorites (1)", "opencode (1)"]);
 	f.input("shared"); await f.render();
-	assert.deepEqual(sidebar(), ["› All (3)", "Favorites (2)", "All (0)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	assert.deepEqual(sidebar(), ["❯ All (3)", "Favorites (2)", "All (0)", "alpha (1)", "favorites (1)", "opencode (1)"]);
 	await enterFavorites(f);
 	assert.equal(f.component().getQuery(), "shared");
 	assert.equal(f.component().getSelectedModel(), a, "preserve matching current identity when entering Favorites");
@@ -384,7 +384,7 @@ test("Favorites write failure preserves star, row, query, scope and count", asyn
 	assert.equal(f.component().getQuery(), "shared");
 	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
 	assert.match(frame(f), /Favorites \(1\)/);
-	assert.match(frame(f), /›★  alpha\/shared/);
+	assert.match(frame(f), /❯ ★  alpha\/shared/);
 	assert.match(frame(f), /Favorites:.*read-only/);
 	chmodSync(path, 0o600);
 	f.input("\x06"); await f.render();
