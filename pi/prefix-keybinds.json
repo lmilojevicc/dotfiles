@@ -8,7 +8,7 @@
   ],
   "replaceDefaults": true,
   "bindings": {
-    "m": "app.model.select",
+    "m": "pi.model-picker",
     "r": "pi.reload",
     "n": "app.session.new",
     "l": "app.session.resume",

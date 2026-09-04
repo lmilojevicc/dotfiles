@@ -25,6 +25,8 @@ Configuration is merged in this precedence order (later files override earlier v
 
 The extension preserves its existing hardcoded `.pi` path behavior. Writes target the environment override when set, then an existing project file, then the last loaded file, otherwise the global file. Configuration supports `prefixKey`, `timeoutMs`, `showHelp`, `cancelKeys`, `replaceDefaults`, and `bindings`.
 
+The default `m` mapping is `pi.model-picker`: browse providers/models, switch this session and save the global startup default. It uses the public `model-picker:open` Pi event with a synchronous acknowledgement callback, never editor submission, so drafts and expanded pastes survive streaming/compaction. An absent picker produces a warning without inserting a command or changing the draft. Other slash actions retain their existing submission behavior. Install the sibling [model-picker](../model-picker/README.md) extension. Native `/model` and `app.model.select` are unchanged; explicitly map `m` (or another key) to `app.model.select` to use the native selector instead. Global/project/environment overrides remain authoritative, including unsetting `m`.
+
 Press the configured prefix to activate the layer, then press a mapped key. The layer cancels on a configured cancel key (default: Escape or Ctrl-C) or after `timeoutMs` (default: 2000 ms). Unknown second keys are consumed and reported. Press prefix then `?` for the help palette.
 
 The editor wrapper is installed on a deferred timer after `session_start`, so editor/theme extensions can install first. It wraps the active editor factory, forwards ordinary input, and composes disposal with the original editor.

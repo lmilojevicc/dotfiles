@@ -297,3 +297,59 @@ test("editor wrapper cancels, times out, and composes original disposal", async 
 	assert.deepEqual(ui.statuses.at(-1), ["prefix-keybinds", undefined]);
 	assert.deepEqual(ui.widgets.at(-1), ["prefix-keybinds.active", undefined]);
 });
+
+test("configured custom prefix+m dispatches picker without submit; native action and overrides remain intact", () => {
+	const root = mkdtempSync(join(tmpdir(), "prefix-model-picker-"));
+	const previousHome = process.env.HOME;
+	const previousOverride = process.env.PI_PREFIX_KEYBINDS_CONFIG;
+	try {
+		process.env.HOME = join(root, "home");
+		delete process.env.PI_PREFIX_KEYBINDS_CONFIG;
+		const path = join(root, ".pi", "prefix-keybinds.json");
+		writeJson(path, { prefixKey: "ctrl+q" });
+		let loaded = __testing.loadConfig(root).config;
+		assert.equal(loaded.bindings.find((binding) => binding.key === "m")?.action, "pi.model-picker");
+		const submitted: string[] = [], forwarded: string[] = [];
+		let native = 0, opened = 0;
+		const editor = __testing.patchWithPrefix({
+			handleInput: (data: string) => forwarded.push(data),
+			onSubmit: (value: string) => submitted.push(value),
+			actionHandlers: new Map([["app.model.select", () => native++]]),
+		}, fakeUi(), () => loaded, () => { opened++; return true; });
+		try {
+			editor.handleInput("ctrl+x"); // not the configured prefix
+			editor.handleInput("ctrl+q"); editor.handleInput("m");
+			assert.deepEqual(submitted, []);
+			assert.equal(opened, 1);
+			assert.deepEqual(forwarded, ["ctrl+x"]);
+			assert.equal(native, 0);
+			writeJson(path, { prefixKey: "alt+g", bindings: { m: "app.model.select" } });
+			loaded = __testing.loadConfig(root).config;
+			editor.handleInput("alt+g"); editor.handleInput("m");
+			assert.equal(native, 1, "explicit native action override still dispatches native selector");
+			assert.deepEqual(submitted, []);
+			assert.equal(opened, 1);
+			const overridePath = join(root, "override.json");
+			writeJson(overridePath, { bindings: { m: null } });
+			process.env.PI_PREFIX_KEYBINDS_CONFIG = overridePath;
+			assert.equal(__testing.loadConfig(root).config.bindings.some((binding) => binding.key === "m"), false);
+		} finally { editor.dispose?.(); }
+	} finally {
+		if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
+		if (previousOverride === undefined) delete process.env.PI_PREFIX_KEYBINDS_CONFIG; else process.env.PI_PREFIX_KEYBINDS_CONFIG = previousOverride;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("missing model-picker warns without replacing draft or submitting a command", () => {
+	const inserted: string[] = [];
+	const ui = { ...fakeUi(), setEditorText: (value: string) => inserted.push(value) };
+	const editor = __testing.patchWithPrefix({ handleInput() {} }, ui, () => ({
+		...config(), bindings: [{ key: "m", label: "m", description: "Models", action: "pi.model-picker" }],
+	}));
+	try {
+		editor.handleInput("ctrl+x"); editor.handleInput("m");
+		assert.deepEqual(inserted, []);
+		assert.match(ui.notifications[0]?.[0] ?? "", /unavailable/);
+	} finally { editor.dispose?.(); }
+});

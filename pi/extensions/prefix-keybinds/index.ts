@@ -35,7 +35,7 @@ type NativeActionInfo = {
 	defaultKeys: string | string[];
 };
 
-type ExtensionAction = "pi.reload" | "pi.peek";
+type ExtensionAction = "pi.reload" | "pi.peek" | "pi.model-picker";
 type PrefixAction = AppKeybinding | ExtensionAction;
 
 const NATIVE_ACTIONS = {
@@ -100,6 +100,7 @@ const NATIVE_ACTIONS = {
 const EXTENSION_ACTIONS = {
 	"pi.reload": { defaultKeys: [], description: "Reload extensions, skills, prompts, and themes" },
 	"pi.peek": { defaultKeys: [], description: "Open peek (session scrollback browser)" },
+	"pi.model-picker": { defaultKeys: [], description: "Browse models and save the global default" },
 } satisfies Record<ExtensionAction, NativeActionInfo>;
 
 const PREFIX_ACTIONS = {
@@ -108,7 +109,7 @@ const PREFIX_ACTIONS = {
 } satisfies Record<PrefixAction, NativeActionInfo>;
 
 const DEFAULT_BINDINGS: Record<string, PrefixAction> = {
-	m: "app.model.select",
+	m: "pi.model-picker",
 	r: "pi.reload",
 	n: "app.session.new",
 	l: "app.session.resume",
@@ -870,6 +871,7 @@ function patchWithPrefix(
 	editor: PrefixEditor,
 	ui: ExtensionUIContext,
 	getConfig: () => ResolvedConfig,
+	openModelPicker?: () => boolean,
 ): PrefixEditor {
 	if (editor[PATCHED]) return editor;
 
@@ -898,6 +900,10 @@ function patchWithPrefix(
 	};
 
 	const runBinding = (binding: ResolvedBinding) => {
+		if (binding.action === "pi.model-picker") {
+			if (!openModelPicker?.()) ui.notify("Model picker is unavailable; enable the model-picker extension", "warning");
+			return;
+		}
 		const slash = binding.action in SLASH_ACTIONS
 			? SLASH_ACTIONS[binding.action as ExtensionAction]
 			: undefined;
@@ -983,6 +989,14 @@ export const __testing = Object.freeze({
 
 export default function (pi: ExtensionAPI) {
 	let installTimer: ReturnType<typeof setTimeout> | undefined;
+	let sessionActive = false;
+	const openModelPicker = (): boolean => {
+		if (!sessionActive) return false;
+		let handled = false;
+		// Synchronous acknowledgement detects a missing picker without submitting or replacing the draft.
+		pi.events.emit("model-picker:open", () => { handled = true; });
+		return handled;
+	};
 	pi.registerCommand("prefix-keybinds", {
 		description: "Show or configure prefix keybindings",
 		getArgumentCompletions: commandCompletions,
@@ -995,6 +1009,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		sessionActive = ctx.hasUI;
 		if (installTimer !== undefined) clearTimeout(installTimer);
 		installTimer = undefined;
 		if (!ctx.hasUI) return;
@@ -1014,13 +1029,14 @@ export default function (pi: ExtensionAPI) {
 					const editor = baseFactory
 						? baseFactory(tui, theme, keybindings)
 						: new CustomEditor(tui, theme, keybindings);
-					return patchWithPrefix(editor as PrefixEditor, ctx.ui, () => ensureState(ctx.cwd).config);
+					return patchWithPrefix(editor as PrefixEditor, ctx.ui, () => ensureState(ctx.cwd).config, openModelPicker);
 				};
 			ctx.ui.setEditorComponent(installEditorLayer(previousFactory, PREFIX_LAYER_ID, prefixLayer));
 		}, 0);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		sessionActive = false;
 		if (installTimer !== undefined) clearTimeout(installTimer);
 		installTimer = undefined;
 		clearPrefixActiveState(ctx.ui);
