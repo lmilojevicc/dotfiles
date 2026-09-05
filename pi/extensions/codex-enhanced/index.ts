@@ -402,9 +402,8 @@ function formatResetLines(
 	if (usageState && "error" in usageState) lines.push(theme.fg("error", "  Usage unavailable. R to retry."));
 	if (count && count > 0) lines.push(theme.fg("dim", `  Expires: ${formatResetCreditExpiries(usage?.resetCredits?.credits ?? [])}`));
 	lines.push(
-		`  ${theme.bold("Auto reset")}  ${autoEnabled ? "on" : "off"} · this account`,
-		"  Weekly 0% · soonest expiry first · no prompts",
-		`  ${status}`,
+		`  ${theme.bold("Auto reset")}  ${autoEnabled ? "on" : "off"} · Weekly 0% · soonest expiry first · no prompts`,
+		...(status ? [`  ${status}`] : []),
 		...(status.includes("journal/lock") ? ["  Recovery instructions: see README."] : []),
 	);
 	if (armed) lines.push(theme.fg("warning", "  Reset armed — Ctrl+R again to use one reset."));
@@ -816,7 +815,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 				status: (key) => {
 					const durable = resetAccountStatus(getAgentDir(), key);
 					if (durable.startsWith("Paused")) return durable;
-					if (!readAutoResetPreference(getConfigPath(), key).enabled) return "Automatic spending off.";
+					if (!readAutoResetPreference(getConfigPath(), key).enabled) return "";
 					if (!isCanonicalCodexModel(ctx.model)) return "Inactive: select a canonical Codex model for automatic checks.";
 					return autoStatus.get(key) ?? durable;
 				},

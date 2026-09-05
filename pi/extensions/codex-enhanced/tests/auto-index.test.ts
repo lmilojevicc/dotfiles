@@ -169,9 +169,8 @@ test("Resets actual Enter/Space toggles spending consent once, auto never prompt
 	const component = f.component();
 	component.handleInput("tab");
 	const resetText = component.render(240).join("\n");
-	assert.match(resetText, /Auto reset.*off/);
-	assert.match(resetText, /Weekly 0% · soonest expiry first · no prompts/);
-	assert.doesNotMatch(resetText, /fresh usage|settled turns|permission to spend|R refresh never/);
+	assert.match(resetText, /Auto reset +off · Weekly 0% · soonest expiry first · no prompts/);
+	assert.doesNotMatch(resetText, /this account|Automatic spending off|fresh usage|settled turns|permission to spend|R refresh never/);
 	component.handleInput("enter");
 	await until(() => f.state.posts.length === 1);
 	await drain();
