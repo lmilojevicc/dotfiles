@@ -44,49 +44,6 @@ test("weekly quota uses provider auth independently of the selected model and ne
 	}
 });
 
-test("account switches invalidate both reset confirmation presses until current usage is refreshed", () => {
-	const usageA = {
-		accountKey: "account:account-a",
-		limits: [],
-		resetCredits: {
-			availableCount: 1,
-			credits: [{ id: "credit-a", status: "available" }],
-		},
-	};
-	const usageB = {
-		accountKey: "account:account-b",
-		limits: [],
-		resetCredits: {
-			availableCount: 1,
-			credits: [{ id: "credit-b", status: "available" }],
-		},
-	};
-	let postCount = 0;
-	const executeIfRedeem = (action: ReturnType<typeof __testing.decideResetAction>) => {
-		if (action.kind === "redeem") postCount += 1;
-	};
-
-	const switchedBeforeFirstPress = __testing.decideResetAction("account:account-b", usageA, undefined, undefined);
-	executeIfRedeem(switchedBeforeFirstPress);
-	assert.equal(switchedBeforeFirstPress.kind, "refresh");
-	assert.equal(postCount, 0);
-
-	const firstPressForA = __testing.decideResetAction("account:account-a", usageA, undefined, undefined);
-	assert.equal(firstPressForA.kind, "arm");
-	const switchedBeforeSecondPress = __testing.decideResetAction("account:account-b", usageA, "account:account-a", undefined);
-	executeIfRedeem(switchedBeforeSecondPress);
-	assert.equal(switchedBeforeSecondPress.kind, "refresh");
-	assert.equal(postCount, 0);
-
-	const firstPressAfterBRefresh = __testing.decideResetAction("account:account-b", usageB, undefined, undefined);
-	assert.equal(firstPressAfterBRefresh.kind, "arm");
-	const secondPressAfterBRefresh = __testing.decideResetAction("account:account-b", usageB, "account:account-b", undefined);
-	executeIfRedeem(secondPressAfterBRefresh);
-	assert.equal(secondPressAfterBRefresh.kind, "redeem");
-	assert.equal(secondPressAfterBRefresh.kind === "redeem" ? secondPressAfterBRefresh.state.creditId : undefined, "credit-b");
-	assert.equal(postCount, 1);
-});
-
 test("aborted compaction cancels while a genuine remote failure delegates to local compaction", async () => {
 	const compactionModel = {
 		id: "gpt-5.4",
@@ -131,24 +88,6 @@ test("aborted compaction cancels while a genuine remote failure delegates to loc
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
-});
-
-test("ambiguous reset retries preserve the credit and redeem request ids", async () => {
-	const state = { requestId: "redeem-id", creditId: "credit-id", phase: "pending" as const } as any;
-	const seen: Array<[string, string]> = [];
-	const consume = async (_headers: Headers, creditId: string, requestId: string) => {
-		seen.push([creditId, requestId]);
-		if (seen.length === 1) throw new Error("timeout");
-		return { outcome: "already_redeemed", windowsReset: 1 } as const;
-	};
-
-	await assert.rejects(__testing.runResetRequest(state, new Headers(), undefined, consume));
-	assert.equal(state.phase, "ambiguous");
-	assert.equal(state.requestId, "redeem-id");
-	assert.equal(state.creditId, "credit-id");
-	await __testing.runResetRequest(state, new Headers(), undefined, consume);
-	assert.equal(state.phase, "locked");
-	assert.deepEqual(seen, [["credit-id", "redeem-id"], ["credit-id", "redeem-id"]]);
 });
 
 test("reset redemption fails safely without a usable credit id", async () => {

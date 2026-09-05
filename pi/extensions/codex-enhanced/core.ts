@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const CONFIG_BASENAME = "codex-enhanced.json";
@@ -29,6 +29,9 @@ export type ResetCredit = {
 	id?: string;
 	status?: string;
 	expiresAt?: string;
+	/** Preserve malformed metadata so automation cannot mistake it for absent metadata. */
+	invalidMetadata?: true;
+	resetType?: string;
 };
 
 export type ResetCredits = {
@@ -91,8 +94,12 @@ function writeConfigValue(
 	update: (document: Record<string, unknown>) => Record<string, unknown>,
 ): ConfigWriteResult {
 	const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.${globalThis.crypto.randomUUID()}.tmp`;
+	const lockPath = `${configPath}.lock`;
+	let owned = false;
 	try {
 		mkdirSync(dirname(configPath), { recursive: true });
+		mkdirSync(lockPath, { mode: 0o700 });
+		owned = true;
 		let document: Record<string, unknown> = {};
 		try {
 			const existing = JSON.parse(readFileSync(configPath, "utf8")) as unknown;
@@ -117,7 +124,40 @@ function writeConfigValue(
 			}
 		}
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	} finally {
+		if (owned) {
+			try { rmdirSync(lockPath); }
+			catch { return { ok: false, error: "Settings lock cleanup failed; verify no writer is operating before removing the orphan lock." }; }
+		}
 	}
+}
+
+export function readAutoResetPreference(configPath: string, accountKey: string): { enabled: boolean; revision?: string } {
+	try {
+		const root = JSON.parse(readFileSync(configPath, "utf8"));
+		const resets = isRecord(root) && isRecord(root.resets) ? root.resets : {};
+		return {
+			enabled: isRecord(resets.autoByAccount) && resets.autoByAccount[accountKey] === true,
+			revision: isRecord(resets.revisionByAccount) ? stringValue(resets.revisionByAccount[accountKey]) : undefined,
+		};
+	} catch {
+		return { enabled: false };
+	}
+}
+
+export function writeAutoResetPreference(configPath: string, accountKey: string, enabled: boolean): ConfigWriteResult {
+	if (!accountKey.startsWith("account:") || accountKey.length <= 8) return { ok: false, error: "Current account is required." };
+	return writeConfigValue(configPath, (document) => {
+		const resets = isRecord(document.resets) ? document.resets : {};
+		return {
+			...document,
+			resets: {
+				...resets,
+				autoByAccount: { ...(isRecord(resets.autoByAccount) ? resets.autoByAccount : {}), [accountKey]: enabled },
+				revisionByAccount: { ...(isRecord(resets.revisionByAccount) ? resets.revisionByAccount : {}), [accountKey]: globalThis.crypto.randomUUID() },
+			},
+		};
+	});
 }
 
 export function writeFastConfig(fast: boolean, configPath: string): ConfigWriteResult {
@@ -165,7 +205,9 @@ function parseWindow(value: unknown): UsageWindow | undefined {
 	if (!isRecord(value)) return undefined;
 	const usedPercent = numberValue(value.used_percent);
 	const seconds = numberValue(value.limit_window_seconds);
-	const windowMinutes = numberValue(value.window_minutes) ?? (seconds === undefined ? undefined : Math.ceil(seconds / 60));
+	const minutes = numberValue(value.window_minutes);
+	const windowMinutes = minutes !== undefined && seconds !== undefined && minutes !== seconds / 60
+		? undefined : minutes ?? (seconds === undefined ? undefined : seconds / 60);
 	const resetsAt = numberValue(value.resets_at) ?? numberValue(value.reset_at);
 	return usedPercent === undefined && windowMinutes === undefined && resetsAt === undefined
 		? undefined
@@ -181,7 +223,13 @@ function parseRateLimit(value: unknown): Pick<UsageLimit, "primary" | "secondary
 
 function parseResetCredit(value: unknown): ResetCredit | undefined {
 	if (!isRecord(value)) return undefined;
-	return { id: stringValue(value.id), status: stringValue(value.status), expiresAt: stringValue(value.expires_at) };
+	const invalidMetadata = ["expires_at", "status", "reset_type"].some((key) =>
+		value[key] !== undefined && value[key] !== null && !stringValue(value[key]));
+	return {
+		id: stringValue(value.id), status: stringValue(value.status), expiresAt: stringValue(value.expires_at),
+		...(invalidMetadata ? { invalidMetadata: true as const } : {}),
+		...(stringValue(value.reset_type) ? { resetType: stringValue(value.reset_type) } : {}),
+	};
 }
 
 function resetCreditExpiry(expiresAt: string | undefined): number {
@@ -198,9 +246,33 @@ export function selectResetCredit(credits: ResetCredit[], now = Date.now()): Res
 		.sort((left, right) => {
 			const expiryOrder = resetCreditExpiry(left.expiresAt) - resetCreditExpiry(right.expiresAt);
 			return Number.isNaN(expiryOrder) || expiryOrder === 0
-				? (left.id ?? "").localeCompare(right.id ?? "")
+				? ((left.id ?? "") < (right.id ?? "") ? -1 : (left.id ?? "") > (right.id ?? "") ? 1 : 0)
 				: expiryOrder;
 		})[0];
+}
+
+/** Auto never uses malformed known expiry as an unexpiring credit. */
+export function selectAutoResetCredit(credits: ResetCredit[], now = Date.now()): ResetCredit | undefined {
+	return selectResetCredit(credits.filter((credit) => {
+		if (credit.invalidMetadata || (credit.resetType && credit.resetType !== "codex_rate_limits")) return false;
+		if (credit.expiresAt === undefined) return true;
+		const match = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.exec(credit.expiresAt);
+		if (!match || !Number.isFinite(Date.parse(credit.expiresAt))) return false;
+		const days = new Date(Date.UTC(Number(match[1]), Number(match[2]), 0)).getUTCDate();
+		return Number(match[3]) >= 1 && Number(match[3]) <= days;
+	}), now);
+}
+
+/** Only a freshly fetched main weekly window can exhaust or rearm the spend guard. */
+export function weeklyResetObservation(snapshot: UsageSnapshot, now = Date.now()): "exhausted" | "recovered" | "unknown" {
+	const main = snapshot.limits.find((limit) => limit.limitId === "codex");
+	const weekly = [main?.primary, main?.secondary].filter((window) => window?.windowMinutes === WEEKLY_WINDOW_MINUTES);
+	if (weekly.length !== 1) return "unknown";
+	const window = weekly[0]!;
+	if (window.usedPercent === undefined || !Number.isFinite(window.usedPercent) || window.usedPercent < 0
+		|| window.resetsAt === undefined || !Number.isFinite(new Date(window.resetsAt * 1000).getTime())
+		|| window.resetsAt * 1000 <= now) return "unknown";
+	return window.usedPercent >= 100 ? "exhausted" : "recovered";
 }
 
 export function parseResetCredits(value: unknown): ResetCredits | undefined {
