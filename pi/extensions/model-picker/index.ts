@@ -1,5 +1,6 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ModelPickerComponent } from "./component.ts";
+import { readConfig } from "./config.ts";
 import { catalogue, modelLabel, type PickerModel } from "./domain.ts";
 import { switchAndSave } from "./persistence.ts";
 import { favoritesError, readFavorites, toggleFavorite } from "./favorites.ts";
@@ -21,6 +22,7 @@ export default function modelPicker(pi: ExtensionAPI): void {
 		opening = true;
 		const started = generation;
 		try {
+			const { vimMode } = readConfig((message) => ctx.ui.notify(message, "warning"));
 			const models = catalogue(ctx);
 			const agentDir = getAgentDir();
 			let favorites: string[] = [], favoriteError: string | undefined;
@@ -29,7 +31,7 @@ export default function modelPicker(pi: ExtensionAPI): void {
 			const selected = await ctx.ui.custom<PickerModel | undefined>((tui, theme, keybindings, done) => {
 				cancelPicker = () => done(undefined);
 				return new ModelPickerComponent({
-					models, current: ctx.model, scoped: ctx.scopedModels.length > 0,
+					models, current: ctx.model, scoped: ctx.scopedModels.length > 0, vimMode,
 					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir),
 					theme, keybindings,
 					// Reserve vertical inset here, not via host margin: Pi can place a fixed

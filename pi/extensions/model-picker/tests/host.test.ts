@@ -7,13 +7,12 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createEventBus, CustomEditor, discoverAndLoadExtensions } from "@earendil-works/pi-coding-agent";
 import { Container, CURSOR_MARKER, Text, TuiMainScreen, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { model } from "./fixtures.ts";
+import { extensionFixture, model } from "./fixtures.ts";
 import type { ModelPickerComponent } from "../component.ts";
 import type { PickerModel } from "../domain.ts";
 import { favoriteKey } from "../favorites.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-const pickerPath = fileURLToPath(new URL("../index.ts", import.meta.url));
 const prefixPath = fileURLToPath(new URL("../../prefix-keybinds/index.ts", import.meta.url));
 // Test-only host access: run installed methods, never patch their prototypes.
 const { InteractiveMode } = await import(new URL("./modes/interactive/interactive-mode.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
@@ -21,7 +20,7 @@ const { KeybindingsManager } = await import(new URL("./core/keybindings.js", imp
 const themes = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 async function hostFixture(t: test.TestContext, prefix = false, options: {
-	models?: PickerModel[]; favorites?: string[]; scoped?: boolean; current?: PickerModel;
+	models?: PickerModel[]; favorites?: string[]; scoped?: boolean; current?: PickerModel; vimMode?: boolean;
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "picker-host-regression-"));
 	const previous = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, PI_PREFIX_KEYBINDS_CONFIG: process.env.PI_PREFIX_KEYBINDS_CONFIG };
@@ -33,16 +32,19 @@ async function hostFixture(t: test.TestContext, prefix = false, options: {
 	writeFileSync(join(root, "settings.json"), '{"theme":"dark"}');
 	const favoriteBytes = JSON.stringify({ favorites: options.favorites ?? ["provider/model-05", "provider/model-17", "unavailable/model"], extra: true }) + "\n";
 	writeFileSync(join(root, "model-favorites.json"), favoriteBytes);
+	const pickerPath = extensionFixture(root, options.vimMode);
+	const configPath = join(root, "extension", "config.json");
 	const bus = createEventBus();
 	const loaded = await discoverAndLoadExtensions(prefix ? [pickerPath, prefixPath] : [pickerPath], join(root, "project"), root, bus);
 	assert.deepEqual(loaded.errors, []);
 	themes.initTheme("dark", false);
 	let input: (data: string) => void = () => {};
 	let resize: () => void = () => {};
+	let cursorVisible = false;
 	const terminal = {
 		columns: 80, rows: 24, kittyProtocolActive: false,
 		start: (onInput: typeof input, onResize: typeof resize) => { input = onInput; resize = onResize; },
-		stop() {}, drainInput: async () => {}, write() {}, moveBy() {}, hideCursor() {}, showCursor() {},
+		stop() {}, drainInput: async () => {}, write() {}, moveBy() {}, hideCursor() { cursorVisible = false; }, showCursor() { cursorVisible = true; },
 		clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {},
 	};
 	const tui = new TuiMainScreen(terminal);
@@ -120,9 +122,9 @@ async function hostFixture(t: test.TestContext, prefix = false, options: {
 	const activatePrefix = async () => {
 		input("\x11"); input("m"); await render();
 	};
-	return { root, favoriteBytes, bus, loaded, context, host, editor, draft, terminal, tui, notifications, notified, entries, lifecycle, render, screen,
+	return { root, configPath, favoriteBytes, bus, loaded, context, host, editor, draft, terminal, tui, notifications, notified, entries, lifecycle, render, screen,
 		input: (data: string) => input(data), resize: () => resize(), activatePrefix,
-		frameLines: () => renderedLines, renderedWidth: () => renderedWidth,
+		frameLines: () => renderedLines, renderedWidth: () => renderedWidth, cursorVisible: () => cursorVisible,
 		component: () => component! as ModelPickerComponent, completion: () => completion, submissions: () => submissions, changes: () => editorChanges };
 }
 
@@ -270,9 +272,9 @@ test("Favorites sidebar order/counts, query and session intersection survive pro
 	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
 	await f.render();
 	const sidebar = () => frame(f).split("\n").filter((line) => line.includes(" │ ")).map((line) => line.split(" │ ")[0].replace(/^│ /, "").trim());
-	assert.deepEqual(sidebar(), ["❯ All (4)", "Favorites (2)", "All (1)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	assert.deepEqual(sidebar(), ["› All (4)", "Favorites (2)", "All (1)", "alpha (1)", "favorites (1)", "opencode (1)"]);
 	f.input("shared"); await f.render();
-	assert.deepEqual(sidebar(), ["❯ All (3)", "Favorites (2)", "All (0)", "alpha (1)", "favorites (1)", "opencode (1)"]);
+	assert.deepEqual(sidebar(), ["› All (3)", "Favorites (2)", "All (0)", "alpha (1)", "favorites (1)", "opencode (1)"]);
 	await enterFavorites(f);
 	assert.equal(f.component().getQuery(), "shared");
 	assert.equal(f.component().getSelectedModel(), a, "preserve matching current identity when entering Favorites");
@@ -384,7 +386,7 @@ test("Favorites write failure preserves star, row, query, scope and count", asyn
 	assert.equal(f.component().getQuery(), "shared");
 	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
 	assert.match(frame(f), /Favorites \(1\)/);
-	assert.match(frame(f), /❯ ★  alpha\/shared/);
+	assert.match(frame(f), /› ★  alpha\/shared/);
 	assert.match(frame(f), /Favorites:.*read-only/);
 	chmodSync(path, 0o600);
 	f.input("\x06"); await f.render();
@@ -475,5 +477,89 @@ test("actual centered overlay does not shift on scrolled favorite toggles or emp
 	f.input(down); f.input("\r"); f.input("\x06");
 	assert.deepEqual(f.component().getScope(), { kind: "favorites" });
 	f.input("\x1b"); await running;
+	assert.equal(f.editor.getExpandedText(), f.draft);
+});
+
+for (const prefix of [false, true]) test(`actual ${prefix ? "prefix" : "command"} host rereads module-local Vim config on every open without reload`, async (t) => {
+	const f = await hostFixture(t, prefix, { vimMode: true });
+	f.tui.setShowHardwareCursor(true);
+	let switches = 0;
+	f.loaded.runtime.setModel = async () => { switches++; return true; };
+	const settings = readFileSync(join(f.root, "settings.json"), "utf8");
+	// Neither cwd nor agent-dir config is an override.
+	writeFileSync(join(f.root, "config.json"), '{"vimMode":false}');
+	writeFileSync(join(f.context.cwd, "config.json"), '{"vimMode":false}');
+	if (prefix) {
+		await f.lifecycle("session_start");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	let running: Promise<unknown> | undefined;
+	const open = async () => {
+		if (prefix) await f.activatePrefix();
+		else { running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never); await f.render(); }
+	};
+	const close = async () => { await (prefix ? f.completion() : running); await tick(); };
+	await open();
+	const initial = f.component().getSelectedModel();
+	assert.equal(f.cursorVisible(), false);
+	assert.ok(f.frameLines().every((line) => !line.includes(CURSOR_MARKER)));
+	f.input("ignored"); assert.equal(f.component().getQuery(), "");
+	f.input("j"); assert.notEqual(f.component().getSelectedModel(), initial);
+	f.input("k"); await f.render(); assert.equal(f.component().getSelectedModel(), initial);
+	const before = f.frameLines().length;
+	f.input("/"); await f.render();
+	assert.equal(f.component().getQuery(), "");
+	assert.ok(f.frameLines().some((line) => line.includes(CURSOR_MARKER)));
+	assert.equal(f.frameLines().length, before);
+	assert.equal(f.cursorVisible(), true);
+	const state = f.tui.captureRenderState();
+	assert.match(f.screen()[state.hardwareCursorRow - state.previousViewportTop], /Search:/);
+	f.input("model"); await f.render(); f.input("\r"); await f.render();
+	assert.equal(f.component().getQuery(), "model");
+	assert.ok(f.frameLines().every((line) => !line.includes(CURSOR_MARKER)));
+	assert.equal(switches, 0);
+	assert.equal(f.cursorVisible(), false);
+	f.input("/"); f.input("\x1b"); await f.render();
+	assert.equal(f.component().getQuery(), "model");
+	f.input("\x1b"); assert.equal(f.component().getQuery(), "");
+	f.input("\x1b"); await close();
+	assert.equal(readFileSync(join(f.root, "settings.json"), "utf8"), settings);
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
+
+	writeFileSync(f.configPath, '{"vimMode":false}');
+	await open();
+	assert.ok(f.frameLines().some((line) => line.includes(CURSOR_MARKER)));
+	f.input("jkhl/"); assert.equal(f.component().getQuery(), "jkhl/");
+	f.input("\x1b"); f.input("\x1b"); await close();
+
+	const invalid = '{"vimMode":"true"}\n'; writeFileSync(f.configPath, invalid);
+	await open();
+	assert.ok(f.notifications.at(-1)!.includes(f.configPath));
+	assert.match(f.notifications.at(-1)!, /using vimMode=false/);
+	f.input("j"); assert.equal(f.component().getQuery(), "j");
+	f.input("\x1b"); f.input("\x1b"); await close();
+	assert.equal(readFileSync(f.configPath, "utf8"), invalid);
+	assert.equal(switches, 0);
+	assert.equal(readFileSync(join(f.root, "settings.json"), "utf8"), settings);
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
+	assert.equal(f.editor.getExpandedText(), f.draft); assert.equal(f.changes(), 0);
+});
+
+test("actual Vim host requires painted NORMAL model confirmation to save paired global default", async (t) => {
+	const f = await hostFixture(t, false, { vimMode: true });
+	const switched: PickerModel[] = [];
+	f.loaded.runtime.setModel = async (chosen) => { switched.push(chosen); return true; };
+	const running = f.loaded.extensions[0].commands.get("model-picker")!.handler("", f.context as never);
+	await f.render();
+	f.input("/"); f.input("model"); await f.render(); f.input("\r");
+	assert.deepEqual(switched, []);
+	f.input("j"); f.input("\r"); assert.deepEqual(switched, []);
+	await f.render(); const chosen = f.component().getSelectedModel()!;
+	f.input("\r"); await running;
+	assert.deepEqual(switched, [chosen]);
+	const settings = JSON.parse(readFileSync(join(f.root, "settings.json"), "utf8"));
+	assert.equal(settings.defaultProvider, chosen.provider); assert.equal(settings.defaultModel, chosen.id);
+	assert.equal(settings.theme, "dark");
+	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
 	assert.equal(f.editor.getExpandedText(), f.draft);
 });

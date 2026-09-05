@@ -27,7 +27,7 @@ function fixture(initial: string[] = [], current = models[0]) {
 }
 function snapshot(lines: string[]) {
 	const rows = lines.map((line, physical) => ({ line: line.split(" │ ").at(-1)!, physical })).filter(({ line }) => /model-\d+/.test(line));
-	return { sequence: rows.map(({ line }) => line.replaceAll("★", " ")), top: rows[0]?.line.replaceAll("★", " "), selectedRow: rows.find(({ line }) => line.includes("❯"))?.physical, height: lines.length };
+	return { sequence: rows.map(({ line }) => line.replaceAll("★", " ")), top: rows[0]?.line.replaceAll("★", " "), selectedRow: rows.find(({ line }) => line.includes("›"))?.physical, height: lines.length };
 }
 for (const scope of ["all", "provider"] as const) for (const query of ["", "mdl"] as const) {
 	test(`stable ${scope} viewport: scrolled add/remove/readd and failed save, query=${query || "empty"}`, () => {
@@ -45,7 +45,7 @@ for (const scope of ["all", "provider"] as const) for (const query of ["", "mdl"
 			assert.deepEqual(snapshot(f.paint()), before, "sequence, physical highlight, top row and frame height all stay fixed");
 			assert.equal(f.favorites().includes(favoriteKey(selected)), expected);
 			assert.match(f.paint().join("\n"), new RegExp(`Favorites \\(${expected ? 3 : 2}\\)`));
-			assert.equal(f.paint().find((line) => line.split(" │ ").at(-1)!.includes("❯"))!.includes("★"), expected);
+			assert.equal(f.paint().find((line) => line.split(" │ ").at(-1)!.includes("›"))!.includes("★"), expected);
 		}
 		f.fail(); f.press(toggle);
 		assert.deepEqual(snapshot(f.paint()), before);
@@ -149,7 +149,7 @@ test("selected scope stays accented/bold when models focused, without a full-row
 	});
 	component.render(100);
 	assert.equal(component.getPane(), "models");
-	assert.ok(styled.includes("<bold>❯ All (60)</bold>"));
-	assert.ok(styled.includes("❯"));
+	assert.ok(styled.includes("<bold>› All (60)</bold>"));
+	assert.ok(styled.includes("›"));
 	assert.match(component.render(100).join("\n"), /<bold>alpha\/model-00<\/bold>/);
 });

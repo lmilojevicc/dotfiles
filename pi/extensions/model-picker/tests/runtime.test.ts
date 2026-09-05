@@ -13,7 +13,7 @@ function isolateAgentDir(t: test.TestContext, root: string): void {
 }
 import { AgentSession, discoverAndLoadExtensions, ModelSelectorComponent } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, visibleWidth } from "@earendil-works/pi-tui";
-import { keys, model } from "./fixtures.ts";
+import { extensionFixture, keys, model } from "./fixtures.ts";
 
 const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -23,7 +23,7 @@ test("real Pi runtime registers only /model-picker without patching native selec
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	isolateAgentDir(t, root);
 	const before = Object.getOwnPropertyDescriptors(ModelSelectorComponent.prototype);
-	const loaded = await discoverAndLoadExtensions([dirname(extensionPath)], root, root);
+	const loaded = await discoverAndLoadExtensions([dirname(extensionFixture(root))], root, root);
 	assert.deepEqual(loaded.errors, []);
 	assert.equal(loaded.extensions.length, 1);
 	const extension = loaded.extensions[0];
@@ -39,7 +39,7 @@ test("command rejects RPC/print/json without catalogue, UI custom, switching or 
 	const root = mkdtempSync(join(tmpdir(), "model-picker-modes-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	isolateAgentDir(t, root);
-	const loaded = await discoverAndLoadExtensions([extensionPath], root, root);
+	const loaded = await discoverAndLoadExtensions([extensionFixture(root)], root, root);
 	const command = loaded.extensions[0].commands.get("model-picker")!;
 	let warnings = 0;
 	await command.handler("", { mode: "rpc", hasUI: true, ui: { notify: (message: string) => { assert.match(message, /terminal/); warnings++; } } } as never);
@@ -54,7 +54,7 @@ test("real installed TUI renders, navigates, resizes and cancels cached scoped p
 	isolateAgentDir(t, root);
 	const legacy = join(root, "model-favorites.json");
 	writeFileSync(legacy, "legacy bytes\n");
-	const loaded = await discoverAndLoadExtensions([extensionPath], root, root);
+	const loaded = await discoverAndLoadExtensions([extensionFixture(root)], root, root);
 	assert.deepEqual(loaded.errors, []);
 	const command = loaded.extensions[0].commands.get("model-picker")!;
 	const themeModule = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
@@ -109,7 +109,7 @@ test("real loaded command switches and saves to isolated global settings with ho
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const favoriteBytes = '{"favorites":["beta/shared"],"extra":true}\n';
 	writeFileSync(join(root, "model-favorites.json"), favoriteBytes);
-	const loaded = await discoverAndLoadExtensions([extensionPath], root, root);
+	const loaded = await discoverAndLoadExtensions([extensionFixture(root)], root, root);
 	assert.deepEqual(loaded.errors, []);
 	const chosen = model("beta", "shared");
 	let switched = 0;
@@ -182,12 +182,12 @@ for (const name of ["dark", "light"]) test(`real ${name} theme aligns separate s
 	const themes = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 	const theme = themes.getThemeByName(name);
 	assert.ok(theme);
-	assert.equal(visibleWidth("❯"), 1);
+	assert.equal(visibleWidth("›"), 1);
 	assert.equal(visibleWidth("★"), 1);
 	const target = model("p", "target"), other = model("p", "other");
-	for (const width of [20, 25, 63, 64, 100]) for (const active of [false, true]) for (const favorite of [false, true]) for (const current of [false, true]) {
+	for (const vimMode of [false, true]) for (const width of [20, 25, 63, 64, 100]) for (const active of [false, true]) for (const favorite of [false, true]) for (const current of [false, true]) {
 		const component = new ModelPickerComponent({ models: [target, other], current: current ? target : undefined,
-			favorites: favorite ? ["p/target"] : [], scoped: false, theme, keybindings: keys(),
+			favorites: favorite ? ["p/target"] : [], scoped: false, vimMode, theme, keybindings: keys(),
 			getHeight: () => 16, onChange() {}, onSelect() {}, onCancel() {},
 		});
 		component.render(width);
@@ -200,13 +200,13 @@ for (const name of ["dark", "light"]) test(`real ${name} theme aligns separate s
 		const rows = bodies.map((line) => width >= 64 ? line.split(" │ ").at(-1)! : line);
 		const targetRow = rows.find((line) => line.includes("p/target"))!;
 		const otherRow = rows.find((line) => line.includes("p/other"))!;
-		const prefix = `${active ? "❯" : " "} ${favorite ? "★" : " "}${current ? "*" : " "} `;
+		const prefix = `${active ? "›" : " "} ${favorite ? "★" : " "}${current ? "*" : " "} `;
 		assert.equal(targetRow.slice(0, 5), prefix);
-		assert.equal(otherRow.slice(0, 5), `${active ? " " : "❯"}    `);
+		assert.equal(otherRow.slice(0, 5), `${active ? " " : "›"}    `);
 		for (const [row, label] of [[targetRow, "p/target"], [otherRow, "p/other"]]) {
 			assert.equal(visibleWidth(row.slice(0, row.indexOf(label))), 5, "fixed model label column");
 		}
-		assert.doesNotMatch(plain.join("\n"), /❯[★*]|›/, "cursor never fuses with status markers");
+		assert.doesNotMatch(plain.join("\n"), /›[★*]|❯/, "cursor never fuses with status markers");
 		component.handleInput("\t");
 		const providerLines = component.render(width);
 		assert.ok(providerLines.every((line) => visibleWidth(line) <= width));
@@ -215,7 +215,7 @@ for (const name of ["dark", "light"]) test(`real ${name} theme aligns separate s
 			.map((line) => width >= 64 ? line.split(" │ ")[0] : line);
 		for (const label of ["All", "Favorites", "p"]) {
 			const row = providers.find((line) => line.includes(`${label} (`))!;
-			assert.equal(row.slice(0, 2), label === "All" ? "❯ " : "  ");
+			assert.equal(row.slice(0, 2), label === "All" ? "› " : "  ");
 			assert.equal(visibleWidth(row.slice(0, row.indexOf(label))), 2, "fixed provider label column");
 		}
 		component.dispose();
@@ -228,7 +228,7 @@ test("real open restores legacy order inside session catalogue; toggles reread d
 	const path = join(root, "model-favorites.json");
 	const a = model("alpha", "vendor/shared"), b = model("beta", "vendor/shared"), outside = model("outside", "model");
 	writeFileSync(path, JSON.stringify({ favorites: ["outside/model", "beta/vendor/shared", "alpha/vendor/shared"], extra: [1] }));
-	const loaded = await discoverAndLoadExtensions([extensionPath], root, root);
+	const loaded = await discoverAndLoadExtensions([extensionFixture(root)], root, root);
 	const { plainTheme } = await import("./fixtures.ts");
 	let component: any;
 	const context = { mode: "tui", hasUI: true, cwd: root, model: outside, scopedModels: [{ model: a }, { model: b }],
@@ -251,7 +251,7 @@ test("real open restores legacy order inside session catalogue; toggles reread d
 	writeFileSync(path, JSON.stringify({ favorites: ["alpha/vendor/shared", "beta/vendor/shared"] }));
 	const reopened = command("", { ...context, model: b } as never);
 	assert.equal(component.getSelectedModel(), b, "current favorite wins preselection even when not first");
-	assert.match(component.render(100).join("\n"), /❯ ★\* beta\/vendor\/shared/);
+	assert.match(component.render(100).join("\n"), /› ★\* beta\/vendor\/shared/);
 	component.handleInput("\x1b"); await reopened;
 });
 
@@ -260,7 +260,7 @@ test("invalid favorite load and toggle do not prevent real default save or chang
 	isolateAgentDir(t, root); t.after(() => rmSync(root, { recursive: true, force: true }));
 	const path = join(root, "model-favorites.json"), bytes = '{"favorites":[2]}\n';
 	writeFileSync(path, bytes);
-	const loaded = await discoverAndLoadExtensions([extensionPath], root, root);
+	const loaded = await discoverAndLoadExtensions([extensionFixture(root)], root, root);
 	const { plainTheme } = await import("./fixtures.ts");
 	const chosen = model("beta", "shared");
 	loaded.runtime.setModel = async () => true;
