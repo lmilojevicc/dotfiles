@@ -399,20 +399,15 @@ function formatResetLines(
 		`  ${theme.bold("Banked resets")}${loading ? theme.fg("dim", "  refreshing…") : ""}${busy ? theme.fg("dim", "  resetting…") : ""}`,
 		`  Available: ${theme.bold(count === undefined ? "unknown" : String(count))}`,
 	];
-	if (usageState && "error" in usageState) lines.push(theme.fg("error", "  Usage read failed. R retries; automatic spending is not based on this display."));
+	if (usageState && "error" in usageState) lines.push(theme.fg("error", "  Usage unavailable. R to retry."));
 	if (count && count > 0) lines.push(theme.fg("dim", `  Expires: ${formatResetCreditExpiries(usage?.resetCredits?.credits ?? [])}`));
 	lines.push(
-		`  ${theme.bold("Automatic banked reset")}  ${autoEnabled ? "on" : "off"} · current account only`,
-		"  Weekly exhaustion only (fresh usage >=100%); checks every minute, including idle, and after settled turns.",
-		"  Requires a selected canonical Codex model. Spends soonest-expiring usable credit first.",
-		"  Server decides eligibility and which counters reset. No model/tool work is retried.",
+		`  ${theme.bold("Auto reset")}  ${autoEnabled ? "on" : "off"} · this account`,
+		"  Weekly 0% · soonest expiry first · no prompts",
 		`  ${status}`,
-		...(status.includes("journal/lock") ? ["  Orphan lock? Stop all cooperating processes; preserve journal. See README."] : []),
-		"  Enter/Space toggles permission to spend banked credits automatically WITHOUT prompts.",
-		"  Disabling cannot undo a sent reset. Ctrl+R confirmation applies only to manual resets.",
+		...(status.includes("journal/lock") ? ["  Recovery instructions: see README."] : []),
 	);
-	if (armed) lines.push(theme.fg("warning", "  Reset armed — press Ctrl+R again to consume/retry one banked reset."));
-	else lines.push(theme.fg("dim", "  Ctrl+R twice: manual reset / exact saved-intent retry. R refresh never clears the spend guard."));
+	if (armed) lines.push(theme.fg("warning", "  Reset armed — Ctrl+R again to use one reset."));
 	return lines;
 }
 
