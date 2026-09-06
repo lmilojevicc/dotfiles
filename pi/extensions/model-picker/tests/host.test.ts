@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,7 +33,7 @@ async function hostFixture(t: test.TestContext, prefix = false, options: {
 	const favoriteBytes = JSON.stringify({ favorites: options.favorites ?? ["provider/model-05", "provider/model-17", "unavailable/model"], extra: true }) + "\n";
 	writeFileSync(join(root, "model-favorites.json"), favoriteBytes);
 	const pickerPath = extensionFixture(root, options.vimMode);
-	const configPath = join(root, "extension", "config.json");
+	const configPath = join(root, "model-picker.json");
 	const bus = createEventBus();
 	const loaded = await discoverAndLoadExtensions(prefix ? [pickerPath, prefixPath] : [pickerPath], join(root, "project"), root, bus);
 	assert.deepEqual(loaded.errors, []);
@@ -480,15 +480,18 @@ test("actual centered overlay does not shift on scrolled favorite toggles or emp
 	assert.equal(f.editor.getExpandedText(), f.draft);
 });
 
-for (const prefix of [false, true]) test(`actual ${prefix ? "prefix" : "command"} host rereads module-local Vim config on every open without reload`, async (t) => {
+for (const prefix of [false, true]) test(`actual ${prefix ? "prefix" : "command"} host rereads agent-root Vim config on every open without reload`, async (t) => {
 	const f = await hostFixture(t, prefix, { vimMode: true });
 	f.tui.setShowHardwareCursor(true);
 	let switches = 0;
 	f.loaded.runtime.setModel = async () => { switches++; return true; };
 	const settings = readFileSync(join(f.root, "settings.json"), "utf8");
-	// Neither cwd nor agent-dir config is an override.
-	writeFileSync(join(f.root, "config.json"), '{"vimMode":false}');
-	writeFileSync(join(f.context.cwd, "config.json"), '{"vimMode":false}');
+	// Stale package and project files must never override or supply missing agent config.
+	mkdirSync(join(f.context.cwd, ".pi"));
+	const stalePaths = [join(f.root, "extension", "config.json"), join(f.context.cwd, "config.json"),
+		join(f.context.cwd, "model-picker.json"), join(f.context.cwd, ".pi", "model-picker.json")];
+	const staleBytes = '{"vimMode":true}\n';
+	for (const path of stalePaths) writeFileSync(path, staleBytes);
 	if (prefix) {
 		await f.lifecycle("session_start");
 		await new Promise((resolve) => setTimeout(resolve, 10));
@@ -526,11 +529,14 @@ for (const prefix of [false, true]) test(`actual ${prefix ? "prefix" : "command"
 	assert.equal(readFileSync(join(f.root, "settings.json"), "utf8"), settings);
 	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
 
+	assert.equal(readFileSync(f.configPath, "utf8"), '{"vimMode":true}');
 	writeFileSync(f.configPath, '{"vimMode":false}');
 	await open();
 	assert.ok(f.frameLines().some((line) => line.includes(CURSOR_MARKER)));
 	f.input("jkhl/"); assert.equal(f.component().getQuery(), "jkhl/");
 	f.input("\x1b"); f.input("\x1b"); await close();
+	assert.equal(readFileSync(f.configPath, "utf8"), '{"vimMode":false}');
+	assert.equal(f.notifications.length, 0);
 
 	const invalid = '{"vimMode":"true"}\n'; writeFileSync(f.configPath, invalid);
 	await open();
@@ -539,10 +545,20 @@ for (const prefix of [false, true]) test(`actual ${prefix ? "prefix" : "command"
 	f.input("j"); assert.equal(f.component().getQuery(), "j");
 	f.input("\x1b"); f.input("\x1b"); await close();
 	assert.equal(readFileSync(f.configPath, "utf8"), invalid);
+	rmSync(f.configPath);
+	const notices = f.notifications.length;
+	await open();
+	assert.ok(f.frameLines().some((line) => line.includes(CURSOR_MARKER)));
+	f.input("j"); assert.equal(f.component().getQuery(), "j");
+	f.input("\x1b"); f.input("\x1b"); await close();
+	assert.equal(f.notifications.length, notices, "absent config silently defaults to standard search");
+	assert.equal(existsSync(f.configPath), false, "opening never creates or migrates config");
+	for (const path of stalePaths) assert.equal(readFileSync(path, "utf8"), staleBytes);
 	assert.equal(switches, 0);
 	assert.equal(readFileSync(join(f.root, "settings.json"), "utf8"), settings);
 	assert.equal(readFileSync(join(f.root, "model-favorites.json"), "utf8"), f.favoriteBytes);
 	assert.equal(f.editor.getExpandedText(), f.draft); assert.equal(f.changes(), 0);
+	assert.equal(f.submissions(), 0);
 });
 
 test("actual Vim host requires painted NORMAL model confirmation to save paired global default", async (t) => {

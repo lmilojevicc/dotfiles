@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-export const configPath = fileURLToPath(new URL("./config.json", import.meta.url));
-
-/** Read on each opening; package-local configuration is never created or repaired here. */
-export function readConfig(warn: (message: string) => void, path = configPath): { vimMode: boolean } {
+/** Resolve and read on each opening; agent configuration is never created or repaired here. */
+export function readConfig(warn: (message: string) => void, path = join(getAgentDir(), "model-picker.json")): { vimMode: boolean } {
 	try {
 		const value: unknown = JSON.parse(readFileSync(path, "utf8"));
 		if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("expected an object");

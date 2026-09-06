@@ -2,14 +2,14 @@ import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PickerModel } from "../domain.ts";
 
-/** Real loader fixture: config lives next to copied modules, never in the repository/home. */
+/** Real loader fixture: root is the isolated agent directory, separate from copied modules. */
 export function extensionFixture(root: string, vimMode = false): string {
 	const directory = join(root, "extension");
 	mkdirSync(directory);
 	for (const file of ["index.ts", "component.ts", "config.ts", "domain.ts", "favorites.ts", "persistence.ts", "package.json"]) {
 		copyFileSync(new URL(`../${file}`, import.meta.url), join(directory, file));
 	}
-	writeFileSync(join(directory, "config.json"), JSON.stringify({ vimMode }));
+	writeFileSync(join(root, "model-picker.json"), JSON.stringify({ vimMode }));
 	return join(directory, "index.ts");
 }
 import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
