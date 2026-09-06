@@ -14,7 +14,6 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@narumitw/pi-goal",
     "git:github.com/MasuRii/pi-tool-display",
-    "git:github.com/crustyhacker/pi-thinking-steps",
     "npm:@ff-labs/pi-fff",
     "npm:pi-btw"
   ],
