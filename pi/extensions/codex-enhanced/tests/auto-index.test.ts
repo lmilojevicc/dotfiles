@@ -304,24 +304,24 @@ test("Resets toggle suppresses an account-switch race instead of enabling unseen
 	await menu;
 });
 
-test("legacy in-process intents are blocked and durably preserved at startup even while auto is off", async (t) => {
+test("unresolved legacy pending IDs are durably preserved at startup even while auto is off", async (t) => {
 	const f = fixture(t);
 	const symbol = Symbol.for("codex-enhanced.reset-request-store");
 	const prior = Reflect.get(globalThis, symbol);
-	Reflect.set(globalThis, symbol, new Map([[f.key, { phase: "ambiguous", requestId: "legacy-request", creditId: "legacy-credit", message: "must not persist raw error" }]]));
+	Reflect.set(globalThis, symbol, new Map([[f.key, { phase: "pending", requestId: "legacy-request", creditId: "legacy-credit", message: "must not persist raw error" }]]));
 	t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
 	const l = lifecycle(t, f.ctx);
 	await l.handlers.get("session_start")({}, f.ctx);
 	const saved = readResetJournal(f.dir, f.key)!;
 	assert.equal(saved.phase, "legacy_blocked");
-	assert.deepEqual(saved.legacyBlocked, { requestId: "legacy-request", creditId: "legacy-credit" });
+	assert.deepEqual(saved.legacyBlocked, { requestId: "legacy-request", creditId: "legacy-credit", phase: "pending", active: false, settled: false });
 	assert.doesNotMatch(JSON.stringify(saved), /raw error/);
 	Reflect.deleteProperty(globalThis, symbol); // restart no longer has the old in-memory map
 	writeAutoResetPreference(f.path, f.key, true);
 	const automatic = await __testing.runCoordinatedReset(f.ctx, "auto", new AbortController().signal, () => true);
-	assert.match(automatic.status, /legacy/);
+	assert.match(automatic.status, /previous reset needs recovery/);
 	const manual = await __testing.runCoordinatedReset(f.ctx, "manual", new AbortController().signal, () => true);
-	assert.match(manual.status, /legacy/);
+	assert.match(manual.status, /previous reset needs recovery/);
 	assert.equal(f.state.posts.length, 0);
 });
 
@@ -500,3 +500,98 @@ for (const failure of ["held", "orphan", "corrupt"] as const) {
 		});
 	}
 }
+
+for (const source of ["success", "ambiguous", "unknown"] as const) {
+	test(`legacy ${source} surviving producer repairs matching lossy startup marker without spending`, async (t) => {
+		const f = fixture(t);
+		const symbol = Symbol.for("codex-enhanced.reset-request-store");
+		const prior = Reflect.get(globalThis, symbol);
+		const ids = { requestId: "original-request", creditId: "original-credit" };
+		Reflect.set(globalThis, symbol, new Map([[f.key, { ...ids,
+			phase: source === "ambiguous" ? "ambiguous" : "locked", promise: undefined,
+			message: source === "success" ? { kind: "info", text: "Codex rate limits reset." }
+				: { kind: "error", text: "Reset response was not recognized; refreshed usage." },
+		}]]));
+		t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+		await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key,
+			phase: "legacy_blocked", recovered: false, legacyBlocked: ids }));
+		const l = lifecycle(t, f.ctx);
+		await l.handlers.get("session_start")({}, f.ctx);
+		assert.equal(f.state.posts.length, 0);
+		assert.equal(readResetJournal(f.dir, f.key)?.phase, source === "success" ? "reset" : source);
+		assert.equal(readResetJournal(f.dir, f.key)?.legacyBlocked, undefined);
+		const migrated = readFileSync(resetPaths(f.dir, f.key).journal, "utf8");
+		await l.handlers.get("session_start")({}, f.ctx); // repeated /reload with original map retained
+		assert.equal(readFileSync(resetPaths(f.dir, f.key).journal, "utf8"), migrated);
+		writeAutoResetPreference(f.path, f.key, true);
+		await __testing.runCoordinatedReset(f.ctx, "auto", new AbortController().signal, () => true);
+		assert.equal(f.state.posts.length, 0);
+		const menu = l.commands.get("codex-enhanced").handler("", f.ctx);
+		await drain();
+		const component = f.component();
+		component.handleInput("tab");
+		assert.doesNotMatch(component.render(240).join("\n"), /legacy|previous reset needs recovery|this account|Automatic spending off/);
+		assert.match(component.render(240).join("\n"), /Auto reset +on · Weekly 0% · soonest expiry first · no prompts/);
+		if (source !== "success") {
+			component.handleInput("ctrl+r"); await drain();
+			assert.equal(f.state.posts.length, 0);
+			component.handleInput("ctrl+r"); await drain();
+			assert.equal(f.state.posts.length, 1);
+			assert.equal(f.state.posts[0].credit_id, ids.creditId);
+			assert.equal(f.state.posts[0].redeem_request_id, ids.requestId);
+		}
+		component.handleInput("escape");
+		await menu;
+	});
+}
+
+test("legacy pending promise remains owned by old producer until finally; reload then migrates success", async (t) => {
+	const f = fixture(t);
+	const symbol = Symbol.for("codex-enhanced.reset-request-store");
+	const prior = Reflect.get(globalThis, symbol);
+	const state = { requestId: "live-original-request", creditId: "live-original-credit", phase: "pending",
+		promise: new Promise(() => {}) as Promise<unknown> | undefined,
+		message: undefined as { kind: string; text: string } | undefined };
+	Reflect.set(globalThis, symbol, new Map([[f.key, state]]));
+	t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+	const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx);
+	assert.equal(readResetJournal(f.dir, f.key), undefined);
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx);
+	await drain();
+	f.component().handleInput("tab");
+	assert.match(f.component().render(240).join("\n"), /previous reset still running/);
+	for (const mode of ["manual", "auto"] as const) {
+		if (mode === "auto") writeAutoResetPreference(f.path, f.key, true);
+		assert.match((await __testing.runCoordinatedReset(f.ctx, mode, new AbortController().signal, () => true)).status, /still running/);
+	}
+	state.phase = "locked";
+	state.message = { kind: "info", text: "Codex rate limits reset." };
+	await l.handlers.get("session_start")({}, f.ctx);
+	assert.equal(readResetJournal(f.dir, f.key), undefined, "then callback is not finally settlement");
+	state.promise = undefined;
+	await l.handlers.get("session_start")({}, f.ctx);
+	await drain();
+	assert.equal(readResetJournal(f.dir, f.key)?.phase, "reset");
+	assert.equal(readResetJournal(f.dir, f.key)?.recovered, false);
+	assert.equal(f.state.posts.length, 0);
+	await menu; // reload closes the prior menu via the existing shutdown signal
+});
+
+test("legacy startup re-reads producer state after each account's awaited migration", async (t) => {
+	const f = fixture(t);
+	const symbol = Symbol.for("codex-enhanced.reset-request-store");
+	const prior = Reflect.get(globalThis, symbol);
+	const first = { requestId: "first-request", creditId: "first-credit", phase: "locked",
+		message: { kind: "info", text: "Codex rate limits reset." } };
+	const second = { requestId: "second-request", creditId: "second-credit", phase: "ambiguous",
+		promise: undefined as Promise<unknown> | undefined };
+	Reflect.set(globalThis, symbol, new Map([["account:synthetic-first", first], [f.key, second]]));
+	t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+	const l = lifecycle(t, f.ctx);
+	queueMicrotask(() => { second.phase = "pending"; second.promise = new Promise(() => {}); });
+	await l.handlers.get("session_start")({}, f.ctx);
+	assert.equal(readResetJournal(f.dir, "account:synthetic-first")?.phase, "reset");
+	assert.equal(readResetJournal(f.dir, f.key), undefined, "second account is now live, not settled ambiguity");
+	assert.equal(f.state.posts.length, 0);
+});

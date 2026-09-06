@@ -3,6 +3,34 @@ import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, ren
 import { join } from "node:path";
 import { selectAutoResetCredit, selectResetCredit, weeklyResetObservation, type ResetCredits, type ResetOutcome, type ResetResult, type UsageSnapshot } from "./core.ts";
 
+export type LegacyResetIntent = {
+	requestId?: string;
+	creditId?: string;
+	phase?: "pending" | "ambiguous" | "locked";
+	outcome?: ResetOutcome;
+	active: boolean;
+	settled: boolean;
+};
+
+/** Exact messages/kinds emitted by the pre-auto runResetRequest producer, not arbitrary error text. */
+export function legacyResetIntent(value: unknown): LegacyResetIntent {
+	const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+	const id = (value: unknown) => typeof value === "string" && value.trim() ? value : undefined;
+	const phase = record.phase === "pending" || record.phase === "ambiguous" || record.phase === "locked" ? record.phase : undefined;
+	const active = record.promise !== undefined;
+	const message = record.message as { kind?: unknown; text?: unknown } | undefined;
+	const outcomes = [
+		["reset", "info", "Codex rate limits reset."],
+		["already_redeemed", "info", "Reset already applied; refreshed usage."],
+		["nothing_to_reset", "error", "No active Codex limit to reset."],
+		["no_credit", "error", "No banked resets available."],
+		["unknown", "error", "Reset response was not recognized; refreshed usage."],
+	] as const;
+	const outcome = phase === "locked" ? outcomes.find(([, kind, text]) => message?.kind === kind && message?.text === text)?.[0] ?? "unknown" : undefined;
+	return { requestId: id(record.requestId), creditId: id(record.creditId), phase, outcome,
+		active, settled: !active && (phase === "locked" || phase === "ambiguous") };
+}
+
 export type ResetJournal = {
 	version: 1;
 	accountKey: string;
@@ -10,13 +38,15 @@ export type ResetJournal = {
 	phase: "pending" | "ambiguous" | ResetOutcome | "legacy_blocked";
 	requestId?: string;
 	creditId?: string;
-	legacyBlocked?: { requestId?: string; creditId?: string };
+	legacyBlocked?: { requestId?: string; creditId?: string } & Partial<LegacyResetIntent>;
+	legacyReset?: LegacyResetIntent;
 };
 
 const UNCERTAIN = new Set(["pending", "ambiguous", "unknown"]);
 const PHASES = new Set(["pending", "ambiguous", "reset", "already_redeemed", "nothing_to_reset", "no_credit", "unknown", "legacy_blocked"]);
 const MAX_JOURNAL_BYTES = 16_384;
-const LEGACY_PAUSED = "Paused: legacy in-process reset detected; IDs preserved. Reconcile the original request before upgrading. Do not delete the journal or restart to erase uncertainty.";
+const LEGACY_PAUSED = "Paused: previous reset needs recovery; see README.";
+const LEGACY_ACTIVE = "Paused: previous reset still running. Wait, then /reload.";
 const STORAGE_PAUSED = "Paused: reset journal/lock unavailable or uncertain. Verify no cooperating process is operating before removing ONLY an orphan lock; preserve the journal.";
 
 export function resetPaths(agentDir: string, accountKey: string) {
@@ -58,11 +88,12 @@ export function readResetJournal(agentDir: string, accountKey: string): ResetJou
 export function resetJournalStatus(journal: ResetJournal | undefined): string {
 	if (journal && (journal.phase === "legacy_blocked" || Object.hasOwn(journal, "legacyBlocked"))) return LEGACY_PAUSED;
 	if (!journal || journal.recovered) return "Monitoring fresh weekly usage.";
-	if (UNCERTAIN.has(journal.phase)) return "Paused: uncertain reset. Ctrl+R retries ONLY the saved credit and request ID; automatic retry is disabled.";
+	if (UNCERTAIN.has(journal.phase)) return "Paused: uncertain reset. Ctrl+R twice retries ONLY the saved credit and request ID; automatic retry is disabled.";
 	return `Paused auto: ${journal.phase}. Waiting for fresh weekly recovery then exhaustion. Manual: R refresh, then Ctrl+R twice permits another spend.`;
 }
 
-export function resetAccountStatus(agentDir: string, accountKey: string): string {
+export function resetAccountStatus(agentDir: string, accountKey: string, legacy?: LegacyResetIntent): string {
+	if (legacy?.active) return LEGACY_ACTIVE;
 	try {
 		try { lstatSync(resetPaths(agentDir, accountKey).lock); return STORAGE_PAUSED; }
 		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
@@ -118,12 +149,30 @@ export async function withResetAccountLock<T>(agentDir: string, accountKey: stri
 	}
 }
 
-/** One-way upgrade safety marker; never takes over or replays a possibly live old-client request. */
-export async function preserveLegacyReset(agentDir: string, accountKey: string, intent: { requestId?: string; creditId?: string }): Promise<void> {
+/** Never replace a normal/newer intent or infer settlement from age, usage or absent disk locks. */
+function migrateLegacyReset(accountKey: string, journal: ResetJournal | undefined, intent: LegacyResetIntent): ResetJournal | undefined {
+	if (intent.active) return journal;
+	if (journal) {
+		if (journal.phase !== "legacy_blocked") return journal;
+		const saved = journal.legacyBlocked;
+		if (!intent.requestId || !intent.creditId || saved?.requestId !== intent.requestId || saved?.creditId !== intent.creditId
+			|| (journal.requestId !== undefined && journal.requestId !== intent.requestId)
+			|| (journal.creditId !== undefined && journal.creditId !== intent.creditId)) return journal;
+	}
+	if (intent.settled && intent.requestId && intent.creditId) {
+		return { version: 1, accountKey, recovered: false, requestId: intent.requestId, creditId: intent.creditId,
+			phase: intent.phase === "ambiguous" ? "ambiguous" : intent.outcome ?? "unknown", legacyReset: intent };
+	}
+	return journal ?? { version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: intent };
+}
+
+/** Migration is local-only. A live producer retains ownership; re-read its state on the next check. */
+export async function preserveLegacyReset(agentDir: string, accountKey: string, intent: LegacyResetIntent): Promise<void> {
+	if (intent.active) return;
 	await withResetAccountLock(agentDir, accountKey, async (save) => {
 		const journal = readResetJournal(agentDir, accountKey);
-		if (journal && Object.hasOwn(journal, "legacyBlocked")) return;
-		save({ ...(journal ?? { version: 1, accountKey, phase: "legacy_blocked", recovered: false }), legacyBlocked: intent });
+		const migrated = migrateLegacyReset(accountKey, journal, intent);
+		if (migrated !== journal) save(migrated);
 	});
 }
 
@@ -133,8 +182,8 @@ export type ResetOperation = {
 	mode: "auto" | "manual";
 	/** Explicit successful R refresh observed this terminal intent, never an uncertain intent. */
 	manualAfterRequestId?: string;
-	/** Old in-process store cannot safely be migrated while its request may still run. */
-	legacyIntent?: { requestId?: string; creditId?: string };
+	/** Re-read the old producer after awaits; never take over a live operation. */
+	legacyIntent?: () => LegacyResetIntent | undefined;
 	/** Must re-resolve auth and check lifecycle/model/consent after every network await. */
 	validate: () => Promise<void>;
 	/** Synchronous lifecycle/consent check; must not dispatch or await. */
@@ -159,10 +208,15 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			let observedAt = 0;
 			let autoCredit: ResetCredits["credits"][number] | undefined;
 			let journal = readResetJournal(operation.agentDir, operation.accountKey);
-			if (operation.legacyIntent && !journal?.legacyBlocked) {
-				journal = { ...(journal ?? { version: 1, accountKey: operation.accountKey, phase: "legacy_blocked", recovered: false }),
-					legacyBlocked: operation.legacyIntent };
-				save(journal);
+			const legacy = operation.legacyIntent?.();
+			if (legacy?.active) return { status: LEGACY_ACTIVE };
+			if (legacy) {
+				const migrated = migrateLegacyReset(operation.accountKey, journal, legacy);
+				if (migrated !== journal) {
+					save(migrated);
+					// Migration itself never spends or observes recovery, even for a manual caller.
+					return { status: resetJournalStatus(migrated) };
+				}
 			}
 			if (journal && (journal.phase === "legacy_blocked" || Object.hasOwn(journal, "legacyBlocked"))) return { status: LEGACY_PAUSED };
 			const uncertain = journal && UNCERTAIN.has(journal.phase);
@@ -210,6 +264,7 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			await operation.validate();
 			const checkBeforePost = () => {
 				operation.checkBeforePost();
+				if (operation.legacyIntent?.()?.active) throw new Error(LEGACY_ACTIVE);
 				if (operation.mode === "auto" && (!autoUsage || weeklyResetObservation(autoUsage) !== "exhausted"
 					|| Date.now() - observedAt > 30_000 || !autoCredit || !selectAutoResetCredit([autoCredit]))) {
 					throw new Error("Observation expired before POST");

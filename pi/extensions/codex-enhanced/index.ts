@@ -54,7 +54,7 @@ import {
 	type RequestShape,
 } from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
-import { coordinateReset, preserveLegacyReset, readResetJournal, withResetAccountLock, resetAccountStatus, type ResetOperationResult } from "./resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetAccountStatus, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
 
 const STATUS_KEY = "codex-enhanced";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -290,15 +290,12 @@ function formatResetResult(result: ResetResult): string {
 	return "Reset response was not recognized; refreshed usage.";
 }
 
-function legacyResetIntents(): Map<string, { requestId?: string; creditId?: string }> {
+function legacyResetIntents(): Map<string, LegacyResetIntent> {
 	const store: unknown = Reflect.get(globalThis, Symbol.for("codex-enhanced.reset-request-store"));
-	const intents = new Map<string, { requestId?: string; creditId?: string }>();
+	const intents = new Map<string, LegacyResetIntent>();
 	if (store instanceof Map) for (const [key, value] of store) {
 		if (typeof key !== "string" || !key.startsWith("account:")) continue;
-		intents.set(key, {
-			requestId: isRecord(value) ? stringValue(value.requestId) : undefined,
-			creditId: isRecord(value) ? stringValue(value.creditId) : undefined,
-		});
+		intents.set(key, legacyResetIntent(value));
 	}
 	return intents;
 }
@@ -338,7 +335,7 @@ async function runCoordinatedReset(
 		check();
 		return await coordinateReset({
 			agentDir: getAgentDir(), accountKey: account.key, mode, validate, checkBeforePost: check, manualAfterRequestId,
-			legacyIntent: legacyResetIntents().get(account.key),
+			legacyIntent: () => legacyResetIntents().get(account.key),
 			readUsage: () => fetchUsageWithHeaders(headers, signal, false),
 			// Spending decisions never use the menu's five-second detail cache.
 			readCredits: async () => parseResetCredits(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, { method: "GET", headers, signal })),
@@ -813,7 +810,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 				changed: () => { resetGeneration += 1; },
 				checkAuto: async () => { if (autoCheck) await autoCheck; await checkAuto(); },
 				status: (key) => {
-					const durable = resetAccountStatus(getAgentDir(), key);
+					const durable = resetAccountStatus(getAgentDir(), key, legacyResetIntents().get(key));
 					if (durable.startsWith("Paused")) return durable;
 					if (!readAutoResetPreference(getConfigPath(), key).enabled) return "";
 					if (!isCanonicalCodexModel(ctx.model)) return "Inactive: select a canonical Codex model for automatic checks.";
@@ -864,9 +861,12 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 		clearStatus(lastContext);
 		void refreshStatus(ctx);
 		const signal = shutdownController.signal;
-		for (const [key, intent] of legacyResetIntents()) {
+		for (const key of legacyResetIntents().keys()) {
+			// A prior account's awaited migration may overlap a legacy producer transition.
+			const intent = legacyResetIntents().get(key);
+			if (!intent) continue;
 			try { await preserveLegacyReset(getAgentDir(), key, intent); }
-			catch { autoStatus.set(key, "Paused: legacy reset could not be journaled. Reconcile original request; do not restart to erase it."); }
+			catch { autoStatus.set(key, "Paused: previous reset needs recovery; see README."); }
 		}
 		if (active && !signal.aborted) {
 			autoTimer = setInterval(() => { void checkAuto(); }, 60_000);

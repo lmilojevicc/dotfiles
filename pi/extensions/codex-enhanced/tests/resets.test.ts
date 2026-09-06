@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { coordinateReset, readResetJournal, resetAccountStatus, resetPaths, withResetAccountLock, type ResetOperation } from "../resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
 
 const accountKey = "account:synthetic";
 function usage(percent = 100, count = 2) {
@@ -295,3 +295,159 @@ for (const prior of ["none", "guarded", "recovered", "ambiguous", "pending", "un
 		});
 	}
 }
+
+const legacyIds = { requestId: "legacy-request", creditId: "legacy-credit" };
+const legacySuccess = { ...legacyIds, phase: "locked", message: { kind: "info", text: "Codex rate limits reset." } };
+
+for (const [outcome, kind, text] of [
+	["reset", "info", "Codex rate limits reset."],
+	["already_redeemed", "info", "Reset already applied; refreshed usage."],
+	["nothing_to_reset", "error", "No active Codex limit to reset."],
+	["no_credit", "error", "No banked resets available."],
+	["unknown", "error", "Reset response was not recognized; refreshed usage."],
+	["unknown", "error", "Codex rate limits reset."],
+	["unknown", "info", "unexpected message"],
+] as const) {
+	test(`legacy locked ${kind}/${text} preserves exact producer outcome without POST`, async (t) => {
+		const { op, posts, agentDir } = fixture(t);
+		const intent = legacyResetIntent({ ...legacyIds, phase: "locked", message: { kind, text } });
+		await preserveLegacyReset(agentDir, accountKey, intent);
+		const journal = readResetJournal(agentDir, accountKey)!;
+		assert.equal(journal.phase, outcome);
+		assert.equal(journal.legacyReset?.phase, "locked");
+		assert.equal(journal.legacyReset?.outcome, outcome);
+		assert.equal(journal.recovered, false);
+		assert.equal(journal.legacyBlocked, undefined);
+		assert.equal(journal.requestId, legacyIds.requestId);
+		assert.equal(journal.creditId, legacyIds.creditId);
+		const saved = readFileSync(resetPaths(agentDir, accountKey).journal, "utf8");
+		for (let i = 0; i < 3; i++) await preserveLegacyReset(agentDir, accountKey, intent);
+		assert.equal(readFileSync(resetPaths(agentDir, accountKey).journal, "utf8"), saved);
+		await coordinateReset({ ...op, legacyIntent: () => intent });
+		assert.equal(posts.length, 0);
+		assert.doesNotMatch(resetAccountStatus(agentDir, accountKey), /previous reset|legacy/);
+	});
+}
+
+test("legacy completed migration itself never reads or spends; recovery then new exhaustion is required", async (t) => {
+	const { op, posts, agentDir } = fixture(t);
+	const legacyIntent = () => legacyResetIntent(legacySuccess);
+	let usageReads = 0;
+	let creditReads = 0;
+	await coordinateReset({ ...op, mode: "manual", legacyIntent,
+		readUsage: async () => { usageReads++; assert.fail("migration must not read usage"); },
+		readCredits: async () => { creditReads++; assert.fail("migration must not select credit"); } });
+	assert.equal(usageReads, 0);
+	assert.equal(creditReads, 0);
+	assert.equal(posts.length, 0);
+	assert.equal(readResetJournal(agentDir, accountKey)?.phase, "reset");
+	await coordinateReset({ ...op, legacyIntent });
+	assert.equal(posts.length, 0);
+	await coordinateReset({ ...op, legacyIntent, readUsage: async () => usage(40) });
+	assert.equal(readResetJournal(agentDir, accountKey)?.recovered, true);
+	await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+	assert.equal(readResetJournal(agentDir, accountKey)?.recovered, true, "reload cannot overwrite observed recovery");
+	assert.equal(posts.length, 0);
+	await coordinateReset({ ...op, legacyIntent });
+	assert.equal(posts.length, 1);
+	const newer = readFileSync(resetPaths(agentDir, accountKey).journal, "utf8");
+	await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+	assert.equal(readFileSync(resetPaths(agentDir, accountKey).journal, "utf8"), newer);
+});
+
+for (const phase of ["pending", "locked", "ambiguous"] as const) {
+	test(`legacy live ${phase} cannot migrate, enrich or POST until producer finally settles`, async (t) => {
+		const { op, posts, agentDir } = fixture(t);
+		const state = { ...legacySuccess, phase, promise: new Promise(() => {}) as Promise<unknown> | undefined };
+		const legacyIntent = () => legacyResetIntent(state);
+		await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+		assert.equal(readResetJournal(agentDir, accountKey), undefined);
+		for (const mode of ["auto", "manual"] as const) {
+			assert.match((await coordinateReset({ ...op, mode, legacyIntent })).status, /still running/);
+		}
+		assert.equal(readResetJournal(agentDir, accountKey), undefined);
+		await withResetAccountLock(agentDir, accountKey, async (save) => save({ version: 1, accountKey,
+			phase: "legacy_blocked", recovered: false, legacyBlocked: legacyIds }));
+		await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+		assert.equal(readResetJournal(agentDir, accountKey)?.phase, "legacy_blocked");
+		state.promise = undefined;
+		await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+		assert.equal(readResetJournal(agentDir, accountKey)?.phase, phase === "pending" ? "legacy_blocked" : phase === "locked" ? "reset" : "ambiguous");
+		assert.equal(posts.length, 0);
+	});
+}
+
+for (const phase of ["ambiguous", "locked"] as const) {
+	test(`legacy settled ${phase} uncertainty survives recovery/reload and permits manual exact-ID retry only`, async (t) => {
+		const { op, posts, agentDir } = fixture(t);
+		const legacyIntent = () => legacyResetIntent({ ...legacyIds, phase,
+			message: { kind: "error", text: "Reset response was not recognized; refreshed usage." } });
+		await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+		await coordinateReset({ ...op, legacyIntent, readUsage: async () => usage(0) });
+		await coordinateReset({ ...op }); // Simulated restart without old map.
+		assert.equal(posts.length, 0);
+		assert.equal(readResetJournal(agentDir, accountKey)?.recovered, false);
+		await coordinateReset({ ...op, mode: "manual", legacyIntent,
+			readUsage: async () => { assert.fail("same-ID retry must not read/select a new credit"); },
+			readCredits: async () => { assert.fail("same-ID retry must not select credit"); } });
+		assert.deepEqual(posts, [[legacyIds.creditId, legacyIds.requestId]]);
+		await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+		assert.equal(readResetJournal(agentDir, accountKey)?.phase, "reset", "stale original evidence cannot overwrite retry outcome");
+	});
+}
+
+test("legacy matching lossy marker is enriched, but mismatched/missing IDs and newer intents are never clobbered", async (t) => {
+	const cases: ResetJournal[] = [
+		{ version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: legacyIds },
+		{ version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: { ...legacyIds, requestId: "other" } },
+		{ version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: { ...legacyIds, creditId: "other" } },
+		{ version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: {} },
+		{ version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: legacyIds, requestId: "newer" },
+		{ version: 1, accountKey, phase: "reset", recovered: true, ...legacyIds },
+		{ version: 1, accountKey, phase: "pending", recovered: false, requestId: "newer", creditId: "new-credit" },
+		{ version: 1, accountKey, phase: "reset", recovered: false, requestId: "newer", creditId: "new-credit", legacyBlocked: legacyIds },
+	];
+	for (const [index, saved] of cases.entries()) {
+		const { op, posts, agentDir } = fixture(t);
+		await withResetAccountLock(agentDir, accountKey, async (save) => save(saved));
+		await preserveLegacyReset(agentDir, accountKey, legacyResetIntent(legacySuccess));
+		if (index === 0) {
+			assert.equal(readResetJournal(agentDir, accountKey)?.phase, "reset");
+			assert.equal(readResetJournal(agentDir, accountKey)?.legacyBlocked, undefined);
+		} else assert.deepEqual(readResetJournal(agentDir, accountKey), saved);
+		assert.equal(posts.length, 0);
+		if (saved.phase === "legacy_blocked" && index > 0) {
+			await coordinateReset({ ...op, mode: "manual" });
+			await coordinateReset({ ...op, readUsage: async () => usage(0) });
+			assert.deepEqual(readResetJournal(agentDir, accountKey), saved);
+			assert.equal(posts.length, 0);
+		}
+	}
+});
+
+test("legacy old operation becoming active during a manual retry suppresses dispatch", async (t) => {
+	const { op, posts, agentDir } = fixture(t);
+	const state = { ...legacyIds, phase: "ambiguous", promise: undefined as Promise<unknown> | undefined };
+	const legacyIntent = () => legacyResetIntent(state);
+	await preserveLegacyReset(agentDir, accountKey, legacyIntent());
+	let validations = 0;
+	await coordinateReset({ ...op, mode: "manual", legacyIntent, validate: async () => {
+		if (++validations === 2) state.promise = new Promise(() => {});
+	} });
+	assert.equal(posts.length, 0);
+	assert.equal(readResetJournal(agentDir, accountKey)?.phase, "ambiguous");
+});
+
+test("legacy lossy marker without original evidence cannot infer completion from no lock or recovered usage", async (t) => {
+	const { op, posts, agentDir } = fixture(t);
+	const saved: ResetJournal = { version: 1, accountKey, phase: "legacy_blocked", recovered: false, legacyBlocked: legacyIds };
+	await withResetAccountLock(agentDir, accountKey, async (save) => save(saved));
+	for (const mode of ["auto", "manual"] as const) {
+		for (const percent of [0, 100]) {
+			assert.match((await coordinateReset({ ...op, mode, readUsage: async () => usage(percent) })).status, /previous reset needs recovery; see README/);
+			assert.deepEqual(readResetJournal(agentDir, accountKey), saved);
+		}
+	}
+	assert.equal(posts.length, 0);
+	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), false);
+});
