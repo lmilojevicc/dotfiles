@@ -6,7 +6,7 @@ Private Pi 0.84.4 extension for session-branch-native task tracking.
 - Human commands: `/tasks` and `/todos` (alias), using Pi-native task and settings menus
 - `/tasks-board`: open a live floating inspector; search/filter locally, inspect task details, and delete the selected task after confirmation
 - `Ctrl+Shift+T`: toggle the above-editor widget between its configured limit and show-all
-- Upstream-compatible display settings in global `<agent-dir>/tasks-config.json` and project `.pi/tasks-config.json`
+- Global Task Settings shared across projects in `<agent-dir>/tasks-config.json`
 - Stable numeric IDs, optimistic revisions, one active task, validated dependency DAG, and atomic batches
 - Tool-result snapshots for model changes and custom session entries for interactive changes
 - Legacy `@juicesharp/rpiv-todo` snapshot replay
@@ -15,7 +15,13 @@ The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `
 
 The above-editor widget leaves one blank row after nonempty Tasks content so adjacent telemetry remains visually separate. The sole `in_progress` task uses the upstream 11-frame spinner at 150 ms. Its elapsed time and `↑`/`↓` counters are ephemeral, session-scoped presentation data. The counters are the parent assistant turn's full input/output usage attributed while that task is active; they are not execution or subagent telemetry. Activity starts fresh after reload, session/branch changes, or a different task starts, and is preserved across compaction only while the same task remains active.
 
-Display settings are `collapseCompleted`, `showAll`, `maxVisible`, `sortOrder`, `hiddenAt`, and `glyphs`. Project settings override global settings; glyph entries merge individually. Task truth remains exclusively in session branches.
+### Global Task Settings
+
+`/tasks` → Settings saves each choice immediately for all projects in `<getAgentDir()>/tasks-config.json` (normally `~/.pi/agent/tasks-config.json`; respects `PI_CODING_AGENT_DIR`). Display settings keep the existing JSON format: `collapseCompleted`, `showAll`, `maxVisible`, `sortOrder`, `hiddenAt`, and JSON-only `glyphs`. Defaults are completed tasks expanded, show-all off, 10 visible tasks, ID sort, hidden tasks at the bottom, and built-in glyphs. Unknown global keys are retained.
+
+Legacy project `.pi/tasks-config.json` files are ignored, left untouched, and not automatically imported. A symlinked agent directory is supported, but the config file itself must be a regular file, not a symlink. Missing or invalid global settings fall back to defaults; saving refuses malformed, unreadable, or unsafe existing files rather than overwriting them.
+
+Successful menu changes apply to the current session immediately. Other running sessions pick them up on their next session start (including new/resume/fork) or `/reload`, not through live synchronization. Escape closes the menu without undoing saved choices. `Ctrl+Shift+T` and the board's search/filter/completed-visibility controls remain temporary views, not global settings. Task truth remains exclusively in session branches.
 
 This extension tracks work only. Owner and metadata are inert. It does not launch agents or processes, expose upstream execution tools, cascade tasks, auto-clear tasks, or store task truth in config files.
 

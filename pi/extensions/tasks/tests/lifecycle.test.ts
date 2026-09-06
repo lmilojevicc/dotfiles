@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_TASKS_CONFIG, saveGlobalTasksConfig, type TaskDisplayConfig } from "../src/config/tasks-config.ts";
 import { registerLifecycle, restoreContext, synchronizationMessage } from "../src/lifecycle.ts";
 import { snapshot, task } from "./helpers.ts";
 import { STATE_ENTRY } from "../src/state/replay.ts";
@@ -20,6 +24,47 @@ test("lifecycle replay keeps sessions isolated", () => {
 	evictSlot("a");
 	assert.equal(getSnapshot("a").tasks.length, 0);
 	assert.equal(getSnapshot("b").tasks.length, 1);
+});
+
+test("foreground session starts load shared global settings across projects and reload without sharing task truth", async (t) => {
+	const root = mkdtempSync(join(tmpdir(), "tasks-lifecycle-"));
+	const agent = join(root, "agent");
+	const originalAgent = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agent;
+	t.after(() => {
+		if (originalAgent === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgent;
+		rmSync(root, { recursive: true, force: true });
+	});
+	const handlers = new Map<string, Function>();
+	const configs: TaskDisplayConfig[] = [];
+	registerLifecycle({ on: (name: string, handler: Function) => handlers.set(name, handler) } as any, {
+		setConfig: (config) => { configs.push(config); }, refresh() {}, dispose() {},
+	});
+	const contexts = ["a", "b"].map((id, index) => {
+		const cwd = join(root, id);
+		mkdirSync(join(cwd, ".pi"), { recursive: true });
+		writeFileSync(join(cwd, ".pi", "tasks-config.json"), JSON.stringify({ maxVisible: index + 1 }));
+		return {
+			...ctx(id, [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(index + 1)], 1) }]),
+			cwd, mode: "tui", ui: { notify() {} },
+		};
+	});
+	saveGlobalTasksConfig({ showAll: true, maxVisible: 30 });
+	for (const context of contexts) await handlers.get("session_start")!({ reason: "startup" }, context);
+	assert.deepEqual(configs, Array.from({ length: 2 }, () => ({ ...DEFAULT_TASKS_CONFIG, showAll: true, maxVisible: 30 })));
+	saveGlobalTasksConfig({ showAll: false, maxVisible: 20 });
+	// Already-applied configs remain cached until another session_start, including /reload.
+	assert.equal(configs[0].maxVisible, 30);
+	for (const reason of ["reload", "new", "resume", "fork"]) {
+		await handlers.get("session_start")!({ reason }, contexts[0]);
+		assert.deepEqual(configs.at(-1), { ...DEFAULT_TASKS_CONFIG, maxVisible: 20 });
+	}
+	assert.equal(getSnapshot("a").tasks[0]?.id, 1);
+	assert.equal(getSnapshot("b").tasks[0]?.id, 2);
+	for (const [index, context] of contexts.entries()) {
+		assert.equal(readFileSync(join(context.cwd, ".pi", "tasks-config.json"), "utf8"), JSON.stringify({ maxVisible: index + 1 }));
+	}
 });
 
 test("human edit synchronization is one-shot per revision", () => {

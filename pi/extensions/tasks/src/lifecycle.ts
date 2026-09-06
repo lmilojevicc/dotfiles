@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadTasksConfig, type TaskDisplayConfig } from "./config/tasks-config.js";
+import { loadGlobalTasksConfig, type TaskDisplayConfig } from "./config/tasks-config.js";
 import { progress } from "./ui/format.js";
 import { taskActivity } from "./state/activity.js";
 import { replayBranch, SYNC_MESSAGE } from "./state/replay.js";
@@ -74,7 +74,7 @@ export function registerLifecycle(pi: ExtensionAPI, ui: LifecycleUI): void {
 		if (ctx.mode === "tui") setForeground(id);
 		if (id !== getForeground()) return;
 		ui.bind?.(ctx.ui);
-		ui.setConfig?.(loadTasksConfig(ctx.cwd));
+		ui.setConfig?.(loadGlobalTasksConfig());
 		ui.refresh(true);
 		const warning = takeMigrationWarning(id);
 		if (warning) ctx.ui.notify(warning, "warning");

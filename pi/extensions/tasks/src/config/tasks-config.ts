@@ -9,7 +9,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { normalizeTaskGlyphsConfig, type TaskGlyphsConfig } from "../ui/task-glyphs.js";
 import { isTaskSortOrder, type TaskSortOrder } from "../ui/task-sort.js";
@@ -41,6 +41,7 @@ const isMissing = (error: unknown): error is NodeJS.ErrnoException =>
 
 function readObject(path: string): JsonObject {
 	try {
+		assertSafeExistingDestination(path);
 		const value: unknown = JSON.parse(readFileSync(path, "utf8"));
 		return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
 	} catch {
@@ -94,89 +95,59 @@ export function loadGlobalTasksConfig(agentDir = getAgentDir()): TaskDisplayConf
 	return normalizeTasksConfig(readObject(join(agentDir, "tasks-config.json")));
 }
 
-export function loadTasksConfig(cwd: string, agentDir = getAgentDir()): TaskDisplayConfig {
-	const global = normalizeTasksConfig(readObject(join(agentDir, "tasks-config.json")));
-	const project = normalizeLayer(readObject(join(cwd, ".pi", "tasks-config.json")));
-	return { ...global, ...project, glyphs: { ...global.glyphs, ...project.glyphs } };
-}
-
-const differs = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
-
-function assertContained(projectRoot: string, destination: string): void {
-	const pathFromRoot = relative(projectRoot, destination);
-	if (isAbsolute(pathFromRoot) || pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`)) {
-		throw new Error(`Refusing to save task config outside the project root: ${destination}`);
+function assertSafeDirectory(canonicalDirectory: string): void {
+	if (!lstatSync(canonicalDirectory).isDirectory() || realpathSync(canonicalDirectory) !== canonicalDirectory) {
+		throw new Error(`Task config parent is no longer the intended directory: ${canonicalDirectory}`);
 	}
 }
 
-function assertSafeProjectDirectory(projectRoot: string, projectDirectory: string): string {
-	let stats;
+function assertSafeExistingDestination(path: string): void {
 	try {
-		stats = lstatSync(projectDirectory);
-	} catch (error) {
-		if (!isMissing(error)) throw error;
-		mkdirSync(projectDirectory);
-		stats = lstatSync(projectDirectory);
-	}
-	if (stats.isSymbolicLink()) throw new Error(`Refusing to save task config through symlinked directory: ${projectDirectory}`);
-	if (!stats.isDirectory()) throw new Error(`Task config parent is not a directory: ${projectDirectory}`);
-	const canonicalDirectory = realpathSync(projectDirectory);
-	assertContained(projectRoot, canonicalDirectory);
-	return canonicalDirectory;
-}
-
-function assertSafeExistingDestination(projectRoot: string, path: string): void {
-	try {
-		assertContained(projectRoot, realpathSync(path));
+		const stats = lstatSync(path);
+		if (stats.isSymbolicLink()) throw new Error(`Refusing to use symlinked task config: ${path}`);
+		if (!stats.isFile()) throw new Error(`Task config is not a regular file: ${path}`);
 	} catch (error) {
 		if (!isMissing(error)) throw error;
 	}
 }
 
-/** Save display-only project overrides atomically while retaining unrelated upstream keys. */
-export function saveTasksConfig(config: TaskDisplayConfig, cwd: string, agentDir = getAgentDir()): void {
-	const projectRoot = realpathSync(cwd);
-	const projectDirectory = join(projectRoot, ".pi");
-	const canonicalDirectory = assertSafeProjectDirectory(projectRoot, projectDirectory);
+/** Merge display settings into the global file atomically, retaining unrelated keys. */
+export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentDir = getAgentDir()): void {
+	mkdirSync(agentDir, { recursive: true });
+	// A deliberately symlinked agent directory is supported; writes stay at its canonical location.
+	const canonicalDirectory = realpathSync(agentDir);
+	assertSafeDirectory(canonicalDirectory);
 	const path = join(canonicalDirectory, "tasks-config.json");
-	assertSafeExistingDestination(projectRoot, path);
+	assertSafeExistingDestination(path);
 
-	const globalRaw = readObject(join(agentDir, "tasks-config.json"));
-	const global = normalizeTasksConfig(globalRaw);
 	const existing = readExistingObject(path);
 	const next: JsonObject = { ...existing };
 	for (const key of DISPLAY_KEYS) {
-		if (key === "glyphs") continue;
-		if (differs(config[key], global[key])) next[key] = config[key];
-		else delete next[key];
+		if (config[key] === undefined) continue;
+		next[key] = key === "glyphs" ? { ...objectValue(existing.glyphs), ...config.glyphs } : config[key];
 	}
-	const existingGlyphs = objectValue(existing.glyphs);
-	const globalGlyphs = normalizeTaskGlyphsConfig(globalRaw.glyphs);
-	const glyphs: JsonObject = { ...existingGlyphs };
-	for (const [name, value] of Object.entries(config.glyphs)) {
-		if (differs(value, (globalGlyphs as Record<string, unknown>)[name])) glyphs[name] = value;
-		else delete glyphs[name];
-	}
-	if (Object.keys(glyphs).length) next.glyphs = glyphs;
-	else delete next.glyphs;
 
-	assertSafeProjectDirectory(projectRoot, projectDirectory);
-	assertSafeExistingDestination(projectRoot, path);
+	assertSafeDirectory(canonicalDirectory);
+	assertSafeExistingDestination(path);
 	const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
 	let fd: number | undefined;
+	let created = false;
 	try {
 		fd = openSync(temporary, "wx", 0o600);
+		created = true;
 		writeFileSync(fd, JSON.stringify(next, null, 2));
 		closeSync(fd);
 		fd = undefined;
-		assertSafeProjectDirectory(projectRoot, projectDirectory);
-		assertSafeExistingDestination(projectRoot, path);
+		assertSafeDirectory(canonicalDirectory);
+		assertSafeExistingDestination(path);
 		renameSync(temporary, path);
 	} catch (error) {
 		if (fd !== undefined) {
 			try { closeSync(fd); } catch {}
 		}
-		try { unlinkSync(temporary); } catch {}
+		if (created) {
+			try { unlinkSync(temporary); } catch {}
+		}
 		throw error;
 	}
 }

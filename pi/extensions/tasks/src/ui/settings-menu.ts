@@ -1,7 +1,7 @@
 /** Settings surface adapted from @tintinweb/pi-tasks 0.9.0. */
 import { getSettingsListTheme, type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
-import { saveTasksConfig, type TaskDisplayConfig } from "../config/tasks-config.js";
+import { saveGlobalTasksConfig, type TaskDisplayConfig } from "../config/tasks-config.js";
 import { BUILT_IN_SORT_ORDERS } from "./task-sort.js";
 
 export const DISPLAY_SETTING_ITEMS = [
@@ -30,8 +30,8 @@ export const DISPLAY_SETTING_ITEMS = [
 export async function openSettingsMenu(
 	ui: Pick<ExtensionUIContext, "custom" | "notify">,
 	config: TaskDisplayConfig,
-	cwd: string,
 	onChange: (config: TaskDisplayConfig) => void,
+	agentDir?: string,
 ): Promise<void> {
 	await ui.custom<void>((_tui, theme, _keybindings, done) => {
 		const customSort = Array.isArray(config.sortOrder);
@@ -49,8 +49,10 @@ export async function openSettingsMenu(
 			else if (id === "maxVisible") config.maxVisible = Number(value);
 			else if (id === "sortOrder") config.sortOrder = value as TaskDisplayConfig["sortOrder"];
 			else if (id === "hiddenAt") config.hiddenAt = value as "top" | "bottom";
+			else return;
 			try {
-				saveTasksConfig(config, cwd);
+				// Save only the changed row, not stale preferences from another running session.
+				saveGlobalTasksConfig({ [id]: config[id] }, agentDir);
 				onChange(config);
 			} catch (error) {
 				Object.assign(config, previous);
@@ -68,7 +70,8 @@ export async function openSettingsMenu(
 			handleInput(data: string): void { list.handleInput(data); }
 		}
 		const panel = new SettingsPanel();
-		panel.addChild(new Text(theme.bold(theme.fg("accent", "⚙  Task Settings")), 0, 0));
+		panel.addChild(new Text(theme.bold(theme.fg("accent", "⚙  Global Task Settings")), 0, 0));
+		panel.addChild(new Text(theme.fg("dim", "Saved immediately for all projects. Other sessions pick up changes on start or /reload."), 0, 0));
 		panel.addChild(new Spacer(1));
 		panel.addChild(list);
 		return panel;

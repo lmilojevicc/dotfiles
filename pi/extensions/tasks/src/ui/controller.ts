@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { loadTasksConfig, type TaskDisplayConfig } from "../config/tasks-config.js";
+import { loadGlobalTasksConfig, type TaskDisplayConfig } from "../config/tasks-config.js";
 import { validateSnapshot } from "../domain/invariants.js";
 import { reduceTasks } from "../domain/reducer.js";
 import type { ReduceResult, Task, TaskSnapshot, TodoInput } from "../domain/types.js";
@@ -77,7 +77,7 @@ export async function openTaskManager(
 		return;
 	}
 	const hooks = hooksFrom(hookValue);
-	let config = hooks.getConfig?.() ?? loadTasksConfig(ctx.cwd ?? process.cwd());
+	let config = hooks.getConfig?.() ?? loadGlobalTasksConfig();
 	const mutate = (input: TodoInput) => {
 		const result = applyHumanMutation(pi, ctx, input);
 		if (result.error) ctx.ui.notify(result.error, "error");
@@ -151,7 +151,7 @@ export async function openTaskManager(
 		} else if (choice.startsWith("Clear all")) {
 			if (await ctx.ui.confirm("Clear all tasks", `Delete all ${tasks.length} tasks?`)) mutate({ action: "clear" });
 		} else if (choice === "Settings") {
-			await openSettingsMenu(ctx.ui, config, ctx.cwd ?? process.cwd(), (updated) => {
+			await openSettingsMenu(ctx.ui, config, (updated) => {
 				config = updated;
 				if (hooks.setConfig) hooks.setConfig(updated);
 				else hooks.refresh();
