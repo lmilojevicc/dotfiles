@@ -8,11 +8,11 @@ import {
 
 export const DEFAULT_READER_WIDTH = 110;
 export const READER_STATE_ENTRY = "dotfiles.reader-mode";
-export const SUPPORTED_PI_VERSION = "0.84.2";
+export const SUPPORTED_PI_VERSION = "0.85.1";
 const PATCH_KEY = Symbol.for("dotfiles.reader-mode.layout-patch.v1");
 const LATE_INSTALL_WARNING_TITLE = "Reader mode needs a TUI remount";
 const LATE_INSTALL_WARNING_MESSAGE =
-	"Automatic remounting is unsafe in Pi 0.84.2. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.";
+	`Automatic remounting is unsafe in Pi ${SUPPORTED_PI_VERSION}. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.`;
 
 type ReaderState = {
 	enabled: boolean;
@@ -224,7 +224,7 @@ export function installReaderPatch(owner: symbol, piVersion: string = VERSION): 
 	) {
 		return {
 			ok: false,
-			error: "Reader mode disabled: Pi interactive layout internals no longer match the guarded 0.84.2 seam",
+			error: `Reader mode disabled: Pi interactive layout internals no longer match the guarded ${SUPPORTED_PI_VERSION} seam`,
 		};
 	}
 
@@ -257,7 +257,7 @@ export function installReaderPatch(owner: symbol, piVersion: string = VERSION): 
 			!components.every(isRenderComponent) ||
 			typeof tui?.addChild !== "function"
 		) {
-			failLayout(record, "Pi interactive layout internals no longer match the guarded 0.84.2 seam");
+			failLayout(record, `Pi interactive layout internals no longer match the guarded ${SUPPORTED_PI_VERSION} seam`);
 			originalMount.call(this, tui, components);
 			return;
 		}

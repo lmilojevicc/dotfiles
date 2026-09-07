@@ -1,6 +1,6 @@
 # Experimental Reader Mode
 
-Constrains Pi's complete interactive session UI to one horizontally centered column. The transcript, pending messages, status, widgets, editor, and footer share the same width. Overlays remain terminal-relative, and fullscreen's primary `ScrollView` remains full-terminal-width so its scrollbar stays at the terminal edge.
+Constrains Pi's seven interactive content regions to one horizontally centered column. The transcript, pending messages, status, widgets, editor, and footer share the same width. Overlays and renderer-owned fullscreen chrome (scrollbar, search controls, and jump-to-latest label) remain terminal-relative. Fullscreen's primary `ScrollView` remains full-terminal-width so its scrollbar stays at the terminal edge.
 
 The default maximum is 110 columns. Terminals at or below the maximum render normally with no margins. When the unused width is odd, the right margin is one column wider.
 
@@ -13,17 +13,19 @@ The default maximum is 110 columns. Terminals at or below the maximum render nor
 
 Invalid or compound arguments do not change state. State is appended as Pi custom session entries (`dotfiles.reader-mode`) and restored from the latest entry on session start, reload, switch, or resume after the extension has observed the interactive root layout. The extension does not create a global preferences file.
 
-A first installation through `/reload` happens after Pi has already mounted that layout, and Pi 0.84.2 exposes no safe way for the extension to remount it. Until a patched mount is observed, `/reader on`, an enabling `/reader` toggle, and `/reader <width>` show an acknowledgement dialog on every attempt. Confirming, dismissing, or letting it time out does not change or persist state, wrap existing roots, request a render, or trigger a private action. Restart Pi or switch TUI mode in `/settings`, then rerun the desired `/reader` command. Before observation, `/reader off` is an idempotent silent no-op because reader mode is already off; non-TUI and no-UI command contexts are also inert.
+A first installation through `/reload` happens after Pi has already mounted that layout, and Pi 0.85.1 exposes no safe way for the extension to remount it. Until a patched mount is observed, `/reader on`, an enabling `/reader` toggle, and `/reader <width>` show an acknowledgement dialog on every attempt. Confirming, dismissing, or letting it time out does not change or persist state, wrap existing roots, request a render, or trigger a private action. Restart Pi or switch TUI mode in `/settings`, then rerun the desired `/reader` command. Before observation, `/reader off` is an idempotent silent no-op because reader mode is already off; non-TUI and no-UI command contexts are also inert.
 
 ## Private-internals warning
 
-**This is an experimental, private-internals implementation.** Pi 0.84.2 has no supported root content-width API. The extension therefore patches the non-public `InteractiveMode.prototype.mountInteractiveTui` method and wraps the seven root region components' `render(width)` methods by identity. It expects the layout built in `dist/modes/interactive/interactive-mode.js` around the fullscreen `ScrollView`/dock and regular seven-region mount.
+**This is an experimental, private-internals implementation supporting exactly Pi 0.85.1.** Other versions, including 0.84.2, are rejected. Pi 0.85.1 has no supported root content-width API. The extension therefore patches the non-public `InteractiveMode.prototype.mountInteractiveTui` method and wraps the seven root region components' `render(width)` methods by identity. It expects the layout built in `dist/modes/interactive/interactive-mode.js` around the fullscreen `ScrollView`/dock and regular seven-region mount.
 
 The patch checks Pi's public `VERSION` before changing the prototype, then checks the method and mounted layout shapes as defense in depth. Centering uses the renderer terminal width, not the transcript's scrollbar-adjusted width, so fullscreen `auto`, `always`, and `hidden` scrollbar layouts share a left edge. Rendered margins are inserted after leading OSC 133 A/B/C prompt markers, and exact empty image-reservation rows remain empty.
 
 A process-global Symbol prevents duplicate wrapping and method identities are restored on final session shutdown when Pi's lifecycle permits. Pi reuses its mounted component tree during extension reload and session replacement, so an accepted runtime's non-final shutdown leaves the patch installed but disabled and explicitly releases ownership for the next extension runtime to reclaim. Reload of an extension that has already observed the layout remains supported, as do renderer mode switches for that same `InteractiveMode` object.
 
 **Intentional limitation:** exactly one `InteractiveMode` instance is supported per process. If a genuinely second instance mounts, reader mode fails closed process-wide: all wrapped render methods and the original prototype method are restored, the second instance is left unpatched, and a small permanent tombstone prevents any extension runtime from reclaiming the patch until Pi restarts. Commands and lifecycle handlers then remain inert and report a bounded error without changing session state. This explicit fail-safe avoids process-global state crossing between concurrent sessions. If the guarded seam, version, ownership, or layout changes, reader mode stays off and reports an error rather than applying a partial Markdown/editor-only layout.
+
+**Known mouse limitation:** reader mode shifts rendered content but does not translate component mouse coordinates. Fullscreen clicks and drags within centered content can be misaligned or trigger rendering at the wrong width. This is a pre-existing limitation, not a proven 0.85.1 regression; fullscreen mouse support is not claimed. Use keyboard controls or turn reader mode off for mouse interaction.
 
 A full Pi restart is recommended after changing this package. Run unit/contract tests and the PATH-discovered installed-host smoke check with:
 
@@ -32,4 +34,8 @@ npm test
 npm run test:real-pi
 ```
 
-The host smoke requires a Pi 0.84.2 executable on `PATH`; set `PI_BIN=/path/to/pi` when it is installed elsewhere. It resolves the package from that executable and does not assume a Homebrew path.
+The host smoke requires exactly Pi 0.85.1 on `PATH` (or `PI_BIN=/path/to/pi`), a Node version supporting `registerHooks` and type stripping, Python 3 with POSIX PTY support, and `fd`/`rg` on `PATH` (to avoid managed-tool downloads). Missing prerequisites fail rather than skip. It resolves the installed package from the executable without assuming a Homebrew path; no host packages are installed.
+
+The smoke checks real SDK containers/fullscreen layout at widths 80, 110, 111, 140, and 141 with all three scrollbar modes. It also launches the actual bundled CLI in a 140×40 PTY, verifies the loader imports the patched live host class and seven real roots, checks centered editor/footer rendering and both working-indicator placements, then exercises `/settings` mode switching, `/reload`, off, and quit from both regular and fullscreen startup. Each CLI run is offline and timeout-bounded, with temporary home/cwd/agent/settings/session directories, no credentials or model prompts, and only explicit reader/probe extension paths; auto-discovered resources and context files are disabled and temporary data is cleaned up.
+
+This is startup/layout coverage, not an exhaustive terminal interaction certification. Live resize, overlay interaction, scroll/search/prompt-navigation gestures, image display, and model streaming remain untested in the PTY; OSC markers and image reservation rows retain unit regression coverage.

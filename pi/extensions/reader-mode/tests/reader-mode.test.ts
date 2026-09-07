@@ -4,6 +4,7 @@ import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import readerModeExtension, {
 	DEFAULT_READER_WIDTH,
 	READER_STATE_ENTRY,
+	SUPPORTED_PI_VERSION,
 	installReaderPatch,
 	parseReaderCommand,
 } from "../index.ts";
@@ -182,7 +183,7 @@ test("late install confirm, cancel, and timeout acknowledgements are inert until
 	for (const input of ["on", "on", "on", "", "90"]) await runtime.reader(input);
 	assert.deepEqual(runtime.confirmations, Array.from({ length: 5 }, () => ({
 		title: "Reader mode needs a TUI remount",
-		message: "Automatic remounting is unsafe in Pi 0.84.2. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.",
+		message: `Automatic remounting is unsafe in Pi ${SUPPORTED_PI_VERSION}. Restart Pi or switch TUI mode in /settings, then rerun the desired /reader command.`,
 		options: { timeout: 15_000 },
 	})));
 	assert.deepEqual(runtime.appended, [], "acknowledgements never persist reader state");
@@ -455,15 +456,17 @@ test("repeat mounts for the same InteractiveMode update renderer ownership", () 
 
 test("unsupported public Pi version is rejected before prototype mutation", () => {
 	const originalMount = InteractiveMode.prototype.mountInteractiveTui;
-	const result = installReaderPatch(Symbol("unsupported-version-test"), "0.85.0");
-	assert.deepEqual(result, {
-		ok: false,
-		error: "Reader mode disabled: Pi 0.85.0 is unsupported; expected 0.84.2",
-	});
-	assert.equal(InteractiveMode.prototype.mountInteractiveTui, originalMount);
+	for (const version of ["0.84.2", "0.85.0", "0.85.2", "0.86.0", "0.85.1-dev"]) {
+		const result = installReaderPatch(Symbol("unsupported-version-test"), version);
+		assert.deepEqual(result, {
+			ok: false,
+			error: `Reader mode disabled: Pi ${version} is unsupported; expected ${SUPPORTED_PI_VERSION}`,
+		});
+		assert.equal(InteractiveMode.prototype.mountInteractiveTui, originalMount);
+	}
 });
 
-test("version/shape mismatch fails closed instead of partially centering", () => {
+test("unsupported instance version fails closed instead of partially centering", () => {
 	const handlers = new Map<string, Handler>();
 	const commands = new Map<string, { handler: Handler }>();
 	readerModeExtension({
@@ -488,6 +491,56 @@ test("version/shape mismatch fails closed instead of partially centering", () =>
 	assert.equal(notifications.length, 2, "session start and command both report the mismatch");
 	assert.ok(notifications.every((message) => message.startsWith("Reader mode disabled:")));
 	handlers.get("session_shutdown")?.({ reason: "quit" }, ctx);
+});
+
+test("malformed prototype methods reject installation without mutation", () => {
+	const prototype = InteractiveMode.prototype as any;
+	for (const [name, malformed] of [
+		["init", undefined],
+		["switchTuiMode", undefined],
+		["mountInteractiveTui", undefined],
+		["mountInteractiveTui", function wrongArity(_tui: unknown) {}],
+	] as const) {
+		const original = prototype[name];
+		try {
+			prototype[name] = malformed;
+			const beforeMount = prototype.mountInteractiveTui;
+			assert.deepEqual(installReaderPatch(Symbol("malformed-method")), {
+				ok: false,
+				error: `Reader mode disabled: Pi interactive layout internals no longer match the guarded ${SUPPORTED_PI_VERSION} seam`,
+			});
+			assert.equal(prototype.mountInteractiveTui, beforeMount);
+		} finally {
+			prototype[name] = original;
+		}
+	}
+});
+
+test("malformed mounted layouts leave every root unpatched and commands inert", async () => {
+	for (const shape of ["not-array", "six-roots", "eight-roots", "missing-render", "missing-addChild"]) {
+		const runtime = createExtensionRuntime();
+		const components: any[] = Array.from({ length: 7 }, () => ({ render: () => ["plain"] }));
+		if (shape === "six-roots") components.pop();
+		if (shape === "eight-roots") components.push({ render: () => ["extra"] });
+		if (shape === "missing-render") components[3] = {};
+		const originals = components.map((component) => component.render);
+		const roots = shape === "not-array" ? new Set(components) : components;
+		const renderer = shape === "missing-addChild" ? {} : { addChild() {} };
+		try {
+			const mount = () => (new InteractiveMode() as any).mountInteractiveTui(renderer, roots);
+			// The guard still delegates to the host: host errors must not be swallowed.
+			if (shape === "missing-addChild") assert.throws(mount, TypeError);
+			else mount();
+			runtime.start();
+			await runtime.reader("on");
+			assert.deepEqual(components.map((component) => component.render), originals, shape);
+			assert.deepEqual(runtime.appended, [], shape);
+			assert.equal(runtime.notifications.length, 2, shape);
+			assert.ok(runtime.notifications.every(({ message }) => message.includes(`guarded ${SUPPORTED_PI_VERSION} seam`)));
+		} finally {
+			runtime.shutdown();
+		}
+	}
 });
 
 test("a second InteractiveMode permanently tombstones reader mode without owner bookkeeping", () => {

@@ -1,7 +1,7 @@
-export const VERSION = "0.84.2";
+export const VERSION = "0.85.1";
 
 export class InteractiveMode {
-	constructor(version = "0.84.2") {
+	constructor(version = VERSION) {
 		this.version = version;
 	}
 
