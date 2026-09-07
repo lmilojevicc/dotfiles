@@ -1,5 +1,6 @@
 import { registerHooks } from "node:module";
 
+// Unit tests need no installed SDK; production normalization is extension-local.
 registerHooks({
 	resolve(specifier, context, nextResolve) {
 		if (specifier === "@earendil-works/pi-tui") {

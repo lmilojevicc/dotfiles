@@ -74,6 +74,16 @@ Errors never include the key, identity fields, provider response bodies, or raw 
 
 Long adjacent text/reasoning deltas are adaptively coalesced before Pi renders them. The burst threshold is measured in UTF-16 code units (JavaScript string length), not wire bytes, to avoid repeated encoding work. Parser yields provide a tested cooperative per-slice bound for a responsive or moderately slow consumer; they are not hard global backpressure because Pi's EventStream exposes no capacity or producer acknowledgement. Extremely slow/paused consumers and Pi's full-message Markdown rebuild remain Pi-core long-turn limits.
 
+## History handoff and safe diagnostics
+
+Outgoing history uses the extension-local `src/pi-0851-transform-messages.ts` compatibility adapter with the selected provider/API/model identity; stored history is not edited. It preserves the audited Pi 0.85.1 `transformMessages` behavior, with source provenance/hash in the adapter and the upstream MIT notice in `LICENSE.pi-normalization`. Pi 0.85.1's production loader aliases the Pi AI root in a way that breaks this helper's public subpath import, and the root does not export the helper. The adapter avoids that runtime subpath import without installation-path lookup, dynamic module discovery, or global loader changes. Real-SDK equivalence tests guard its behavior on upgrades. Foreign thinking becomes text (blank/redacted thinking is dropped), and foreign tool IDs use deterministic, bounded hash IDs with paired results. Valid same-target reasoning and tool IDs remain unchanged. Missing results use Pi's explicit `No result provided` error results before the next turn or at end-of-history.
+
+Projection discards failed/aborted turns, empty assistants, opaque/blank reasoning that the gateway cannot represent, and orphan/duplicate/late tool results, including results of discarded failed calls. It does not manufacture successful calls or repair arbitrary malformed history (such as reused/duplicate call IDs).
+
+HTTP and in-band stream 400s report only recognized fixed categories: `context_length_exceeded`, `tool_pairing_or_id`, `invalid_reasoning`, or `invalid_parameter`. Only the known context category triggers Pi's overflow recognition; unknown failures remain status-only. Successfully parsed embedded JSON is inspected through the same field allowlist as structured errors, never via its raw serialization or wrapper prose. Unknown fields (including paths/request IDs nested under `detail`) cannot contribute category tokens; recognized `detail` strings remain supported. Diagnostic inspection is bounded (64 KiB HTTP body, one-second read deadline, 16 KiB inspected text, 64 visits, container nesting depth 4 with root depth 0); read failure retains HTTP status, and caller cancellation still wins. No raw server messages, codes, paths, IDs, headers, or bodies are appended. Quota remains terminal; transient status/network errors retain their retry-recognizable messages.
+
+This is defensive portability hardening, not a demonstrated fix for the original in-band 400. Separate synthetic Contributor baselines at 1,024 output tokens / low effort succeeded with fresh text, Codex text history, and Codex thinking plus a paired composite tool ID **before** normalization. The original cause, longer histories, the default output budget, and other upstream/model validation remain unverified.
+
 ## Catalogue and protocol caveat
 
 The extension awaits Command Code's official unauthenticated `GET /provider/v1/models` endpoint **before registering the provider** at startup (including `/reload` and new extension instances). Requests reject redirects and have a three-second timeout and a 256 KiB response limit. A valid live list is authoritative for IDs, names, order, context windows, and removals. Startup HTTP, network, timeout, oversized, or schema failures silently use a 59-model fallback: the original 57-model membership captured from Command Code 1.31.0 on 2026-08-21 plus only `meta/muse-spark-1.3` and `meta/muse-spark-1.3-contributor`. Both additions have audited membership (`Sr`) and exact 1,048,576-token context literals (`Tr`) in official CLI 1.50.0's `dist/cli.mjs`, with the thinking snapshot below applied. They remain text-only with the conservative 64,000-token gateway output default and explicitly unknown prices. A later successful live list still removes any omitted fallback IDs.
@@ -113,7 +123,9 @@ cd pi/extensions/command-code
 npm test
 ```
 
-`npm test` uses Node's built-in test runner and Pi peer stubs. Run the catalogue/registration/refresh integration tests against already-installed real Pi peers too:
+`npm test` uses Node's built-in test runner, root Pi peer stubs, and the production local normalization adapter. It needs no installed SDK or `PI_COMMAND_CODE_TEST_SDK` override.
+
+Run the SDK suite against already-installed real Pi peers:
 
 ```sh
 # If Pi peers are already resolvable locally:
@@ -122,7 +134,11 @@ npm run test:sdk
 PI_COMMAND_CODE_TEST_SDK=/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent npm run test:sdk
 ```
 
-The SDK suite tests Pi's actual thinking helpers, payload serialization, native refresh/generation contracts, and provider composition. Both suites mock network requests and use no real credentials or inference; neither installs dependencies.
+The SDK suite directly compares the local adapter against the actual public `@earendil-works/pi-ai/api/transform-messages` helper (resolved only in test context), including immutable history, identity/signatures, tool ID/result mapping, synthetic missing results and image degradation. It also tests actual thinking helpers, stream request capture, safe HTTP/in-band diagnostics, overflow/retry recognition, payload serialization, native refresh/generation contracts, and provider composition.
+
+`npm run test:sdk` additionally runs `npm run test:production-loader` in a separate process **without** the custom SDK test resolver. This offline test uses installed Pi 0.85.1's actual `loadExtensions`, production aliases and Jiti, awaits factory discovery, and verifies native provider registration and the exact synthetic model. Jiti filesystem and Node compile caches are disabled. You can run it separately with the same SDK-directory override. The loader test intentionally asserts Pi 0.85.1: re-audit it and adapter equivalence before accepting a different Pi version. It covers the installed unbundled Node runtime, not every bundled/binary distribution.
+
+All suites mock service requests and use no real credentials or inference; none installs dependencies. The SDK override locates only the test host and is never consulted by production extension code.
 
 ## Optional paid smoke test
 

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { transformMessagesPi0851 } from "./pi-0851-transform-messages.ts";
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { GATEWAY_DEFAULT_MAX_TOKENS } from "./catalogue.ts";
 
@@ -45,26 +47,42 @@ function wireUserBlocks(
   });
 }
 
-export function convertMessages(context: Context, supportsImages = false): unknown[] {
+function portableToolCallId(id: string): string {
+  // Hash the whole ID, not a sanitized/truncated prefix (Responses IDs can be
+  // composite and very long). 192 digest bits keep IDs bounded and portable.
+  return `call_${createHash("sha256").update(id).digest("hex").slice(0, 48)}`;
+}
+
+export function convertMessages(context: Context, model: Model<string>): unknown[] {
   const output: unknown[] = [];
-  for (const message of context.messages) {
+  const pendingToolIds = new Set<string>();
+  // The versioned Pi compatibility adapter preserves source history, downgrades
+  // foreign thinking, drops failed turns and inserts missing error results.
+  for (const message of transformMessagesPi0851(context.messages, model, portableToolCallId)) {
     if (message.role === "user") {
+      pendingToolIds.clear();
       output.push({
         role: "user",
-        content: typeof message.content === "string" ? [{ type: "text", text: message.content }] : wireUserBlocks(message.content, supportsImages),
+        content: typeof message.content === "string" ? [{ type: "text", text: message.content }] : wireUserBlocks(message.content, model.input.includes("image")),
       });
     } else if (message.role === "assistant") {
-      output.push({
-        role: "assistant",
-        content: message.content.map((part) => {
-          if (part.type === "thinking") return { type: "reasoning", text: part.thinking };
-          if (part.type === "toolCall") {
-            return { type: "tool-call", toolCallId: part.id, toolName: part.name, input: part.arguments };
-          }
-          return { type: "text", text: part.text };
-        }),
-      });
+      pendingToolIds.clear();
+      const content: unknown[] = [];
+      for (const part of message.content) {
+        if (part.type === "thinking") {
+          // The gateway has no encrypted/signature replay field. Never project
+          // opaque redacted content or empty reasoning, even for the same model.
+          if (!part.redacted && part.thinking.trim()) content.push({ type: "reasoning", text: part.thinking });
+        } else if (part.type === "toolCall") {
+          pendingToolIds.add(part.id);
+          content.push({ type: "tool-call", toolCallId: part.id, toolName: part.name, input: part.arguments });
+        } else if (part.text.trim()) content.push({ type: "text", text: part.text });
+      }
+      if (content.length) output.push({ role: "assistant", content });
     } else {
+      // Discard unmatched/duplicate results, including results from omitted
+      // failed calls. Do not invent successful assistant calls to retain them.
+      if (!pendingToolIds.delete(message.toolCallId)) continue;
       output.push({
         role: "tool",
         content: [{
@@ -85,7 +103,7 @@ export function buildPayload(model: Model<string>, context: Context, options: Si
   const maxTokens = Math.max(1, Math.min(options.maxTokens ?? GATEWAY_DEFAULT_MAX_TOKENS, model.maxTokens));
   const params: CommandCodePayload["params"] = {
     model: model.id,
-    messages: convertMessages(context, model.input.includes("image")),
+    messages: convertMessages(context, model),
     tools: (context.tools ?? []).map((tool) => ({
       name: tool.name,
       description: tool.description,

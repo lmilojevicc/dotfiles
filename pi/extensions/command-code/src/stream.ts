@@ -136,19 +136,78 @@ class RetryableCommandCodeError extends SafeCommandCodeError {}
 
 const TERMINAL_ACCOUNT_ERROR = /(?:insufficient[_ -]?quota|quota exceeded|out of (?:budget|credits?)|billing|payment required|subscription limit|usage limit|plan limit|available balance|freeusagelimiterror|gousagelimiterror)/i;
 
-function structuredErrorText(value: unknown, depth = 0): string {
-  if (depth > 4) return "";
-  if (typeof value === "string") return value;
-  if (typeof value !== "object" || value === null) return "";
-  if (Array.isArray(value)) return value.map((item) => structuredErrorText(item, depth + 1)).join(" ");
-  return Object.entries(value as Record<string, unknown>)
-    .filter(([key]) => /^(?:code|type|message|reason|error|detail|status)$/i.test(key))
-    .map(([, item]) => structuredErrorText(item, depth + 1))
-    .join(" ");
+// Inspect only error fields, with a small shared budget for structured and
+// embedded JSON. These strings are classification input, never display output.
+function inspectError(value: unknown): { text: string; status?: number } {
+  const texts: string[] = [];
+  let remaining = 16 * 1024;
+  let nodes = 0;
+  let status: number | undefined;
+  function visit(item: unknown, depth: number): void {
+    if (++nodes > 64 || remaining <= 0) return;
+    if (typeof item === "string") {
+      const text = item.slice(0, remaining);
+      remaining -= text.length;
+      // A partial string may hide either JSON delimiter. Never classify its
+      // serialized fields or wrapper prose as an ordinary plain diagnostic.
+      if (text.length < item.length) return;
+      const start = text.indexOf("{");
+      if (start >= 0) {
+        const end = text.lastIndexOf("}");
+        if (end > start) {
+          try {
+            // Interpret embedded JSON in place, never its serialized values or
+            // wrapper prose. Every parse/visit still consumes the shared budgets.
+            const parsed: unknown = JSON.parse(text.slice(start, end + 1));
+            visit(parsed, depth);
+          } catch { /* opaque */ }
+        }
+        // Incomplete or invalid embedded candidates are also opaque.
+        return;
+      }
+      texts.push(text);
+    } else if (depth > 4) {
+      // Bound container nesting (root depth 0), not scalar leaves. Embedded
+      // objects occupy the same position as equivalent structured objects.
+      return;
+    } else if (Array.isArray(item)) {
+      for (const child of item.slice(0, 64)) visit(child, depth + 1);
+    } else if (typeof item === "object" && item !== null) {
+      const object = item as Record<string, unknown>;
+      const candidate = object.statusCode ?? object.status;
+      if (status === undefined && typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 400 && candidate <= 599) status = candidate;
+      for (const key of ["code", "type", "message", "reason", "error", "detail", "status"]) {
+        if (Object.hasOwn(object, key)) visit(object[key], depth + 1);
+      }
+    }
+  }
+  visit(value, 0);
+  return { text: texts.join(" "), status };
 }
 
 export function isTerminalAccountError(value: unknown): boolean {
-  return TERMINAL_ACCOUNT_ERROR.test(structuredErrorText(value));
+  return TERMINAL_ACCOUNT_ERROR.test(inspectError(value).text);
+}
+
+function badRequestCategory(text: string): string | undefined {
+  // Narrow recognized validation phrases/codes only; generic invalid_request
+  // errors are not evidence of either context overflow or a bad parameter.
+  if (/(?:context[_ ]length[_ ]exceeded|model_context_window_exceeded|prompt is too long|exceeds the context window|exceeds (?:the )?(?:model'?s )?maximum context length|input token count[^\n]{0,80}exceeds the maximum|context window exceeds limit)/i.test(text)
+    && !/(?:rate limit|too many requests|throttl)/i.test(text)) return "context_length_exceeded";
+  if (/(?:invalid_tool_(?:call_)?id|tool_pairing|tool_call_id[^\n]{0,100}(?:invalid|must|match|not found)|tool_use[^\n]{0,100}without[^\n]{0,40}tool_result|tool_calls[^\n]{0,100}must be followed|tool[_ -]result[^\n]{0,100}(?:without|no matching|not found|duplicate))/i.test(text)) return "tool_pairing_or_id";
+  if (/(?:invalid[_ -](?:reasoning|thinking)|invalid signature[^\n]{0,60}(?:reasoning|thinking)|(?:reasoning|thinking)[^\n]{0,100}(?:invalid|must be followed|signature verification failed)|redacted_thinking[^\n]{0,60}(?:invalid|not supported))/i.test(text)) return "invalid_reasoning";
+  if (/(?:invalid_parameter|unsupported_parameter|(?:invalid|unsupported) (?:parameter|argument)|(?:max_tokens|temperature|reasoning_effort)[^\n]{0,80}(?:must be|not supported|invalid))/i.test(text)) return "invalid_parameter";
+  return undefined;
+}
+
+function classifiedError(kind: "request failed" | "stream error", value: unknown, httpStatus?: number): SafeCommandCodeError {
+  const detail = inspectError(value);
+  const status = httpStatus ?? detail.status;
+  if (TERMINAL_ACCOUNT_ERROR.test(detail.text)) return new SafeCommandCodeError("Command Code quota exceeded");
+  const message = `Command Code ${kind}${status ? ` (${status})` : ""}`;
+  if (status === 429 || (status !== undefined && status >= 500)) return new RetryableCommandCodeError(message);
+  const category = status === 400 ? badRequestCategory(detail.text) : undefined;
+  return new SafeCommandCodeError(category ? `${message}: ${category}` : message);
 }
 
 function emptyMessage(model: Model<string>): AssistantMessage {
@@ -351,15 +410,7 @@ function handleEvent(
       break;
     case "error": {
       deltas.flush();
-      const detail = typeof event.error === "object" && event.error !== null ? event.error as Record<string, unknown> : undefined;
-      const status = number(detail?.statusCode ?? event.statusCode);
-      if (isTerminalAccountError(detail ?? event)) {
-        throw new SafeCommandCodeError("Command Code quota exceeded");
-      }
-      if (status === 429 || status >= 500) {
-        throw new RetryableCommandCodeError(`Command Code stream error (${status})`);
-      }
-      throw new SafeCommandCodeError(status ? `Command Code stream error (${status})` : "Command Code stream error");
+      throw classifiedError("stream error", event);
     }
   }
   return burstFlushed;
@@ -371,7 +422,7 @@ async function readWithSignal(
 ): Promise<ReadableStreamReadResult<Uint8Array>> {
   signal.throwIfAborted();
   return await new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason);
+    const abort = () => { signal.removeEventListener("abort", abort); reject(signal.reason); };
     signal.addEventListener("abort", abort, { once: true });
     reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
   });
@@ -476,31 +527,41 @@ async function classifyHttpError(response: Response, signal: AbortSignal): Promi
   const status = response.status;
   let parsed: unknown;
   if (response.body) {
-    const reader = response.body.getReader();
+    const deadline = new AbortController();
+    const deadlineAt = performance.now() + 1_000;
+    const timer = setTimeout(() => deadline.abort(), 1_000);
+    const diagnosticSignal = AbortSignal.any([signal, deadline.signal]);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const decoder = new TextDecoder();
     let text = "";
     let bytes = 0;
+    let reachedEof = false;
     try {
-      while (bytes <= 64 * 1024) {
-        const { done, value } = await readWithSignal(reader, signal);
-        if (done) break;
+      reader = response.body.getReader();
+      // The clock check also bounds an always-ready source of empty chunks,
+      // whose microtasks could otherwise starve the deadline timer.
+      while (bytes <= 64 * 1024 && performance.now() < deadlineAt) {
+        const { done, value } = await readWithSignal(reader, diagnosticSignal);
+        if (done) { reachedEof = true; break; }
         if (value) {
           bytes += value.byteLength;
           if (bytes > 64 * 1024) break;
           text += decoder.decode(value, { stream: true });
         }
       }
-      if (bytes <= 64 * 1024) {
+      if (reachedEof && bytes <= 64 * 1024) {
         text += decoder.decode();
         try { parsed = JSON.parse(text) as unknown; } catch { /* unstructured bodies stay opaque */ }
       }
+    } catch {
+      // Diagnostic I/O must not hide the known HTTP status. Caller abort and
+      // overall timeout still take precedence in displayedError().
     } finally {
-      cancelAndReleaseReader(reader);
+      clearTimeout(timer);
+      if (reader) cancelAndReleaseReader(reader);
     }
   }
-  if (isTerminalAccountError(parsed)) return new SafeCommandCodeError("Command Code quota exceeded");
-  if (status === 429 || status >= 500) return new RetryableCommandCodeError(`Command Code request failed (${status})`);
-  return new SafeCommandCodeError(`Command Code request failed (${status})`);
+  return classifiedError("request failed", parsed, status);
 }
 
 type CommandCodeHeaderFlags = {

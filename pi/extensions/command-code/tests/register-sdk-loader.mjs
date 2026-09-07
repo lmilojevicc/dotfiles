@@ -11,6 +11,6 @@ const peers = new Set(["@earendil-works/pi-ai", "@earendil-works/pi-tui", "@eare
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    return nextResolve(specifier, peers.has(specifier) ? { ...context, parentURL } : context);
+    return nextResolve(specifier, (peers.has(specifier) || specifier.startsWith("@earendil-works/pi-ai/api/") || specifier.startsWith("@earendil-works/pi-ai/utils/")) ? { ...context, parentURL } : context);
   },
 });
