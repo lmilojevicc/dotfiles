@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import codexEnhanced, { __testing } from "../index.ts";
-import { getConfigPath, readAutoResetPreference, writeAutoResetPreference } from "../core.ts";
+import { getConfigPath, readAutoResetPreference, readConfig, writeAutoResetPreference } from "../core.ts";
 import { readResetJournal, resetPaths, withResetAccountLock } from "../resets.ts";
 
 const canonical = { id: "synthetic-model", provider: "openai-codex", api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api" };
@@ -976,3 +976,63 @@ for (const stage of ["opening", "final"] as const) for (const changed of ["marke
 		c.handleInput("escape"); await f.menu;
 	});
 }
+
+test("Fast/Compaction actual Enter/Space toggles once, compact status/footer, short save error, Quota/Resets byte-stable", async (t) => {
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const f = fixture(t); const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx);
+	await until(() => f.component() && f.state.detailReads > 0); await drain();
+	const c = f.component();
+	const quota60 = c.render(60); const quota40 = c.render(40);
+	c.handleInput("tab");
+	const resets60 = c.render(60); const resets40 = c.render(40);
+	c.handleInput("tab"); // Fast
+	const text = (width: number) => c.render(width).join("\n");
+	for (const width of [32, 40, 60, 80]) {
+		const rendered = c.render(width);
+		assert.ok(rendered.every((line: string) => visibleWidth(line) <= width));
+		const frame = rendered.join("\n");
+		assert.match(frame, /Fast mode  off/);
+		assert.equal(frame.match(/Space toggle/g)?.length, 1, "toggle affordance lives only in the footer");
+		assert.match(frame, /Tab next · Esc close/);
+		assert.doesNotMatch(frame, /Enter\/Space|Enter or Space|Globally|persists|Current model/);
+	}
+	c.handleInput("enter"); await drain();
+	assert.equal(readConfig(f.path).fast, true, "Enter toggles exactly once");
+	assert.match(text(60), /Fast mode  on/);
+	assert.equal(f.state.confirmCalls, 0, "no confirm prompts");
+	f.ctx.model = { id: "synthetic-other-model", provider: "other", api: "other" };
+	assert.match(text(40), /Requires a Codex model/);
+	assert.equal(text(40).match(/Requires a Codex model/g)?.length, 1, "one meaningful status only");
+	c.handleInput("space"); await drain();
+	assert.equal(readConfig(f.path).fast, false, "Space toggles exactly once");
+	assert.doesNotMatch(text(40), /Requires a Codex model|Could not save/);
+	f.ctx.model = { ...canonical };
+	c.handleInput("tab"); // Compaction
+	c.handleInput("space"); await drain();
+	assert.equal(readConfig(f.path).compaction.responsesCompactEnabled, true);
+	assert.match(text(40), /Server compaction  on/);
+	f.ctx.model = { id: "synthetic-other-model", provider: "other", api: "other" };
+	assert.match(text(40), /Requires a Codex model/);
+	f.ctx.model = { ...canonical };
+	writeFileSync(`${f.path}.lock`, "synthetic occupied settings lock");
+	c.handleInput("enter"); await drain();
+	assert.equal(readConfig(f.path).compaction.responsesCompactEnabled, true, "failed save keeps the persisted value");
+	const errorFrame = text(40);
+	assert.equal(errorFrame.match(/Could not save setting/g)?.length, 1, "save error is short and singular");
+	assert.match(errorFrame, /Server compaction  on/, "never displays the requested value as saved");
+	assert.doesNotMatch(errorFrame, /ENOENT|EEXIST|Globally/);
+	rmSync(`${f.path}.lock`);
+	c.handleInput("enter"); await drain();
+	assert.equal(readConfig(f.path).compaction.responsesCompactEnabled, false, "toggle retry saves");
+	assert.doesNotMatch(text(40), /Could not save setting/);
+	c.handleInput("shift+tab"); c.handleInput("shift+tab");
+	assert.deepEqual(c.render(60), resets60);
+	assert.deepEqual(c.render(40), resets40);
+	c.handleInput("shift+tab");
+	assert.deepEqual(c.render(60), quota60);
+	assert.deepEqual(c.render(40), quota40);
+	c.handleInput("escape");
+	await menu;
+});

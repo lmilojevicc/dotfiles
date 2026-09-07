@@ -289,7 +289,7 @@ function resetWrappedLines(text: string, width: number): string[] {
 	return wrapTextWithAnsi(text, Math.max(1, width - 2)).map((line) => `  ${line}`);
 }
 
-function packResetControls(controls: string[], width: number): string[] {
+function packControls(controls: string[], width: number): string[] {
 	const lines: string[] = [];
 	for (const control of controls) {
 		const previous = lines.at(-1);
@@ -422,31 +422,31 @@ function formatResetLines(theme: Theme, usageState: UsageState, loading: boolean
 	return lines;
 }
 
-function formatFastLines(theme: Theme, fast: boolean, eligible: boolean): string[] {
-	const value = fast ? theme.fg("accent", "on") : theme.fg("dim", "off");
-	const status = fast
-		? theme.fg(eligible ? "accent" : "dim", `  Globally enabled · subsequent canonical Codex requests without an explicit tier are eligible.${eligible ? "" : " Current model is ineligible."}`)
-		: theme.fg("dim", "  Globally off · outgoing service tier is left untouched.");
+/** One muted rule per tab: abbreviated at narrow widths, never wrapped or dropped. */
+function fitSettingRule(full: string, short: string, width: number): string {
+	if (visibleWidth(full) <= width - 2) return full;
+	return truncateToWidth(short, Math.max(1, width - 2), "…");
+}
+
+function formatFastLines(theme: Theme, fast: boolean, status: string, width: number): string[] {
+	const rule = fast
+		? fitSettingRule("Fast service tier on Codex requests · served tier unobserved", "Fast tier · served tier unobserved", width)
+		: fitSettingRule("Standard processing · service tier untouched", "Standard processing", width);
 	return [
-		`  ${theme.bold("Fast mode")}  ${value}`,
-		status,
-		...(fast ? [theme.fg("dim", "  Served tier is unobserved; the backend may still serve standard processing.")] : []),
-		theme.fg("dim", "  This setting persists globally across Pi sessions; toggling changes all sessions on their next request."),
-		theme.fg("dim", "  Enter or Space to toggle."),
+		`  ${theme.bold("Fast mode")}  ${fast ? theme.fg("accent", "on") : theme.fg("text", "off")}`,
+		`  ${theme.fg("muted", rule)}`,
+		...(status ? ["", ...resetWrappedLines(theme.fg("warning", status), width)] : []),
 	];
 }
 
-function formatCompactionLines(theme: Theme, enabled: boolean, eligible: boolean): string[] {
-	const value = enabled ? theme.fg("accent", "on") : theme.fg("dim", "off");
-	const status = enabled
-		? theme.fg(eligible ? "accent" : "dim", `  Globally enabled · Pi compaction uses OpenAI's encrypted Responses compaction item for canonical Codex sessions.${eligible ? "" : " Current model is ineligible."}`)
-		: theme.fg("dim", "  Globally off · Pi uses its normal local compaction.");
+function formatCompactionLines(theme: Theme, enabled: boolean, status: string, width: number): string[] {
+	const rule = enabled
+		? fitSettingRule("Server-side compaction for Codex sessions · falls back to local", "Codex sessions · local fallback", width)
+		: "Pi compacts sessions locally";
 	return [
-		`  ${theme.bold("Server compaction")}  ${value}`,
-		status,
-		theme.fg("dim", "  The menu is always accessible; this setting only applies to canonical OpenAI Codex Responses models."),
-		theme.fg("dim", "  Remote failures fall back to Pi's local compaction without replacing session history."),
-		theme.fg("dim", "  Enter or Space to toggle."),
+		`  ${theme.bold("Server compaction")}  ${enabled ? theme.fg("accent", "on") : theme.fg("text", "off")}`,
+		`  ${theme.fg("muted", rule)}`,
+		...(status ? ["", ...resetWrappedLines(theme.fg("warning", status), width)] : []),
 	];
 }
 
@@ -497,6 +497,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		let resetAccountKey: string | undefined;
 		let resetArmedAccountKey: string | undefined;
 		let resetArmedAction: string | undefined;
+		let fastMessage: string | undefined;
+		let compactionMessage: string | undefined;
 		let manualInteractionRevision = 0;
 		const cancelManual = () => {
 			manualInteractionRevision += 1;
@@ -758,6 +760,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			activeTab = tab;
 			cancelRecovery();
 			recoveryFailure = undefined;
+			fastMessage = undefined;
+			compactionMessage = undefined;
 			cancelManual();
 			if (tab === "resets" && !resetAccountKey) void ensureResetAccount();
 			render();
@@ -767,13 +771,21 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			activateTab(MENU_TABS[(index + offset + MENU_TABS.length) % MENU_TABS.length] ?? "quota");
 		};
 		const toggleFast = () => {
+			fastMessage = undefined;
 			const result = toggleFastConfig();
-			if ("error" in result) ctx.ui.notify(`Failed to save Fast mode: ${result.error}`, "error");
+			if ("error" in result) {
+				fastMessage = "Could not save setting";
+				ctx.ui.notify(`Failed to save Fast mode: ${result.error}`, "error");
+			}
 			render();
 		};
 		const toggleCompaction = () => {
+			compactionMessage = undefined;
 			const result = toggleResponsesCompactConfig();
-			if ("error" in result) ctx.ui.notify(`Failed to save server compaction: ${result.error}`, "error");
+			if ("error" in result) {
+				compactionMessage = "Could not save setting";
+				ctx.ui.notify(`Failed to save server compaction: ${result.error}`, "error");
+			}
 			render();
 		};
 
@@ -784,11 +796,6 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				if (activeTab === "resets" && visibleWidth(tabs) > width) {
 					tabs = `  ${theme.fg("muted", "Quota / ")}${theme.bold("Resets")}${theme.fg("muted", width >= 35 ? " / Fast / Compaction" : " / Fast / Compact")}`;
 				}
-				const footer = activeTab === "quota"
-					? "  Tab next · Shift+Tab previous · R to refresh · Esc to close"
-					: activeTab === "fast" || activeTab === "compaction"
-						? "  Tab next · Shift+Tab previous · Enter/Space toggle · Esc to close"
-						: "";
 				const config = readConfig();
 				const eligible = isCanonicalCodexModel(ctx.model as RuntimeModel | undefined);
 				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery();
@@ -833,10 +840,13 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 						: activeTab === "resets"
 							? resetBody
 							: activeTab === "fast"
-								? formatFastLines(theme, config.fast, eligible)
-								: formatCompactionLines(theme, config.compaction.responsesCompactEnabled, eligible)),
+								? formatFastLines(theme, config.fast, fastMessage ?? (config.fast && !eligible ? "Requires a Codex model" : ""), width)
+								: formatCompactionLines(theme, config.compaction.responsesCompactEnabled, compactionMessage ?? (config.compaction.responsesCompactEnabled && !eligible ? "Requires a Codex model" : ""), width)),
 					"",
-					...(activeTab === "resets" ? packResetControls(resetFooter, width).map((line) => `  ${theme.fg("muted", line)}`) : [theme.fg("dim", footer)]),
+					...(activeTab === "quota"
+						? [theme.fg("dim", "  Tab next · Shift+Tab previous · R to refresh · Esc to close")]
+						: packControls(activeTab === "resets" ? resetFooter : ["Space toggle", "Tab next · Esc close"], width)
+							.map((line) => `  ${theme.fg("muted", line)}`)),
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 				].map((line) => truncateToWidth(line, width, ""));
 			},
@@ -925,6 +935,8 @@ export const __testing = Object.freeze({
 	openUsage,
 	formatResetLines,
 	formatResetCreditExpiries,
+	formatFastLines,
+	formatCompactionLines,
 	resetWrappedLines,
 });
 
