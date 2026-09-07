@@ -119,8 +119,8 @@ async function settlesPromptly<T>(promise: Promise<T>): Promise<T> {
 }
 
 test("bundled fallback catalogue projects the current audited model set", () => {
-  assert.equal(COMMAND_CODE_MODELS.length, 57);
-  assert.equal(new Set(COMMAND_CODE_MODELS.map((model) => model.id.toLowerCase())).size, 57);
+  assert.equal(COMMAND_CODE_MODELS.length, 59);
+  assert.equal(new Set(COMMAND_CODE_MODELS.map((model) => model.id.toLowerCase())).size, 59);
   assert.ok(COMMAND_CODE_MODELS.every((model) =>
     model.provider === PROVIDER_ID
     && model.api === COMMAND_CODE_API
@@ -145,9 +145,11 @@ test("bundled prices match the audited Command Code snapshot", () => {
     "media, web-search, reasoning, fixed-request, and alternate cache charges",
   ]);
   assert.equal(expectedSnapshotCosts.size, 57);
-  assert.deepEqual([...expectedSnapshotCosts.keys()], COMMAND_CODE_MODELS.map((model) => model.id));
+  const originalModels = COMMAND_CODE_MODELS.slice(0, 57);
+  assert.deepEqual([...expectedSnapshotCosts.keys()], originalModels.map((model) => model.id));
+  assert.deepEqual(COMMAND_CODE_MODELS.slice(57).map((model) => model.id), COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds);
 
-  for (const model of COMMAND_CODE_MODELS) {
+  for (const model of originalModels) {
     const expected = expectedSnapshotCosts.get(model.id);
     assert.ok(expected, `missing expected Command Code price for ${model.id}`);
     assert.deepEqual(
@@ -158,12 +160,23 @@ test("bundled prices match the audited Command Code snapshot", () => {
   }
 });
 
-test("verified free fallback models remain distinct from future unknown-price placeholders", () => {
+test("verified free fallback models remain distinct from audited Muse 1.3 unknown-price placeholders", () => {
   assert.deepEqual(COMMAND_CODE_PRICING_METADATA.verifiedFreeModelIds, [
     "poolside/laguna-s-2.1-free",
     "stealth/ox-alpha",
   ]);
-  assert.deepEqual(COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds, []);
+  assert.deepEqual(COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds, [
+    "meta/muse-spark-1.3",
+    "meta/muse-spark-1.3-contributor",
+  ]);
+  for (const id of COMMAND_CODE_PRICING_METADATA.unknownPriceModelIds) {
+    const model = COMMAND_CODE_MODELS.find((model) => model.id === id);
+    assert.ok(model, `missing audited fallback ${id}`);
+    assert.strictEqual(model.cost, COMMAND_CODE_UNKNOWN_COST);
+    assert.equal(model.contextWindow, 1_048_576);
+    assert.equal(model.maxTokens, GATEWAY_DEFAULT_MAX_TOKENS);
+    assert.deepEqual(model.input, ["text"]);
+  }
 
   const paidModels = COMMAND_CODE_MODELS.filter((model) => Object.values(model.cost).some((cost) => cost > 0));
   assert.equal(paidModels.length, 55);

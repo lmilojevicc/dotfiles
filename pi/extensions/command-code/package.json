@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import ./tests/register-loader.mjs --test tests/*.test.ts"
+    "test": "node --import ./tests/register-loader.mjs --test tests/*.test.ts",
+    "test:sdk": "node --import ./tests/register-sdk-loader.mjs --test tests/*.sdk.ts"
   },
   "pi": {
     "extensions": [

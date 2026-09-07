@@ -1,10 +1,10 @@
 # Command Code provider for Pi
 
-Local Pi extension registering the `command-code` provider with Command Code's live model catalogue and an offline 57-model fallback.
+Local Pi extension registering the `command-code` provider with Command Code's live model catalogue and an offline 59-model fallback.
 
 ## Requirements
 
-- Pi 0.84.2 or compatible
+- Pi with native `Provider.refreshModels` / generation-checked publication support (tested with 0.85.1)
 - Command Code CLI with a compatible `~/.commandcode/auth.json` credential file
 - Node.js 22.19+
 - A Command Code account with access to the selected model
@@ -24,6 +24,29 @@ From the repository root, install the local Pi package:
 ```sh
 pi install ./pi/extensions/command-code
 ```
+
+### Child sessions and isolated extension loading
+
+A parent's provider registration is not inherited by child sessions. Each child selecting a `command-code` model must load this extension itself. Fallback membership helps failed discovery only after the extension loads; it cannot repair a missing provider extension.
+
+When child extension discovery is disabled, explicitly allow the **absolute path** to this extension's `index.ts` through the launcher's supported configuration. For a Pi CLI launcher, Pi supports `--no-extensions -e /absolute/path/to/pi/extensions/command-code/index.ts` together. Replace the example path with the actual installed or worktree entry point; load one copy, not both.
+
+For `pi-subagents`, use a custom agent definition's `extensions` field (not a per-call field or `/run` bracket option), for example this frontmatter:
+
+```yaml
+---
+name: command-code-worker
+description: Worker using the explicitly loaded Command Code provider
+model: command-code/meta/muse-spark-1.3-contributor
+thinking: high
+async: true
+extensions: /absolute/path/to/pi/extensions/command-code/index.ts
+---
+```
+
+The installed launcher's agent docs support a single path, comma-separated paths, or a block list here. An explicit list loads exactly those extensions, while an empty field disables ambient extensions. Use background execution (`async: true`) for this provider-extension setup, consistent with the launcher's guidance. Keep existing tool allowlists and capability restrictions; an extension path does not override a policy that denies extensions.
+
+**Existing `pi-subagents` limitation:** a cached model-not-found exclusion can reject an explicit per-call model selection before launching a child, even when the parent's current registry lists that exact model. Configured/inherited candidates have a stale-unavailable check against exact current registry membership, but explicit selections currently reject earlier. This extension does not fix that asymmetry or clear existing exclusions, and changing the thinking suffix does not resolve it. Do not clear all exclusions or bypass authentication/quota restrictions; provider loading and offline fallback are separate from launcher exclusion policy.
 
 ## Usage command
 
@@ -53,15 +76,19 @@ Long adjacent text/reasoning deltas are adaptively coalesced before Pi renders t
 
 ## Catalogue and protocol caveat
 
-At startup the extension requests Command Code's official unauthenticated `GET /provider/v1/models` endpoint with a three-second timeout and a 256 KiB response limit. Valid live IDs, names, ordering, and context windows are overlaid on the checked-in rich metadata. HTTP, network, timeout, oversized, or schema failures silently use the complete 57-model fallback captured from Command Code 1.31.0 on 2026-08-21.
+The extension awaits Command Code's official unauthenticated `GET /provider/v1/models` endpoint **before registering the provider** at startup (including `/reload` and new extension instances). Requests reject redirects and have a three-second timeout and a 256 KiB response limit. A valid live list is authoritative for IDs, names, order, context windows, and removals. Startup HTTP, network, timeout, oversized, or schema failures silently use a 59-model fallback: the original 57-model membership captured from Command Code 1.31.0 on 2026-08-21 plus only `meta/muse-spark-1.3` and `meta/muse-spark-1.3-contributor`. Both additions have audited membership (`Sr`) and exact 1,048,576-token context literals (`Tr`) in official CLI 1.50.0's `dist/cli.mjs`, with the thinking snapshot below applied. They remain text-only with the conservative 64,000-token gateway output default and explicitly unknown prices. A later successful live list still removes any omitted fallback IDs.
 
-The catalogue is refreshed only when the extension starts; restart Pi to pick up later server changes. Future live IDs that are not in the fallback are exposed with limited metadata: text-only input, no reasoning controls, and the gateway's 64,000-token default output limit clamped to the live context window. Their zero cost is an **unknown-price placeholder**, not a free-price claim, because the endpoint does not publish pricing. Curated metadata is added to the fallback as it becomes available.
+The provider also implements Pi's native mid-session model refresh contract. When Pi refreshes this configured provider with network access allowed, it fetches and publishes a replacement list synchronously through Pi's generation-checked publication callback. Failures retain that instance's last-good list; cancellation and stale generations cannot replace it. Network-disabled refreshes do no I/O and keep current models. There is no background refresh timer, disk catalogue cache, stored-snapshot restoration, or catalogue persistence. Startup factory discovery remains a separate awaited request; the refresh context's network flag governs native refresh, not factory discovery. Pi's `models.json` overrides still apply above this native provider.
 
-Bundled prices are a checked-in snapshot of Command Code's [official pricing page](https://commandcode.ai/docs/resources/pricing-limits), retrieved at `2026-08-21T12:52:28Z`. Values use Pi's units of USD per one million input, output, cache-read, and cache-write tokens. Of the 57 fallback IDs, the page published primary rates for 55 paid models and explicitly marked two models free (`poolside/laguna-s-2.1-free` and `stealth/ox-alpha`). The free offers are capacity/preview dependent and may end. All checked-in fallback IDs currently have verified rates; only future live IDs absent from the fallback use the explicit unknown-price placeholder. Three docs-only models absent from the live 57-model endpoint are intentionally not added.
+**Thinking is a separate checked-in snapshot**, not live discovery. `src/thinking.ts` records exact IDs and explicit efforts from the installed official Command Code CLI **1.50.0**, `dist/cli.mjs`'s `yr` / `getSupportedEfforts` table. It covers verified fallback IDs, including both Muse 1.3 IDs; it does not infer capabilities from model families or execute/scrape the CLI at runtime. Muse 1.1, 1.2, 1.2-contributor, and **1.3-contributor** expose low/medium/high/xhigh, **not max**. Plain Muse 1.3 also exposes max. Unsupported levels (including off/minimal) are hidden; the CLI's Default row is not treated as proof that thinking can be disabled. Omitting an explicit effort omits `reasoning_effort`, leaving the gateway default.
+
+New live IDs absent from the thinking snapshot have no explicit reasoning controls. New IDs absent from the pricing/output snapshot remain text-only with the gateway's 64,000-token default output limit clamped to live context, and zero cost as an **unknown-price placeholder**, not a free-price claim. Both bundled Muse 1.3 IDs also use these conservative output and unknown-price defaults despite their verified thinking controls. The observed model endpoint publishes neither thinking capabilities nor prices. Refresh/reload alone cannot add missing capability or pricing facts: those require an audited extension metadata update.
+
+Bundled prices are a checked-in snapshot of Command Code's [official pricing page](https://commandcode.ai/docs/resources/pricing-limits), retrieved at `2026-08-21T12:52:28Z`. Values use Pi's units of USD per one million input, output, cache-read, and cache-write tokens. The original 57 pricing entries are unchanged: the page published primary rates for 55 paid models and explicitly marked two models free (`poolside/laguna-s-2.1-free` and `stealth/ox-alpha`). The free offers are capacity/preview dependent and may end. The 59-model fallback additionally classifies both Muse 1.3 IDs as unknown-priced, not free; live IDs absent from the fallback also use the explicit unknown-price placeholder. Three docs-only models absent from the original 57-model snapshot were intentionally not added to the fallback.
 
 These flat values are estimates, not guaranteed invoice totals. Command Code can vary the actual charge by upstream routing and ZDR, and its primary displayed rate can reflect temporary deals or time-of-day pricing (the DeepSeek entries use the advertised off-peak main rate). Pi's four cost fields cannot represent long-context tiers, media, web-search, reasoning, fixed-request, alternate cache-duration, or other conditional charges. Command Code's authenticated Usage page remains authoritative for each request. OpenRouter prices are not used because requests are billed by Command Code and the two services' rates differ.
 
-Five max-output limits absent from Command Code's API use current OpenRouter metadata as **inferred compatibility metadata**, not as Command Code guarantees or prices. Context values come from Command Code's Provider API:
+Five max-output limits absent from Command Code's API use checked-in OpenRouter metadata as **inferred compatibility metadata**, not as Command Code guarantees or prices. Context values come from Command Code's Provider API:
 
 | Command Code ID | Context | Max output | OpenRouter source |
 |---|---:|---:|---|
@@ -75,7 +102,7 @@ All catalogue entries are currently text-only in this extension; image blocks ar
 
 Model availability still depends on the user's Command Code plan. Server changes may break this undocumented integration. The gateway's observed `permissionMode: "standard"` and `mode: "agent"` values remain fixed compatibility values because no supported mapping for alternatives is documented.
 
-Requests identify themselves with the audited Command Code client contract: `User-Agent: cli`, `x-cli-environment: production`, and `x-command-code-version: 1.22.0`. The version header is the protocol/catalogue compatibility snapshot audited by this extension; it is not the extension's own version. The official environment switches `CMD_ZDR=1` and `CMD_PROVIDER_DEEPSEEK_INTERNAL=1` are forwarded as their observed `"1"` routing headers when explicitly set. The extension does not synthesize `traceparent`, because it has no authentic Command Code trace/span context, and never logs request headers.
+Requests identify themselves with the audited Command Code client contract: `User-Agent: cli`, `x-cli-environment: production`, and `x-command-code-version: 1.22.0`. The version header is the protocol compatibility snapshot audited by this extension (independent of the thinking snapshot); it is not the extension's own version. The official environment switches `CMD_ZDR=1` and `CMD_PROVIDER_DEEPSEEK_INTERNAL=1` are forwarded as their observed `"1"` routing headers when explicitly set. The extension does not synthesize `traceparent`, because it has no authentic Command Code trace/span context, and never logs request headers.
 
 ## Tests
 
@@ -86,7 +113,16 @@ cd pi/extensions/command-code
 npm test
 ```
 
-Tests use Node's built-in test runner and Pi peer stubs, so they require no package installation. They are local and mocked; they make no network calls and use no real credentials.
+`npm test` uses Node's built-in test runner and Pi peer stubs. Run the catalogue/registration/refresh integration tests against already-installed real Pi peers too:
+
+```sh
+# If Pi peers are already resolvable locally:
+npm run test:sdk
+# Otherwise point to your installed pi-coding-agent package directory, e.g.:
+PI_COMMAND_CODE_TEST_SDK=/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent npm run test:sdk
+```
+
+The SDK suite tests Pi's actual thinking helpers, payload serialization, native refresh/generation contracts, and provider composition. Both suites mock network requests and use no real credentials or inference; neither installs dependencies.
 
 ## Optional paid smoke test
 

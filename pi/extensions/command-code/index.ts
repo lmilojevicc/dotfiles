@@ -8,6 +8,7 @@ import {
   COMMAND_CODE_MODELS,
   PROVIDER_ID,
   PROVIDER_NAME,
+  fetchCommandCodeModels,
   resolveCommandCodeModels,
 } from "./src/catalogue.ts";
 import { streamCommandCode } from "./src/stream.ts";
@@ -21,7 +22,8 @@ import {
 export function createCommandCodeProvider(
   models: typeof COMMAND_CODE_MODELS = COMMAND_CODE_MODELS,
 ): Provider<typeof COMMAND_CODE_API> {
-  return createProvider({
+  let currentModels = models;
+  const provider = createProvider({
     id: PROVIDER_ID,
     name: PROVIDER_NAME,
     baseUrl: COMMAND_CODE_BASE_URL,
@@ -50,6 +52,19 @@ export function createCommandCodeProvider(
     models,
     api: { stream: streamCommandCode, streamSimple: streamCommandCode },
   });
+  // createProvider's fetchModels merges a baseline and persists automatically.
+  // This live endpoint instead owns the whole list, including order and removals.
+  return {
+    ...provider,
+    getModels: () => currentModels,
+    async refreshModels(context) {
+      if (!context.allowNetwork || context.signal.aborted) return;
+      const next = await fetchCommandCodeModels({ signal: context.signal });
+      if (!next || context.signal.aborted) return;
+      // No stored catalogue restoration or persistence: capabilities stay curated.
+      await context.publish({ update: () => { currentModels = next; } });
+    },
+  };
 }
 
 export const commandCodeProvider = createCommandCodeProvider();
@@ -231,7 +246,7 @@ export function createCommandCodeUsageHandler(
 
 export default async function commandCodeExtension(pi: ExtensionAPI): Promise<void> {
   const models = await resolveCommandCodeModels();
-  pi.registerProvider(models === COMMAND_CODE_MODELS ? commandCodeProvider : createCommandCodeProvider(models));
+  pi.registerProvider(createCommandCodeProvider(models));
   pi.registerCommand("command-code-usage", {
     description: "Show Command Code plan and usage limits",
     handler: createCommandCodeUsageHandler(),
