@@ -40,6 +40,14 @@ export type ResetJournal = {
 	creditId?: string;
 	legacyBlocked?: { requestId?: string; creditId?: string } & Partial<LegacyResetIntent>;
 	legacyReset?: LegacyResetIntent;
+	/** Nonblocking evidence; never reuse legacyBlocked on an acknowledged terminal record. */
+	legacyAcknowledgement?: {
+		original: ResetJournal;
+		snapshot: string;
+		outcome: "reset" | "already_redeemed";
+		noPriorOperationInFlight: true;
+		acknowledgedAt: string;
+	};
 };
 
 const UNCERTAIN = new Set(["pending", "ambiguous", "unknown"]);
@@ -99,6 +107,139 @@ export function resetAccountStatus(agentDir: string, accountKey: string, legacy?
 		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
 		return resetJournalStatus(readResetJournal(agentDir, accountKey));
 	} catch { return STORAGE_PAUSED; }
+}
+
+export type LegacyAcknowledgementOffer = Readonly<{
+	accountKey: string;
+	requestId: string;
+	creditId: string;
+	snapshot: string;
+}>;
+export type LegacyAcknowledgementReason = "not-lossy" | "malformed" | "legacy-active" | "legacy-conflict" | "storage" | "changed" | "cancelled";
+export type LegacyAcknowledgementEligibility =
+	| { eligible: true; offer: LegacyAcknowledgementOffer }
+	| { eligible: false; reason: LegacyAcknowledgementReason };
+
+function snapshotFingerprint(agentDir: string, accountKey: string): string {
+	const path = resetPaths(agentDir, accountKey).journal;
+	const stat = lstatSync(path);
+	return createHash("sha256").update(readFileSync(path)).update(JSON.stringify([stat.dev, stat.ino, stat.mtimeMs, stat.ctimeMs])).digest("hex");
+}
+
+function legacyConflict(legacy: LegacyResetIntent | undefined, ids: { requestId?: string; creditId?: string }, acknowledged = false): LegacyAcknowledgementReason | undefined {
+	if (!legacy) return undefined;
+	if (legacy.active) return "legacy-active";
+	if (legacy.requestId !== ids.requestId || legacy.creditId !== ids.creditId) return "legacy-conflict";
+	if (acknowledged && legacy.settled && legacy.phase === "locked" && (legacy.outcome === "reset" || legacy.outcome === "already_redeemed")) return undefined;
+	// An incomplete, inactive old map can survive acknowledgement. A real unresolved
+	// operation cannot: user attestation is not authority to take over its producer.
+	if (legacy.phase !== undefined || legacy.outcome !== undefined || legacy.settled !== false) return "legacy-conflict";
+	return undefined;
+}
+
+function lossyEligibility(agentDir: string, accountKey: string, legacy?: LegacyResetIntent): LegacyAcknowledgementEligibility {
+	const journal = readResetJournal(agentDir, accountKey);
+	if (!journal || journal.phase !== "legacy_blocked") return { eligible: false, reason: "not-lossy" };
+	const marker = journal.legacyBlocked;
+	const id = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+	if (journal.recovered || !marker || Array.isArray(marker) || typeof marker !== "object"
+		|| !id(marker.requestId) || !id(marker.creditId)
+		|| Object.keys(marker).some((key) => key !== "requestId" && key !== "creditId")
+		|| Object.keys(journal).some((key) => !["version", "accountKey", "phase", "recovered", "legacyBlocked", "requestId", "creditId"].includes(key))
+		|| (journal.requestId !== undefined && journal.requestId !== marker.requestId)
+		|| (journal.creditId !== undefined && journal.creditId !== marker.creditId)) return { eligible: false, reason: "malformed" };
+	const conflict = legacyConflict(legacy, marker);
+	if (conflict) return { eligible: false, reason: conflict };
+	return { eligible: true, offer: Object.freeze({ accountKey, requestId: marker.requestId, creditId: marker.creditId,
+		snapshot: snapshotFingerprint(agentDir, accountKey) }) };
+}
+
+/** Read-only offer, bound to the exact owned lossy record, not a generic unlock. */
+export function offerLegacyAcknowledgement(agentDir: string, accountKey: string,
+	legacyIntent: () => LegacyResetIntent | undefined): LegacyAcknowledgementEligibility {
+	try {
+		try { lstatSync(resetPaths(agentDir, accountKey).lock); return { eligible: false, reason: "storage" }; }
+		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+		return lossyEligibility(agentDir, accountKey, legacyIntent());
+	} catch { return { eligible: false, reason: "storage" }; }
+}
+
+export type LegacyAcknowledgementResult = { acknowledged: true; journal: ResetJournal } | { acknowledged: false; reason: LegacyAcknowledgementReason };
+
+/** Local-only: no auth, quota observation, credit selection, redemption ID or reset request.
+ * The caller owns explicit attestation and a synchronous, fail-closed context guard.
+ */
+export async function acknowledgeLegacyReset(options: {
+	agentDir: string;
+	offer: LegacyAcknowledgementOffer;
+	attestation?: { outcome: "reset" | "already_redeemed"; noPriorOperationInFlight: true };
+	legacyIntent: () => LegacyResetIntent | undefined;
+	checkCurrent: () => void;
+}): Promise<LegacyAcknowledgementResult> {
+	const { agentDir, offer, attestation } = options;
+	if (!attestation || !["reset", "already_redeemed"].includes(attestation.outcome)
+		|| attestation.noPriorOperationInFlight !== true) return { acknowledged: false, reason: "cancelled" };
+	try {
+		options.checkCurrent();
+		return await withResetAccountLock<LegacyAcknowledgementResult>(agentDir, offer.accountKey, async (save) => {
+			options.checkCurrent();
+			const current = lossyEligibility(agentDir, offer.accountKey, options.legacyIntent());
+			if (!current.eligible) return { acknowledged: false, reason: current.reason };
+			if (current.offer.snapshot !== offer.snapshot || current.offer.requestId !== offer.requestId
+				|| current.offer.creditId !== offer.creditId) return { acknowledged: false, reason: "changed" };
+			const original = readResetJournal(agentDir, offer.accountKey)!;
+			const journal: ResetJournal = { version: 1, accountKey: offer.accountKey, phase: attestation.outcome,
+				recovered: false, requestId: offer.requestId, creditId: offer.creditId,
+				legacyAcknowledgement: { original, snapshot: offer.snapshot, outcome: attestation.outcome,
+					noPriorOperationInFlight: true, acknowledgedAt: new Date().toISOString() } };
+			options.checkCurrent();
+			const conflict = legacyConflict(options.legacyIntent(), offer);
+			if (conflict) return { acknowledged: false, reason: conflict };
+			if (snapshotFingerprint(agentDir, offer.accountKey) !== offer.snapshot) return { acknowledged: false, reason: "changed" };
+			save(journal);
+			return { acknowledged: true, journal };
+		});
+	} catch { return { acknowledged: false, reason: "storage" }; }
+}
+
+export type ManualResetAction =
+	| { kind: "blocked" }
+	| { kind: "retry"; accountKey: string; requestId: string }
+	| { kind: "spend"; after?: { accountKey: string; requestId: string } };
+
+/** Manual authorization is tied to the terminal intent, independently of automatic recovery. */
+function journalManualAction(journal: ResetJournal | undefined): ManualResetAction {
+	if (!journal) return { kind: "spend" };
+	if (journal.phase === "legacy_blocked" || Object.hasOwn(journal, "legacyBlocked")) return { kind: "blocked" };
+	const identity = { accountKey: journal.accountKey, requestId: journal.requestId! };
+	return UNCERTAIN.has(journal.phase) ? { kind: "retry", ...identity } : { kind: "spend", after: identity };
+}
+
+export function manualResetNeedsRefresh(action: ManualResetAction, refresh?: { accountKey: string; requestId?: string }): boolean {
+	return action.kind === "spend" && action.after !== undefined
+		&& (refresh?.accountKey !== action.after.accountKey || refresh?.requestId !== action.after.requestId);
+}
+
+export type ResetAccountState = {
+	reason: "ready" | "legacy" | "active" | "storage" | "uncertain" | "recovery";
+	status: string;
+	manualAction: ManualResetAction;
+};
+/** Semantic state for controls/priority; callers must not infer safety from translated copy. */
+export function resetAccountState(agentDir: string, accountKey: string, legacy?: LegacyResetIntent): ResetAccountState {
+	const blocked = { kind: "blocked" } as const;
+	if (legacy?.active) return { reason: "active", status: "Paused: previous reset still running", manualAction: blocked };
+	try {
+		try { lstatSync(resetPaths(agentDir, accountKey).lock); return { reason: "storage", status: "Paused: local recovery required", manualAction: blocked }; }
+		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+		const journal = readResetJournal(agentDir, accountKey);
+		if (journal?.phase === "legacy_blocked" || (journal && Object.hasOwn(journal, "legacyBlocked"))) return { reason: "legacy", status: "Paused: previous reset needs review", manualAction: blocked };
+		if (journal?.legacyAcknowledgement && legacy && legacyConflict(legacy, journal, true)) return { reason: "legacy", status: "Paused: previous reset needs review", manualAction: blocked };
+		const manualAction = journalManualAction(journal);
+		if (journal && UNCERTAIN.has(journal.phase)) return { reason: "uncertain", status: "Paused: previous reset unconfirmed", manualAction };
+		if (journal && !journal.recovered) return { reason: "recovery", status: "Waiting for weekly recovery", manualAction };
+		return { reason: "ready", status: "", manualAction };
+	} catch { return { reason: "storage", status: "Paused: local recovery required", manualAction: blocked }; }
 }
 
 /** No leases or stale-PID takeover: a crash requires verified operator unlock, never intent deletion. */
@@ -194,7 +335,7 @@ export type ResetOperation = {
 	refresh: () => Promise<void>;
 };
 
-export type ResetOperationResult = { status: string; result?: ResetResult };
+export type ResetOperationResult = { status: string; result?: ResetResult; displayStatus?: string };
 
 /** Both entry points hold the same exclusion across observation, durable intent, POST and reconciliation. */
 export async function coordinateReset(operation: ResetOperation): Promise<ResetOperationResult> {
@@ -208,8 +349,10 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			let observedAt = 0;
 			let autoCredit: ResetCredits["credits"][number] | undefined;
 			let journal = readResetJournal(operation.agentDir, operation.accountKey);
+			const acknowledgedJournal = journal?.legacyAcknowledgement ? journal : undefined;
 			const legacy = operation.legacyIntent?.();
 			if (legacy?.active) return { status: LEGACY_ACTIVE };
+			if (journal?.legacyAcknowledgement && legacy && legacyConflict(legacy, journal, true)) return { status: LEGACY_PAUSED };
 			if (legacy) {
 				const migrated = migrateLegacyReset(operation.accountKey, journal, legacy);
 				if (migrated !== journal) {
@@ -221,8 +364,9 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			if (journal && (journal.phase === "legacy_blocked" || Object.hasOwn(journal, "legacyBlocked"))) return { status: LEGACY_PAUSED };
 			const uncertain = journal && UNCERTAIN.has(journal.phase);
 			if (uncertain && operation.mode === "auto") return { status: resetJournalStatus(journal) };
-			if (journal && !uncertain && operation.mode === "manual" && operation.manualAfterRequestId !== journal.requestId) {
-				return { status: "Press R for an explicit fresh refresh, then Ctrl+R twice to permit a NEW manual spend (even in this weekly episode)." };
+			if (operation.mode === "manual" && manualResetNeedsRefresh(journalManualAction(journal),
+				{ accountKey: operation.accountKey, requestId: operation.manualAfterRequestId })) {
+				return { status: "Press R for an explicit fresh refresh, then Ctrl+R twice to permit a NEW manual spend (even in this weekly episode).", displayStatus: "Manual reset not authorized" };
 			}
 			if (!uncertain) {
 				// Acquired lock BEFORE starting this GET: pre-spend in-flight snapshots cannot rearm it.
@@ -241,7 +385,7 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 					return { status: resetJournalStatus(journal) };
 				}
 				if (operation.mode === "auto" && observation !== "exhausted") {
-					return { status: observation === "unknown" ? "Paused: weekly usage is missing, invalid or stale." : "Monitoring fresh weekly usage." };
+					return { status: observation === "unknown" ? "Paused: weekly usage is missing, invalid or stale." : "Monitoring fresh weekly usage.", displayStatus: observation === "unknown" ? "Paused: weekly usage unavailable" : undefined };
 				}
 				let credits: ResetCredits | undefined;
 				if (usage.resetCredits?.availableCount !== 0) {
@@ -252,7 +396,7 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 				}
 				const credit = credits && credits.availableCount > 0
 					? (operation.mode === "auto" ? selectAutoResetCredit : selectResetCredit)(credits.credits) : undefined;
-				if (!credit?.id) return { status: "Paused: no usable detailed credit. No POST; a later fresh check may find one." };
+				if (!credit?.id) return { status: "Paused: no usable detailed credit. No POST; a later fresh check may find one.", displayStatus: usage.resetCredits?.availableCount === 0 ? undefined : "No usable reset details" };
 				// Recheck timestamp/credit expiry after detail/auth reads, not display/cache values.
 				if (operation.mode === "auto" && (weeklyResetObservation(usage) !== "exhausted"
 					|| !selectAutoResetCredit([credit]))) return { status: "Paused: usage or credit expired during check." };
@@ -264,7 +408,9 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			await operation.validate();
 			const checkBeforePost = () => {
 				operation.checkBeforePost();
-				if (operation.legacyIntent?.()?.active) throw new Error(LEGACY_ACTIVE);
+				const currentLegacy = operation.legacyIntent?.();
+				if (currentLegacy?.active) throw new Error(LEGACY_ACTIVE);
+				if (acknowledgedJournal && legacyConflict(currentLegacy, acknowledgedJournal, true)) throw new Error(LEGACY_PAUSED);
 				if (operation.mode === "auto" && (!autoUsage || weeklyResetObservation(autoUsage) !== "exhausted"
 					|| Date.now() - observedAt > 30_000 || !autoCredit || !selectAutoResetCredit([autoCredit]))) {
 					throw new Error("Observation expired before POST");
@@ -304,7 +450,7 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			return { result, status: resetJournalStatus(journal) };
 		});
 	} catch {
-		return { status: spending || stage === "storage" ? STORAGE_PAUSED
+		return { displayStatus: spending || stage === "storage" ? "Paused: local recovery required" : stage === "read" ? "Could not refresh balance" : "Paused: account or context changed", status: spending || stage === "storage" ? STORAGE_PAUSED
 			: stage === "read" ? "Paused: fresh usage/credit read failed; no POST. A later check may retry the read."
 				: "Paused: auth, account, model, consent or lifecycle changed; no new POST. Any saved intent is preserved." };
 	}

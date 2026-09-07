@@ -22,13 +22,15 @@
 
 import { unwatchFile, watchFile } from "node:fs";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
 	getConfigPath as resolveConfigPath,
 	injectFastServiceTier,
 	isCanonicalBaseUrl,
 	isCanonicalCodexModel,
 	parseResetCredits,
+	selectAutoResetCredit,
+	selectResetCredit,
 	parseResetResult,
 	parseUsagePayload,
 	readConfig as readConfigFile,
@@ -54,7 +56,7 @@ import {
 	type RequestShape,
 } from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetAccountStatus, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
 
 const STATUS_KEY = "codex-enhanced";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -268,18 +270,33 @@ function formatRow(row: string[], widths: number[]): string {
 	return `  ${row.map((cell, index) => cell + " ".repeat(Math.max(0, (widths[index] ?? 0) - stripAnsi(cell).length))).join("  ")}`;
 }
 
-function formatResetCreditExpiries(credits: ResetCredit[]): string {
-	const expiries = credits
-		.map((credit) => ({ credit, ms: credit.expiresAt ? Date.parse(credit.expiresAt) : Number.NaN }))
-		.filter(({ credit, ms }) => Number.isFinite(ms) && (!credit.status || credit.status === "available"))
-		.sort((left, right) => left.ms - right.ms);
-	if (expiries.length === 0) return "unknown";
-	const shown = expiries.slice(0, 3).map(({ ms }, index) => {
-		const minutes = Math.round((ms - Date.now()) / 60_000);
-		const expiry = minutes <= 0 ? "expired" : minutes < 90 ? `in ~${minutes}m` : minutes < 60 * 48 ? `in ~${Math.round(minutes / 60)}h` : `in ~${Math.round(minutes / 1440)}d`;
-		return `#${index + 1} ${expiry}`;
+function formatResetCreditExpiries(credits: ResetCredit[], count: number): string[] {
+	const now = Date.now();
+	const usable = credits.filter((credit) => selectAutoResetCredit([credit], now));
+	const expiries = usable.filter((credit) => credit.expiresAt).sort((a, b) => Date.parse(a.expiresAt!) - Date.parse(b.expiresAt!));
+	const labels = expiries.slice(0, 3).map((credit) => {
+		const minutes = Math.max(1, Math.ceil((Date.parse(credit.expiresAt!) - now) / 60_000));
+		return minutes < 90 ? `~${minutes}m` : minutes < 2880 ? `~${Math.round(minutes / 60)}h` : `~${Math.round(minutes / 1440)}d`;
 	});
-	return `${shown.join(" · ")}${expiries.length > shown.length ? ` · +${expiries.length - shown.length} more` : ""}`;
+	if (!labels.length) return ["Expiry unknown"];
+	const partial = expiries.length < count || usable.length !== credits.length;
+	return [`Next expiry in ${labels[0]}${labels.length > 1 ? ` · then ${labels.slice(1).join(", ")}` : ""}${expiries.length > 3 ? ` · +${expiries.length - 3} more` : ""}`,
+		...(partial ? ["Other expiry details unknown"] : [])];
+}
+
+/** Layout with terminal cells, not byte/string length; truncation is only the outer safety net. */
+function resetWrappedLines(text: string, width: number): string[] {
+	return wrapTextWithAnsi(text, Math.max(1, width - 2)).map((line) => `  ${line}`);
+}
+
+function packResetControls(controls: string[], width: number): string[] {
+	const lines: string[] = [];
+	for (const control of controls) {
+		const previous = lines.at(-1);
+		if (previous && visibleWidth(`${previous} · ${control}`) <= width - 2) lines[lines.length - 1] = `${previous} · ${control}`;
+		else lines.push(...wrapTextWithAnsi(control, Math.max(1, width - 2)));
+	}
+	return lines;
 }
 
 function formatResetResult(result: ResetResult): string {
@@ -308,6 +325,7 @@ async function runCoordinatedReset(
 	expectedAccountKey?: string,
 	manualAfterRequestId?: string,
 	onReconciled?: (usage: AccountUsageSnapshot) => void,
+	onApplying?: () => void,
 ): Promise<ResetOperationResult> {
 	try {
 		const modelIdentity = JSON.stringify(ctx.model);
@@ -339,7 +357,7 @@ async function runCoordinatedReset(
 			readUsage: () => fetchUsageWithHeaders(headers, signal, false),
 			// Spending decisions never use the menu's five-second detail cache.
 			readCredits: async () => parseResetCredits(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, { method: "GET", headers, signal })),
-			consume: (creditId, requestId) => consumeResetCredit(headers, creditId, requestId, signal),
+			consume: (creditId, requestId) => { onApplying?.(); return consumeResetCredit(headers, creditId, requestId, signal); },
 			refresh: async () => {
 				const usage = await fetchUsageWithHeaders(headers, signal, false);
 				await validate();
@@ -380,30 +398,27 @@ function formatQuotaLines(theme: Theme, usageState: UsageState, loading: boolean
 	];
 }
 
-function formatResetLines(
-	theme: Theme,
-	usageState: UsageState,
-	loading: boolean,
-	accountLoading: boolean,
-	armed: boolean,
-	autoEnabled: boolean,
-	status: string,
-): string[] {
+function formatResetLines(theme: Theme, usageState: UsageState, loading: boolean,
+	autoEnabled: boolean | undefined, status: string, width: number): string[] {
 	const usage = usageState && !("error" in usageState) ? usageState : undefined;
 	const count = usage?.resetCredits?.availableCount;
-	const busy = accountLoading;
-	const lines = [
-		`  ${theme.bold("Banked resets")}${loading ? theme.fg("dim", "  refreshing…") : ""}${busy ? theme.fg("dim", "  resetting…") : ""}`,
-		`  Available: ${theme.bold(count === undefined ? "unknown" : String(count))}`,
-	];
-	if (usageState && "error" in usageState) lines.push(theme.fg("error", "  Usage unavailable. R to retry."));
-	if (count && count > 0) lines.push(theme.fg("dim", `  Expires: ${formatResetCreditExpiries(usage?.resetCredits?.credits ?? [])}`));
-	lines.push(
-		`  ${theme.bold("Auto reset")}  ${autoEnabled ? "on" : "off"} · Weekly 0% · soonest expiry first · no prompts`,
-		...(status ? [`  ${status}`] : []),
-		...(status.includes("journal/lock") ? ["  Recovery instructions: see README."] : []),
-	);
-	if (armed) lines.push(theme.fg("warning", "  Reset armed — Ctrl+R again to use one reset."));
+	const balance = count === undefined ? (!usageState && loading ? "Loading banked resets…" : "Banked resets: unknown")
+		: `${count} banked reset${count === 1 ? "" : "s"}`;
+	const lines = resetWrappedLines(theme.bold(balance), width);
+	if (count && count > 0) for (const expiry of formatResetCreditExpiries(usage?.resetCredits?.credits ?? [], count)) {
+		lines.push(...resetWrappedLines(theme.fg("muted", expiry), width));
+	}
+	const setting = `Auto reset ${autoEnabled === undefined ? "—" : autoEnabled ? theme.fg("accent", "on") : theme.fg("text", "off")}`;
+	const full = `${setting} · Weekly 0% · soonest expiry first · no prompts`;
+	const short = `${setting} · Weekly 0% · expiry first · no prompts`;
+	lines.push("");
+	if (visibleWidth(full) <= width - 2) lines.push(`  ${full}`);
+	else if (visibleWidth(short) <= width - 2) lines.push(`  ${short}`);
+	else {
+		// Exactly one policy wrap at supported narrow widths, preserving "no prompts".
+		lines.push(`  ${setting} · Weekly 0%`, `  ${theme.fg("muted", "expiry first · no prompts")}`);
+	}
+	if (status) lines.push("", ...resetWrappedLines(theme.fg("warning", status), width));
 	return lines;
 }
 
@@ -455,6 +470,8 @@ type ResetMenuControls = {
 	captureCurrent: () => () => boolean;
 	changed: () => void;
 	status: (accountKey: string) => string;
+	clearStatus: (accountKey: string) => void;
+	activity: (accountKey: string) => "checking" | "applying" | undefined;
 	track: <T>(operation: Promise<T>) => Promise<T>;
 	onStatusChange: (render: (usage?: AccountUsageSnapshot) => void) => () => void;
 };
@@ -479,26 +496,59 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		let resetAccountLoading = false;
 		let resetAccountKey: string | undefined;
 		let resetArmedAccountKey: string | undefined;
+		let resetArmedAction: string | undefined;
+		let manualInteractionRevision = 0;
+		const cancelManual = () => {
+			manualInteractionRevision += 1;
+			resetArmedAccountKey = undefined;
+			resetArmedAction = undefined;
+		};
 		let resetRunning = false;
 		let resetMessage: string | undefined;
 		let manualRefresh: { accountKey: string; requestId?: string } | undefined;
+		let recoveryRevision = 0;
+		let recoveryFailure: { offer: LegacyAcknowledgementOffer; contextCurrent: () => boolean } | undefined;
+		let recovery: { offer?: LegacyAcknowledgementOffer; outcome?: "reset" | "already_redeemed";
+			checking: boolean; valid: () => boolean; contextCurrent: () => boolean; authorization?: string } | undefined;
+		const cancelRecovery = () => { recoveryRevision += 1; recovery = undefined; };
+		const offerMatches = (offer: LegacyAcknowledgementOffer) => {
+			const current = offerLegacyAcknowledgement(getAgentDir(), offer.accountKey,
+				() => legacyResetIntents().get(offer.accountKey));
+			return current.eligible && current.offer.snapshot === offer.snapshot;
+		};
+		const offeredRecordCurrent = () => Boolean(recovery?.offer && offerMatches(recovery.offer));
+		const durableState = (): ResetAccountState => resetAccountKey
+			? resetAccountState(getAgentDir(), resetAccountKey, legacyResetIntents().get(resetAccountKey))
+			: { reason: "ready", status: "", manualAction: { kind: "blocked" } };
+		const usableManualCredit = () => Boolean(usageState && !("error" in usageState) && usageState.accountKey === resetAccountKey
+			&& usageState.resetCredits && usageState.resetCredits.availableCount > 0 && selectResetCredit(usageState.resetCredits.credits));
+		const manualEligible = (state: ResetAccountState) => state.manualAction.kind !== "blocked"
+			&& !manualResetNeedsRefresh(state.manualAction, manualRefresh)
+			&& (state.manualAction.kind === "retry" || usableManualCredit());
+		const discardStaleArm = (state: ResetAccountState) => {
+			if (resetArmedAccountKey && (resetArmedAccountKey !== resetAccountKey || !manualEligible(state)
+				|| resetArmedAction !== JSON.stringify(state.manualAction))) cancelManual();
+		};
 
 		const render = () => {
 			if (!viewSignal.aborted) tui.requestRender();
 		};
 		const stopStatusListener = controls.onStatusChange((usage) => {
 			if (viewSignal.aborted) return;
+			cancelRecovery();
+			cancelManual();
+			recoveryFailure = undefined;
+			resetMessage = undefined;
 			if (usage && (!resetAccountKey || usage.accountKey === resetAccountKey)) {
 				usageRevision += 1; // Do not let an older menu GET overwrite reconciliation.
 				usageState = usage;
 				resetAccountKey = usage.accountKey;
 				manualRefresh = undefined;
-				resetArmedAccountKey = undefined;
 			}
 			render();
 		});
 		const configPath = getConfigPath();
-		const onConfigChange = () => render();
+		const onConfigChange = () => { if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery(); render(); };
 		let configWatcherActive = true;
 		watchFile(configPath, { interval: 250, persistent: false }, onConfigChange);
 		const stopConfigWatcher = () => {
@@ -508,14 +558,18 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			unwatchFile(configPath, onConfigChange);
 		};
 		const closeOnShutdown = () => {
+			cancelRecovery();
+			cancelManual();
 			stopConfigWatcher();
 			done(undefined);
 		};
 		shutdownSignal.addEventListener("abort", closeOnShutdown, { once: true });
 		const load = (account?: { key: string; headers: Headers }, explicit = false) => {
+			cancelManual();
+			recoveryFailure = undefined;
 			if (usageLoading) return;
+			cancelRecovery();
 			usageLoading = true;
-			resetArmedAccountKey = undefined;
 			render();
 			const current = controls.captureCurrent();
 			const modelIdentity = JSON.stringify(ctx.model);
@@ -559,16 +613,17 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				})
 				.finally(() => { usageLoading = false; render(); });
 		};
-		const ensureResetAccount = async (): Promise<{ key: string; headers: Headers } | undefined> => {
+		const ensureResetAccount = async (isCurrent = () => true): Promise<{ key: string; headers: Headers } | undefined> => {
 			if (resetAccountLoading) return undefined;
 			resetAccountLoading = true;
 			render();
 			try {
 				const account = await resolveResetAccount(ctx, viewSignal);
+				if (!isCurrent()) return undefined;
 				resetAccountKey = account.key;
 				return account;
 			} catch (error) {
-				if (!viewSignal.aborted) usageState = { error: error instanceof Error ? error.message : String(error) };
+				if (!viewSignal.aborted && isCurrent()) usageState = { error: error instanceof Error ? error.message : String(error) };
 				return undefined;
 			} finally {
 				resetAccountLoading = false;
@@ -576,36 +631,53 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			}
 		};
 		const startReset = async () => {
-			if (usageLoading || resetAccountLoading || resetRunning) return;
-			const current = controls.captureCurrent();
-			const account = await ensureResetAccount();
-			if (!account || viewSignal.aborted || !current()) return;
+			const state = durableState();
+			discardStaleArm(state);
+			if (usageLoading || resetAccountLoading || resetRunning || recovery || !manualEligible(state)) return;
+			const revision = ++manualInteractionRevision;
+			const lifecycleCurrent = controls.captureCurrent();
+			const model = JSON.stringify(ctx.model);
+			const current = () => lifecycleCurrent() && !viewSignal.aborted && activeTab === "resets"
+				&& revision === manualInteractionRevision && JSON.stringify(ctx.model) === model;
+			const action = JSON.stringify(state.manualAction);
+			const account = await ensureResetAccount(current);
+			if (!account || !current()) return;
 			if (!usageState || "error" in usageState || usageState.accountKey !== account.key) {
 				load(account);
 				return;
 			}
-			if (resetArmedAccountKey !== account.key) {
+			const refreshedState = durableState();
+			if (!manualEligible(refreshedState) || action !== JSON.stringify(refreshedState.manualAction)) {
+				cancelManual(); render(); return;
+			}
+			if (resetArmedAccountKey !== account.key || resetArmedAction !== action) {
 				resetArmedAccountKey = account.key;
+				resetArmedAction = action;
 				render();
 				return;
 			}
+			// Clear the visible arm without revoking this confirmed operation's revision.
 			resetArmedAccountKey = undefined;
+			resetArmedAction = undefined;
 			resetRunning = true;
+			resetMessage = undefined;
 			render();
 			const result = await controls.track(runCoordinatedReset(ctx, "manual", shutdownSignal, current, account.key,
 				manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined));
 			manualRefresh = undefined;
 			resetRunning = false;
-			resetMessage = result.result ? `${formatResetResult(result.result)} ${result.status}` : result.status;
+			resetMessage = result.result ? formatResetResult(result.result) : result.displayStatus ?? "Could not apply reset";
 			if (!viewSignal.aborted) load();
 			render();
 		};
 		const toggleAuto = async () => {
+			cancelRecovery();
+			cancelManual();
+			recoveryFailure = undefined;
 			const displayedAccountKey = resetAccountKey;
 			const current = controls.captureCurrent();
 			const account = await ensureResetAccount();
 			if (!account || viewSignal.aborted || !current()) return;
-			resetArmedAccountKey = undefined;
 			if (!displayedAccountKey || displayedAccountKey !== account.key) {
 				resetMessage = "Account changed; refreshed current account. No spending preference changed.";
 				load(account);
@@ -614,13 +686,79 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			const preference = readAutoResetPreference(configPath, account.key);
 			const result = writeAutoResetPreference(configPath, account.key, !preference.enabled);
 			controls.changed();
-			if ("error" in result) ctx.ui.notify("Failed to save automatic reset preference; verify config permissions/lock.", "error");
+			if ("error" in result) resetMessage = "Could not save auto reset setting";
 			else if (!preference.enabled) void controls.checkAuto().then(render);
 			render();
 		};
+		const beginRecovery = async () => {
+			if (recovery || usageLoading || resetAccountLoading || resetRunning || !resetAccountKey) return;
+			const key = resetAccountKey;
+			const offered = offerLegacyAcknowledgement(getAgentDir(), key, () => legacyResetIntents().get(key));
+			if (!offered.eligible) return;
+			cancelManual();
+			recoveryFailure = undefined;
+			const revision = ++recoveryRevision;
+			const current = controls.captureCurrent();
+			const model = JSON.stringify(ctx.model);
+			const preference = readAutoResetPreference(configPath, key);
+			const contextCurrent = () => !viewSignal.aborted && current() && activeTab === "resets"
+				&& resetAccountKey === key && JSON.stringify(ctx.model) === model
+				&& JSON.stringify(readAutoResetPreference(configPath, key)) === JSON.stringify(preference);
+			const valid = () => contextCurrent() && revision === recoveryRevision;
+			const state = { offer: offered.offer, checking: true, valid, contextCurrent, authorization: undefined as string | undefined,
+				outcome: undefined as "reset" | "already_redeemed" | undefined };
+			recovery = state;
+			manualRefresh = undefined;
+			render();
+			try {
+				const account = await resolveResetAccount(ctx, viewSignal);
+				if (!valid() || !offeredRecordCurrent() || account.key !== key) throw new Error("Changed");
+				state.authorization = account.headers.get("authorization") ?? undefined;
+				state.checking = false;
+			} catch {
+				if (recovery === state) {
+					if (state.contextCurrent() && offerMatches(state.offer)) recoveryFailure = { offer: state.offer, contextCurrent: state.contextCurrent };
+					cancelRecovery();
+				}
+			}
+			render();
+		};
+		const confirmRecovery = async () => {
+			const state = recovery;
+			if (!state?.offer || !state.outcome || state.checking) return;
+			state.checking = true;
+			render();
+			try {
+				const account = await resolveResetAccount(ctx, viewSignal);
+				const checkCurrent = () => {
+					if (!state.valid() || recovery !== state || account.key !== state.offer!.accountKey
+						|| account.headers.get("authorization") !== state.authorization) throw new Error("Changed");
+				};
+				checkCurrent();
+				const result = await controls.track(acknowledgeLegacyReset({ agentDir: getAgentDir(), offer: state.offer,
+					attestation: { outcome: state.outcome, noPriorOperationInFlight: true }, checkCurrent,
+					legacyIntent: () => legacyResetIntents().get(account.key) }));
+				if (result.acknowledged) {
+					recoveryFailure = undefined;
+					controls.clearStatus(account.key);
+					manualRefresh = undefined;
+					cancelManual();
+					resetMessage = "Completion saved locally; no reset used";
+				} else if (recovery === state) resetMessage = "Completion not saved; review current state";
+			} catch {
+				if (recovery === state && state.contextCurrent() && offerMatches(state.offer)) {
+					recoveryFailure = { offer: state.offer, contextCurrent: state.contextCurrent };
+				}
+			}
+			if (recovery === state) cancelRecovery();
+			render(); // No refresh, auto check, or manual authorization follows acknowledgement.
+		};
+
 		const activateTab = (tab: MenuTab) => {
 			activeTab = tab;
-			resetArmedAccountKey = undefined;
+			cancelRecovery();
+			recoveryFailure = undefined;
+			cancelManual();
 			if (tab === "resets" && !resetAccountKey) void ensureResetAccount();
 			render();
 		};
@@ -642,14 +780,50 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		load();
 		return {
 			render: (width: number) => {
-				const tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}  ${theme.fg("dim", "/")}  ${activeTab === "fast" ? theme.bold("Fast") : theme.fg("dim", "Fast")}  ${theme.fg("dim", "/")}  ${activeTab === "compaction" ? theme.bold("Compaction") : theme.fg("dim", "Compaction")}`;
+				let tabs = `  ${activeTab === "quota" ? theme.bold("Quota") : theme.fg("dim", "Quota")}  ${theme.fg("dim", "/")}  ${activeTab === "resets" ? theme.bold("Resets") : theme.fg("dim", "Resets")}  ${theme.fg("dim", "/")}  ${activeTab === "fast" ? theme.bold("Fast") : theme.fg("dim", "Fast")}  ${theme.fg("dim", "/")}  ${activeTab === "compaction" ? theme.bold("Compaction") : theme.fg("dim", "Compaction")}`;
+				if (activeTab === "resets" && visibleWidth(tabs) > width) {
+					tabs = `  ${theme.fg("muted", "Quota / ")}${theme.bold("Resets")}${theme.fg("muted", width >= 35 ? " / Fast / Compaction" : " / Fast / Compact")}`;
+				}
 				const footer = activeTab === "quota"
 					? "  Tab next · Shift+Tab previous · R to refresh · Esc to close"
 					: activeTab === "fast" || activeTab === "compaction"
 						? "  Tab next · Shift+Tab previous · Enter/Space toggle · Esc to close"
-						: "  Tab next · Shift+Tab previous · Enter/Space auto toggle · R refresh · Ctrl+R manual reset · Esc close";
+						: "";
 				const config = readConfig();
 				const eligible = isCanonicalCodexModel(ctx.model as RuntimeModel | undefined);
+				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery();
+				const state = durableState();
+				discardStaleArm(state);
+				if (recoveryFailure && (!recoveryFailure.contextCurrent() || !offerMatches(recoveryFailure.offer))) recoveryFailure = undefined;
+				const autoActivity = resetAccountKey ? controls.activity(resetAccountKey) : undefined;
+				const safety = ["legacy", "active"].includes(state.reason) || (state.reason === "storage" && !resetRunning && !autoActivity);
+				const armed = Boolean(resetAccountKey && resetArmedAccountKey === resetAccountKey);
+				const preference = resetAccountKey ? readAutoResetPreference(configPath, resetAccountKey).enabled : undefined;
+				const canAcknowledge = !usageLoading && !resetRunning && !resetAccountLoading && resetAccountKey
+					&& offerLegacyAcknowledgement(getAgentDir(), resetAccountKey, () => legacyResetIntents().get(resetAccountKey!)).eligible;
+				const usable = usableManualCredit();
+				const manual = !usageLoading && !resetRunning && !resetAccountLoading && manualEligible(state);
+				const needsRefresh = manualResetNeedsRefresh(state.manualAction, manualRefresh);
+				const status = safety ? (recoveryFailure ? "Paused: could not verify account; completion not saved" : state.status) : resetRunning || autoActivity === "applying" ? "Applying reset…" : resetAccountLoading ? "Checking account…" : autoActivity ? "Checking weekly usage…"
+					: armed ? (state.reason === "uncertain" ? "Retry previous reset?" : "Use 1 banked reset?")
+					: usageLoading && usageState ? "Refreshing balance…" : resetMessage
+					?? (usageState && "error" in usageState ? "Could not refresh balance" : state.reason === "uncertain" ? state.status
+						: preference && resetAccountKey ? controls.status(resetAccountKey) : !usable && usageState && !("error" in usageState) && (usageState.resetCredits?.availableCount ?? 0) > 0 ? "No usable reset details" : "");
+				const resetFooter = recovery
+					? recovery.checking ? ["Esc cancel"] : recovery.outcome ? ["Enter acknowledge · Esc cancel"] : ["1 reset · 2 already applied", "Esc cancel"]
+					: armed ? ["Ctrl+R confirm · Esc cancel"]
+					: [
+						...(canAcknowledge ? ["A acknowledge completion"] : manual && !needsRefresh ? [state.reason === "uncertain" ? "Ctrl+R retry previous reset" : "Ctrl+R use reset"] : []),
+						...(!usageLoading && !resetRunning && !resetAccountLoading ? [needsRefresh ? "R refresh for manual reset" : "R refresh"] : []),
+						...(resetAccountKey && !resetAccountLoading ? ["Space toggle"] : []), "Tab next · Esc close",
+					];
+				const resetBody = recovery ? [
+					...resetWrappedLines(theme.bold("Acknowledge completion"), width),
+					...resetWrappedLines("Save locally · no reset used", width), "",
+					...resetWrappedLines(recovery.checking ? "Checking account…" : recovery.outcome
+						? `I confirm the original reset ${recovery.outcome === "reset" ? "completed" : "was already applied"} and no old request is running.`
+						: "Choose the confirmed original outcome. If unsure, cancel.", width),
+				] : formatResetLines(theme, usageState, usageLoading, preference, status, width);
 				return [
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 					tabs,
@@ -657,26 +831,37 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					...(activeTab === "quota"
 						? formatQuotaLines(theme, usageState, usageLoading)
 						: activeTab === "resets"
-							? formatResetLines(theme, usageState, usageLoading, resetAccountLoading || resetRunning,
-								Boolean(resetAccountKey && resetArmedAccountKey === resetAccountKey),
-								resetAccountKey ? readAutoResetPreference(configPath, resetAccountKey).enabled : false,
-								resetMessage ?? (resetAccountKey ? controls.status(resetAccountKey) : "Resolve current account to change automatic spending."))
+							? resetBody
 							: activeTab === "fast"
 								? formatFastLines(theme, config.fast, eligible)
 								: formatCompactionLines(theme, config.compaction.responsesCompactEnabled, eligible)),
 					"",
-					theme.fg("dim", footer),
+					...(activeTab === "resets" ? packResetControls(resetFooter, width).map((line) => `  ${theme.fg("muted", line)}`) : [theme.fg("dim", footer)]),
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 				].map((line) => truncateToWidth(line, width, ""));
 			},
 			invalidate: render,
 			dispose: () => {
+				cancelRecovery();
+				cancelManual();
 				shutdownSignal.removeEventListener("abort", closeOnShutdown);
 				stopConfigWatcher();
 				viewController.abort();
 			},
 			handleInput: (data: string) => {
+				if (viewSignal.aborted) return;
+				discardStaleArm(durableState());
+				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) { cancelRecovery(); render(); return; }
+				if (matchesKey(data, "escape") && (recovery || resetArmedAccountKey)) {
+					cancelRecovery(); cancelManual(); render(); return;
+				}
+				if (recovery && !matchesKey(data, "tab") && !matchesKey(data, "shift+tab") && !matchesKey(data, "ctrl+c") && !matchesKey(data, "space")) {
+					if (!recovery.checking && (data === "1" || data === "2")) recovery.outcome = data === "1" ? "reset" : "already_redeemed";
+					else if (matchesKey(data, "enter")) void confirmRecovery();
+					render(); return;
+				}
 				if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+					cancelManual();
 					stopConfigWatcher();
 					viewController.abort();
 					done(undefined);
@@ -690,6 +875,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					toggleCompaction();
 				} else if (activeTab === "resets" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
 					void toggleAuto();
+				} else if (activeTab === "resets" && data.toLowerCase() === "a") {
+					void beginRecovery();
 				} else if (activeTab === "resets" && matchesKey(data, "ctrl+r")) {
 					void startReset();
 				} else if ((activeTab === "quota" || activeTab === "resets") && data.toLowerCase() === "r") {
@@ -736,6 +923,9 @@ export const __testing = Object.freeze({
 	runCompactionHook,
 	runCoordinatedReset,
 	openUsage,
+	formatResetLines,
+	formatResetCreditExpiries,
+	resetWrappedLines,
 });
 
 export default function codexEnhanced(pi: ExtensionAPI) {
@@ -748,6 +938,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 	let autoTimer: ReturnType<typeof setInterval> | undefined;
 	let autoCheck: Promise<void> | undefined;
 	const autoStatus = new Map<string, string>();
+	const autoActivity = new Map<string, "checking" | "applying">();
 	const manualOperations = new Set<Promise<unknown>>();
 	const resetStatusListeners = new Set<(usage?: AccountUsageSnapshot) => void>();
 	const captureCurrent = () => {
@@ -764,15 +955,21 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 			try {
 				const account = await resolveResetAccount(ctx, signal);
 				if (!current() || !readAutoResetPreference(getConfigPath(), account.key).enabled) return;
+				autoActivity.set(account.key, "checking");
+				for (const render of resetStatusListeners) render();
 				const result = await runCoordinatedReset(ctx, "auto", signal, current, account.key, undefined, (usage) => {
 					generation += 1; // Invalidate older footer reads as well as its cached value.
 					const weeklyLeft = weeklyUsageLeft(usage);
 					weeklyUsageCache.set(usage.accountKey, { value: weeklyLeft, expiresAt: Date.now() + WEEKLY_USAGE_CACHE_MS });
 					setStatus(ctx, weeklyLeft);
 					for (const render of resetStatusListeners) render(usage);
+				}, () => {
+					autoActivity.set(account.key, "applying");
+					for (const render of resetStatusListeners) render();
 				});
+				autoActivity.delete(account.key);
 				if (current()) {
-					autoStatus.set(account.key, result.status);
+					autoStatus.set(account.key, result.displayStatus ?? "");
 					for (const render of resetStatusListeners) render();
 				}
 			} catch { /* No auth: do not spend or emit per-minute notifications. */ }
@@ -810,12 +1007,14 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 				changed: () => { resetGeneration += 1; },
 				checkAuto: async () => { if (autoCheck) await autoCheck; await checkAuto(); },
 				status: (key) => {
-					const durable = resetAccountStatus(getAgentDir(), key, legacyResetIntents().get(key));
-					if (durable.startsWith("Paused")) return durable;
+					const durable = resetAccountState(getAgentDir(), key, legacyResetIntents().get(key));
+					if (durable.reason !== "ready" && durable.reason !== "recovery") return durable.status;
 					if (!readAutoResetPreference(getConfigPath(), key).enabled) return "";
-					if (!isCanonicalCodexModel(ctx.model)) return "Inactive: select a canonical Codex model for automatic checks.";
-					return autoStatus.get(key) ?? durable;
+					if (!isCanonicalCodexModel(ctx.model)) return "Paused: select a Codex model";
+					return durable.reason === "recovery" ? durable.status : autoStatus.get(key) ?? durable.status;
 				},
+				clearStatus: (key) => { autoStatus.delete(key); },
+				activity: (key) => autoActivity.get(key),
 				onStatusChange: (render) => {
 					resetStatusListeners.add(render);
 					return () => { resetStatusListeners.delete(render); };

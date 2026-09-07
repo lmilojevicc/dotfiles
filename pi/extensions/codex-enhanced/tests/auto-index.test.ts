@@ -184,7 +184,7 @@ test("Resets actual Enter/Space toggles spending consent once, auto never prompt
 	component.handleInput("ctrl+r");
 	await drain();
 	assert.equal(f.state.posts.length, 1);
-	assert.match(component.render(240).join("\n"), /Reset armed/);
+	assert.match(component.render(240).join("\n"), /Use 1 banked reset\?/);
 	component.handleInput("ctrl+r");
 	await until(() => f.state.posts.length === 2);
 	await drain();
@@ -259,15 +259,15 @@ test("Resets manual account switches invalidate both confirmation presses until 
 	component.handleInput("ctrl+r");
 	await drain();
 	assert.equal(f.state.posts.length, 0);
-	assert.doesNotMatch(component.render(240).join("\n"), /Reset armed/);
+	assert.doesNotMatch(component.render(240).join("\n"), /Use 1 banked reset\?/);
 	component.handleInput("ctrl+r");
 	await drain();
-	assert.match(component.render(240).join("\n"), /Reset armed/);
+	assert.match(component.render(240).join("\n"), /Use 1 banked reset\?/);
 	f.state.account = "synthetic-switch-before-second";
 	component.handleInput("ctrl+r");
 	await drain();
 	assert.equal(f.state.posts.length, 0);
-	assert.doesNotMatch(component.render(240).join("\n"), /Reset armed/);
+	assert.doesNotMatch(component.render(240).join("\n"), /Use 1 banked reset\?/);
 	component.handleInput("ctrl+r");
 	await drain();
 	assert.equal(f.state.posts.length, 0);
@@ -347,9 +347,9 @@ for (const tab of ["quota", "resets"]) {
 		await drain();
 		assert.equal(f.state.posts.length, 1);
 		assert.equal(f.state.statuses.at(-1), "Codex weekly: 75% left");
-		assert.match(component.render(240).join("\n"), tab === "quota" ? /75%/ : /Available: 1/);
+		assert.match(component.render(240).join("\n"), tab === "quota" ? /75%/ : /1 banked reset/);
 		component.handleInput(tab === "quota" ? "tab" : "shift+tab");
-		assert.match(component.render(240).join("\n"), tab === "quota" ? /Available: 1/ : /75%/);
+		assert.match(component.render(240).join("\n"), tab === "quota" ? /1 banked reset/ : /75%/);
 		assert.equal(readResetJournal(f.dir, f.key)?.recovered, false, "reconciliation is display-only");
 		f.state.percent = 100;
 		tick();
@@ -393,7 +393,7 @@ test("automatic reconciliation supersedes older pending initial menu and footer 
 	assert.match(component.render(240).join("\n"), /75%/);
 	assert.equal(f.state.statuses.at(-1), "Codex weekly: 75% left");
 	component.handleInput("tab");
-	assert.match(component.render(240).join("\n"), /Available: 1/);
+	assert.match(component.render(240).join("\n"), /1 banked reset/);
 	component.handleInput("escape");
 	await menu;
 });
@@ -438,9 +438,9 @@ for (const mutation of ["account", "model", "shutdown"] as const) {
 		await shutdown;
 		await drain();
 		assert.equal(f.state.statuses.includes("Codex weekly: 75% left"), false, "old reconciliation never reaches footer");
-		assert.doesNotMatch(component.render(240).join("\n"), /Available: 1/);
+		assert.doesNotMatch(component.render(240).join("\n"), /1 banked reset/);
 		if (mutation === "account") {
-			assert.match(component.render(240).join("\n"), /Available: 7/);
+			assert.match(component.render(240).join("\n"), /7 banked resets/);
 			assert.equal(f.state.statuses.at(-1), "Codex weekly: 40% left");
 		}
 		assert.equal(readResetJournal(f.dir, f.key)?.recovered, false);
@@ -476,7 +476,7 @@ for (const failure of ["held", "orphan", "corrupt"] as const) {
 			component.handleInput("r");
 			await drain();
 			assert.ok(f.state.usageReads > before, "quota GET remains available");
-			assert.match(component.render(240).join("\n"), tab === "quota" ? /65%/ : /Available: 0/);
+			assert.match(component.render(240).join("\n"), tab === "quota" ? /65%/ : /0 banked resets/);
 			assert.equal(readFileSync(paths.journal, "utf8"), saved, "R does not change journal");
 			if (tab === "quota") component.handleInput("tab");
 			component.handleInput("ctrl+r"); await drain();
@@ -493,7 +493,7 @@ for (const failure of ["held", "orphan", "corrupt"] as const) {
 			component.handleInput("ctrl+r"); await drain();
 			component.handleInput("ctrl+r"); await drain();
 			assert.equal(f.state.posts.length, 0, "failed coordinated refresh issued no rearm token");
-			assert.match(component.render(240).join("\n"), /Press R for an explicit fresh refresh/);
+			assert.match(component.render(240).join("\n"), /R refresh for manual reset/);
 			assert.equal(readFileSync(paths.journal, "utf8"), terminal);
 			component.handleInput("escape");
 			await menu;
@@ -595,3 +595,384 @@ test("legacy startup re-reads producer state after each account's awaited migrat
 	assert.equal(readResetJournal(f.dir, f.key), undefined, "second account is now live, not settled ambiguity");
 	assert.equal(f.state.posts.length, 0);
 });
+
+async function recoveryMenu(t: any) {
+	const f = fixture(t);
+	const original = { version: 1 as const, accountKey: f.key, phase: "legacy_blocked" as const, recovered: false,
+		legacyBlocked: { requestId: "synthetic-old-request", creditId: "synthetic-old-credit" } };
+	await withResetAccountLock(f.dir, f.key, async (save) => save(original));
+	const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+	f.component().handleInput("tab");
+	const bytes = () => readFileSync(resetPaths(f.dir, f.key).journal, "utf8");
+	return { ...f, l, menu, bytes, original };
+}
+
+for (const choice of ["1", "2"]) {
+	test(`Resets A→${choice}→Enter explicitly acknowledges locally, no GET/POST or spend/refresh chain`, async (t) => {
+		const f = await recoveryMenu(t);
+		const c = f.component(); const before = f.bytes();
+		const preference = readAutoResetPreference(f.path, f.key);
+		let auth = 0; const resolve = f.ctx.modelRegistry.getProviderAuth;
+		f.ctx.modelRegistry.getProviderAuth = async () => { auth++; return resolve(); };
+		const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		assert.match(c.render(60).join("\n"), /A acknowledge completion/);
+		c.handleInput("a"); await drain();
+		assert.equal(f.bytes(), before, "A only opens");
+		assert.match(c.render(40).join("\n"), /Choose the confirmed/);
+		c.handleInput("enter"); await drain();
+		assert.equal(f.bytes(), before, "no silently selected successful outcome");
+		c.handleInput(choice);
+		assert.match(c.render(80).join("\n"), /no old request is\s+running/);
+		c.handleInput("enter"); c.handleInput("enter"); await drain();
+		const journal = readResetJournal(f.dir, f.key)!;
+		assert.equal(journal.phase, choice === "1" ? "reset" : "already_redeemed");
+		assert.equal(journal.recovered, false);
+		assert.equal(journal.requestId, f.original.legacyBlocked.requestId);
+		assert.equal(journal.creditId, f.original.legacyBlocked.creditId);
+		assert.deepEqual(journal.legacyAcknowledgement?.original, f.original);
+		assert.equal(Object.hasOwn(journal, "legacyBlocked"), false);
+		assert.equal(auth, 2, "only approved identity resolutions on open and final confirmation");
+		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		assert.deepEqual(readAutoResetPreference(f.path, f.key), preference);
+		assert.equal(f.state.confirmCalls, 0, "inline substate, no nested dialogs");
+		const rendered = c.render(60).join("\n");
+		assert.match(rendered, /Completion saved locally; no reset used/);
+		assert.doesNotMatch(rendered, /needs review|A acknowledge|Use 1 banked reset\?/);
+		assert.match(rendered, /R refresh for manual reset/);
+		// Neither acknowledgement nor stale keys granted a manual-refresh token.
+		c.handleInput("ctrl+r"); await drain(); c.handleInput("ctrl+r"); await drain();
+		assert.equal(f.state.posts.length, 0);
+		for (const width of [40, 60]) {
+			assert.equal(c.render(width).join("\n").match(/R refresh for manual reset/g)?.length, 1, "guarded attempt has one footer action only");
+		}
+		c.handleInput("r"); await drain();
+		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 0);
+		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 1);
+		c.handleInput("escape"); await f.menu;
+	});
+}
+
+for (const stage of ["open", "outcome", "confirm-auth"] as const) {
+	test(`Resets recovery cancellation at ${stage} is byte-identical and never spends`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component(); const before = f.bytes();
+		const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		c.handleInput("a"); await drain();
+		if (stage !== "open") c.handleInput("1");
+		let release!: () => void;
+		const auth = f.ctx.modelRegistry.getProviderAuth;
+		if (stage === "confirm-auth") {
+			f.ctx.modelRegistry.getProviderAuth = async () => { await new Promise<void>((resolve) => { release = resolve; }); return auth(); };
+			c.handleInput("enter");
+		}
+		c.handleInput("escape");
+		if (stage === "confirm-auth") { release(); f.ctx.modelRegistry.getProviderAuth = auth; }
+		await drain();
+		assert.equal(f.bytes(), before);
+		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		assert.match(c.render(40).join("\n"), /A acknowledge completion/);
+		f.close(); // no additional key needed to settle the custom component
+		await f.menu;
+	});
+}
+
+for (const stage of ["opening", "confirming"] as const) for (const race of ["account", "auth", "model", "model-off-on", "toggle", "off-on", "tab", "close", "shutdown", "journal", "journal-malformed", "corrupt", "lock", "legacy-live", "legacy-conflict"] as const) {
+	test(`Resets acknowledgement cancels ${race} race while ${stage}`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component();
+		if (stage === "confirming") { c.handleInput("a"); await drain(); c.handleInput("1"); }
+		const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		const resolve = f.ctx.modelRegistry.getProviderAuth;
+		let release!: () => void; let waiting = false;
+		f.ctx.modelRegistry.getProviderAuth = async () => {
+			if (!waiting) { waiting = true; await new Promise<void>((r) => { release = r; }); }
+			if (race === "auth" && stage === "confirming") return { auth: { apiKey: token(f.state.account).replace("signature", "changed"), baseUrl: canonical.baseUrl } };
+			return resolve();
+		};
+		c.handleInput(stage === "opening" ? "a" : "enter");
+		await until(() => waiting);
+		let shutdown: Promise<void> | undefined;
+		const symbol = Symbol.for("codex-enhanced.reset-request-store"); const prior = Reflect.get(globalThis, symbol);
+		if (race === "account" || (race === "auth" && stage === "opening")) f.state.account = "synthetic-other-recovery";
+		if (race === "model" || race === "model-off-on") {
+			f.ctx.model = { ...canonical, id: "synthetic-other-model" };
+			f.l.handlers.get("model_select")({}, f.ctx);
+			if (race === "model-off-on") { f.ctx.model = { ...canonical }; f.l.handlers.get("model_select")({}, f.ctx); }
+		}
+		if (race === "toggle" || race === "off-on") {
+			writeAutoResetPreference(f.path, f.key, true);
+			if (race === "off-on") writeAutoResetPreference(f.path, f.key, false);
+		}
+		if (race === "tab") c.handleInput("tab");
+		if (race === "close") c.handleInput("ctrl+c");
+		if (race === "shutdown") shutdown = f.l.handlers.get("session_shutdown")({}, f.ctx);
+		if (race === "journal") await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "pending", recovered: false, requestId: "competing-request", creditId: "competing-credit" }));
+		if (race === "journal-malformed") writeFileSync(resetPaths(f.dir, f.key).journal, JSON.stringify({ ...f.original, legacyBlocked: { requestId: "missing-credit" } }));
+		if (race === "corrupt") writeFileSync(resetPaths(f.dir, f.key).journal, "not-json");
+		if (race === "lock") mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 });
+		if (race === "legacy-live" || race === "legacy-conflict") {
+			Reflect.set(globalThis, symbol, new Map([[f.key, { ...f.original.legacyBlocked, phase: "pending",
+				...(race === "legacy-live" ? { promise: new Promise(() => {}) } : { requestId: "conflicting-request" }) }]]));
+			t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+		}
+		const before = f.bytes(); release(); await drain(); await shutdown;
+		assert.equal(f.bytes(), before);
+		if (race !== "corrupt") assert.equal(readResetJournal(f.dir, f.key)?.legacyAcknowledgement, undefined);
+		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		assert.equal(f.state.posts.length, 0);
+		if (race !== "close" && race !== "shutdown") f.close();
+		await f.menu;
+	});
+}
+
+test("Resets recovery rejects identity lookup failure without quota/reset calls", async (t) => {
+	const f = await recoveryMenu(t); const c = f.component(); const before = f.bytes();
+	const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+	let auth = 0;
+	f.ctx.modelRegistry.getProviderAuth = async () => { auth++; throw new Error("synthetic auth unavailable"); };
+	c.handleInput("a"); await drain();
+	assert.equal(auth, 1); assert.equal(f.bytes(), before);
+	assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+	f.close(); await f.menu;
+});
+
+for (const phase of ["pending", "ambiguous", "unknown"] as const) {
+	test(`Resets normal ${phase} never exposes A acknowledgement`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component();
+		await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase, recovered: false, requestId: "synthetic-uncertain", creditId: "synthetic-uncertain-credit" }));
+		const before = f.bytes();
+		assert.doesNotMatch(c.render(40).join("\n"), /A acknowledge/);
+		assert.match(c.render(40).join("\n"), /Ctrl\+R retry previous reset/);
+		c.handleInput("a"); c.handleInput("1"); await drain();
+		assert.equal(f.bytes(), before); assert.equal(f.state.posts.length, 0);
+		c.handleInput("escape"); await f.menu;
+	});
+}
+
+test("Resets armed Escape cancels before closing; Tab and R clear manual arms", async (t) => {
+	const f = fixture(t); const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+	const c = f.component(); c.handleInput("tab");
+	for (const cancel of ["escape", "tab", "r"]) {
+		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(40).join("\n"), /Ctrl\+R confirm · Esc cancel/);
+		c.handleInput(cancel); await drain(); if (cancel === "tab") c.handleInput("shift+tab");
+		assert.doesNotMatch(c.render(40).join("\n"), /Use 1 banked reset\?/);
+	}
+	assert.equal(f.state.posts.length, 0);
+	c.handleInput("escape"); await menu;
+});
+
+test("Resets actual component retains complete controls at 32/40/60/80 and boundary widths", async (t) => {
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const { stripVTControlCharacters } = await import("node:util");
+	const f = await recoveryMenu(t); const c = f.component();
+	// Synthetic ANSI theme render pass: exercise theme callbacks, not a no-colour mock.
+	f.ctx.ui.theme.fg = (color: string, text: string) => `\x1b[${color === "accent" ? "36" : "37"}m${text}\x1b[0m`;
+	f.ctx.ui.theme.bold = (text: string) => `\x1b[1m${text}\x1b[22m`;
+	const widths = [32, 39, 40, 41, 59, 60, 61, 79, 80, 81];
+	const check = (patterns: RegExp[], policy = false) => {
+		for (const width of widths) {
+			const lines = c.render(width);
+			assert.ok(lines.every((line: string) => visibleWidth(line) <= width));
+			const text = lines.map(stripVTControlCharacters).join("\n");
+			for (const pattern of patterns) assert.match(text, pattern, `${width}: ${text}`);
+			if (policy) assert.match(text, /no prompts/);
+		}
+	};
+	check([/A acknowledge completion/, /Space toggle/, /R refresh/, /Tab next · Esc close/], true);
+	c.handleInput("a"); await drain(); check([/1 reset · 2 already applied/, /Esc cancel/]);
+	c.handleInput("1"); check([/Enter acknowledge · Esc cancel/, /no old request/]);
+	c.handleInput("escape");
+	await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "unknown", recovered: false, requestId: "synthetic-unknown", creditId: "synthetic-unknown-credit" }));
+	check([/Ctrl\+R retry previous reset/, /Tab next · Esc close/], true);
+	c.handleInput("ctrl+r"); await drain(); check([/Retry previous reset\?/, /Ctrl\+R confirm · Esc cancel/], true);
+	c.handleInput("escape"); c.handleInput("escape"); await f.menu;
+});
+
+test("Resets applying reset is not account loading or its own local-lock error", async (t) => {
+	const f = fixture(t); const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+	const c = f.component(); c.handleInput("tab");
+	let release!: () => void; let waiting = false;
+	t.mock.method(globalThis, "fetch", async (url: any, init: any) => {
+		const response = await f.fetch(url, init);
+		if (init.method === "POST") { waiting = true; await new Promise<void>((r) => { release = r; }); }
+		return response;
+	});
+	c.handleInput("ctrl+r"); await drain(); c.handleInput("ctrl+r"); await until(() => waiting);
+	assert.match(c.render(40).join("\n"), /Applying reset/);
+	assert.doesNotMatch(c.render(40).join("\n"), /Checking account|local recovery|Ctrl\+R/);
+	release(); await drain(); c.handleInput("escape"); await menu;
+});
+
+test("Resets acknowledgement clears stale auto pause and retains scheduler recovery→exhaustion guard", async (t) => {
+	const f = await recoveryMenu(t); const c = f.component();
+	writeAutoResetPreference(f.path, f.key, true);
+	const tick = [...f.l.timers.values()][0]!;
+	tick(); await drain();
+	assert.match(c.render(80).join("\n"), /previous reset needs review/);
+	const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+	c.handleInput("a"); await drain(); c.handleInput("1"); c.handleInput("enter"); await drain();
+	assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+	assert.match(c.render(80).join("\n"), /Completion saved locally/);
+	assert.equal(readResetJournal(f.dir, f.key)?.recovered, false);
+	tick(); await drain(); assert.equal(f.state.posts.length, 0);
+	assert.doesNotMatch(c.render(80).join("\n"), /needs review|Completion saved/);
+	assert.match(c.render(80).join("\n"), /Waiting for weekly recovery/);
+	f.state.percent = 50; tick(); await drain();
+	assert.equal(readResetJournal(f.dir, f.key)?.recovered, true); assert.equal(f.state.posts.length, 0);
+	f.state.percent = 100; tick(); await drain(); assert.equal(f.state.posts.length, 1);
+	c.handleInput("escape"); await f.menu;
+});
+
+test("Resets acknowledgement durability failure shows safety pause and no reset calls", async (t) => {
+	const fs = (await import("node:fs")).default;
+	const { syncBuiltinESMExports } = await import("node:module");
+	const f = await recoveryMenu(t); const c = f.component(); const before = f.bytes();
+	c.handleInput("a"); await drain(); c.handleInput("1");
+	const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+	t.mock.method(fs, "renameSync", () => { throw new Error("synthetic acknowledgement fault"); }); syncBuiltinESMExports();
+	c.handleInput("enter"); await drain();
+	(fs.renameSync as any).mock.restore(); syncBuiltinESMExports();
+	assert.equal(f.bytes(), before);
+	assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+	const text = c.render(60).join("\n");
+	assert.match(text, /Paused: local recovery required/);
+	assert.doesNotMatch(text, /Completion saved|A acknowledge|Ctrl\+R/);
+	c.handleInput("escape"); await f.menu;
+});
+
+for (const cancellation of ["escape", "tab", "r"] as const) {
+	test(`manual second-auth continuation cannot rearm after ${cancellation}`, async (t) => {
+		const f = fixture(t); const l = lifecycle(t, f.ctx);
+		await l.handlers.get("session_start")({}, f.ctx); await drain();
+		const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+		const c = f.component(); c.handleInput("tab"); c.handleInput("ctrl+r"); await drain();
+		assert.match(c.render(60).join("\n"), /Use 1 banked reset\?/);
+		const auth = f.ctx.modelRegistry.getProviderAuth;
+		let release!: () => void; let waiting = false;
+		f.ctx.modelRegistry.getProviderAuth = async () => {
+			if (!waiting) { waiting = true; await new Promise<void>((r) => { release = r; }); }
+			return auth();
+		};
+		c.handleInput("ctrl+r"); await until(() => waiting);
+		c.handleInput(cancellation); release(); await drain();
+		if (cancellation === "tab") c.handleInput("shift+tab");
+		assert.equal(f.state.posts.length, 0);
+		assert.doesNotMatch(c.render(60).join("\n"), /Use 1 banked reset\?|Ctrl\+R confirm/);
+		c.handleInput("ctrl+r"); await drain();
+		assert.equal(f.state.posts.length, 0, "first fresh press only arms");
+		assert.match(c.render(60).join("\n"), /Use 1 banked reset\?/);
+		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 1);
+		c.handleInput("escape"); await menu;
+	});
+}
+
+for (const scenario of ["recovered", "newer-request"] as const) {
+	test(`manual footer and input require exact terminal refresh for ${scenario}`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component();
+		const terminal = { version: 1 as const, accountKey: f.key, phase: "reset" as const, recovered: true,
+			requestId: "terminal-original", creditId: "terminal-credit" };
+		await withResetAccountLock(f.dir, f.key, async (save) => save(terminal));
+		if (scenario === "newer-request") {
+			c.handleInput("r"); await drain();
+			assert.match(c.render(60).join("\n"), /Ctrl\+R use reset/);
+			await withResetAccountLock(f.dir, f.key, async (save) => save({ ...terminal, requestId: "terminal-newer" }));
+		}
+		const before = f.bytes(); const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		c.handleInput("ctrl+r"); await drain(); c.handleInput("ctrl+r"); await drain();
+		for (const width of [40, 60]) {
+			const text = c.render(width).join("\n");
+			assert.equal(text.match(/R refresh for manual reset/g)?.length, 1, "one footer action, never a duplicate body instruction");
+			assert.doesNotMatch(text, /Ctrl\+R (use reset|confirm)|Use 1 banked reset\?/);
+		}
+		assert.equal(f.bytes(), before); assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		c.handleInput("r"); await drain();
+		assert.match(c.render(60).join("\n"), /Ctrl\+R use reset/);
+		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 0);
+		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 1);
+		c.handleInput("escape"); await f.menu;
+	});
+}
+
+for (const blocker of ["lossy", "lock", "corrupt", "live"] as const) {
+	test(`durable ${blocker} drops a stale manual arm and ignores hidden Ctrl+R`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component();
+		await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "unknown", recovered: false,
+			requestId: "uncertain-request", creditId: "uncertain-credit" }));
+		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(60).join("\n"), /Ctrl\+R confirm/);
+		if (blocker === "lossy") await withResetAccountLock(f.dir, f.key, async (save) => save(f.original));
+		if (blocker === "lock") mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 });
+		if (blocker === "corrupt") writeFileSync(resetPaths(f.dir, f.key).journal, "not-json");
+		if (blocker === "live") {
+			const symbol = Symbol.for("codex-enhanced.reset-request-store"); const prior = Reflect.get(globalThis, symbol);
+			Reflect.set(globalThis, symbol, new Map([[f.key, { requestId: "live-request", creditId: "live-credit", phase: "pending", promise: new Promise(() => {}) }]]));
+			t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+		}
+		let auth = 0; const resolve = f.ctx.modelRegistry.getProviderAuth;
+		f.ctx.modelRegistry.getProviderAuth = async () => { auth++; return resolve(); };
+		const before = f.bytes(); const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		// Input must drop the stale arm even without an intervening render.
+		c.handleInput("ctrl+r"); await drain(); c.handleInput("ctrl+r"); await drain();
+		for (const width of [40, 60]) {
+			const text = c.render(width).join("\n");
+			assert.doesNotMatch(text, /Ctrl\+R|Use 1 banked reset\?|Retry previous reset\?/);
+			if (blocker === "lossy") assert.match(text, /A acknowledge completion/);
+		}
+		assert.equal(auth, 0); assert.equal(f.bytes(), before);
+		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		if (blocker === "lossy") { c.handleInput("a"); await drain(); assert.match(c.render(60).join("\n"), /Choose the confirmed/); c.handleInput("escape"); }
+		c.handleInput("escape"); await f.menu;
+	});
+}
+
+test("new uncertain request drops old manual arm and requires two fresh exact-ID retry presses", async (t) => {
+	const f = await recoveryMenu(t); const c = f.component();
+	const uncertain = { version: 1 as const, accountKey: f.key, phase: "unknown" as const, recovered: false, requestId: "old-uncertain", creditId: "old-credit" };
+	await withResetAccountLock(f.dir, f.key, async (save) => save(uncertain));
+	c.handleInput("ctrl+r"); await drain();
+	await withResetAccountLock(f.dir, f.key, async (save) => save({ ...uncertain, requestId: "new-uncertain", creditId: "new-credit" }));
+	assert.doesNotMatch(c.render(60).join("\n"), /Ctrl\+R confirm/);
+	c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 0);
+	c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 1);
+	assert.equal(f.state.posts[0].redeem_request_id, "new-uncertain"); assert.equal(f.state.posts[0].credit_id, "new-credit");
+	c.handleInput("escape"); await f.menu;
+});
+
+for (const stage of ["opening", "final"] as const) for (const changed of ["marker", "live", "conflict", "storage"] as const) {
+	test(`acknowledgement ${stage} auth failure is visible but cannot mask changed ${changed} safety`, async (t) => {
+		const f = await recoveryMenu(t); const c = f.component();
+		if (stage === "final") { c.handleInput("a"); await drain(); c.handleInput("1"); }
+		const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length]; const before = f.bytes();
+		let auth = 0; const resolve = f.ctx.modelRegistry.getProviderAuth;
+		f.ctx.modelRegistry.getProviderAuth = async () => { auth++; throw new Error("synthetic identity lookup failure"); };
+		c.handleInput(stage === "opening" ? "a" : "enter"); await drain();
+		for (const width of [40, 60]) {
+			const text = c.render(width).join("\n");
+			assert.match(text.replace(/\s+/g, " "), /Paused: could not verify account; completion not saved/);
+			assert.equal(text.match(/Paused:/g)?.length, 1);
+			assert.match(text, /A acknowledge completion/);
+		}
+		assert.equal(auth, 1); assert.equal(f.bytes(), before);
+		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+		if (changed === "marker") await withResetAccountLock(f.dir, f.key, async (save) => save({ ...f.original, legacyBlocked: { requestId: "new-marker", creditId: "new-marker-credit" } }));
+		if (changed === "storage") mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 });
+		if (changed === "live" || changed === "conflict") {
+			const symbol = Symbol.for("codex-enhanced.reset-request-store"); const prior = Reflect.get(globalThis, symbol);
+			Reflect.set(globalThis, symbol, new Map([[f.key, { requestId: "other-request", creditId: "other-credit", phase: "pending",
+				...(changed === "live" ? { promise: new Promise(() => {}) } : {}) }]]));
+			t.after(() => { if (prior === undefined) Reflect.deleteProperty(globalThis, symbol); else Reflect.set(globalThis, symbol, prior); });
+		}
+		for (const width of [40, 60]) {
+			const text = c.render(width).join("\n");
+			assert.doesNotMatch(text, /could not verify|completion not saved/);
+			assert.match(text, /Paused:/);
+			if (changed === "live") assert.match(text, /still running/);
+			if (changed === "storage") assert.match(text, /local recovery required/);
+		}
+		f.ctx.modelRegistry.getProviderAuth = resolve;
+		c.handleInput("escape"); await f.menu;
+	});
+}

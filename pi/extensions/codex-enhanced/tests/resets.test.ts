@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetAccountState, manualResetNeedsRefresh, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
 
 const accountKey = "account:synthetic";
 function usage(percent = 100, count = 2) {
@@ -451,3 +451,31 @@ test("legacy lossy marker without original evidence cannot infer completion from
 	assert.equal(posts.length, 0);
 	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), false);
 });
+
+for (const recovered of [false, true]) {
+	test(`terminal manual identity and coordinator share exact refresh eligibility with recovered=${recovered}`, async (t) => {
+		const { op, posts, agentDir } = fixture(t);
+		let reads = 0; const readUsage = op.readUsage;
+		op.readUsage = async () => { reads++; return readUsage(); };
+		for (const phase of ["reset", "already_redeemed", "nothing_to_reset", "no_credit"] as const) {
+			const requestId = `terminal-${phase}`;
+			await withResetAccountLock(agentDir, accountKey, async (save) => save({ version: 1, accountKey, recovered, phase,
+				requestId, creditId: "saved-credit" }));
+			const state = resetAccountState(agentDir, accountKey);
+			assert.deepEqual(state.manualAction, { kind: "spend", after: { accountKey, requestId } });
+			assert.equal(state.reason, recovered ? "ready" : "recovery");
+			for (const refresh of [undefined, { accountKey, requestId: "older" }, { accountKey: "account:other", requestId }]) {
+				assert.equal(manualResetNeedsRefresh(state.manualAction, refresh), true);
+			}
+			assert.equal(manualResetNeedsRefresh(state.manualAction, { accountKey, requestId }), false);
+			const beforePosts = posts.length; const beforeReads = reads;
+			for (const manualAfterRequestId of [undefined, "older"]) {
+				const result = await coordinateReset({ ...op, mode: "manual", manualAfterRequestId });
+				assert.equal(result.displayStatus, "Manual reset not authorized", "body status is distinct from the footer action");
+			}
+			assert.equal(posts.length, beforePosts); assert.equal(reads, beforeReads);
+			await coordinateReset({ ...op, mode: "manual", manualAfterRequestId: requestId });
+			assert.equal(posts.length, beforePosts + 1);
+		}
+	});
+}
