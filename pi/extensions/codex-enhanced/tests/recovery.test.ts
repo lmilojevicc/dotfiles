@@ -140,7 +140,7 @@ for (const fault of ["write", "fsync", "rename", "directory-fsync"] as const) {
 		assert.equal(existsSync(f.paths.lock), true);
 		assert.equal(offerLegacyAcknowledgement(f.dir, key, noLegacy).eligible, false);
 		if (fault !== "directory-fsync") assert.equal(f.bytes(), before);
-		assert.equal(resetAccountState(f.dir, key).reason, "storage");
+		assert.equal(resetAccountState(f.dir, key).reason, "busy");
 	});
 }
 

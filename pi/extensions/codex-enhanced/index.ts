@@ -56,7 +56,7 @@ import {
 	type RequestShape,
 } from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetPaths, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
 
 const STATUS_KEY = "codex-enhanced";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -535,6 +535,23 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		const render = () => {
 			if (!viewSignal.aborted) tui.requestRender();
 		};
+		let stopResetWatcher = () => {};
+		const bindResetAccount = (key: string) => {
+			if (viewSignal.aborted || resetAccountKey === key) return;
+			stopResetWatcher();
+			resetAccountKey = key;
+			const paths = resetPaths(getAgentDir(), key);
+			let watching = true;
+			const onResetChange = () => {
+				if (watching && resetAccountKey === key) render(); // Local reread only; never auth, refresh or auto check.
+			};
+			for (const path of [paths.lock, paths.journal]) watchFile(path, { interval: 250, persistent: false }, onResetChange);
+			stopResetWatcher = () => {
+				if (!watching) return;
+				watching = false;
+				for (const path of [paths.lock, paths.journal]) unwatchFile(path, onResetChange);
+			};
+		};
 		const stopStatusListener = controls.onStatusChange((usage) => {
 			if (viewSignal.aborted) return;
 			cancelRecovery();
@@ -544,7 +561,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			if (usage && (!resetAccountKey || usage.accountKey === resetAccountKey)) {
 				usageRevision += 1; // Do not let an older menu GET overwrite reconciliation.
 				usageState = usage;
-				resetAccountKey = usage.accountKey;
+				bindResetAccount(usage.accountKey);
 				manualRefresh = undefined;
 			}
 			render();
@@ -557,6 +574,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			if (!configWatcherActive) return;
 			configWatcherActive = false;
 			stopStatusListener();
+			stopResetWatcher();
 			unwatchFile(configPath, onConfigChange);
 		};
 		const closeOnShutdown = () => {
@@ -608,7 +626,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				.then((usage) => {
 					if (viewSignal.aborted || revision !== usageRevision || !current()) return;
 					usageState = usage;
-					resetAccountKey = usage.accountKey;
+					bindResetAccount(usage.accountKey);
 				})
 				.catch((error) => {
 					if (!viewSignal.aborted && revision === usageRevision && current()) usageState = { error: error instanceof Error ? error.message : String(error) };
@@ -622,7 +640,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			try {
 				const account = await resolveResetAccount(ctx, viewSignal);
 				if (!isCurrent()) return undefined;
-				resetAccountKey = account.key;
+				bindResetAccount(account.key);
 				return account;
 			} catch (error) {
 				if (!viewSignal.aborted && isCurrent()) usageState = { error: error instanceof Error ? error.message : String(error) };
@@ -668,7 +686,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined));
 			manualRefresh = undefined;
 			resetRunning = false;
-			resetMessage = result.result ? formatResetResult(result.result) : result.displayStatus ?? "Could not apply reset";
+			resetMessage = result.reason === "busy" ? undefined : result.result ? formatResetResult(result.result) : result.displayStatus ?? "Could not apply reset";
 			if (!viewSignal.aborted) load();
 			render();
 		};
@@ -803,7 +821,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				discardStaleArm(state);
 				if (recoveryFailure && (!recoveryFailure.contextCurrent() || !offerMatches(recoveryFailure.offer))) recoveryFailure = undefined;
 				const autoActivity = resetAccountKey ? controls.activity(resetAccountKey) : undefined;
-				const safety = ["legacy", "active"].includes(state.reason) || (state.reason === "storage" && !resetRunning && !autoActivity);
+				const safety = ["legacy", "active", "storage"].includes(state.reason) || (state.reason === "busy" && !resetRunning && !autoActivity);
 				const armed = Boolean(resetAccountKey && resetArmedAccountKey === resetAccountKey);
 				const preference = resetAccountKey ? readAutoResetPreference(configPath, resetAccountKey).enabled : undefined;
 				const canAcknowledge = !usageLoading && !resetRunning && !resetAccountLoading && resetAccountKey
@@ -981,7 +999,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 				});
 				autoActivity.delete(account.key);
 				if (current()) {
-					autoStatus.set(account.key, result.displayStatus ?? "");
+					autoStatus.set(account.key, result.reason === "busy" ? "" : result.displayStatus ?? "");
 					for (const render of resetStatusListeners) render();
 				}
 			} catch { /* No auth: do not spend or emit per-minute notifications. */ }

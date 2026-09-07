@@ -31,8 +31,10 @@ function fixture(t: any) {
 		rmSync(dir, { recursive: true, force: true });
 	});
 	const identity = `synthetic-${++nextAccount}`;
-	const state = { account: identity, percent: 100, count: 2, usageReads: 0, detailReads: 0, posts: [] as any[], confirmCalls: 0, statuses: [] as Array<string | undefined> };
+	const state = { renderOnRequest: false, renders: 0, frame: "", account: identity, percent: 100, count: 2, usageReads: 0, detailReads: 0, posts: [] as any[], confirmCalls: 0, statuses: [] as Array<string | undefined> };
 	let component: any;
+	let renderQueued = false;
+	let disposed = false;
 	let done: (() => void) | undefined;
 	const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
 	const ctx: any = {
@@ -43,8 +45,16 @@ function fixture(t: any) {
 			theme, setStatus: (_key: string, value?: string) => { state.statuses.push(value); }, notify: () => {},
 			confirm: () => { state.confirmCalls++; throw new Error("Automatic resets must never prompt"); },
 			custom: (factory: any) => new Promise<void>((resolve) => {
-				done = () => { component?.dispose?.(); resolve(); };
-				component = factory({ requestRender: () => {} }, theme, {}, done);
+				done = () => { disposed = true; component?.dispose?.(); resolve(); };
+				component = factory({ requestRender: () => {
+					state.renders++;
+					if (!state.renderOnRequest || renderQueued) return;
+					renderQueued = true;
+					setImmediate(() => {
+						renderQueued = false;
+						if (!disposed) state.frame = component.render(80).join("\n");
+					});
+				} }, theme, {}, done);
 			}),
 		},
 	};
@@ -65,6 +75,104 @@ function fixture(t: any) {
 	};
 	t.mock.method(globalThis, "fetch", fetch);
 	return { dir, ctx, state, fetch, path: getConfigPath(dir), key: `account:${identity}`, component: () => component, close: () => done?.() };
+}
+
+async function waitForFrame(condition: () => boolean) {
+	const deadline = Date.now() + 3_000;
+	while (!condition() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25));
+	assert.ok(condition(), "file watcher did not update the open component");
+}
+
+test("Resets open component clears settled auto lock contention read-only and watches journal changes", async (t) => {
+	const f = fixture(t); f.state.renderOnRequest = true;
+	const l = lifecycle(t, f.ctx);
+	const paths = resetPaths(f.dir, f.key);
+	const terminal = { version: 1 as const, accountKey: f.key, phase: "reset" as const, recovered: true,
+		requestId: "preserved-request", creditId: "preserved-credit" };
+	await withResetAccountLock(f.dir, f.key, async (save) => save(terminal));
+	const bytes = readFileSync(paths.journal, "utf8");
+	mkdirSync(paths.lock, { mode: 0o700 });
+	writeAutoResetPreference(f.path, f.key, true);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+	const c = f.component(); c.handleInput("tab");
+	await waitForFrame(() => /Waiting for reset lock/.test(f.state.frame));
+	assert.match(f.state.frame, /Waiting for reset lock/);
+	assert.doesNotMatch(f.state.frame, /local recovery|A acknowledge|Ctrl\+R/);
+	let auth = 0; const resolve = f.ctx.modelRegistry.getProviderAuth;
+	f.ctx.modelRegistry.getProviderAuth = async () => { auth++; return resolve(); };
+	const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
+	c.handleInput("ctrl+r"); c.handleInput("ctrl+r"); c.handleInput("a"); await drain();
+	assert.equal(auth, 0);
+	assert.equal(readFileSync(paths.journal, "utf8"), bytes);
+	assert.doesNotMatch(c.render(80).join("\n"), /Use 1 banked|acknowledge completion|Ctrl\+R/);
+	rmSync(paths.lock, { recursive: true }); // Synthetic cooperating owner releases its fixture lock.
+	await waitForFrame(() => !/Waiting for reset lock|local recovery/.test(f.state.frame));
+	assert.equal(f.component(), c, "same menu remains open");
+	assert.match(f.state.frame, /Auto reset +on/);
+	assert.match(f.state.frame, /R refresh for manual reset/);
+	assert.doesNotMatch(f.state.frame, /A acknowledge|Ctrl\+R/);
+	assert.equal(readFileSync(paths.journal, "utf8"), bytes);
+	writeFileSync(paths.journal, JSON.stringify({ ...terminal, recovered: false }));
+	await waitForFrame(() => /Waiting for weekly recovery/.test(f.state.frame));
+	writeFileSync(paths.journal, "not-json");
+	await waitForFrame(() => /Paused: local recovery required/.test(f.state.frame));
+	const renders = f.state.renders;
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	assert.equal(f.state.renders, renders, "unchanged files do not continuously redraw");
+	assert.equal(auth, 0, "watchers never resolve auth");
+	assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts, "watchers never GET or POST");
+	c.handleInput("escape"); await menu;
+});
+
+for (const ending of ["close", "shutdown"] as const) {
+	test(`Resets account watcher rebinds singly, ignores old callbacks and stops on ${ending}`, async (t) => {
+		const fs = (await import("node:fs")).default;
+		const { syncBuiltinESMExports } = await import("node:module");
+		const watch = fs.watchFile, unwatch = fs.unwatchFile;
+		const listeners = new Map<string, Set<() => void>>();
+		t.mock.method(fs, "watchFile", ((path: string, options: any, listener: () => void) => {
+			const active = listeners.get(path) ?? new Set(); active.add(listener); listeners.set(path, active);
+			return watch(path, options, listener);
+		}) as any);
+		t.mock.method(fs, "unwatchFile", ((path: string, listener: () => void) => {
+			listeners.get(path)?.delete(listener); unwatch(path, listener);
+		}) as any);
+		syncBuiltinESMExports();
+		t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+		const f = fixture(t); f.state.renderOnRequest = true;
+		const l = lifecycle(t, f.ctx);
+		await l.handlers.get("session_start")({}, f.ctx); await drain();
+		const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+		const c = f.component(); c.handleInput("tab");
+		const oldPaths = resetPaths(f.dir, f.key);
+		const oldCallbacks = [oldPaths.lock, oldPaths.journal].flatMap((path) => [...listeners.get(path)!]);
+		assert.equal(oldCallbacks.length, 2);
+		c.handleInput("r"); await drain();
+		for (const path of [oldPaths.lock, oldPaths.journal]) assert.equal(listeners.get(path)?.size, 1, "same account never duplicates watchers");
+		f.state.account = "synthetic-new-bound-account";
+		c.handleInput("r"); await drain();
+		const newPaths = resetPaths(f.dir, `account:${f.state.account}`);
+		for (const path of [oldPaths.lock, oldPaths.journal]) assert.equal(listeners.get(path)?.size, 0);
+		for (const path of [newPaths.lock, newPaths.journal]) assert.equal(listeners.get(path)?.size, 1);
+		let renders = f.state.renders;
+		for (const callback of oldCallbacks) callback();
+		assert.equal(f.state.renders, renders, "queued old-account callbacks cannot render");
+		mkdirSync(oldPaths.lock, { mode: 0o700 });
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		assert.doesNotMatch(f.state.frame, /Waiting for reset lock|local recovery/);
+		const callbacks = [...listeners.values()].flatMap((active) => [...active]);
+		assert.equal(callbacks.length, 3, "one config watcher and two bound-account watchers");
+		if (ending === "close") c.handleInput("escape");
+		else await l.handlers.get("session_shutdown")({}, f.ctx);
+		await menu; await drain();
+		assert.ok([...listeners.values()].every((active) => active.size === 0));
+		renders = f.state.renders;
+		for (const callback of callbacks) callback();
+		mkdirSync(newPaths.lock, { mode: 0o700 });
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		assert.equal(f.state.renders, renders, "closed menu never redraws");
+	});
 }
 
 test("automatic index path is default-off, account scoped and requires no UI prompt", async (t) => {
@@ -246,7 +354,7 @@ for (const mode of ["rpc", "json", "print"]) {
 }
 
 test("Resets manual account switches invalidate both confirmation presses until current usage is refreshed", async (t) => {
-	const f = fixture(t);
+	const f = fixture(t); f.state.renderOnRequest = true;
 	const l = lifecycle(t, f.ctx);
 	l.handlers.get("session_start")({}, f.ctx);
 	await drain();
@@ -827,7 +935,7 @@ test("Resets acknowledgement clears stale auto pause and retains scheduler recov
 	c.handleInput("escape"); await f.menu;
 });
 
-test("Resets acknowledgement durability failure shows safety pause and no reset calls", async (t) => {
+test("Resets acknowledgement durability failure retains lock wait and no reset calls", async (t) => {
 	const fs = (await import("node:fs")).default;
 	const { syncBuiltinESMExports } = await import("node:module");
 	const f = await recoveryMenu(t); const c = f.component(); const before = f.bytes();
@@ -839,7 +947,7 @@ test("Resets acknowledgement durability failure shows safety pause and no reset 
 	assert.equal(f.bytes(), before);
 	assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
 	const text = c.render(60).join("\n");
-	assert.match(text, /Paused: local recovery required/);
+	assert.match(text, /Waiting for reset lock/);
 	assert.doesNotMatch(text, /Completion saved|A acknowledge|Ctrl\+R/);
 	c.handleInput("escape"); await f.menu;
 });
@@ -941,7 +1049,7 @@ test("new uncertain request drops old manual arm and requires two fresh exact-ID
 	c.handleInput("escape"); await f.menu;
 });
 
-for (const stage of ["opening", "final"] as const) for (const changed of ["marker", "live", "conflict", "storage"] as const) {
+for (const stage of ["opening", "final"] as const) for (const changed of ["marker", "live", "conflict", "busy"] as const) {
 	test(`acknowledgement ${stage} auth failure is visible but cannot mask changed ${changed} safety`, async (t) => {
 		const f = await recoveryMenu(t); const c = f.component();
 		if (stage === "final") { c.handleInput("a"); await drain(); c.handleInput("1"); }
@@ -958,7 +1066,7 @@ for (const stage of ["opening", "final"] as const) for (const changed of ["marke
 		assert.equal(auth, 1); assert.equal(f.bytes(), before);
 		assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
 		if (changed === "marker") await withResetAccountLock(f.dir, f.key, async (save) => save({ ...f.original, legacyBlocked: { requestId: "new-marker", creditId: "new-marker-credit" } }));
-		if (changed === "storage") mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 });
+		if (changed === "busy") mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 });
 		if (changed === "live" || changed === "conflict") {
 			const symbol = Symbol.for("codex-enhanced.reset-request-store"); const prior = Reflect.get(globalThis, symbol);
 			Reflect.set(globalThis, symbol, new Map([[f.key, { requestId: "other-request", creditId: "other-credit", phase: "pending",
@@ -968,9 +1076,8 @@ for (const stage of ["opening", "final"] as const) for (const changed of ["marke
 		for (const width of [40, 60]) {
 			const text = c.render(width).join("\n");
 			assert.doesNotMatch(text, /could not verify|completion not saved/);
-			assert.match(text, /Paused:/);
+			assert.match(text, changed === "busy" ? /Waiting for reset lock/ : /Paused:/);
 			if (changed === "live") assert.match(text, /still running/);
-			if (changed === "storage") assert.match(text, /local recovery required/);
 		}
 		f.ctx.modelRegistry.getProviderAuth = resolve;
 		c.handleInput("escape"); await f.menu;

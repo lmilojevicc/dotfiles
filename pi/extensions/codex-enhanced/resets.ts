@@ -55,6 +55,8 @@ const PHASES = new Set(["pending", "ambiguous", "reset", "already_redeemed", "no
 const MAX_JOURNAL_BYTES = 16_384;
 const LEGACY_PAUSED = "Paused: previous reset needs recovery; see README.";
 const LEGACY_ACTIVE = "Paused: previous reset still running. Wait, then /reload.";
+const RESET_LOCK_BUSY = "Waiting for reset lock";
+class ResetLockBusyError extends Error {}
 const STORAGE_PAUSED = "Paused: reset journal/lock unavailable or uncertain. Verify no cooperating process is operating before removing ONLY an orphan lock; preserve the journal.";
 
 export function resetPaths(agentDir: string, accountKey: string) {
@@ -103,7 +105,7 @@ export function resetJournalStatus(journal: ResetJournal | undefined): string {
 export function resetAccountStatus(agentDir: string, accountKey: string, legacy?: LegacyResetIntent): string {
 	if (legacy?.active) return LEGACY_ACTIVE;
 	try {
-		try { lstatSync(resetPaths(agentDir, accountKey).lock); return STORAGE_PAUSED; }
+		try { lstatSync(resetPaths(agentDir, accountKey).lock); return RESET_LOCK_BUSY; }
 		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
 		return resetJournalStatus(readResetJournal(agentDir, accountKey));
 	} catch { return STORAGE_PAUSED; }
@@ -221,7 +223,7 @@ export function manualResetNeedsRefresh(action: ManualResetAction, refresh?: { a
 }
 
 export type ResetAccountState = {
-	reason: "ready" | "legacy" | "active" | "storage" | "uncertain" | "recovery";
+	reason: "ready" | "legacy" | "active" | "busy" | "storage" | "uncertain" | "recovery";
 	status: string;
 	manualAction: ManualResetAction;
 };
@@ -230,7 +232,7 @@ export function resetAccountState(agentDir: string, accountKey: string, legacy?:
 	const blocked = { kind: "blocked" } as const;
 	if (legacy?.active) return { reason: "active", status: "Paused: previous reset still running", manualAction: blocked };
 	try {
-		try { lstatSync(resetPaths(agentDir, accountKey).lock); return { reason: "storage", status: "Paused: local recovery required", manualAction: blocked }; }
+		try { lstatSync(resetPaths(agentDir, accountKey).lock); return { reason: "busy", status: RESET_LOCK_BUSY, manualAction: blocked }; }
 		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
 		const journal = readResetJournal(agentDir, accountKey);
 		if (journal?.phase === "legacy_blocked" || (journal && Object.hasOwn(journal, "legacyBlocked"))) return { reason: "legacy", status: "Paused: previous reset needs review", manualAction: blocked };
@@ -254,7 +256,11 @@ export async function withResetAccountLock<T>(agentDir: string, accountKey: stri
 		mkdirSync(paths.directory, { recursive: true, mode: 0o700 });
 		checkPrivate(paths.directory, true);
 		syncDirectory(agentDir);
-		mkdirSync(paths.lock, { mode: 0o700 });
+		try { mkdirSync(paths.lock, { mode: 0o700 }); }
+		catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ResetLockBusyError(RESET_LOCK_BUSY);
+			throw error;
+		}
 		owned = true;
 		writeFileSync(ownerPath, owner, { mode: 0o600, flag: "wx" });
 		syncDirectory(paths.directory);
@@ -335,7 +341,7 @@ export type ResetOperation = {
 	refresh: () => Promise<void>;
 };
 
-export type ResetOperationResult = { status: string; result?: ResetResult; displayStatus?: string };
+export type ResetOperationResult = { status: string; result?: ResetResult; displayStatus?: string; reason?: "busy" };
 
 /** Both entry points hold the same exclusion across observation, durable intent, POST and reconciliation. */
 export async function coordinateReset(operation: ResetOperation): Promise<ResetOperationResult> {
@@ -449,7 +455,8 @@ export async function coordinateReset(operation: ResetOperation): Promise<ResetO
 			// Reconciliation is display-only. A later locked fresh GET must observe recovery.
 			return { result, status: resetJournalStatus(journal) };
 		});
-	} catch {
+	} catch (error) {
+		if (error instanceof ResetLockBusyError) return { reason: "busy", status: RESET_LOCK_BUSY, displayStatus: RESET_LOCK_BUSY };
 		return { displayStatus: spending || stage === "storage" ? "Paused: local recovery required" : stage === "read" ? "Could not refresh balance" : "Paused: account or context changed", status: spending || stage === "storage" ? STORAGE_PAUSED
 			: stage === "read" ? "Paused: fresh usage/credit read failed; no POST. A later check may retry the read."
 				: "Paused: auth, account, model, consent or lifecycle changed; no new POST. Any saved intent is preserved." };

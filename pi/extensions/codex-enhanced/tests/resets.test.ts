@@ -1,13 +1,64 @@
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetAccountState, manualResetNeedsRefresh, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
 
 const accountKey = "account:synthetic";
+
+for (const state of ["lock", "malformed", "invalid", "unreadable"] as const) {
+	test(`resetAccountState classifies ${state} without authorizing actions or changing evidence`, async (t) => {
+		const { op, agentDir, posts } = fixture(t);
+		const paths = resetPaths(agentDir, accountKey);
+		await withResetAccountLock(agentDir, accountKey, async (save) => save({ version: 1, accountKey,
+			phase: "reset", recovered: true, requestId: "preserved-request", creditId: "preserved-credit" }));
+		if (state === "lock") mkdirSync(paths.lock, { mode: 0o700 });
+		if (state === "malformed") writeFileSync(paths.journal, "not-json");
+		if (state === "invalid") writeFileSync(paths.journal, JSON.stringify({ version: 1, accountKey, phase: "reset", recovered: true }));
+		const before = readFileSync(paths.journal, "utf8");
+		if (state === "unreadable") {
+			const read = fs.readFileSync;
+			t.mock.method(fs, "readFileSync", ((path: any, ...args: any[]) => {
+				if (path === paths.journal) throw Object.assign(new Error("synthetic unreadable journal"), { code: "EACCES" });
+				return (read as any)(path, ...args);
+			}) as any);
+			syncBuiltinESMExports();
+			t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+		}
+		assert.deepEqual(resetAccountState(agentDir, accountKey), { reason: state === "lock" ? "busy" : "storage",
+			status: state === "lock" ? "Waiting for reset lock" : "Paused: local recovery required", manualAction: { kind: "blocked" } });
+		if (state === "lock") {
+			assert.equal(resetAccountStatus(agentDir, accountKey), "Waiting for reset lock");
+			const result = await coordinateReset({ ...op, readUsage: async () => { assert.fail("busy must not GET"); } });
+			assert.equal(result.reason, "busy");
+			assert.equal(result.displayStatus, "Waiting for reset lock");
+		}
+		t.mock.restoreAll(); syncBuiltinESMExports();
+		assert.equal(readFileSync(paths.journal, "utf8"), before);
+		assert.equal(posts.length, 0);
+	});
+}
+
+for (const code of ["EACCES", "EIO"] as const) {
+	test(`coordinateReset lock mkdir ${code} is storage, not contention`, async (t) => {
+		const { op, agentDir, posts } = fixture(t);
+		const mkdir = fs.mkdirSync;
+		t.mock.method(fs, "mkdirSync", ((path: any, ...args: any[]) => {
+			if (path === resetPaths(agentDir, accountKey).lock) throw Object.assign(new Error("synthetic lock failure"), { code });
+			return (mkdir as any)(path, ...args);
+		}) as any);
+		syncBuiltinESMExports();
+		t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+		const result = await coordinateReset({ ...op, readUsage: async () => { assert.fail("storage must not GET"); } });
+		assert.equal(result.reason, undefined);
+		assert.equal(result.displayStatus, "Paused: local recovery required");
+		assert.equal(posts.length, 0);
+	});
+}
 function usage(percent = 100, count = 2) {
 	return { limits: [{ limitId: "codex", secondary: { usedPercent: percent, windowMinutes: 10080, resetsAt: Date.now() / 1000 + 3600 } }], resetCredits: { availableCount: count, credits: [] } };
 }
