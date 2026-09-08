@@ -1,0 +1,10 @@
+{
+  "models": {
+    "gpt-6-astra": [
+      "When designing or implementing UI/TUI, use the minimum copy needed to understand and operate the interface. Do not add explanatory text merely to fill space or make the interface feel complete.",
+      "Omit redundant subtitles, section introductions, helper paragraphs, repeated status descriptions, and tooltips that restate visible labels. Prefer a clear label over a label plus an explanation.",
+      "Show secondary explanations only when needed, using contextual help or progressive disclosure rather than permanent text beside every control.",
+      "Keep necessary labels, units, validation errors, actionable failure messages, destructive-action warnings, and accessible names. Brevity must not hide information needed to use the interface safely. Honor explicitly requested explanatory copy."
+    ]
+  }
+}
