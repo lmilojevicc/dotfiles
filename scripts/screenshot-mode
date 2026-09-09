@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# screenshot-mode — toggle the three "screenshot" settings on/off.
+# screenshot-mode — toggle screenshot settings on/off.
 #
 #   screenshot-mode [on|off]
 #
 # With no argument it auto-detects the current state and flips it.
 # Affects:
 #   - herdr:   hide_tab_bar_when_single_tab (true screenshot / unset normal)
+#              pane_borders ("off" screenshot / unset normal)
 #   - ghostty: background-opacity (0.8 screenshot / unset normal)
 #   - nvim:    lualine statusline bg ("NONE" screenshot / colors.base normal)
 set -euo pipefail
@@ -27,15 +28,21 @@ state() {
 set_state() {
   local target="$1"
 
-  # herdr: omit the key in normal mode because false is the default.
+  # herdr: omit the keys in normal mode (defaults: visible tabs, "auto" borders).
+  # https://herdr.dev/docs/config-reference/
   if [[ "$target" == on ]]; then
     if grep -q '^[[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=' "$HERDR_CONF"; then
       sed -i '' 's/^\([[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=[[:space:]]*\).*/\1true/' "$HERDR_CONF"
     else
       sed -i '' 's/^\[ui\]/[ui]\n  hide_tab_bar_when_single_tab = true/' "$HERDR_CONF"
     fi
+    if grep -q '^[[:space:]]*pane_borders[[:space:]]*=' "$HERDR_CONF"; then
+      sed -i '' 's/^\([[:space:]]*pane_borders[[:space:]]*=[[:space:]]*\).*/\1"off"/' "$HERDR_CONF"
+    else
+      sed -i '' 's/^\[ui\]/[ui]\n  pane_borders = "off"/' "$HERDR_CONF"
+    fi
   else
-    sed -i '' '/^[[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=/d' "$HERDR_CONF"
+    sed -i '' '/^[[:space:]]*hide_tab_bar_when_single_tab[[:space:]]*=/d; /^[[:space:]]*pane_borders[[:space:]]*=/d' "$HERDR_CONF"
   fi
 
   # ghostty: omit the key in normal mode because 1.0 is the default. Always
