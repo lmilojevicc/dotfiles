@@ -1,5 +1,6 @@
 import type { ModelThinkingLevel, ThinkingLevelMap } from "@earendil-works/pi-ai";
 
+// Baseline provenance; supplemental exact-ID sources are cited inline below.
 export const COMMAND_CODE_THINKING_METADATA = Object.freeze({
   sourcePackage: "command-code",
   sourceVersion: "1.50.0",
@@ -12,8 +13,8 @@ const throughMax = ["low", "medium", "high", "xhigh", "max"] as const;
 const throughXhigh = ["low", "medium", "high", "xhigh"] as const;
 const throughHigh = ["low", "medium", "high"] as const;
 
-// Checked-in exact-ID subset of the official CLI 1.50.0 effort table: existing
-// fallback IDs plus Muse 1.3. No family inference, prices, or catalogue membership.
+// Checked-in exact-ID subset of the official CLI 1.50.0 effort table plus
+// explicitly sourced supplements. No family inference, prices, or membership.
 // The CLI's "Default" row is not evidence that reasoning can be switched off.
 const effortsById = new Map<string, readonly Effort[]>([
   ["claude-sonnet-5", throughMax],
@@ -31,6 +32,10 @@ const effortsById = new Map<string, readonly Effort[]>([
   ["gpt-5.4-mini", throughHigh],
   ["deepseek/deepseek-v4-pro", ["high", "max"]],
   ["deepseek/deepseek-v4-flash", ["high", "max"]],
+  // Pi's refreshed opencode-go/deepseek-flash (V4.1) exposes low/high/max.
+  // Exact base_model/efforts: https://github.com/anomalyco/models.dev/blob/dev/providers/opencode-go/models/deepseek-flash.toml
+  // Compatibility inference, not a Command Code CLI 1.50.0 capability claim.
+  ["deepseek/deepseek-v4.1-flash", ["low", "high", "max"]],
   ["moonshotai/kimi-k3", ["low", "high", "max"]],
   ["zai-org/glm-5.3", ["low", "high", "max"]],
   ["zai-org/glm-5.2", ["high", "max"]],

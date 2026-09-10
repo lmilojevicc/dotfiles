@@ -85,6 +85,31 @@ for (const id of ["meta/muse-spark-1.1", "meta/muse-spark-1.2", "meta/muse-spark
   });
 }
 
+test("DeepSeek V4.1 refresh exposes low/high/max through real Pi helpers and Command Code payloads", async (t) => {
+  const id = "deepseek/deepseek-v4.1-flash";
+  const models = createModels();
+  models.setProvider(configured(createCommandCodeProvider()));
+  t.mock.method(globalThis, "fetch", async () => response(id));
+  const result = await models.refresh();
+  assert.equal(result.errors.size, 0);
+  const model = models.getModel("command-code", id)!;
+  assert.ok(model);
+  assert.deepEqual(getSupportedThinkingLevels(model), ["low", "high", "max"]);
+  assert.equal(clampThinkingLevel(model, "off"), "low");
+  assert.equal(clampThinkingLevel(model, "minimal"), "low");
+  assert.equal(clampThinkingLevel(model, "max"), "max");
+  for (const level of ["low", "high", "max", "minimal", "medium", "xhigh", undefined] as const) {
+    const serialized = JSON.parse(JSON.stringify(buildPayload(model, { messages: [] }, { reasoning: level })));
+    assert.equal(serialized.params.model, id);
+    if (level === "low" || level === "high" || level === "max") {
+      assert.equal(serialized.params.reasoning_effort, level);
+    } else {
+      assert.equal(Object.hasOwn(serialized.params, "reasoning_effort"), false);
+    }
+  }
+  assert.deepEqual(getSupportedThinkingLevels(catalogue("deepseek/deepseek-v4-flash")[0]!), ["high", "max"]);
+});
+
 test("other verified effort changes preserve holes; unrelated models remain conservative", () => {
   for (const [id, levels] of [
     ["moonshotai/Kimi-K3", ["low", "high", "max"]],

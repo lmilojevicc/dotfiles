@@ -215,6 +215,29 @@ test("live catalogue overlay preserves paid and free prices while safely default
   assert.equal(added.maxTokens, GATEWAY_DEFAULT_MAX_TOKENS);
 });
 
+test("DeepSeek V4.1 live discovery adds exact-ID thinking controls without importing other provider metadata", async () => {
+  for (const id of ["deepseek/deepseek-v4.1-flash", "DEEPSEEK/DEEPSEEK-V4.1-FLASH"]) {
+    const models = await resolveCommandCodeModels({
+      fetch: async () => Response.json(livePayload(
+        liveModel(id, "DeepSeek V4.1 Flash", 1_000_000),
+        liveModel(`${id}-unverified`, "Unverified variant", 1_000_000),
+      )),
+    });
+    const model = models[0]!;
+    assert.equal(model.id, id);
+    assert.equal(model.provider, "command-code");
+    assert.equal(model.reasoning, true);
+    assert.deepEqual(model.thinkingLevelMap, {
+      off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max",
+    });
+    assert.deepEqual(model.input, ["text"]);
+    assert.strictEqual(model.cost, COMMAND_CODE_UNKNOWN_COST);
+    assert.equal(model.maxTokens, GATEWAY_DEFAULT_MAX_TOKENS);
+    assert.equal(models[1]?.reasoning, false);
+    assert.equal(models[1]?.thinkingLevelMap, undefined);
+  }
+});
+
 test("live catalogue clamps output limits to reduced live context windows", () => {
   const parsed = parseCommandCodeCatalogue(livePayload(
     liveModel("zai-org/GLM-5.1", "Known Small Context", 1_000),
