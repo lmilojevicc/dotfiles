@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, test } from "node:test";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import extensionManager, { APPLY_CHOICE, CANCEL_CHOICE } from "../index.ts";
 import { applyExtensionChanges } from "../state.ts";
 
@@ -226,7 +227,7 @@ async function runCommand(
 	const ctx = {
 		cwd,
 		hasUI: true,
-		mode: "tui",
+		mode: "rpc",
 		ui: {
 			async select(title: string, choices: string[]) {
 				titles.push(title);
@@ -246,11 +247,86 @@ async function runCommand(
 	return { reloadCount, notifications, titles };
 }
 
+async function runTuiCommand(inputs: readonly string[]): Promise<{
+	reloadCount: number;
+	notifications: string[];
+	customCount: number;
+	selectCount: number;
+}> {
+	const command = registerExtensionCommand();
+	let reloadCount = 0, customCount = 0, selectCount = 0;
+	const notifications: string[] = [];
+	const theme = {
+		fg: (_color: string, value: string) => value,
+		bold: (value: string) => value,
+	};
+	const tui = { terminal: { rows: 24, columns: 100 }, requestRender() {} };
+	const ctx = {
+		cwd: agentDir,
+		hasUI: true,
+		mode: "tui",
+		ui: {
+			async custom(factory: Function) {
+				customCount++;
+				let result: unknown;
+				const component = await factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), (value: unknown) => { result = value; });
+				component.focused = true;
+				component.render(95);
+				for (const input of inputs) {
+					component.handleInput(input);
+					component.render(95);
+				}
+				return result;
+			},
+			async select() { selectCount++; return undefined; },
+			notify(message: string) { notifications.push(message); },
+		},
+		async reload() { reloadCount++; },
+	} as unknown as ExtensionCommandContext;
+	await command.handler("", ctx);
+	return { reloadCount, notifications, customCount, selectCount };
+}
+
 function writeExtension(name: string): void {
 	const directory = join(agentDir, "extensions", name);
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(join(directory, "index.ts"), "export default function () {}\n");
 }
+
+test("TUI uses the custom searchable manager and applies staged toggles across single-result filters", async () => {
+	writeExtension("aaaaaaaa");
+	writeExtension("qqqqqqqq");
+	writeFileSync(join(agentDir, "settings.json"), "{}");
+
+	// With one filtered extension, Down selects Apply; PageDown would correctly
+	// advance by the two-row page size and land on Cancel.
+	const inputs = ["aaaaaaaa", "\r", ...Array.from({ length: 8 }, () => "\x7f"), "qqqqqqqq", "\r", "\x1b[B", "\r"];
+	const result = await runTuiCommand(inputs);
+	assert.equal(result.customCount, 1);
+	assert.equal(result.selectCount, 0);
+	assert.equal(result.reloadCount, 1, JSON.stringify(result));
+	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
+		"-extensions/aaaaaaaa/index.ts",
+		"-extensions/qqqqqqqq/index.ts",
+	]);
+});
+
+test("TUI cancel discards staged changes without saving or reloading", async () => {
+	writeExtension("first");
+	const settingsPath = join(agentDir, "settings.json");
+	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
+	const result = await runTuiCommand(["\r", "\x1b"]);
+	assert.equal(result.reloadCount, 0);
+	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
+	assert.ok(result.notifications.includes("Extension changes discarded"));
+});
+
+test("non-UI mode rejects the command instead of silently opening a custom UI", async () => {
+	writeExtension("first");
+	const command = registerExtensionCommand();
+	const ctx = { cwd: agentDir, hasUI: false, mode: "json" } as unknown as ExtensionCommandContext;
+	await assert.rejects(command.handler("", ctx), /requires interactive or RPC UI mode/);
+});
 
 test("the slash command stages multiple local toggles, applies them, and can re-enable them", async () => {
 	writeExtension("first");

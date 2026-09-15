@@ -10,6 +10,7 @@ import {
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ExtensionManagerComponent, type ExtensionManagerResult, type ExtensionManagerRow } from "./component.ts";
 import { applyExtensionChanges, type ExtensionChange } from "./state.ts";
 
 export const APPLY_CHOICE = "Apply changes and reload";
@@ -174,6 +175,97 @@ async function persistChanges(
 	return changes.length;
 }
 
+function stagedCount(resources: readonly ResolvedResource[], desired: ReadonlyMap<string, boolean>): number {
+	return resources.filter((resource) => desired.get(resource.path) !== resource.enabled).length;
+}
+
+function toggleResource(
+	ctx: ExtensionCommandContext,
+	resource: ResolvedResource,
+	desired: Map<string, boolean>,
+	localFilePackageSources: ReadonlySet<string>,
+): void {
+	if (isManagerResource(resource)) {
+		ctx.ui.notify("The extension manager keeps itself enabled so disabled extensions remain recoverable", "warning");
+		return;
+	}
+	if (localFilePackageSources.has(resource.metadata.source)) {
+		ctx.ui.notify("Pi does not support extension filters for local-file packages; configure a directory package to make this extension toggleable", "warning");
+		return;
+	}
+	desired.set(resource.path, !(desired.get(resource.path) ?? resource.enabled));
+}
+
+async function openSelectManager(
+	ctx: ExtensionCommandContext,
+	resources: readonly ResolvedResource[],
+	desired: Map<string, boolean>,
+	localFilePackageSources: ReadonlySet<string>,
+	agentDir: string,
+): Promise<ExtensionManagerResult> {
+	while (true) {
+		const choices = resources.map((resource) => {
+			const enabled = desired.get(resource.path) ?? resource.enabled;
+			const lock = isManagerResource(resource)
+				? " · required"
+				: localFilePackageSources.has(resource.metadata.source)
+					? " · unavailable (local file package)"
+					: "";
+			return `${enabled ? "[x]" : "[ ]"} ${resourceName(resource, agentDir)}${lock}`;
+		});
+		const choiceToResource = new Map(choices.map((choice, index) => [choice, resources[index]]));
+		const count = stagedCount(resources, desired);
+		const choice = await ctx.ui.select(
+			count > 0 ? `Extensions (${count} staged)` : "Extensions (select to toggle)",
+			[...choices, APPLY_CHOICE, CANCEL_CHOICE],
+		);
+		if (choice === undefined || choice === CANCEL_CHOICE) return "cancel";
+		if (choice === APPLY_CHOICE) return "apply";
+		const resource = choiceToResource.get(choice);
+		if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);
+	}
+}
+
+async function openTuiManager(
+	ctx: ExtensionCommandContext,
+	resources: readonly ResolvedResource[],
+	desired: Map<string, boolean>,
+	localFilePackageSources: ReadonlySet<string>,
+	agentDir: string,
+): Promise<ExtensionManagerResult | undefined> {
+	const rows: ExtensionManagerRow[] = resources.map((resource) => {
+		const label = resourceName(resource, agentDir);
+		return {
+			id: resource.path,
+			label,
+			searchText: `${label} ${resource.path} ${resource.metadata.source} ${resource.metadata.origin}`,
+			enabled: resource.enabled,
+			lock: isManagerResource(resource)
+				? "required"
+				: localFilePackageSources.has(resource.metadata.source) ? "local-file-package" : undefined,
+		};
+	});
+	const byPath = new Map(resources.map((resource) => [resource.path, resource]));
+	return ctx.ui.custom<ExtensionManagerResult | undefined>((tui, theme, keybindings, done) =>
+		new ExtensionManagerComponent({
+			rows,
+			theme,
+			keybindings,
+			getHeight: () => Math.max(1, Math.min(17, tui.terminal.rows - 2)),
+			getWidth: () => tui.terminal.columns,
+			getTerminalHeight: () => tui.terminal.rows,
+			getEnabled: (row) => desired.get(row.id) ?? row.enabled,
+			getStagedCount: () => stagedCount(resources, desired),
+			onToggle: (row) => {
+				const resource = byPath.get(row.id);
+				if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);
+			},
+			onChange: () => tui.requestRender(),
+			onDone: done,
+		}),
+	{ overlay: true, overlayOptions: { width: "95%", maxHeight: 17, margin: { left: 1, right: 1 }, anchor: "center" } });
+}
+
 async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 	if (!ctx.hasUI) throw new Error("/extensions requires interactive or RPC UI mode");
 
@@ -186,52 +278,21 @@ async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 	const desired = new Map(
 		resources.map((resource) => [resource.path, isManagerResource(resource) || resource.enabled]),
 	);
-	while (true) {
-		const stagedCount = resources.filter(
-			(resource) => desired.get(resource.path) !== resource.enabled,
-		).length;
-		const choices = resources.map((resource) => {
-			const enabled = desired.get(resource.path) ?? resource.enabled;
-			const lock = isManagerResource(resource)
-				? " · required"
-				: localFilePackageSources.has(resource.metadata.source)
-					? " · unavailable (local file package)"
-					: "";
-			return `${enabled ? "[x]" : "[ ]"} ${resourceName(resource, agentDir)}${lock}`;
-		});
-		const choiceToResource = new Map(choices.map((choice, index) => [choice, resources[index]]));
-		const choice = await ctx.ui.select(
-			stagedCount > 0 ? `Extensions (${stagedCount} staged)` : "Extensions (select to toggle)",
-			[...choices, APPLY_CHOICE, CANCEL_CHOICE],
-		);
-
-		if (choice === undefined || choice === CANCEL_CHOICE) {
-			if (stagedCount > 0) ctx.ui.notify("Extension changes discarded", "info");
-			return;
-		}
-		if (choice === APPLY_CHOICE) {
-			const changed = await persistChanges(settingsManager, resources, desired, agentDir);
-			if (changed === 0) {
-				ctx.ui.notify("No extension changes to apply", "info");
-				return;
-			}
-			ctx.ui.notify(`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reloading`, "info");
-			await ctx.reload();
-			return;
-		}
-
-		const resource = choiceToResource.get(choice);
-		if (!resource) continue;
-		if (isManagerResource(resource)) {
-			ctx.ui.notify("The extension manager keeps itself enabled so disabled extensions remain recoverable", "warning");
-			continue;
-		}
-		if (localFilePackageSources.has(resource.metadata.source)) {
-			ctx.ui.notify("Pi does not support extension filters for local-file packages; configure a directory package to make this extension toggleable", "warning");
-			continue;
-		}
-		desired.set(resource.path, !(desired.get(resource.path) ?? resource.enabled));
+	const result = ctx.mode === "tui"
+		? await openTuiManager(ctx, resources, desired, localFilePackageSources, agentDir)
+		: await openSelectManager(ctx, resources, desired, localFilePackageSources, agentDir);
+	if (result !== "apply") {
+		if (stagedCount(resources, desired) > 0) ctx.ui.notify("Extension changes discarded", "info");
+		return;
 	}
+
+	const changed = await persistChanges(settingsManager, resources, desired, agentDir);
+	if (changed === 0) {
+		ctx.ui.notify("No extension changes to apply", "info");
+		return;
+	}
+	ctx.ui.notify(`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reloading`, "info");
+	await ctx.reload();
 }
 
 export default function extensionManager(pi: ExtensionAPI): void {
