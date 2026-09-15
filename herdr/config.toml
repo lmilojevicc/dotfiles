@@ -57,7 +57,7 @@ onboarding = false
     type = "popup"
     width = "75%"
     height = "75%"
-    command = "seshagy"
+    command = "seshagy --ephemeral"
 
   [[keys.command]]
     key = "prefix+,"
