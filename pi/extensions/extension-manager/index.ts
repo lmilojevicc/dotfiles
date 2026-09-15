@@ -246,8 +246,10 @@ async function openTuiManager(
 		};
 	});
 	const byPath = new Map(resources.map((resource) => [resource.path, resource]));
-	return ctx.ui.custom<ExtensionManagerResult | undefined>((tui, theme, keybindings, done) =>
-		new ExtensionManagerComponent({
+	let getTerminalWidth = () => 1;
+	return ctx.ui.custom<ExtensionManagerResult | undefined>((tui, theme, keybindings, done) => {
+		getTerminalWidth = () => tui.terminal.columns;
+		return new ExtensionManagerComponent({
 			rows,
 			theme,
 			keybindings,
@@ -262,8 +264,19 @@ async function openTuiManager(
 			},
 			onChange: () => tui.requestRender(),
 			onDone: done,
-		}),
-	{ overlay: true, overlayOptions: { width: "95%", maxHeight: 19, margin: { left: 1, right: 1 }, anchor: "center" } });
+		});
+	}, {
+		overlay: true,
+		overlayOptions: {
+			// OverlayOptions has no maxWidth, so cap its percentage width on each layout read.
+			get width() {
+				return Math.max(1, Math.min(Math.floor(getTerminalWidth() * 0.8), 96));
+			},
+			maxHeight: 19,
+			margin: { left: 1, right: 1 },
+			anchor: "center",
+		},
+	});
 }
 
 async function openManager(ctx: ExtensionCommandContext): Promise<void> {

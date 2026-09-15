@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, test } from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import { KeybindingsManager, type OverlayOptions, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import extensionManager, { APPLY_CHOICE, CANCEL_CHOICE } from "../index.ts";
 import { applyExtensionChanges } from "../state.ts";
 
@@ -247,14 +247,22 @@ async function runCommand(
 	return { reloadCount, notifications, titles };
 }
 
+type CapturedCustomOptions = {
+	overlay?: boolean;
+	overlayOptions?: OverlayOptions | (() => OverlayOptions);
+};
+
 async function runTuiCommand(inputs: readonly string[]): Promise<{
 	reloadCount: number;
 	notifications: string[];
 	customCount: number;
 	selectCount: number;
+	customOptions: CapturedCustomOptions | undefined;
+	terminal: { rows: number; columns: number };
 }> {
 	const command = registerExtensionCommand();
 	let reloadCount = 0, customCount = 0, selectCount = 0;
+	let customOptions: CapturedCustomOptions | undefined;
 	const notifications: string[] = [];
 	const theme = {
 		fg: (_color: string, value: string) => value,
@@ -266,15 +274,23 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 		hasUI: true,
 		mode: "tui",
 		ui: {
-			async custom(factory: Function) {
+			async custom(factory: Function, options: CapturedCustomOptions) {
 				customCount++;
+				customOptions = options;
 				let result: unknown;
 				const component = await factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), (value: unknown) => { result = value; });
+				const renderWidth = () => {
+					const overlayOptions = typeof options.overlayOptions === "function" ? options.overlayOptions() : options.overlayOptions;
+					const width = overlayOptions?.width;
+					if (typeof width === "number") return width;
+					if (typeof width === "string") return Math.floor(tui.terminal.columns * Number.parseFloat(width) / 100);
+					return tui.terminal.columns;
+				};
 				component.focused = true;
-				component.render(95);
+				component.render(renderWidth());
 				for (const input of inputs) {
 					component.handleInput(input);
-					component.render(95);
+					component.render(renderWidth());
 				}
 				return result;
 			},
@@ -284,7 +300,7 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 		async reload() { reloadCount++; },
 	} as unknown as ExtensionCommandContext;
 	await command.handler("", ctx);
-	return { reloadCount, notifications, customCount, selectCount };
+	return { reloadCount, notifications, customCount, selectCount, customOptions, terminal: tui.terminal };
 }
 
 function writeExtension(name: string): void {
@@ -292,6 +308,26 @@ function writeExtension(name: string): void {
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(join(directory, "index.ts"), "export default function () {}\n");
 }
+
+test("TUI passes centered 80%-responsive overlay sizing with a 96-column cap", async () => {
+	writeExtension("first");
+	const result = await runTuiCommand(["\x1b"]);
+	assert.equal(result.customOptions?.overlay, true);
+
+	const optionSource = result.customOptions?.overlayOptions;
+	const options = typeof optionSource === "function" ? optionSource() : optionSource;
+	assert.ok(options);
+	assert.equal(options.width, 80);
+	assert.equal(options.maxHeight, 19);
+	assert.deepEqual(options.margin, { left: 1, right: 1 });
+	assert.equal(options.anchor, "center");
+	assert.equal(options.minWidth, undefined);
+
+	result.terminal.columns = 160;
+	assert.equal(options.width, 96);
+	result.terminal.columns = 20;
+	assert.equal(options.width, 16);
+});
 
 test("TUI uses the custom searchable manager and applies staged toggles across single-result filters", async () => {
 	writeExtension("aaaaaaaa");
