@@ -138,37 +138,57 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		this.renderedTerminalHeight = this.options.getTerminalHeight?.();
 		if (width <= 0) return [];
 		const { theme, keybindings: kb } = this.options;
-		const clip = (line: string) => truncateToWidth(line, width, "");
-		const height = Math.min(17, this.renderedHeight);
+		const height = Math.min(19, this.renderedHeight);
+		const clip = (line: string, size = width) => truncateToWidth(line, Math.max(0, size), "");
+		const fill = (line: string, size: number) => {
+			const value = clip(line, size);
+			return value + " ".repeat(Math.max(0, size - visibleWidth(value)));
+		};
 		const cancelKey = kb.getKeys("tui.select.cancel")[0] ?? "unbound";
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelName = cancelKey === "escape" ? "Esc" : cancelKey;
 		const confirmName = confirmKey === "enter" ? "Enter" : confirmKey;
 		const primaryHint = `${confirmName} act · ${cancelName} cancel`;
-		if (width < 20 || height < 8 || visibleWidth(primaryHint) > width) {
+		const contentWidth = Math.max(0, width - 4);
+		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
+		if (width < 24 || height < 10 || visibleWidth(primaryHint) > contentWidth) {
+			if (width >= 4 && height >= 3) {
+				const lines = [
+					theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
+					bordered(theme.fg("warning", clip("Resize required", contentWidth))),
+				];
+				if (height >= 4) lines.push(bordered(theme.fg("dim", clip(`${cancelName} cancel`, contentWidth))));
+				lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
+				return lines.map((line) => clip(line));
+			}
 			const lines = [theme.fg("warning", clip("Resize required"))];
 			if (height > 1) lines.push(theme.fg("dim", clip(`${cancelName} cancel`)));
-			return lines.slice(0, height).map(clip);
+			return lines.slice(0, height).map((line) => clip(line));
 		}
 		this.usable = true;
 
 		const staged = this.options.getStagedCount();
 		const title = staged > 0 ? `Extensions (${staged} staged)` : "Extensions";
 		const searchPrefix = theme.fg("muted", "Search: ");
-		const search = searchPrefix + this.input.render(Math.max(1, width - visibleWidth(searchPrefix)))[0];
-		const bodyRows = Math.min(10, Math.max(1, height - 7), Math.max(1, this.options.rows.length));
+		const search = searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
+		const bodyRows = Math.min(10, Math.max(1, height - 9), Math.max(1, this.options.rows.length));
 		this.pageSize = bodyRows;
 		const selectedExtension = this.filtered.length === 0 ? 0 : Math.min(this.selected, this.filtered.length - 1);
 		const { start, end } = extensionViewport(selectedExtension, this.filtered.length, bodyRows);
 		const up = start > 0 ? `  ↑ ${start} more` : "";
 		const down = end < this.filtered.length ? `  ↓ ${this.filtered.length - end} more` : "";
-		const lines = [theme.bold(clip(title)), clip(search), theme.fg("borderMuted", clip(up))];
+		const lines = [
+			theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
+			bordered(theme.bold(clip(title, contentWidth))),
+			bordered(clip(search, contentWidth)),
+			bordered(theme.fg("borderMuted", clip(up, contentWidth))),
+		];
 
 		for (let slot = 0; slot < bodyRows; slot++) {
 			const index = start + slot;
 			const row = this.filtered[index];
 			if (!row) {
-				lines.push(slot === 0 ? theme.fg("warning", clip("  No matching extensions")) : "");
+				lines.push(bordered(slot === 0 ? theme.fg("warning", clip("  No matching extensions", contentWidth)) : ""));
 				continue;
 			}
 			const active = index === this.selected;
@@ -177,20 +197,21 @@ export class ExtensionManagerComponent implements Component, Focusable {
 			const marker = active ? theme.fg("accent", "›") : " ";
 			const checkbox = enabled ? theme.fg("success", "[x]") : "[ ]";
 			const label = cleanText(row.label) + lock;
-			lines.push(clip(`${marker} ${checkbox} ${active ? theme.bold(label) : row.lock ? theme.fg("muted", label) : label}`));
+			lines.push(bordered(clip(`${marker} ${checkbox} ${active ? theme.bold(label) : row.lock ? theme.fg("muted", label) : label}`, contentWidth)));
 		}
-		lines.push(theme.fg("borderMuted", clip(down)));
+		lines.push(bordered(theme.fg("borderMuted", clip(down, contentWidth))));
 
 		const action = (kind: "apply" | "cancel", label: string): string => {
 			const active = this.getSelectedKind() === kind;
-			return clip(`${active ? theme.fg("accent", "›") : " "} ${active ? theme.bold(label) : label}`);
+			return clip(`${active ? theme.fg("accent", "›") : " "} ${active ? theme.bold(label) : label}`, contentWidth);
 		};
-		lines.push(action("apply", "Apply changes and reload"), action("cancel", "Cancel"));
+		lines.push(bordered(action("apply", "Apply changes and reload")), bordered(action("cancel", "Cancel")));
 		const fullHint = `Type search · ↑↓ move · ${primaryHint}`;
 		const moveHint = `↑↓ move · ${primaryHint}`;
-		const footer = visibleWidth(fullHint) <= width ? fullHint : visibleWidth(moveHint) <= width ? moveHint : primaryHint;
-		lines.push(theme.fg("dim", footer));
-		return lines.slice(0, height).map(clip);
+		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : primaryHint;
+		lines.push(bordered(theme.fg("dim", footer)));
+		lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
+		return lines.slice(0, height).map((line) => clip(line));
 	}
 
 	invalidate(): void { this.input.invalidate(); }

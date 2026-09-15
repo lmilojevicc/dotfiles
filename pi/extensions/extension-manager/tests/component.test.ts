@@ -23,14 +23,14 @@ const row = (name: string, options: Partial<ExtensionManagerRow> = {}): Extensio
 	...options,
 });
 
-function setup(rows: readonly ExtensionManagerRow[], initialHeight = 17, initialWidth = 100) {
+function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initialWidth = 100, theme = plainTheme) {
 	const desired = new Map(rows.map((item) => [item.id, item.enabled]));
 	const done: ExtensionManagerResult[] = [];
 	let changed = 0;
 	const terminal = { height: initialHeight, width: initialWidth };
 	const component = new ExtensionManagerComponent({
 		rows,
-		theme: plainTheme as never,
+		theme: theme as never,
 		keybindings: keys(),
 		getHeight: () => terminal.height,
 		getWidth: () => terminal.width,
@@ -84,9 +84,50 @@ test("bounded render reports exact hidden counts above and below", () => {
 	assert.doesNotMatch(output, /↓ \d+ more/);
 });
 
+test("rounded frame uses themed borders, one-cell padding, and exact ANSI-safe widths", () => {
+	const calls: Array<{ role: string; value: string }> = [];
+	const ansiTheme = {
+		fg: (role: string, value: string) => {
+			calls.push({ role, value });
+			return `\x1b[36m${value}\x1b[39m`;
+		},
+		bold: (value: string) => `\x1b[1m${value}\x1b[22m`,
+	};
+	const rows = Array.from({ length: 20 }, (_, index) => row(`界😀-${index}`));
+	const { component } = setup(rows, 19, 64, ansiTheme);
+	const lines = component.render(64);
+
+	assert.equal(lines.length, 19);
+	assert.ok(calls.some(({ role, value }) => role === "border" && /^╭─+╮$/.test(value)));
+	assert.ok(calls.some(({ role, value }) => role === "border" && value === "│"));
+	assert.ok(calls.some(({ role, value }) => role === "border" && /^╰─+╯$/.test(value)));
+	assert.ok(calls.some(({ role }) => role === "borderMuted"));
+	for (const line of lines) assert.equal(visibleWidth(line), 64, JSON.stringify(line));
+
+	const plain = setup(rows, 19, 64).component.render(64);
+	assert.match(plain[0], /^╭─{62}╮$/);
+	assert.match(plain.at(-1)!, /^╰─{62}╯$/);
+	for (const line of plain.slice(1, -1)) {
+		assert.ok(line.startsWith("│ ") && line.endsWith(" │"));
+		assert.equal(visibleWidth(line), 64);
+	}
+});
+
+test("frame accounting preserves adaptive one-to-ten-row list capacity", () => {
+	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
+	for (const [height, count] of [[10, 1], [13, 4], [19, 10]] as const) {
+		const { component } = setup(rows, height, 80);
+		const lines = component.render(80);
+		assert.equal(lines.length, height);
+		assert.equal(lines.join("\n").match(/\[[ x]\]/g)?.length, count);
+		assert.equal(visibleWidth(lines[0]), 80);
+		assert.equal(visibleWidth(lines.at(-1)!), 80);
+	}
+});
+
 test("navigation wraps, pages clamp, and actions stay outside filtering", () => {
 	const rows = Array.from({ length: 12 }, (_, index) => row(`item-${index}`));
-	const { component, done } = setup(rows, 12);
+	const { component, done } = setup(rows, 14);
 	component.handleInput(up);
 	assert.equal(component.getSelectedKind(), "cancel");
 	component.handleInput(down);
@@ -135,11 +176,11 @@ for (const [name, space] of [["raw", " "], ["Kitty CSI-u", "\x1b[32u"]] as const
 	});
 }
 
-test("resize recomputes capacity and stale frames cannot toggle or apply", () => {
+test("resize recomputes framed capacity and stale frames cannot toggle or apply", () => {
 	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
-	const { component, desired, terminal } = setup(rows, 17, 80);
+	const { component, desired, terminal } = setup(rows, 19, 80);
 	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 10);
-	terminal.height = 11;
+	terminal.height = 13;
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), true);
 	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 4);
@@ -147,9 +188,49 @@ test("resize recomputes capacity and stale frames cannot toggle or apply", () =>
 	assert.equal(desired.get(rows[0].id), false);
 });
 
+test("feasible Resize required layouts use a compact themed frame without enabling actions", () => {
+	const disabled = row("disabled", { enabled: false });
+	for (const [width, height] of [[35, 8], [24, 17]] as const) {
+		const { component } = setup([disabled], height, width);
+		const lines = component.render(width);
+		assert.equal(lines.length, 4);
+		assert.equal(lines[0], `╭${"─".repeat(width - 2)}╮`);
+		assert.equal(lines.at(-1), `╰${"─".repeat(width - 2)}╯`);
+		assert.ok(lines[1].startsWith("│ Resize required") && lines[1].endsWith(" │"));
+		assert.ok(lines[2].startsWith("│ Esc cancel") && lines[2].endsWith(" │"));
+		for (const line of lines) assert.equal(visibleWidth(line), width);
+	}
+
+	const borderCalls: string[] = [];
+	const themed = setup([disabled], 8, 35, {
+		fg: (role: string, value: string) => {
+			if (role === "border") borderCalls.push(value);
+			return `\x1b[36m${value}\x1b[39m`;
+		},
+		bold: (value: string) => value,
+	});
+	const themedLines = themed.component.render(35);
+	assert.ok(borderCalls.some((value) => /^╭─+╮$/.test(value)));
+	assert.ok(borderCalls.includes("│"));
+	assert.ok(borderCalls.some((value) => /^╰─+╯$/.test(value)));
+	for (const line of themedLines) assert.equal(visibleWidth(line), 35);
+
+	const blocked = setup([disabled], 19, 80);
+	blocked.component.handleInput(down);
+	assert.equal(blocked.component.getSelectedKind(), "apply");
+	blocked.terminal.width = 24;
+	blocked.terminal.height = 17;
+	blocked.component.render(24);
+	blocked.component.handleInput(enter);
+	assert.equal(blocked.desired.get(disabled.id), false);
+	assert.deepEqual(blocked.done, []);
+	blocked.component.handleInput(escape);
+	assert.deepEqual(blocked.done, ["cancel"]);
+});
+
 test("tiny layouts remain cancellable; focus, clipping, and Unicode widths are safe", () => {
 	const long = row("界😀é".repeat(30));
-	for (const width of [0, 1, 7, 19, 20, 35]) {
+	for (const width of [0, 1, 7, 19, 20, 24, 25, 26, 35]) {
 		for (const height of [1, 2, 7, 8, 12, 17]) {
 			const { component } = setup([long], height, width);
 			const lines = component.render(width);
@@ -157,12 +238,22 @@ test("tiny layouts remain cancellable; focus, clipping, and Unicode widths are s
 			for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width}x${height}: ${JSON.stringify(line)}`);
 		}
 	}
-	const tiny = setup([long], 2, 10);
-	assert.match(tiny.component.render(10)[0], /Resize/);
+	const disabledLong = { ...long, enabled: false };
+	const tiny = setup([disabledLong], 2, 10);
+	const tinyLines = tiny.component.render(10);
+	assert.match(tinyLines[0], /Resize/);
+	assert.doesNotMatch(tinyLines.join("\n"), /[╭╮╰╯│]/);
+	for (const line of tinyLines) assert.ok(visibleWidth(line) <= 10);
 	tiny.component.handleInput(enter);
-	assert.equal(tiny.desired.get(long.id), true);
+	assert.equal(tiny.desired.get(disabledLong.id), false, "Resize state disables mutation");
 	tiny.component.handleInput(escape);
 	assert.deepEqual(tiny.done, ["cancel"]);
+
+	const tooNarrow = setup([disabledLong], 17, 3);
+	const tooNarrowLines = tooNarrow.component.render(3);
+	assert.deepEqual(tooNarrowLines.map((line) => line.slice(0, 3)), ["Res", "Esc"]);
+	assert.ok(tooNarrowLines.every((line) => visibleWidth(line) === 3));
+	assert.doesNotMatch(tooNarrowLines.join("\n"), /[╭╮╰╯│]/);
 
 	const focused = setup([long]);
 	assert.ok(focused.component.render(80).some((line) => line.includes(CURSOR_MARKER)));

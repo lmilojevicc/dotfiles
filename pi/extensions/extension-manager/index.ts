@@ -251,7 +251,7 @@ async function openTuiManager(
 			rows,
 			theme,
 			keybindings,
-			getHeight: () => Math.max(1, Math.min(17, tui.terminal.rows - 2)),
+			getHeight: () => Math.max(1, Math.min(19, tui.terminal.rows - 2)),
 			getWidth: () => tui.terminal.columns,
 			getTerminalHeight: () => tui.terminal.rows,
 			getEnabled: (row) => desired.get(row.id) ?? row.enabled,
@@ -263,7 +263,7 @@ async function openTuiManager(
 			onChange: () => tui.requestRender(),
 			onDone: done,
 		}),
-	{ overlay: true, overlayOptions: { width: "95%", maxHeight: 17, margin: { left: 1, right: 1 }, anchor: "center" } });
+	{ overlay: true, overlayOptions: { width: "95%", maxHeight: 19, margin: { left: 1, right: 1 }, anchor: "center" } });
 }
 
 async function openManager(ctx: ExtensionCommandContext): Promise<void> {
