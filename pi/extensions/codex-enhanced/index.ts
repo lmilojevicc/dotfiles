@@ -693,11 +693,10 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				render();
 			}
 		};
-		const startReset = async (confirm = true) => {
+		const startReset = async () => {
 			const state = durableState();
 			discardStaleArm(state);
 			if (usageLoading || resetAccountLoading || resetRunning || recovery || !manualEligible(state)) return;
-			if (!confirm && resetArmedAccountKey) return;
 			const revision = ++manualInteractionRevision;
 			const lifecycleCurrent = controls.captureCurrent();
 			const model = JSON.stringify(ctx.model);
@@ -887,7 +886,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 						: preference && resetAccountKey ? controls.status(resetAccountKey) : !usable && usageState && !("error" in usageState) && (usageState.resetCredits?.availableCount ?? 0) > 0 ? "No usable reset details" : "");
 				const resetFooter = recovery
 					? recovery.checking ? ["Esc cancel"] : recovery.outcome ? ["Enter acknowledge · Esc cancel"] : ["1 reset · 2 already applied", "Esc cancel"]
-					: armed ? [state.manualAction.kind === "retry" ? "Enter retry · Esc cancel" : "Enter use reset · Esc cancel"]
+					: armed ? [state.manualAction.kind === "retry" ? "Ctrl+R retry · Esc cancel" : "Ctrl+R use reset · Esc cancel"]
 					: [
 						...(canAcknowledge ? ["A acknowledge completion"] : []),
 						"R refresh",
@@ -904,7 +903,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					...(armed ? state.manualAction.kind === "retry" ? resetWrappedLines("Same credit and request ID", width) : [] : ["", ...resetWrappedLines(
 						safety || resetRunning || autoActivity ? "Manual reset unavailable"
 						: needsRefresh ? "Manual reset · R refresh first"
-						: manual ? state.manualAction.kind === "retry" ? "U retry previous reset" : "U use 1 reset"
+						: manual ? state.manualAction.kind === "retry" ? "Ctrl+R retry previous reset" : "Ctrl+R use 1 reset"
 						: usageState && !("error" in usageState) && usageState.resetCredits?.availableCount === 0 ? "Manual reset · no banked resets"
 						: "Manual reset · R refresh", width)]),
 				];
@@ -965,8 +964,6 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					toggleCompaction();
 				} else if (activeTab === "resets" && resetArmedAccountKey && matchesKey(data, "enter")) {
 					void startReset();
-				} else if (activeTab === "resets" && data.toLowerCase() === "u") {
-					void startReset(false);
 				} else if (activeTab === "resets" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
 					void toggleAuto();
 				} else if (activeTab === "resets" && data.toLowerCase() === "a") {

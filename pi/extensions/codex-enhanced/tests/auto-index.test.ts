@@ -855,7 +855,7 @@ for (const phase of ["pending", "ambiguous", "unknown"] as const) {
 		await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase, recovered: false, requestId: "synthetic-uncertain", creditId: "synthetic-uncertain-credit" }));
 		const before = f.bytes();
 		assert.doesNotMatch(c.render(40).join("\n"), /A acknowledge/);
-		assert.match(c.render(40).join("\n"), /U retry previous reset/);
+		assert.match(c.render(40).join("\n"), /Ctrl\+R retry previous reset/);
 		c.handleInput("a"); c.handleInput("1"); await drain();
 		assert.equal(f.bytes(), before); assert.equal(f.state.posts.length, 0);
 		c.handleInput("escape"); await f.menu;
@@ -868,7 +868,7 @@ test("Resets armed Escape cancels before closing; Tab and R clear manual arms", 
 	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
 	const c = f.component(); c.handleInput("tab");
 	for (const cancel of ["escape", "tab", "r"]) {
-		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(40).join("\n"), /Enter use reset · Esc cancel/);
+		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(40).join("\n"), /Ctrl\+R use reset · Esc cancel/);
 		c.handleInput(cancel); await drain(); if (cancel === "tab") c.handleInput("shift+tab");
 		assert.doesNotMatch(c.render(40).join("\n"), /Use 1 banked reset\?/);
 	}
@@ -898,8 +898,8 @@ test("Resets actual component retains complete controls at 32/40/60/80 and bound
 	c.handleInput("1"); check([/Enter acknowledge · Esc cancel/, /no old request/]);
 	c.handleInput("escape");
 	await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "unknown", recovered: false, requestId: "synthetic-unknown", creditId: "synthetic-unknown-credit" }));
-	check([/U retry previous reset/, /Tab next · Esc close/], true);
-	c.handleInput("ctrl+r"); await drain(); check([/Retry previous reset\?/, /Enter retry · Esc cancel/], true);
+	check([/Ctrl\+R retry previous reset/, /Tab next · Esc close/], true);
+	c.handleInput("ctrl+r"); await drain(); check([/Retry previous reset\?/, /Ctrl\+R retry · Esc cancel/], true);
 	c.handleInput("escape"); c.handleInput("escape"); await f.menu;
 });
 
@@ -992,7 +992,7 @@ for (const scenario of ["recovered", "newer-request"] as const) {
 		await withResetAccountLock(f.dir, f.key, async (save) => save(terminal));
 		if (scenario === "newer-request") {
 			c.handleInput("r"); await drain();
-			assert.match(c.render(60).join("\n"), /U use 1 reset/);
+			assert.match(c.render(60).join("\n"), /Ctrl\+R use 1 reset/);
 			await withResetAccountLock(f.dir, f.key, async (save) => save({ ...terminal, requestId: "terminal-newer" }));
 		}
 		const before = f.bytes(); const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
@@ -1004,7 +1004,7 @@ for (const scenario of ["recovered", "newer-request"] as const) {
 		}
 		assert.equal(f.bytes(), before); assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
 		c.handleInput("r"); await drain();
-		assert.match(c.render(60).join("\n"), /U use 1 reset/);
+		assert.match(c.render(60).join("\n"), /Ctrl\+R use 1 reset/);
 		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 0);
 		c.handleInput("ctrl+r"); await drain(); assert.equal(f.state.posts.length, 1);
 		c.handleInput("escape"); await f.menu;
@@ -1016,7 +1016,7 @@ for (const blocker of ["lossy", "lock", "corrupt", "live"] as const) {
 		const f = await recoveryMenu(t); const c = f.component();
 		await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "unknown", recovered: false,
 			requestId: "uncertain-request", creditId: "uncertain-credit" }));
-		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(60).join("\n"), /Enter (?:retry|use reset)/);
+		c.handleInput("ctrl+r"); await drain(); assert.match(c.render(60).join("\n"), /Ctrl\+R (?:retry|use reset)/);
 		if (blocker === "lossy") await withResetAccountLock(f.dir, f.key, async (save) => save(f.original));
 		if (blocker === "lock") { rmSync(resetPaths(f.dir, f.key).lock, { force: true }); mkdirSync(resetPaths(f.dir, f.key).lock, { mode: 0o700 }); }
 		if (blocker === "corrupt") writeFileSync(resetPaths(f.dir, f.key).journal, "not-json");
@@ -1151,21 +1151,50 @@ test("Fast/Compaction actual Enter/Space toggles once, compact status/footer, sh
 	await menu;
 });
 
-for (const keys of [["u", "\r"], ["\x12", "\x12"], ["u", "\x12"], ["\x12", "\r"]]) {
+test("manual raw U/u are no-ops before and after Ctrl+R arms", async (t) => {
+	const f = fixture(t); const l = lifecycle(t, f.ctx);
+	await l.handlers.get("session_start")({}, f.ctx); await drain();
+	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
+	const c = f.component(); t.after(f.close); c.handleInput("\t");
+	let auth = 0; const resolve = f.ctx.modelRegistry.getProviderAuth;
+	f.ctx.modelRegistry.getProviderAuth = async () => { auth++; return resolve(); };
+	for (const armed of [false, true]) {
+		if (armed) { c.handleInput("\x12"); await drain(); }
+		const frame = c.render(80);
+		const counts = [auth, f.state.usageReads, f.state.detailReads, f.state.posts.length];
+		const preference = readAutoResetPreference(f.path, f.key);
+		const journal = readResetJournal(f.dir, f.key);
+		for (const key of ["U", "u"]) {
+			c.handleInput(key); await drain();
+			assert.deepEqual(c.render(80), frame);
+			assert.deepEqual([auth, f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
+			assert.deepEqual(readAutoResetPreference(f.path, f.key), preference);
+			assert.deepEqual(readResetJournal(f.dir, f.key), journal);
+		}
+	}
+	f.close(); await menu;
+});
+
+for (const keys of [["\x12", "\x12"], ["\x12", "\r"]]) {
 	test(`manual raw bytes ${JSON.stringify(keys)} confirm once without toggling auto`, async (t) => {
 		const f = fixture(t); const l = lifecycle(t, f.ctx);
 		f.ctx.model = { id: "other", provider: "other" }; // Manual is independent of selected model.
 		await l.handlers.get("session_start")({}, f.ctx); await drain();
 		const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
 		const c = f.component(); c.handleInput("\t");
-		assert.match(c.render(80).join("\n"), /U use 1 reset/);
+		const { visibleWidth } = await import("@earendil-works/pi-tui");
+		const check = (patterns: RegExp[]) => {
+			for (const width of [32, 39, 40, 41, 59, 60, 61, 79, 80, 81]) {
+				const lines = c.render(width);
+				assert.ok(lines.every((line: string) => visibleWidth(line) <= width));
+				for (const pattern of patterns) assert.match(lines.join("\n"), pattern);
+			}
+		};
+		check([/Ctrl\+R use 1 reset/]);
 		c.handleInput(keys[0]); await drain();
-		for (const width of [32, 40, 60, 80]) {
-			const text = c.render(width).join("\n");
-			assert.match(text, /Use 1 banked reset\?/); assert.match(text, /Enter use reset · Esc cancel/);
-		}
-		c.handleInput("u"); c.handleInput("u"); await drain();
-		assert.equal(f.state.posts.length, 0, "U key-repeat never confirms");
+		check([/Use 1 banked reset\?/, /Ctrl\+R use reset · Esc cancel/]);
+		c.handleInput("U"); c.handleInput("u"); await drain();
+		assert.equal(f.state.posts.length, 0, "U/u never confirms");
 		c.handleInput(keys[1]); await until(() => f.state.posts.length === 1); await drain();
 		assert.equal(readAutoResetPreference(f.path, f.key).enabled, false, "armed Enter never toggles auto");
 		assert.equal(f.state.posts.length, 1);
@@ -1175,31 +1204,31 @@ for (const keys of [["u", "\r"], ["\x12", "\x12"], ["u", "\x12"], ["\x12", "\r"]
 }
 
 for (const cancellation of ["\x1b", "\t", "r", " "]) {
-	test(`U arm raw cancellation ${JSON.stringify(cancellation)} leaves no hidden confirmation`, async (t) => {
+	test(`Ctrl+R arm raw cancellation ${JSON.stringify(cancellation)} leaves no hidden confirmation`, async (t) => {
 		const f = fixture(t); const l = lifecycle(t, f.ctx); f.state.percent = 50;
 		await l.handlers.get("session_start")({}, f.ctx); await drain();
 		const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
-		const c = f.component(); c.handleInput("\t"); c.handleInput("u"); await drain();
+		const c = f.component(); c.handleInput("\t"); c.handleInput("\x12"); await drain();
 		c.handleInput(cancellation); await drain();
 		if (cancellation === "\t") c.handleInput("\x1b[Z");
 		assert.doesNotMatch(c.render(80).join("\n"), /Use 1 banked reset\?/);
 		assert.equal(f.state.posts.length, 0);
-		c.handleInput("u"); await drain(); assert.equal(f.state.posts.length, 0);
+		c.handleInput("\x12"); await drain(); assert.equal(f.state.posts.length, 0);
 		c.handleInput("\x1b"); c.handleInput("\x1b"); await menu;
 	});
 }
 
-test("U retry remains deliberate with zero current credits and preserves IDs", async (t) => {
+test("Ctrl+R retry remains deliberate with zero current credits and preserves IDs", async (t) => {
 	const f = fixture(t); const l = lifecycle(t, f.ctx); f.state.count = 0;
 	await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "pending", recovered: false, requestId: "uncertain-id", creditId: "uncertain-credit" }));
 	await l.handlers.get("session_start")({}, f.ctx); await drain();
 	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
 	const c = f.component(); c.handleInput("\t");
-	assert.match(c.render(80).join("\n"), /U retry previous reset/);
-	c.handleInput("u"); await drain();
+	assert.match(c.render(80).join("\n"), /Ctrl\+R retry previous reset/);
+	c.handleInput("\x12"); await drain();
 	for (const width of [32, 40, 60, 80]) {
 		const text = c.render(width).join("\n");
-		assert.match(text, /Retry previous reset\?/); assert.match(text, /Same credit and request ID/); assert.match(text, /Enter retry · Esc cancel/);
+		assert.match(text, /Retry previous reset\?/); assert.match(text, /Same credit and request ID/); assert.match(text, /Ctrl\+R retry · Esc cancel/);
 	}
 	c.handleInput("\r"); await until(() => f.state.posts.length === 1); await drain();
 	assert.equal(f.state.posts[0].credit_id, "uncertain-credit"); assert.equal(f.state.posts[0].redeem_request_id, "uncertain-id");
@@ -1234,7 +1263,7 @@ test("open Resets detects synthetic owner SIGKILL with unchanged stats, no auth/
 	const counts = [f.state.usageReads, f.state.detailReads, f.state.posts.length];
 	const paths = resetPaths(f.dir, f.key); const before = statSync(paths.lock);
 	const exit = once(child, "exit"); child.kill("SIGKILL"); await exit;
-	await waitForFrame(() => /U use 1 reset/.test(f.state.frame));
+	await waitForFrame(() => /Ctrl\+R use 1 reset/.test(f.state.frame));
 	const after = statSync(paths.lock);
 	assert.deepEqual([after.ino, after.mtimeMs, after.ctimeMs], [before.ino, before.mtimeMs, before.ctimeMs]);
 	assert.equal(auth, 0); assert.deepEqual([f.state.usageReads, f.state.detailReads, f.state.posts.length], counts);
@@ -1251,7 +1280,7 @@ test("confirmation bound before later auth cannot consume a newer other-session 
 	const f = fixture(t); const l = lifecycle(t, f.ctx);
 	await l.handlers.get("session_start")({}, f.ctx); await drain();
 	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
-	const c = f.component(); c.handleInput("\t"); c.handleInput("u"); await drain();
+	const c = f.component(); c.handleInput("\t"); c.handleInput("\x12"); await drain();
 	const auth = f.ctx.modelRegistry.getProviderAuth; let calls = 0; let release!: () => void;
 	f.ctx.modelRegistry.getProviderAuth = async () => {
 		// startReset checks displayed identity after its first auth. Pause the following coordinator auth.
@@ -1269,7 +1298,7 @@ for (const interveningRender of [false, true]) test(`stale armed raw Enter cance
 	const f = fixture(t); const l = lifecycle(t, f.ctx);
 	await l.handlers.get("session_start")({}, f.ctx); await drain();
 	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
-	const c = f.component(); c.handleInput("\t"); c.handleInput("u"); await drain();
+	const c = f.component(); c.handleInput("\t"); c.handleInput("\x12"); await drain();
 	await withResetAccountLock(f.dir, f.key, async (save) => save({ version: 1, accountKey: f.key, phase: "pending", recovered: false, requestId: "competing-request", creditId: "competing-credit" }));
 	// Watcher-driven rendering must not erase the meaning of the next confirmation Enter.
 	if (interveningRender) assert.doesNotMatch(c.render(80).join("\n"), /Use 1 banked reset\?/);
@@ -1321,7 +1350,7 @@ test("manual repeated raw Enter stays confirmation-only during a barrier-held PO
 	await l.handlers.get("session_start")({}, f.ctx); await drain();
 	const menu = l.commands.get("codex-enhanced").handler("", f.ctx); await drain();
 	const c = f.component(); t.after(f.close);
-	c.handleInput("\t"); c.handleInput("u");
+	c.handleInput("\t"); c.handleInput("\x12");
 	await until(() => /Use 1 banked reset\?/.test(c.render(80).join("\n")));
 	let entered!: () => void, release!: () => void;
 	const posted = new Promise<void>((resolve) => { entered = resolve; });
