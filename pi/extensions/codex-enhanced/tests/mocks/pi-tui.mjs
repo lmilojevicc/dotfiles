@@ -12,4 +12,5 @@ catch {
 }
 const tui = await import(pathToFileURL(tuiPath).href);
 export const { truncateToWidth, visibleWidth, wrapTextWithAnsi } = tui;
-export function matchesKey(data, key) { return data === key; }
+const keys = await import(new URL("./keys.js", pathToFileURL(tuiPath)).href);
+export function matchesKey(data, key) { return data === key || keys.matchesKey(data, key); }

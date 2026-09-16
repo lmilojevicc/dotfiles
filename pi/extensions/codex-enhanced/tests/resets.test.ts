@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetAccountState, manualResetNeedsRefresh, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
+import { coordinateReset as coordinateResetImpl, legacyResetIntent, preserveLegacyReset, readResetJournal, resetAccountStatus, resetAccountState, manualResetNeedsRefresh, resetPaths, withResetAccountLock, type ResetJournal, type ResetOperation } from "../resets.ts";
+
+// Each manual test simulates explicit confirmation of the displayed identity.
+const coordinateReset = (op: ResetOperation) => coordinateResetImpl({ ...op,
+	...(op.mode === "manual" && !op.manualAction ? { manualAction: resetAccountState(op.agentDir, op.accountKey).manualAction } : {}) });
 
 const accountKey = "account:synthetic";
 
@@ -16,26 +20,26 @@ for (const state of ["lock", "malformed", "invalid", "unreadable"] as const) {
 		const paths = resetPaths(agentDir, accountKey);
 		await withResetAccountLock(agentDir, accountKey, async (save) => save({ version: 1, accountKey,
 			phase: "reset", recovered: true, requestId: "preserved-request", creditId: "preserved-credit" }));
-		if (state === "lock") mkdirSync(paths.lock, { mode: 0o700 });
+		if (state === "lock") { rmSync(paths.lock); mkdirSync(paths.lock, { mode: 0o700 }); }
 		if (state === "malformed") writeFileSync(paths.journal, "not-json");
 		if (state === "invalid") writeFileSync(paths.journal, JSON.stringify({ version: 1, accountKey, phase: "reset", recovered: true }));
 		const before = readFileSync(paths.journal, "utf8");
 		if (state === "unreadable") {
 			const read = fs.readFileSync;
 			t.mock.method(fs, "readFileSync", ((path: any, ...args: any[]) => {
-				if (path === paths.journal) throw Object.assign(new Error("synthetic unreadable journal"), { code: "EACCES" });
+				if (typeof path === "number") throw Object.assign(new Error("synthetic unreadable journal"), { code: "EACCES" });
 				return (read as any)(path, ...args);
 			}) as any);
 			syncBuiltinESMExports();
 			t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
 		}
-		assert.deepEqual(resetAccountState(agentDir, accountKey), { reason: state === "lock" ? "busy" : "storage",
-			status: state === "lock" ? "Waiting for reset lock" : "Paused: local recovery required", manualAction: { kind: "blocked" } });
+		assert.deepEqual(resetAccountState(agentDir, accountKey), { reason: state === "lock" ? "legacy-lock" : "storage",
+			status: state === "lock" ? "Old reset lock; see README" : "Reset journal unavailable; see README", manualAction: { kind: "blocked" } });
 		if (state === "lock") {
-			assert.equal(resetAccountStatus(agentDir, accountKey), "Waiting for reset lock");
+			assert.equal(resetAccountStatus(agentDir, accountKey), "Old reset lock; see README");
 			const result = await coordinateReset({ ...op, readUsage: async () => { assert.fail("busy must not GET"); } });
-			assert.equal(result.reason, "busy");
-			assert.equal(result.displayStatus, "Waiting for reset lock");
+			assert.equal(result.reason, undefined);
+			assert.equal(result.displayStatus, "Old reset lock; see README");
 		}
 		t.mock.restoreAll(); syncBuiltinESMExports();
 		assert.equal(readFileSync(paths.journal, "utf8"), before);
@@ -44,18 +48,18 @@ for (const state of ["lock", "malformed", "invalid", "unreadable"] as const) {
 }
 
 for (const code of ["EACCES", "EIO"] as const) {
-	test(`coordinateReset lock mkdir ${code} is storage, not contention`, async (t) => {
+	test(`coordinateReset lock open ${code} is storage, not contention`, async (t) => {
 		const { op, agentDir, posts } = fixture(t);
-		const mkdir = fs.mkdirSync;
-		t.mock.method(fs, "mkdirSync", ((path: any, ...args: any[]) => {
+		const open = fs.openSync;
+		t.mock.method(fs, "openSync", ((path: any, ...args: any[]) => {
 			if (path === resetPaths(agentDir, accountKey).lock) throw Object.assign(new Error("synthetic lock failure"), { code });
-			return (mkdir as any)(path, ...args);
+			return (open as any)(path, ...args);
 		}) as any);
 		syncBuiltinESMExports();
 		t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
 		const result = await coordinateReset({ ...op, readUsage: async () => { assert.fail("storage must not GET"); } });
 		assert.equal(result.reason, undefined);
-		assert.equal(result.displayStatus, "Paused: local recovery required");
+		assert.equal(result.displayStatus, "Reset journal/lock unavailable; see README");
 		assert.equal(posts.length, 0);
 	});
 }
@@ -89,7 +93,7 @@ test("resets journal precedes POST; stale success snapshots do not rearm across 
 	assert.equal((await coordinateReset(op)).result?.outcome, "reset");
 	assert.equal(posts[0]?.[0], "soon");
 	assert.equal(statSync(resetPaths(agentDir, accountKey).directory).mode & 0o777, 0o700);
-	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), false);
+	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), true);
 	for (let i = 0; i < 3; i++) await coordinateReset({ ...op }); // independent callers/reload
 	assert.equal(posts.length, 1);
 	op.readUsage = async () => usage(45);
@@ -192,7 +196,7 @@ test("resets manual allows five-hour-only reset while auto requires weekly exhau
 });
 
 test("resets cancellation at every async validation boundary stays retryable with no unsent intent", async (t) => {
-	for (let boundary = 1; boundary <= 4; boundary++) {
+	for (let boundary = 1; boundary <= 5; boundary++) {
 		const { op, posts, agentDir } = fixture(t);
 		let checks = 0;
 		op.validate = async () => { if (++checks === boundary) throw new Error("disabled/account/model/shutdown changed"); };
@@ -226,9 +230,9 @@ test("resets corrupt journal and orphan lock fail closed; neither is erased", as
 	await withResetAccountLock(agentDir, accountKey, async () => {});
 	const paths = resetPaths(agentDir, accountKey);
 	writeFileSync(paths.journal, "not-json", { mode: 0o600 });
-	assert.match((await coordinateReset(op)).status, /Paused/);
+	assert.match((await coordinateReset(op)).status, /unavailable/);
 	assert.equal(readFileSync(paths.journal, "utf8"), "not-json");
-	assert.match(resetAccountStatus(agentDir, accountKey), /preserve the journal/);
+	assert.match(resetAccountStatus(agentDir, accountKey), /Preserve the journal/);
 	assert.equal(posts.length, 0);
 });
 
@@ -257,7 +261,7 @@ test("resets TWO PROCESSES sharing an agent dir perform only one POST", async (t
 	await cExit;
 });
 
-test("resets hard crash retains pending intent and exclusion; verified operator unlock enables exact manual retry only", async (t) => {
+test("resets hard crash releases kernel exclusion without deletion; durable intent permits exact manual retry only", async (t) => {
 	const { op, posts, agentDir } = fixture(t);
 	const a = child(agentDir, "hold");
 	assert.equal((await once(a, "message"))[0], "posted");
@@ -269,10 +273,7 @@ test("resets hard crash retains pending intent and exclusion; verified operator 
 	assert.equal(saved.phase, "pending");
 	assert.equal(existsSync(paths.lock), true);
 	await coordinateReset(op);
-	await coordinateReset({ ...op, mode: "manual" });
 	assert.equal(posts.length, 0);
-	// Simulated operator: all test children have exited; remove ONLY the orphan lock.
-	rmSync(paths.lock, { recursive: true });
 	await coordinateReset(op);
 	assert.equal(posts.length, 0);
 	await coordinateReset({ ...op, mode: "manual" });
@@ -289,8 +290,7 @@ test("resets crash before POST preserves durable pending intent rather than mint
 	await exit;
 	await coordinateReset(op);
 	assert.equal(posts.length, 0);
-	// Simulated exclusive operator recovery: child exited, journal is retained unchanged.
-	rmSync(resetPaths(agentDir, accountKey).lock, { recursive: true });
+	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), true);
 	await coordinateReset({ ...op, mode: "manual" });
 	assert.deepEqual(posts, [[saved.creditId, saved.requestId]]);
 });
@@ -306,7 +306,7 @@ for (const expiry of ["elapsed", "credit", "weekly"] as const) {
 			let validations = 0;
 			let checks = 0;
 			const expire = () => { clock += expiry === "elapsed" ? 31_000 : 1_000; };
-			op.validate = async () => { if (++validations === 4 && boundary === "final-auth") expire(); };
+			op.validate = async () => { if (++validations === 5 && boundary === "final-auth") expire(); };
 			op.checkBeforePost = () => { if (++checks === 2 && boundary === "after-save") expire(); };
 			await coordinateReset(op);
 			assert.equal(posts.length, 0);
@@ -332,7 +332,7 @@ for (const prior of ["none", "guarded", "recovered", "ambiguous", "pending", "un
 			const uncertain = ["ambiguous", "pending", "unknown"].includes(prior);
 			await coordinateReset({ ...op,
 				mode: prior === "guarded" || uncertain ? "manual" : "auto", manualAfterRequestId: "original-request",
-				validate: async () => { if (++validations === (uncertain ? 2 : 4) && boundary === "final-auth") throw new Error("auth cancelled"); },
+				validate: async () => { if (++validations === (uncertain ? 3 : 5) && boundary === "final-auth") throw new Error("auth cancelled"); },
 				checkBeforePost: () => { if (++checks === 2 && boundary === "after-save") throw new Error("consent/lifecycle changed"); },
 			});
 			assert.equal(posts.length, 0);
@@ -483,7 +483,7 @@ test("legacy old operation becoming active during a manual retry suppresses disp
 	await preserveLegacyReset(agentDir, accountKey, legacyIntent());
 	let validations = 0;
 	await coordinateReset({ ...op, mode: "manual", legacyIntent, validate: async () => {
-		if (++validations === 2) state.promise = new Promise(() => {});
+		if (++validations === 3) state.promise = new Promise(() => {});
 	} });
 	assert.equal(posts.length, 0);
 	assert.equal(readResetJournal(agentDir, accountKey)?.phase, "ambiguous");
@@ -500,7 +500,7 @@ test("legacy lossy marker without original evidence cannot infer completion from
 		}
 	}
 	assert.equal(posts.length, 0);
-	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), false);
+	assert.equal(existsSync(resetPaths(agentDir, accountKey).lock), true);
 });
 
 for (const recovered of [false, true]) {
@@ -513,7 +513,7 @@ for (const recovered of [false, true]) {
 			await withResetAccountLock(agentDir, accountKey, async (save) => save({ version: 1, accountKey, recovered, phase,
 				requestId, creditId: "saved-credit" }));
 			const state = resetAccountState(agentDir, accountKey);
-			assert.deepEqual(state.manualAction, { kind: "spend", after: { accountKey, requestId } });
+			assert.deepEqual(state.manualAction, { kind: "spend", after: { accountKey, requestId, creditId: "saved-credit" } });
 			assert.equal(state.reason, recovered ? "ready" : "recovery");
 			for (const refresh of [undefined, { accountKey, requestId: "older" }, { accountKey: "account:other", requestId }]) {
 				assert.equal(manualResetNeedsRefresh(state.manualAction, refresh), true);

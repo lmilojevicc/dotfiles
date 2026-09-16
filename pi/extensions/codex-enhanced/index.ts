@@ -56,7 +56,8 @@ import {
 	type RequestShape,
 } from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetPaths, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult } from "./resets.ts";
+import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetPaths, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult, type ManualResetAction } from "./resets.ts";
+import { inspectResetLock, probeResetLock, type ResetLockAvailability } from "./reset-lock.ts";
 
 const STATUS_KEY = "codex-enhanced";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
@@ -326,6 +327,7 @@ async function runCoordinatedReset(
 	manualAfterRequestId?: string,
 	onReconciled?: (usage: AccountUsageSnapshot) => void,
 	onApplying?: () => void,
+	manualAction?: ManualResetAction,
 ): Promise<ResetOperationResult> {
 	try {
 		const modelIdentity = JSON.stringify(ctx.model);
@@ -352,7 +354,7 @@ async function runCoordinatedReset(
 		};
 		check();
 		return await coordinateReset({
-			agentDir: getAgentDir(), accountKey: account.key, mode, validate, checkBeforePost: check, manualAfterRequestId,
+			agentDir: getAgentDir(), accountKey: account.key, mode, validate, checkBeforePost: check, manualAfterRequestId, manualAction,
 			legacyIntent: () => legacyResetIntents().get(account.key),
 			readUsage: () => fetchUsageWithHeaders(headers, signal, false),
 			// Spending decisions never use the menu's five-second detail cache.
@@ -497,13 +499,23 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		let resetAccountKey: string | undefined;
 		let resetArmedAccountKey: string | undefined;
 		let resetArmedAction: string | undefined;
+		let armCurrent: (() => boolean) | undefined;
+		let lockAvailability: ResetLockAvailability = "available";
+		const localAvailability = () => {
+			const pathState = resetAccountKey ? inspectResetLock(resetPaths(getAgentDir(), resetAccountKey).lock) : "available";
+			return pathState === "available" ? lockAvailability : pathState;
+		};
 		let fastMessage: string | undefined;
 		let compactionMessage: string | undefined;
 		let manualInteractionRevision = 0;
-		const cancelManual = () => {
+		// Keep confirmation Enter reserved even after an asynchronous render clears the arm.
+		let manualEnterReserved = false;
+		const cancelManual = (deliberateAction = false) => {
+			if (deliberateAction) manualEnterReserved = false;
 			manualInteractionRevision += 1;
 			resetArmedAccountKey = undefined;
 			resetArmedAction = undefined;
+			armCurrent = undefined;
 		};
 		let resetRunning = false;
 		let resetMessage: string | undefined;
@@ -515,12 +527,12 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		const cancelRecovery = () => { recoveryRevision += 1; recovery = undefined; };
 		const offerMatches = (offer: LegacyAcknowledgementOffer) => {
 			const current = offerLegacyAcknowledgement(getAgentDir(), offer.accountKey,
-				() => legacyResetIntents().get(offer.accountKey));
+				() => legacyResetIntents().get(offer.accountKey), localAvailability());
 			return current.eligible && current.offer.snapshot === offer.snapshot;
 		};
 		const offeredRecordCurrent = () => Boolean(recovery?.offer && offerMatches(recovery.offer));
 		const durableState = (): ResetAccountState => resetAccountKey
-			? resetAccountState(getAgentDir(), resetAccountKey, legacyResetIntents().get(resetAccountKey))
+			? resetAccountState(getAgentDir(), resetAccountKey, legacyResetIntents().get(resetAccountKey), localAvailability())
 			: { reason: "ready", status: "", manualAction: { kind: "blocked" } };
 		const usableManualCredit = () => Boolean(usageState && !("error" in usageState) && usageState.accountKey === resetAccountKey
 			&& usageState.resetCredits && usageState.resetCredits.availableCount > 0 && selectResetCredit(usageState.resetCredits.credits));
@@ -528,7 +540,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			&& !manualResetNeedsRefresh(state.manualAction, manualRefresh)
 			&& (state.manualAction.kind === "retry" || usableManualCredit());
 		const discardStaleArm = (state: ResetAccountState) => {
-			if (resetArmedAccountKey && (resetArmedAccountKey !== resetAccountKey || !manualEligible(state)
+			if (resetArmedAccountKey && (resetArmedAccountKey !== resetAccountKey || !armCurrent?.() || !manualEligible(state)
 				|| resetArmedAction !== JSON.stringify(state.manualAction))) cancelManual();
 		};
 
@@ -536,19 +548,50 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			if (!viewSignal.aborted) tui.requestRender();
 		};
 		let stopResetWatcher = () => {};
+		let refreshLockStatus = () => {};
 		const bindResetAccount = (key: string) => {
 			if (viewSignal.aborted || resetAccountKey === key) return;
 			stopResetWatcher();
+			resetArmedAccountKey = undefined;
+			resetArmedAction = undefined;
+			armCurrent = undefined;
+			manualRefresh = undefined;
 			resetAccountKey = key;
+			lockAvailability = "available";
 			const paths = resetPaths(getAgentDir(), key);
 			let watching = true;
+			const probeController = new AbortController();
+			const probeSignal = AbortSignal.any([viewSignal, probeController.signal]);
+			let probing = false;
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const probe = async () => {
+				if (!watching || probing) return;
+				probing = true;
+				if (timer) clearTimeout(timer);
+				const state = await probeResetLock(paths.directory, paths.lock, probeSignal);
+				probing = false;
+				if (!watching || viewSignal.aborted || resetAccountKey !== key) return;
+				if (state !== lockAvailability) {
+					lockAvailability = state;
+					if (state === "available") controls.clearStatus(key);
+					render();
+				}
+				timer = setTimeout(() => void probe(), 1_000);
+				timer.unref?.();
+			};
+			refreshLockStatus = () => { void probe(); };
 			const onResetChange = () => {
-				if (watching && resetAccountKey === key) render(); // Local reread only; never auth, refresh or auto check.
+				if (!watching || resetAccountKey !== key) return;
+				render(); // Local reread only; never auth, refresh or auto check.
+				void probe();
 			};
 			for (const path of [paths.lock, paths.journal]) watchFile(path, { interval: 250, persistent: false }, onResetChange);
+			void probe();
 			stopResetWatcher = () => {
 				if (!watching) return;
 				watching = false;
+				probeController.abort();
+				if (timer) clearTimeout(timer);
 				for (const path of [paths.lock, paths.journal]) unwatchFile(path, onResetChange);
 			};
 		};
@@ -585,7 +628,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		};
 		shutdownSignal.addEventListener("abort", closeOnShutdown, { once: true });
 		const load = (account?: { key: string; headers: Headers }, explicit = false) => {
-			cancelManual();
+			cancelManual(explicit);
 			recoveryFailure = undefined;
 			if (usageLoading) return;
 			cancelRecovery();
@@ -631,7 +674,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				.catch((error) => {
 					if (!viewSignal.aborted && revision === usageRevision && current()) usageState = { error: error instanceof Error ? error.message : String(error) };
 				})
-				.finally(() => { usageLoading = false; render(); });
+				.finally(() => { usageLoading = false; refreshLockStatus(); render(); });
 		};
 		const ensureResetAccount = async (isCurrent = () => true): Promise<{ key: string; headers: Headers } | undefined> => {
 			if (resetAccountLoading) return undefined;
@@ -650,10 +693,11 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				render();
 			}
 		};
-		const startReset = async () => {
+		const startReset = async (confirm = true) => {
 			const state = durableState();
 			discardStaleArm(state);
 			if (usageLoading || resetAccountLoading || resetRunning || recovery || !manualEligible(state)) return;
+			if (!confirm && resetArmedAccountKey) return;
 			const revision = ++manualInteractionRevision;
 			const lifecycleCurrent = controls.captureCurrent();
 			const model = JSON.stringify(ctx.model);
@@ -662,7 +706,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			const action = JSON.stringify(state.manualAction);
 			const account = await ensureResetAccount(current);
 			if (!account || !current()) return;
-			if (!usageState || "error" in usageState || usageState.accountKey !== account.key) {
+			if (state.manualAction.kind !== "retry" && (!usageState || "error" in usageState || usageState.accountKey !== account.key)) {
 				load(account);
 				return;
 			}
@@ -671,8 +715,10 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				cancelManual(); render(); return;
 			}
 			if (resetArmedAccountKey !== account.key || resetArmedAction !== action) {
+				manualEnterReserved = true;
 				resetArmedAccountKey = account.key;
 				resetArmedAction = action;
+				armCurrent = () => lifecycleCurrent() && !viewSignal.aborted && activeTab === "resets" && JSON.stringify(ctx.model) === model;
 				render();
 				return;
 			}
@@ -683,7 +729,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			resetMessage = undefined;
 			render();
 			const result = await controls.track(runCoordinatedReset(ctx, "manual", shutdownSignal, current, account.key,
-				manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined));
+				manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined, undefined, undefined, JSON.parse(action)));
 			manualRefresh = undefined;
 			resetRunning = false;
 			resetMessage = result.reason === "busy" ? undefined : result.result ? formatResetResult(result.result) : result.displayStatus ?? "Could not apply reset";
@@ -692,7 +738,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		};
 		const toggleAuto = async () => {
 			cancelRecovery();
-			cancelManual();
+			cancelManual(true);
 			recoveryFailure = undefined;
 			const displayedAccountKey = resetAccountKey;
 			const current = controls.captureCurrent();
@@ -713,9 +759,9 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		const beginRecovery = async () => {
 			if (recovery || usageLoading || resetAccountLoading || resetRunning || !resetAccountKey) return;
 			const key = resetAccountKey;
-			const offered = offerLegacyAcknowledgement(getAgentDir(), key, () => legacyResetIntents().get(key));
+			const offered = offerLegacyAcknowledgement(getAgentDir(), key, () => legacyResetIntents().get(key), localAvailability());
 			if (!offered.eligible) return;
-			cancelManual();
+			cancelManual(true);
 			recoveryFailure = undefined;
 			const revision = ++recoveryRevision;
 			const current = controls.captureCurrent();
@@ -757,6 +803,11 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				checkCurrent();
 				const result = await controls.track(acknowledgeLegacyReset({ agentDir: getAgentDir(), offer: state.offer,
 					attestation: { outcome: state.outcome, noPriorOperationInFlight: true }, checkCurrent,
+					validateIdentity: async () => {
+						const currentAccount = await resolveResetAccount(ctx, viewSignal);
+						if (currentAccount.key !== state.offer!.accountKey
+							|| currentAccount.headers.get("authorization") !== state.authorization) throw new Error("Changed");
+					},
 					legacyIntent: () => legacyResetIntents().get(account.key) }));
 				if (result.acknowledged) {
 					recoveryFailure = undefined;
@@ -780,7 +831,7 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			recoveryFailure = undefined;
 			fastMessage = undefined;
 			compactionMessage = undefined;
-			cancelManual();
+			cancelManual(true);
 			if (tab === "resets" && !resetAccountKey) void ensureResetAccount();
 			render();
 		};
@@ -821,11 +872,11 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				discardStaleArm(state);
 				if (recoveryFailure && (!recoveryFailure.contextCurrent() || !offerMatches(recoveryFailure.offer))) recoveryFailure = undefined;
 				const autoActivity = resetAccountKey ? controls.activity(resetAccountKey) : undefined;
-				const safety = ["legacy", "active", "storage"].includes(state.reason) || (state.reason === "busy" && !resetRunning && !autoActivity);
+				const safety = ["legacy", "legacy-lock", "active", "storage"].includes(state.reason) || (state.reason === "busy" && !resetRunning && !autoActivity);
 				const armed = Boolean(resetAccountKey && resetArmedAccountKey === resetAccountKey);
 				const preference = resetAccountKey ? readAutoResetPreference(configPath, resetAccountKey).enabled : undefined;
 				const canAcknowledge = !usageLoading && !resetRunning && !resetAccountLoading && resetAccountKey
-					&& offerLegacyAcknowledgement(getAgentDir(), resetAccountKey, () => legacyResetIntents().get(resetAccountKey!)).eligible;
+					&& offerLegacyAcknowledgement(getAgentDir(), resetAccountKey, () => legacyResetIntents().get(resetAccountKey!), localAvailability()).eligible;
 				const usable = usableManualCredit();
 				const manual = !usageLoading && !resetRunning && !resetAccountLoading && manualEligible(state);
 				const needsRefresh = manualResetNeedsRefresh(state.manualAction, manualRefresh);
@@ -836,11 +887,11 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 						: preference && resetAccountKey ? controls.status(resetAccountKey) : !usable && usageState && !("error" in usageState) && (usageState.resetCredits?.availableCount ?? 0) > 0 ? "No usable reset details" : "");
 				const resetFooter = recovery
 					? recovery.checking ? ["Esc cancel"] : recovery.outcome ? ["Enter acknowledge · Esc cancel"] : ["1 reset · 2 already applied", "Esc cancel"]
-					: armed ? ["Ctrl+R confirm · Esc cancel"]
+					: armed ? [state.manualAction.kind === "retry" ? "Enter retry · Esc cancel" : "Enter use reset · Esc cancel"]
 					: [
-						...(canAcknowledge ? ["A acknowledge completion"] : manual && !needsRefresh ? [state.reason === "uncertain" ? "Ctrl+R retry previous reset" : "Ctrl+R use reset"] : []),
-						...(!usageLoading && !resetRunning && !resetAccountLoading ? [needsRefresh ? "R refresh for manual reset" : "R refresh"] : []),
-						...(resetAccountKey && !resetAccountLoading ? ["Space toggle"] : []), "Tab next · Esc close",
+						...(canAcknowledge ? ["A acknowledge completion"] : []),
+						"R refresh",
+						...(resetAccountKey && !resetAccountLoading ? ["Space auto"] : []), "Tab next · Esc close",
 					];
 				const resetBody = recovery ? [
 					...resetWrappedLines(theme.bold("Acknowledge completion"), width),
@@ -848,7 +899,15 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					...resetWrappedLines(recovery.checking ? "Checking account…" : recovery.outcome
 						? `I confirm the original reset ${recovery.outcome === "reset" ? "completed" : "was already applied"} and no old request is running.`
 						: "Choose the confirmed original outcome. If unsure, cancel.", width),
-				] : formatResetLines(theme, usageState, usageLoading, preference, status, width);
+				] : [
+					...formatResetLines(theme, usageState, usageLoading, preference, status, width),
+					...(armed ? state.manualAction.kind === "retry" ? resetWrappedLines("Same credit and request ID", width) : [] : ["", ...resetWrappedLines(
+						safety || resetRunning || autoActivity ? "Manual reset unavailable"
+						: needsRefresh ? "Manual reset · R refresh first"
+						: manual ? state.manualAction.kind === "retry" ? "U retry previous reset" : "U use 1 reset"
+						: usageState && !("error" in usageState) && usageState.resetCredits?.availableCount === 0 ? "Manual reset · no banked resets"
+						: "Manual reset · R refresh", width)]),
+				];
 				return [
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 					tabs,
@@ -879,9 +938,12 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			handleInput: (data: string) => {
 				if (viewSignal.aborted) return;
 				discardStaleArm(durableState());
+				// Stale/consumed confirmation keys must not become automatic-spending consent.
+				if (activeTab === "resets" && matchesKey(data, "enter")
+					&& (resetRunning || (manualEnterReserved && !resetArmedAccountKey))) { render(); return; }
 				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) { cancelRecovery(); render(); return; }
 				if (matchesKey(data, "escape") && (recovery || resetArmedAccountKey)) {
-					cancelRecovery(); cancelManual(); render(); return;
+					cancelRecovery(); cancelManual(true); render(); return;
 				}
 				if (recovery && !matchesKey(data, "tab") && !matchesKey(data, "shift+tab") && !matchesKey(data, "ctrl+c") && !matchesKey(data, "space")) {
 					if (!recovery.checking && (data === "1" || data === "2")) recovery.outcome = data === "1" ? "reset" : "already_redeemed";
@@ -901,6 +963,10 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					toggleFast();
 				} else if (activeTab === "compaction" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
 					toggleCompaction();
+				} else if (activeTab === "resets" && resetArmedAccountKey && matchesKey(data, "enter")) {
+					void startReset();
+				} else if (activeTab === "resets" && data.toLowerCase() === "u") {
+					void startReset(false);
 				} else if (activeTab === "resets" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
 					void toggleAuto();
 				} else if (activeTab === "resets" && data.toLowerCase() === "a") {

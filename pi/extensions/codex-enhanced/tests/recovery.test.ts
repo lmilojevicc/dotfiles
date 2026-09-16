@@ -5,8 +5,9 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { acknowledgeLegacyReset, coordinateReset, offerLegacyAcknowledgement, preserveLegacyReset, readResetJournal, resetAccountState, resetPaths, withResetAccountLock, type LegacyResetIntent, type ResetJournal } from "../resets.ts";
+import { acknowledgeLegacyReset, coordinateReset as coordinateResetImpl, offerLegacyAcknowledgement, preserveLegacyReset, readResetJournal, resetAccountState, resetPaths, withResetAccountLock, type LegacyResetIntent, type ResetJournal } from "../resets.ts";
 
+const coordinateReset = (op: any) => coordinateResetImpl({ ...op, manualAction: resetAccountState(op.agentDir, op.accountKey).manualAction });
 const key = "account:synthetic-recovery";
 const ids = { requestId: "synthetic-original-request", creditId: "synthetic-original-credit" };
 const noLegacy = () => undefined;
@@ -26,7 +27,7 @@ async function fixture(t: any, journal: unknown = { version: 1, accountKey: key,
 }
 
 for (const outcome of ["reset", "already_redeemed"] as const) {
-	test(`acknowledgeLegacyReset ${outcome} preserves exact IDs/evidence, zero network and only a lock nonce`, async (t) => {
+	test(`acknowledgeLegacyReset ${outcome} preserves exact IDs/evidence, zero network and only a temporary-file nonce`, async (t) => {
 		const f = await fixture(t);
 		const original = JSON.parse(f.bytes());
 		let network = 0;
@@ -47,9 +48,9 @@ for (const outcome of ["reset", "already_redeemed"] as const) {
 		assert.equal(saved.legacyAcknowledgement?.outcome, outcome);
 		assert.equal(saved.legacyAcknowledgement?.noPriorOperationInFlight, true);
 		assert.ok(saved.legacyAcknowledgement?.acknowledgedAt);
-		assert.equal(nonces, 1, "only exclusion owner nonce, no new redemption ID");
+		assert.equal(nonces, 1, "only temporary-file nonce, no new redemption ID");
 		assert.equal(network, 0, "outside callback assertion cannot be swallowed");
-		assert.equal(existsSync(f.paths.lock), false);
+		assert.equal(existsSync(f.paths.lock), true);
 		assert.equal(offerLegacyAcknowledgement(f.dir, key, noLegacy).eligible, false);
 		const terminal = f.bytes();
 		assert.equal((await f.apply()).acknowledged, false);
@@ -62,7 +63,7 @@ for (const attestation of [undefined, {}, { outcome: "unknown", noPriorOperation
 		const f = await fixture(t); const before = f.bytes();
 		assert.equal((await f.apply({ attestation })).acknowledged, false);
 		assert.equal(f.bytes(), before);
-		assert.equal(existsSync(f.paths.lock), false);
+		assert.equal(existsSync(f.paths.lock), true);
 	});
 }
 
@@ -106,8 +107,12 @@ for (const change of ["journal", "same-bytes", "account", "guard", "guard-before
 		if (change === "journal") await withResetAccountLock(f.dir, key, async (save) => save({ version: 1, accountKey: key, ...ids, requestId: "newer", recovered: false, phase: "pending" }));
 		if (change === "same-bytes") writeFileSync(f.paths.journal, f.bytes());
 		if (change === "corrupt") writeFileSync(f.paths.journal, "not-json");
-		if (change === "orphan") mkdirSync(f.paths.lock, { mode: 0o700 });
-		if (change === "held") held = withResetAccountLock(f.dir, key, async () => new Promise<void>((resolve) => { release = resolve; }));
+		if (change === "orphan") { rmSync(f.paths.lock); mkdirSync(f.paths.lock, { mode: 0o700 }); }
+		if (change === "held") {
+			let entered!: () => void; const ready = new Promise<void>((r) => { entered = r; });
+			held = withResetAccountLock(f.dir, key, async () => { entered(); await new Promise<void>((resolve) => { release = resolve; }); });
+			await ready;
+		}
 		const before = f.bytes(); let checks = 0; let reads = 0;
 		const options = change === "account" ? { offer: { ...(f.offer as any).offer, accountKey: "account:other" } }
 			: change === "guard" || change === "guard-before-save" ? { checkCurrent: () => { if (++checks === (change === "guard" ? 1 : 3)) throw new Error("changed"); } }
@@ -119,7 +124,7 @@ for (const change of ["journal", "same-bytes", "account", "guard", "guard-before
 }
 
 for (const fault of ["write", "fsync", "rename", "directory-fsync"] as const) {
-	test(`acknowledgeLegacyReset ${fault} durability fault retains exclusion and fails closed`, async (t) => {
+	test(`acknowledgeLegacyReset ${fault} durability fault releases exclusion and preserves conservative state`, async (t) => {
 		const f = await fixture(t); const before = f.bytes();
 		const originalWrite = fs.writeFileSync;
 		const originalSync = fs.fsyncSync;
@@ -129,7 +134,7 @@ for (const fault of ["write", "fsync", "rename", "directory-fsync"] as const) {
 			return (originalWrite as any)(path, ...args);
 		}) as any);
 		if (fault === "fsync" || fault === "directory-fsync") t.mock.method(fs, "fsyncSync", (fd: number) => {
-			if (++syncs === (fault === "fsync" ? 3 : 4)) throw new Error("synthetic sync fault");
+			if (++syncs === (fault === "fsync" ? 6 : 7)) throw new Error("synthetic sync fault");
 			originalSync(fd);
 		});
 		if (fault === "rename") t.mock.method(fs, "renameSync", () => { throw new Error("synthetic rename fault"); });
@@ -138,9 +143,10 @@ for (const fault of ["write", "fsync", "rename", "directory-fsync"] as const) {
 		t.mock.restoreAll(); syncBuiltinESMExports();
 		assert.equal(result.acknowledged, false);
 		assert.equal(existsSync(f.paths.lock), true);
-		assert.equal(offerLegacyAcknowledgement(f.dir, key, noLegacy).eligible, false);
 		if (fault !== "directory-fsync") assert.equal(f.bytes(), before);
-		assert.equal(resetAccountState(f.dir, key).reason, "busy");
+		await withResetAccountLock(f.dir, key, async () => {});
+		assert.equal(readResetJournal(f.dir, key)?.recovered, false);
+		assert.equal(resetAccountState(f.dir, key).reason, fault === "directory-fsync" ? "recovery" : "legacy");
 	});
 }
 
