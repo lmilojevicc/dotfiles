@@ -39,6 +39,8 @@ version = 1
 [packages.nvim]
   links = [{ source = ".", target = "~/.config/nvim" }]
 
+[packages.omniwm]
+  links = [{ source = ".", target = "~/.config/omniwm" }]
 
 [packages.pi]
   links = [
