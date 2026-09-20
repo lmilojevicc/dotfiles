@@ -7,11 +7,9 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, Text, truncateToWidth, type KeybindingsManager } from "@earendil-works/pi-tui";
-import {
-  createHerdrAdapter,
-  type ForkPlacement,
-  type HerdrAdapter,
-} from "./herdr.ts";
+import { createHerdrAdapter } from "./herdr.ts";
+import type { ForkPlacement, HostAdapter, HostKind } from "./host.ts";
+import { createTmuxAdapter } from "./tmux.ts";
 import {
   captureForkSnapshot,
   cleanupHandoff,
@@ -23,7 +21,9 @@ import {
 
 const RIGHT_CHOICE = "Right";
 const BELOW_CHOICE = "Below";
-const TAB_CHOICE = "New tab";
+const HERDR_TAB_CHOICE = "New tab";
+const TMUX_WINDOW_CHOICE = "New window";
+const HERDR_MARKERS = ["HERDR_ENV", "HERDR_SOCKET_PATH", "HERDR_PANE_ID", "HERDR_WORKSPACE_ID", "HERDR_TAB_ID"] as const;
 
 export function parsePlacement(args: string): ForkPlacement | undefined | "invalid" {
   const value = args.trim().toLowerCase();
@@ -115,7 +115,9 @@ export async function chooseForkCandidate(
 }
 
 export interface ForkToPaneDependencies {
-  herdr: HerdrAdapter;
+  env: NodeJS.ProcessEnv;
+  tmux: HostAdapter;
+  herdr: HostAdapter;
   bootstrapPath: string;
   chooseCandidate: typeof chooseForkCandidate;
   createFork: typeof createForkFromSnapshot;
@@ -123,8 +125,11 @@ export interface ForkToPaneDependencies {
 }
 
 function defaultDependencies(): ForkToPaneDependencies {
+  const env = process.env;
   return {
-    herdr: createHerdrAdapter(),
+    env,
+    tmux: createTmuxAdapter(undefined, env),
+    herdr: createHerdrAdapter(undefined, env),
     bootstrapPath: fileURLToPath(new URL("./bootstrap.ts", import.meta.url)),
     chooseCandidate: chooseForkCandidate,
     createFork: createForkFromSnapshot,
@@ -132,11 +137,21 @@ function defaultDependencies(): ForkToPaneDependencies {
   };
 }
 
-async function choosePlacement(ctx: ExtensionCommandContext): Promise<ForkPlacement | undefined> {
-  const choice = await ctx.ui.select("Fork destination", [RIGHT_CHOICE, BELOW_CHOICE, TAB_CHOICE]);
+export function selectHostAdapter(
+  env: NodeJS.ProcessEnv,
+  adapters: Pick<ForkToPaneDependencies, "tmux" | "herdr">,
+): HostAdapter | undefined {
+  if (env.TMUX !== undefined) return adapters.tmux;
+  if (HERDR_MARKERS.some((name) => env[name] !== undefined)) return adapters.herdr;
+  return undefined;
+}
+
+async function choosePlacement(ctx: ExtensionCommandContext, hostKind: HostKind): Promise<ForkPlacement | undefined> {
+  const finalChoice = hostKind === "tmux" ? TMUX_WINDOW_CHOICE : HERDR_TAB_CHOICE;
+  const choice = await ctx.ui.select("Fork destination", [RIGHT_CHOICE, BELOW_CHOICE, finalChoice]);
   if (choice === RIGHT_CHOICE) return "horizontal";
   if (choice === BELOW_CHOICE) return "vertical";
-  if (choice === TAB_CHOICE) return "tab";
+  if (choice === finalChoice) return "tab";
   return undefined;
 }
 
@@ -163,13 +178,18 @@ export async function runForkToPane(
     ctx.ui.notify("The current session has not been saved yet", "error");
     return;
   }
-  const host = dependencies.herdr.validateSource();
+  const adapter = selectHostAdapter(dependencies.env, dependencies);
+  if (!adapter) {
+    ctx.ui.notify("fork-to-pane requires tmux or Herdr", "error");
+    return;
+  }
+  const host = adapter.validateSource();
   if (!host.ok) {
-    ctx.ui.notify(host.error || "Herdr is unavailable", "error");
+    ctx.ui.notify(host.error || `${adapter.kind} is unavailable`, "error");
     return;
   }
 
-  const placement = parsed ?? await choosePlacement(ctx);
+  const placement = parsed ?? await choosePlacement(ctx, adapter.kind);
   if (!placement) return;
 
   const candidates = getForkCandidates(ctx.sessionManager.getEntries());
@@ -189,7 +209,7 @@ export async function runForkToPane(
     const fork = dependencies.createFork(snapshot);
     const handoff = dependencies.createProtectedHandoff(fork);
     handoffPath = handoff.path;
-    const launched = await dependencies.herdr.launch({
+    const launched = await adapter.launch({
       placement,
       cwd: ctx.cwd,
       sessionPath: fork.path,
@@ -202,11 +222,15 @@ export async function runForkToPane(
     if (!launched.ok) {
       cleanupHandoff(handoff.path);
       const cleanup = launched.cleanupError ? `; ${launched.cleanupError}` : "";
-      throw new Error(`${launched.error || "Herdr launch failed"}${cleanup}`);
+      throw new Error(`${launched.error || `${adapter.kind} launch failed`}${cleanup}`);
     }
     cleanupHandoff(handoff.path);
     handoffPath = undefined;
-    const destination = placement === "horizontal" ? "to the right" : placement === "vertical" ? "below" : "in a new tab";
+    const destination = placement === "horizontal"
+      ? "to the right"
+      : placement === "vertical"
+        ? "below"
+        : `in a new ${adapter.kind === "tmux" ? "window" : "tab"}`;
     ctx.ui.notify(`Fork opened ${destination}; source session unchanged`, "info");
   } catch (error) {
     if (handoffPath) cleanupHandoff(handoffPath);
@@ -220,7 +244,7 @@ export function createForkToPaneExtension(
 ): void {
   const dependencies = { ...defaultDependencies(), ...overrides };
   pi.registerCommand("fork-to-pane", {
-    description: "Fork into a new Herdr pane",
+    description: "Fork into a new terminal pane or window",
     getArgumentCompletions: (prefix: string) => ["horizontal", "vertical", "tab"]
       .filter((value) => value.startsWith(prefix.trim().toLowerCase()))
       .map((value) => ({ value, label: value })),

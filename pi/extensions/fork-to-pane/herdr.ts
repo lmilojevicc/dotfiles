@@ -4,9 +4,14 @@ import {
   type HandoffReadinessExpectation,
   type HandoffReadinessResult,
 } from "./handoff.ts";
-import type { ForkRuntimeState } from "./session.ts";
+import {
+  buildPiCommand,
+  type ForkPlacement,
+  type HostAdapter,
+  type HostLaunchRequest,
+  type HostLaunchResult,
+} from "./host.ts";
 
-export type ForkPlacement = "horizontal" | "vertical" | "tab";
 export type HerdrDirection = "right" | "down";
 
 export interface HerdrExecResult {
@@ -71,52 +76,9 @@ export function orientationDirection(orientation: Exclude<ForkPlacement, "tab">)
   return orientation === "horizontal" ? "right" : "down";
 }
 
-/** POSIX shell quoting for the command text accepted by `herdr pane run`. */
-export function quoteShellArg(value: string): string {
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
-}
-
-export function buildPiCommand(
-  sessionPath: string,
-  bootstrapPath: string,
-  runtimeState?: ForkRuntimeState,
-): string {
-  const args = ["exec", quoteShellArg("pi"), quoteShellArg("--session"), quoteShellArg(sessionPath), quoteShellArg("--extension"), quoteShellArg(bootstrapPath)];
-  if (runtimeState?.model) {
-    args.push(
-      quoteShellArg("--provider"),
-      quoteShellArg(runtimeState.model.provider),
-      quoteShellArg("--model"),
-      quoteShellArg(runtimeState.model.modelId),
-    );
-  }
-  if (runtimeState?.thinkingLevel) {
-    args.push(quoteShellArg("--thinking"), quoteShellArg(runtimeState.thinkingLevel));
-  }
-  return args.join(" ");
-}
-
-export interface HerdrLaunchRequest {
-  placement: ForkPlacement;
-  cwd: string;
-  sessionPath: string;
-  sessionId: string;
-  bootstrapPath: string;
-  handoffPath: string;
-  handoffNonce: string;
-  runtimeState?: ForkRuntimeState;
-}
-
-export interface HerdrLaunchResult {
-  ok: boolean;
-  paneId?: string;
-  error?: string;
-  cleanupError?: string;
-}
-
-export interface HerdrAdapter {
+export interface HerdrAdapter extends HostAdapter {
+  readonly kind: "herdr";
   validateSource(): { ok: boolean; sourcePaneId?: string; error?: string };
-  launch(request: HerdrLaunchRequest): Promise<HerdrLaunchResult>;
 }
 
 export interface HerdrAdapterOptions {
@@ -168,7 +130,7 @@ export function createHerdrAdapter(
     return { ok: true, sourcePaneId };
   }
 
-  async function launch(request: HerdrLaunchRequest): Promise<HerdrLaunchResult> {
+  async function launch(request: HostLaunchRequest): Promise<HostLaunchResult> {
     if (!sourcePaneId || !sourceWorkspaceId) return { ok: false, error: "Herdr source pane was not validated" };
     const commonArgs = [
       "--cwd", request.cwd,
@@ -200,7 +162,7 @@ export function createHerdrAdapter(
       }
     }
 
-    const closeCreatedTarget = (error: string): HerdrLaunchResult => {
+    const closeCreatedTarget = (error: string): HostLaunchResult => {
       const closeArgs = createdTabId ? ["tab", "close", createdTabId] : ["pane", "close", paneId];
       const close = exec(closeArgs, 5000);
       return {
@@ -238,5 +200,5 @@ export function createHerdrAdapter(
     return { ok: true, paneId };
   }
 
-  return { validateSource, launch };
+  return { kind: "herdr", validateSource, launch };
 }

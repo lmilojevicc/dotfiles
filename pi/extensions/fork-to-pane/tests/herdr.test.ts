@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildPiCommand, quoteShellArg } from "../host.ts";
 import {
-  buildPiCommand,
   createHerdrAdapter,
   orientationDirection,
-  quoteShellArg,
   type HerdrExecResult,
 } from "../herdr.ts";
 

@@ -6,6 +6,8 @@ import test from "node:test";
 import { loadModule } from "./runtime.ts";
 
 interface ForkToPaneDependencies {
+  env: NodeJS.ProcessEnv;
+  tmux: any;
   herdr: any;
   bootstrapPath: string;
   chooseCandidate: Function;
@@ -13,9 +15,10 @@ interface ForkToPaneDependencies {
   createProtectedHandoff: Function;
 }
 
-const { parsePlacement, runForkToPane } = await loadModule<{
+const { parsePlacement, runForkToPane, selectHostAdapter } = await loadModule<{
   parsePlacement(args: string): "horizontal" | "vertical" | "tab" | "invalid" | undefined;
   runForkToPane(args: string, ctx: any, dependencies: ForkToPaneDependencies): Promise<void>;
+  selectHostAdapter(env: NodeJS.ProcessEnv, adapters: { tmux: any; herdr: any }): any;
 }>("../index.ts");
 
 function context(file: string, overrides: Record<string, any> = {}) {
@@ -55,7 +58,14 @@ function context(file: string, overrides: Record<string, any> = {}) {
 function dependencies(overrides: Partial<ForkToPaneDependencies> = {}) {
   const launches: any[] = [];
   const deps: ForkToPaneDependencies = {
+    env: { HERDR_ENV: "1" },
+    tmux: {
+      kind: "tmux",
+      validateSource: () => ({ ok: true }),
+      launch: (request) => { launches.push(request); return { ok: true, paneId: "%2" }; },
+    },
     herdr: {
+      kind: "herdr",
       validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
       launch: (request) => { launches.push(request); return { ok: true, paneId: "new-pane" }; },
     },
@@ -82,6 +92,14 @@ test("argument parsing accepts only the documented orientations", () => {
   assert.equal(parsePlacement("horizontal extra"), "invalid");
 });
 
+test("host detection prefers tmux and otherwise selects Herdr only when marked", () => {
+  const tmux = { kind: "tmux" };
+  const herdr = { kind: "herdr" };
+  assert.equal(selectHostAdapter({ TMUX: "/tmp/tmux,1,0", HERDR_ENV: "1" }, { tmux, herdr }), tmux);
+  assert.equal(selectHostAdapter({ HERDR_PANE_ID: "w1:p1" }, { tmux, herdr }), herdr);
+  assert.equal(selectHostAdapter({}, { tmux, herdr }), undefined);
+});
+
 test("invalid args and non-TUI calls stop before host or session side effects", async () => {
   const { deps } = dependencies({
     herdr: {
@@ -105,13 +123,23 @@ test("unsupported host and picker cancellation create no fork", async () => {
   try {
     let forkCalls = 0;
     const unsupported = dependencies({
-      herdr: { validateSource: () => ({ ok: false, error: "Herdr required" }), launch: () => ({ ok: false }) },
+      env: {},
       createFork: () => { forkCalls += 1; throw new Error("unexpected"); },
     });
     const first = context(file);
-    await runForkToPane("horizontal", first.ctx, unsupported.deps);
+    (first.ctx as any).ui.select = async () => { throw new Error("destination picker must not open"); };
+    await runForkToPane("", first.ctx, unsupported.deps);
     assert.equal(forkCalls, 0);
-    assert.match(first.notifications[0][0], /Herdr required/);
+    assert.match(first.notifications[0][0], /requires tmux or Herdr/);
+
+    const invalidHerdr = dependencies({
+      herdr: { kind: "herdr", validateSource: () => ({ ok: false, error: "Herdr identity is stale" }), launch: () => ({ ok: false }) },
+      createFork: () => { forkCalls += 1; throw new Error("unexpected"); },
+    });
+    const stale = context(file);
+    await runForkToPane("horizontal", stale.ctx, invalidHerdr.deps);
+    assert.equal(forkCalls, 0);
+    assert.match(stale.notifications[0][0], /identity is stale/);
 
     const cancelled = dependencies({
       chooseCandidate: async () => null,
@@ -120,6 +148,66 @@ test("unsupported host and picker cancellation create no fork", async () => {
     const second = context(file);
     await runForkToPane("horizontal", second.ctx, cancelled.deps);
     assert.equal(forkCalls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("nested tmux in Herdr launches only the tmux target", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const file = join(dir, "source.jsonl");
+  writeFileSync(file, "{}\n");
+  try {
+    let tmuxLaunches = 0;
+    let herdrCalls = 0;
+    const { deps } = dependencies({
+      env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" },
+      tmux: {
+        kind: "tmux",
+        validateSource: () => ({ ok: true }),
+        launch: () => { tmuxLaunches += 1; return { ok: true, paneId: "%2" }; },
+      },
+      herdr: {
+        kind: "herdr",
+        validateSource: () => { herdrCalls += 1; return { ok: true }; },
+        launch: () => { herdrCalls += 1; return { ok: true }; },
+      },
+    });
+    await runForkToPane("horizontal", context(file).ctx, deps);
+    assert.equal(tmuxLaunches, 1);
+    assert.equal(herdrCalls, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stale tmux identity fails closed without validating or launching Herdr", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const file = join(dir, "source.jsonl");
+  writeFileSync(file, "{}\n");
+  try {
+    let herdrCalls = 0;
+    let forkCalls = 0;
+    const { deps } = dependencies({
+      env: { TMUX: "malformed", HERDR_ENV: "1" },
+      tmux: {
+        kind: "tmux",
+        validateSource: () => ({ ok: false, error: "tmux session identity is malformed" }),
+        launch: () => { throw new Error("must not launch"); },
+      },
+      herdr: {
+        kind: "herdr",
+        validateSource: () => { herdrCalls += 1; return { ok: true }; },
+        launch: () => { herdrCalls += 1; return { ok: true }; },
+      },
+      createFork: () => { forkCalls += 1; throw new Error("must not fork"); },
+    });
+    const run = context(file);
+    (run.ctx as any).ui.select = async () => { throw new Error("destination picker must not open"); };
+    await runForkToPane("", run.ctx, deps);
+    assert.equal(herdrCalls, 0);
+    assert.equal(forkCalls, 0);
+    assert.match(run.notifications[0][0], /tmux session identity is malformed/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -202,7 +290,7 @@ test("readiness failure removes the protected handoff and never reports success"
   }
 });
 
-test("no args offers exactly Right, Below, and New tab; explicit tab bypasses it", async () => {
+test("no args uses host-specific final choice; explicit tab bypasses it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
@@ -217,6 +305,17 @@ test("no args offers exactly Right, Below, and New tab; explicit tab bypasses it
     await runForkToPane("", first.ctx, chooserRun.deps);
     assert.deepEqual(offered, ["Right", "Below", "New tab"]);
     assert.equal(chooserRun.launches[0].placement, "tab");
+
+    const tmuxContext = context(file);
+    let tmuxOffered: string[] | undefined;
+    (tmuxContext.ctx as any).ui.select = async (_title: string, options: string[]) => {
+      tmuxOffered = options;
+      return "New window";
+    };
+    const tmuxRun = dependencies({ env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1" } });
+    await runForkToPane("", tmuxContext.ctx, tmuxRun.deps);
+    assert.deepEqual(tmuxOffered, ["Right", "Below", "New window"]);
+    assert.equal(tmuxRun.launches[0].placement, "tab");
 
     const second = context(file);
     (second.ctx as any).ui.select = async () => { throw new Error("chooser must be bypassed"); };
