@@ -69,8 +69,8 @@ test("adapter verifies caller identity, splits relative to it, and launches quot
   assert.deepEqual(result, { ok: true, paneId: "w1:p2" });
   assert.deepEqual(calls[3], [
     "pane", "split", "--pane", "w1:p1", "--direction", "right", "--cwd", "/project with space",
-    "--env", "PI_FORK_TO_PANE_HANDOFF=/tmp/private/handoff.json",
-    "--env", "PI_FORK_TO_PANE_NONCE=nonce", "--no-focus",
+    "--env", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff.json",
+    "--env", "PI_SESSION_TO_PANE_NONCE=nonce", "--no-focus",
   ]);
   assert.deepEqual(calls[4], [
     "pane", "run", "w1:p2",
@@ -97,8 +97,8 @@ test("tab placement targets the captured source workspace and returns its root p
   }), { ok: true, paneId: "w1:p9" });
   assert.deepEqual(calls[3], [
     "tab", "create", "--workspace", "w1", "--cwd", "/project",
-    "--env", "PI_FORK_TO_PANE_HANDOFF=/handoff",
-    "--env", "PI_FORK_TO_PANE_NONCE=nonce", "--no-focus",
+    "--env", "PI_SESSION_TO_PANE_HANDOFF=/handoff",
+    "--env", "PI_SESSION_TO_PANE_NONCE=nonce", "--no-focus",
   ]);
   assert.deepEqual(calls[4], ["pane", "run", "w1:p9", "exec 'pi' '--session' '/fork' '--extension' '/boot'"]);
 });

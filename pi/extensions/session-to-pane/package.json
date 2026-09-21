@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-fork-to-pane",
+  "name": "pi-extension-session-to-pane",
   "private": true,
   "type": "module",
   "scripts": {

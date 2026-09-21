@@ -53,7 +53,7 @@ export interface TmuxAdapterOptions {
 
 const SOURCE_FORMAT = "#{pane_id}\t#{session_id}\t#{window_id}\t#{pid}";
 const CREATED_FORMAT = "#{pane_id}\t#{session_id}\t#{window_id}";
-const SERVER_MISMATCH_OUTPUT = "fork-to-pane-server-identity-mismatch";
+const SERVER_MISMATCH_OUTPUT = "session-to-pane-server-identity-mismatch";
 const DEFAULT_READINESS_TIMEOUT_MS = 60_000;
 const DEFAULT_READINESS_POLL_INTERVAL_MS = 50;
 
@@ -206,8 +206,8 @@ export function createTmuxAdapter(
     };
     const commonArgs = [
       "-c", escapeTmuxFormatLiteral(request.cwd),
-      "-e", `PI_FORK_TO_PANE_HANDOFF=${request.handoffPath}`,
-      "-e", `PI_FORK_TO_PANE_NONCE=${request.handoffNonce}`,
+      "-e", `PI_SESSION_TO_PANE_HANDOFF=${request.handoffPath}`,
+      "-e", `PI_SESSION_TO_PANE_NONCE=${request.handoffNonce}`,
       buildPiCommand(request.sessionPath, request.bootstrapPath, request.runtimeState),
     ];
     const sourceTarget = `${pinnedSource.sessionId}:${pinnedSource.windowId}.${pinnedSource.paneId}`;
@@ -260,16 +260,16 @@ export function createTmuxAdapter(
         {
           handoffPath: request.handoffPath,
           nonce: request.handoffNonce,
-          forkSessionPath: request.sessionPath,
-          forkSessionId: request.sessionId,
+          sessionPath: request.sessionPath,
+          sessionId: request.sessionId,
         },
         options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
         options.readinessPollIntervalMs ?? DEFAULT_READINESS_POLL_INTERVAL_MS,
       );
     } catch (error) {
-      return closeCreatedTarget(`Could not verify forked Pi readiness: ${error instanceof Error ? error.message : String(error)}`);
+      return closeCreatedTarget(`Could not verify child Pi readiness: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (!readiness.ok) return closeCreatedTarget(readiness.error || "Forked Pi did not become ready");
+    if (!readiness.ok) return closeCreatedTarget(readiness.error || "Child Pi did not become ready");
     return { ok: true, paneId: target.paneId };
   }
 

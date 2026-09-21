@@ -28,3 +28,11 @@ export function loadModule<T>(path: string): Promise<T> {
 export function loadPi<T>(): Promise<T> {
   return jiti.import("@earendil-works/pi-coding-agent") as Promise<T>;
 }
+
+export function loadPiInternal<T>(path: string): Promise<T> {
+  return jiti.import(join(piRoot, "dist", path)) as Promise<T>;
+}
+
+export function loadTui<T>(): Promise<T> {
+  return jiti.import("@earendil-works/pi-tui") as Promise<T>;
+}

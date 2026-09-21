@@ -150,15 +150,15 @@ test("horizontal and vertical splits are detached, pinned, targeted, and launch 
         placement === "horizontal" ? "-h" : "-v",
         "-t", "$2:@3.%1",
         "-c", "/project with ' quote",
-        "-e", "PI_FORK_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
-        "-e", "PI_FORK_TO_PANE_NONCE=nonce ' one",
+        "-e", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
+        "-e", "PI_SESSION_TO_PANE_NONCE=nonce ' one",
         buildPiCommand("/sessions/fork ' one.jsonl", "/extensions/bootstrap ' one.ts", request().runtimeState),
       ];
       assert.deepEqual(calls[1], [
         "-S", socketPath,
         "if-shell", "-F", "#{==:#{pid},4242}",
         serializeTmuxCommand(creationCommand),
-        serializeTmuxCommand(["display-message", "-p", "fork-to-pane-server-identity-mismatch"]),
+        serializeTmuxCommand(["display-message", "-p", "session-to-pane-server-identity-mismatch"]),
       ]);
       assert.ok(calls.every((call) => call[0] === "-S" && call[1] === socketPath));
       assert.ok(!calls[1][5].includes("selected prompt"));
@@ -185,16 +185,16 @@ test("tab placement creates a detached window in the captured source session", a
     "new-window", "-d", "-P", "-F", "#{pane_id}\t#{session_id}\t#{window_id}",
     "-t", "$2:",
     "-c", "/project with ' quote",
-    "-e", "PI_FORK_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
-    "-e", "PI_FORK_TO_PANE_NONCE=nonce ' one",
+    "-e", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
+    "-e", "PI_SESSION_TO_PANE_NONCE=nonce ' one",
     buildPiCommand("/sessions/fork ' one.jsonl", "/extensions/bootstrap ' one.ts", request().runtimeState),
   ];
   assert.equal(calls[1][5], serializeTmuxCommand(creationCommand));
   assert.deepEqual(readinessExpectation, {
     handoffPath: "/tmp/private/handoff ' one.json",
     nonce: "nonce ' one",
-    forkSessionPath: "/sessions/fork ' one.jsonl",
-    forkSessionId: "fork-session",
+    sessionPath: "/sessions/fork ' one.jsonl",
+    sessionId: "fork-session",
   });
 });
 
@@ -238,7 +238,7 @@ test("replacement server before creation is rejected by the atomic ownership gua
   const adapter = createTmuxAdapter((args) => {
     calls.push(args);
     if (args[2] === "list-panes") return ok(sourceOutput);
-    return ok("fork-to-pane-server-identity-mismatch\n");
+    return ok("session-to-pane-server-identity-mismatch\n");
   }, env, readyOptions);
   assert.equal(adapter.validateSource().ok, true);
   const result = await adapter.launch(request());
@@ -274,7 +274,7 @@ test("readiness failure closes only the proven new pane or window on the pinned 
         serializeTmuxCommand(placement === "tab"
           ? ["kill-window", "-t", "$2:@4"]
           : ["kill-pane", "-t", "$2:@3.%8"]),
-        serializeTmuxCommand(["display-message", "-p", "fork-to-pane-server-identity-mismatch"]),
+        serializeTmuxCommand(["display-message", "-p", "session-to-pane-server-identity-mismatch"]),
       ]);
       assert.ok(!calls.some((call) => call[5]?.includes('"%1"')));
       assert.ok(!calls.some((call) => call[5]?.includes('"@3"') && call[5]?.startsWith('"kill-window"')));
@@ -289,7 +289,7 @@ test("replacement server during readiness is never mutated by cleanup", async ()
     calls.push(args);
     if (args[2] === "list-panes") return ok(sourceOutput);
     if (args[5]?.startsWith('"split-window"')) return ok("%8\t$2\t@3\n");
-    return ok("fork-to-pane-server-identity-mismatch\n");
+    return ok("session-to-pane-server-identity-mismatch\n");
   }, env, {
     waitForReady: async () => ({ ok: false, error: "readiness timed out" }),
   });

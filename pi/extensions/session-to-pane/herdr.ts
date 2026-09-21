@@ -134,8 +134,8 @@ export function createHerdrAdapter(
     if (!sourcePaneId || !sourceWorkspaceId) return { ok: false, error: "Herdr source pane was not validated" };
     const commonArgs = [
       "--cwd", request.cwd,
-      "--env", `PI_FORK_TO_PANE_HANDOFF=${request.handoffPath}`,
-      "--env", `PI_FORK_TO_PANE_NONCE=${request.handoffNonce}`,
+      "--env", `PI_SESSION_TO_PANE_HANDOFF=${request.handoffPath}`,
+      "--env", `PI_SESSION_TO_PANE_NONCE=${request.handoffNonce}`,
       "--no-focus",
     ];
 
@@ -185,17 +185,17 @@ export function createHerdrAdapter(
         {
           handoffPath: request.handoffPath,
           nonce: request.handoffNonce,
-          forkSessionPath: request.sessionPath,
-          forkSessionId: request.sessionId,
+          sessionPath: request.sessionPath,
+          sessionId: request.sessionId,
         },
         options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS,
         options.readinessPollIntervalMs ?? DEFAULT_READINESS_POLL_INTERVAL_MS,
       );
     } catch (error) {
-      return closeCreatedTarget(`Could not verify forked Pi readiness: ${error instanceof Error ? error.message : String(error)}`);
+      return closeCreatedTarget(`Could not verify child Pi readiness: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (!readiness.ok) {
-      return closeCreatedTarget(readiness.error || "Forked Pi did not become ready");
+      return closeCreatedTarget(readiness.error || "Child Pi did not become ready");
     }
     return { ok: true, paneId };
   }

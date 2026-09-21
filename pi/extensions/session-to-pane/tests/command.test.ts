@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { loadModule } from "./runtime.ts";
+import { loadModule, loadPi, loadPiInternal, loadTui } from "./runtime.ts";
 
 interface ForkToPaneDependencies {
   env: NodeJS.ProcessEnv;
@@ -11,15 +11,27 @@ interface ForkToPaneDependencies {
   herdr: any;
   bootstrapPath: string;
   chooseCandidate: Function;
+  chooseTreeEntry: Function;
   createFork: Function;
+  createFullTree: Function;
   createProtectedHandoff: Function;
 }
 
-const { parsePlacement, runForkToPane, selectHostAdapter } = await loadModule<{
-  parsePlacement(args: string): "horizontal" | "vertical" | "tab" | "invalid" | undefined;
-  runForkToPane(args: string, ctx: any, dependencies: ForkToPaneDependencies): Promise<void>;
-  selectHostAdapter(env: NodeJS.ProcessEnv, adapters: { tmux: any; herdr: any }): any;
-}>("../index.ts");
+const {
+  chooseTreeEntry,
+  createSessionToPaneExtension,
+  parsePlacement,
+  runCloneToPane,
+  runForkToPane,
+  runTreeToPane,
+  selectHostAdapter,
+} = await loadModule<any>("../index.ts");
+const { initTheme } = await loadPi<any>();
+const { KeybindingsManager: AppKeybindingsManager } = await loadPiInternal<any>("core/keybindings.js");
+const { Editor, setKeybindings } = await loadTui<any>();
+const appKeybindings = new AppKeybindingsManager();
+setKeybindings(appKeybindings);
+initTheme("dark", false);
 
 function context(file: string, overrides: Record<string, any> = {}) {
   const notifications: Array<[string, string | undefined]> = [];
@@ -33,10 +45,13 @@ function context(file: string, overrides: Record<string, any> = {}) {
     isIdle: () => true,
     hasPendingMessages: () => false,
     fork: async () => { sourceForkCalls += 1; return { cancelled: false }; },
+    navigateTree: async () => { throw new Error("must not navigate source tree"); },
     sessionManager: {
       getSessionFile: () => file,
       getSessionId: () => "source",
       getSessionDir: () => join(file, ".."),
+      getCwd: () => "/project",
+      getLeafId: () => "u1",
       getEntry: (id: string) => id === "u1" ? {
         type: "message", id: "u1", parentId: null, timestamp: "now",
         message: { role: "user", content: "prompt", timestamp: 1 },
@@ -45,10 +60,18 @@ function context(file: string, overrides: Record<string, any> = {}) {
         type: "message", id: "u1", parentId: null, timestamp: "now",
         message: { role: "user", content: "prompt", timestamp: 1 },
       }],
+      getTree: () => [{
+        entry: {
+          type: "message", id: "u1", parentId: null, timestamp: "now",
+          message: { role: "user", content: "prompt", timestamp: 1 },
+        },
+        children: [],
+      }],
     },
     ui: {
       notify: (message: string, type?: string) => notifications.push([message, type]),
       select: async () => "Right",
+      getEditorText: () => "current draft",
     },
     ...overrides,
   } as any;
@@ -71,10 +94,17 @@ function dependencies(overrides: Partial<ForkToPaneDependencies> = {}) {
     },
     bootstrapPath: "/extension/bootstrap.ts",
     chooseCandidate: async (_ctx, candidates) => candidates.at(-1) ?? null,
+    chooseTreeEntry: async () => "u1",
     createFork: (snapshot) => ({
       path: "/sessions/fork.jsonl",
       sessionId: "fork",
       editorText: snapshot.text,
+      launchState: snapshot.runtimeState,
+    }),
+    createFullTree: (snapshot) => ({
+      path: "/sessions/copy.jsonl",
+      sessionId: "copy",
+      editorText: snapshot.editorText,
       launchState: snapshot.runtimeState,
     }),
     createProtectedHandoff: () => ({ path: "/tmp/handoff.json", nonce: "nonce" }),
@@ -117,7 +147,7 @@ test("invalid args and non-TUI calls stop before host or session side effects", 
 });
 
 test("unsupported host and picker cancellation create no fork", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -154,7 +184,7 @@ test("unsupported host and picker cancellation create no fork", async () => {
 });
 
 test("nested tmux in Herdr launches only the tmux target", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -182,7 +212,7 @@ test("nested tmux in Herdr launches only the tmux target", async () => {
 });
 
 test("stale tmux identity fails closed without validating or launching Herdr", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -214,7 +244,7 @@ test("stale tmux identity fails closed without validating or launching Herdr", a
 });
 
 test("successful command launches a separate Pi fork and never calls ctx.fork", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -238,7 +268,7 @@ test("successful command launches a separate Pi fork and never calls ctx.fork", 
 });
 
 test("command does not report success before child readiness acknowledgement", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -264,8 +294,8 @@ test("command does not report success before child readiness acknowledgement", a
 });
 
 test("readiness failure removes the protected handoff and never reports success", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
-  const handoffDir = mkdtempSync(join(tmpdir(), "pi-fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+  const handoffDir = mkdtempSync(join(tmpdir(), "pi-session-to-pane-command-"));
   chmodSync(handoffDir, 0o700);
   const file = join(dir, "source.jsonl");
   const handoffPath = join(handoffDir, "handoff.json");
@@ -291,7 +321,7 @@ test("readiness failure removes the protected handoff and never reports success"
 });
 
 test("no args uses host-specific final choice; explicit tab bypasses it", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {
@@ -327,8 +357,179 @@ test("no args uses host-specific final choice; explicit tab bypasses it", async 
   }
 });
 
+function treePickerSession() {
+  const entry = {
+    type: "message",
+    id: "u1",
+    parentId: null,
+    timestamp: "now",
+    message: { role: "user", content: "prompt", timestamp: 1 },
+  };
+  return {
+    getTree: () => [{ entry, children: [] }],
+    getLeafId: () => "u1",
+  };
+}
+
+function editorWithCollapsedPaste() {
+  const editor = new Editor({ requestRender() {} } as any, {
+    borderColor: (text: string) => text,
+    selectList: {} as any,
+  });
+  let submissions = 0;
+  editor.onSubmit = () => { submissions += 1; };
+  const pasted = "x".repeat(1500);
+  editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+  for (const char of " tail") editor.handleInput(char);
+  editor.handleInput("\x1b[D");
+  return { editor, expanded: `${pasted} tail`, submissions: () => submissions };
+}
+
+test("tree picker overlay preserves collapsed-paste content and cursor on selection and cancellation", async () => {
+  for (const scenario of [
+    { key: "\r", expected: "u1" },
+    { key: "\x1b", expected: null },
+  ]) {
+    const { editor, expanded, submissions } = editorWithCollapsedPaste();
+    const cursor = editor.getCursor();
+    let overlay: boolean | undefined;
+    const ctx = {
+      sessionManager: treePickerSession(),
+      ui: {
+        notify() {},
+        custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
+          overlay = options?.overlay;
+          const savedText = editor.getText();
+          let completed = false;
+          let result: string | null = null;
+          const selector = await factory(
+            { terminal: { rows: 40 }, requestRender() {} },
+            undefined,
+            appKeybindings,
+            (value: string | null) => { completed = true; result = value; },
+          );
+          selector.handleInput(scenario.key);
+          assert.equal(completed, true);
+          if (!options?.overlay) editor.setText(savedText);
+          return result;
+        },
+      },
+    } as any;
+
+    assert.equal(await chooseTreeEntry(ctx), scenario.expected);
+    assert.equal(overlay, true);
+    assert.equal(editor.getExpandedText(), expanded);
+    assert.deepEqual(editor.getCursor(), cursor);
+    assert.equal(submissions(), 0);
+  }
+});
+
+test("tree picker disables label editing in the real tree component", async () => {
+  assert.equal(appKeybindings.matches("L", "app.tree.editLabel"), true);
+  let checked = false;
+  const ctx = {
+    sessionManager: treePickerSession(),
+    ui: {
+      notify() {},
+      custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
+        const selector = await factory(
+          { terminal: { rows: 40 }, requestRender() {} },
+          undefined,
+          appKeybindings,
+          () => {},
+        );
+        assert.equal(options?.overlay, true);
+        assert.equal(selector.getTreeList().onLabelEdit, undefined);
+        selector.handleInput("L");
+        assert.doesNotMatch(selector.render(120).join("\n"), /Label \(empty to remove\):/);
+        checked = true;
+        return null;
+      },
+    },
+  } as any;
+
+  assert.equal(await chooseTreeEntry(ctx), null);
+  assert.equal(checked, true);
+});
+
+test("tree command copies the selected native position without navigating the source", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-tree-command-"));
+  const file = join(dir, "source.jsonl");
+  writeFileSync(file, "{}\n");
+  try {
+    let captured: any;
+    const { deps, launches } = dependencies({
+      chooseTreeEntry: async () => "u1",
+      createFullTree: (snapshot) => {
+        captured = snapshot;
+        return {
+          path: "/sessions/tree.jsonl",
+          sessionId: "tree-copy",
+          editorText: snapshot.editorText,
+          launchState: snapshot.runtimeState,
+        };
+      },
+    });
+    const run = context(file);
+    await runTreeToPane("horizontal", run.ctx, deps);
+
+    assert.equal(captured.mode, "tree");
+    assert.equal(captured.targetLeafId, null);
+    assert.equal(captured.editorText, "prompt");
+    assert.equal(launches[0].sessionId, "tree-copy");
+    assert.deepEqual(launches[0].runtimeState, {
+      model: { provider: "runtime-provider", modelId: "runtime-model" },
+      thinkingLevel: "high",
+    });
+    assert.equal(run.getSourceForkCalls(), 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("clone captures the active position and editor draft before the destination chooser", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-clone-command-"));
+  const file = join(dir, "source.jsonl");
+  writeFileSync(file, "{}\n");
+  try {
+    let draft = "draft before chooser";
+    let leaf = "u1";
+    let captured: any;
+    const run = context(file);
+    (run.ctx as any).ui.getEditorText = () => draft;
+    (run.ctx as any).sessionManager.getLeafId = () => leaf;
+    (run.ctx as any).ui.select = async () => {
+      draft = "changed by chooser";
+      leaf = "other";
+      return "Right";
+    };
+    const { deps } = dependencies({
+      createFullTree: (snapshot) => {
+        captured = snapshot;
+        return { path: "/sessions/clone.jsonl", sessionId: "clone", editorText: snapshot.editorText, launchState: snapshot.runtimeState };
+      },
+    });
+    await runCloneToPane("", run.ctx, deps);
+
+    assert.equal(captured.mode, "clone");
+    assert.equal(captured.editorText, "draft before chooser");
+    assert.equal(captured.targetLeafId, "u1");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the renamed extension registers exactly the three to-pane commands once", () => {
+  const registrations: string[] = [];
+  createSessionToPaneExtension({
+    registerCommand: (name: string) => registrations.push(name),
+  } as any, dependencies().deps);
+  assert.deepEqual(registrations, ["fork-to-pane", "tree-to-pane", "clone-to-pane"]);
+  assert.equal(new Set(registrations).size, 3);
+});
+
 test("busy sessions are rejected before opening a chooser", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-command-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
   const file = join(dir, "source.jsonl");
   writeFileSync(file, "{}\n");
   try {

@@ -9,12 +9,16 @@ const { SessionManager } = await loadPi<any>();
 const {
   HANDOFF_NONCE_ENV,
   HANDOFF_PATH_ENV,
+  captureCloneSnapshot,
   captureForkSnapshot,
+  captureTreeSnapshot,
   cleanupHandoff,
   createForkFromSnapshot,
+  createFullTreeFromSnapshot,
   createHandoff,
   getForkCandidates,
   getHandoffReadyPath,
+  POSITION_MARKER_TYPE,
   publishHandoffReady,
   restoreEditorFromHandoff,
   waitForHandoffReady,
@@ -70,7 +74,7 @@ test("candidate extraction matches native all-entry user-message behavior", () =
 });
 
 test("fork creation copies the path before the selected prompt without mutating source", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-session-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-session-"));
   try {
     const file = writeSession(dir, [
       message("u1", null, "user", "first"),
@@ -101,7 +105,7 @@ test("fork creation copies the path before the selected prompt without mutating 
 });
 
 test("root-message fork writes an exclusive v3 header-only session with mode 0600", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-root-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-root-"));
   try {
     const file = writeSession(dir, [message("u1", null, "user", "root prompt")]);
     const source = SessionManager.open(file, dir);
@@ -123,7 +127,7 @@ test("root-message fork writes an exclusive v3 header-only session with mode 060
 });
 
 test("first-prompt fork materializes retained model metadata and uses its effective model", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-first-model-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-first-model-"));
   try {
     const file = writeSession(dir, [
       modelChange("m1", null, "historical-provider", "historical-model"),
@@ -162,7 +166,7 @@ test("first-prompt fork materializes retained model metadata and uses its effect
 });
 
 test("first-prompt fork materializes retained thinking metadata", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-first-thinking-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-first-thinking-"));
   try {
     const file = writeSession(dir, [
       thinkingChange("t1", null, "xhigh"),
@@ -190,7 +194,7 @@ test("first-prompt fork materializes retained thinking metadata", () => {
 });
 
 test("state-empty root fork carries the active runtime model and thinking level", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-root-runtime-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-root-runtime-"));
   try {
     const file = writeSession(dir, [message("u1", null, "user", "root prompt")]);
     const source = SessionManager.open(file, dir);
@@ -209,7 +213,7 @@ test("state-empty root fork carries the active runtime model and thinking level"
 });
 
 test("fork creation rejects a stale selected message", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-stale-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-stale-"));
   try {
     const file = writeSession(dir, [message("u1", null, "user", "original")]);
     const source = SessionManager.open(file, dir);
@@ -221,8 +225,226 @@ test("fork creation rejects a stale selected message", () => {
   }
 });
 
+test("complete-tree clone preserves alternate branches and reopens at the runtime leaf", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-clone-"));
+  try {
+    const timestamp = new Date().toISOString();
+    const entries = [
+      message("u1", null, "user", "root"),
+      message("a1", "u1", "assistant", "answer"),
+      modelChange("m1", "a1", "historical-provider", "historical-model"),
+      thinkingChange("t1", "m1", "xhigh"),
+      message("u2", "t1", "user", "main branch"),
+      message("a2", "u2", "assistant", "main answer"),
+      { type: "custom_message", id: "c1", parentId: "a1", timestamp, customType: "fixture", content: [{ type: "text", text: "alternate draft" }, { type: "image", data: "image" }], display: true, details: { branch: 2 } },
+      { type: "custom", id: "x1", parentId: "c1", timestamp, customType: "fixture-state", data: { nested: [1, 2] } },
+      { type: "label", id: "l1", parentId: "x1", timestamp, targetId: "c1", label: "alternate" },
+      { type: "session_info", id: "s1", parentId: "l1", timestamp, name: "tree fixture" },
+      { type: "branch_summary", id: "b1", parentId: "s1", timestamp, fromId: "a2", summary: "abandoned", details: { kept: true }, fromHook: true },
+    ];
+    const file = writeSession(dir, entries);
+    const source = SessionManager.open(file, dir);
+    source.branch("a2");
+    const beforeBytes = readFileSync(file, "utf8");
+    const beforeEntries = structuredClone(source.getEntries());
+    const runtimeState = {
+      model: { provider: "runtime-provider", modelId: "runtime-model" },
+      thinkingLevel: "high" as const,
+    };
+
+    const snapshot = captureCloneSnapshot(source, "unsent editor draft", runtimeState);
+    const created = createFullTreeFromSnapshot(snapshot, source);
+    const copy = SessionManager.open(created.path, dir);
+    const copiedEntries = copy.getEntries();
+    const marker = copiedEntries.at(-1);
+
+    assert.notEqual(created.path, file);
+    assert.notEqual(created.sessionId, "source-session");
+    assert.equal(copy.getHeader()?.parentSession, file);
+    assert.deepEqual(copiedEntries.slice(0, -1), beforeEntries);
+    assert.equal(marker?.type, "custom");
+    assert.equal((marker as any).customType, POSITION_MARKER_TYPE);
+    assert.equal(marker?.parentId, "a2");
+    assert.deepEqual((marker as any).data, { sourceLeafId: "a2", mode: "clone" });
+    assert.equal(copy.getLeafId(), marker?.id);
+    assert.equal(created.editorText, "unsent editor draft");
+    assert.deepEqual(created.launchState, runtimeState);
+    assert.deepEqual(copy.buildSessionContext().messages, source.buildSessionContext().messages);
+    assert.equal(source.getLeafId(), "a2");
+    assert.equal(readFileSync(file, "utf8"), beforeBytes);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("complete-tree clone accepts freshly appended live entries with omitted optional fields", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-live-clone-"));
+  try {
+    const file = writeSession(dir, [message("u1", null, "user", "root")]);
+    const source = SessionManager.open(file, dir);
+    const customId = source.appendCustomEntry("fixture");
+    const labelId = source.appendLabelChange("u1", undefined);
+    const beforeBytes = readFileSync(file, "utf8");
+
+    assert.equal(Object.hasOwn(source.getEntry(customId)!, "data"), true);
+    assert.equal(Object.hasOwn(source.getEntry(labelId)!, "label"), true);
+    const created = createFullTreeFromSnapshot(captureCloneSnapshot(source, "live draft"), source);
+    const copy = SessionManager.open(created.path, dir);
+    const copiedEntries = copy.getEntries().slice(0, -1);
+
+    assert.equal(created.editorText, "live draft");
+    assert.deepEqual(copiedEntries, readFileSync(file, "utf8").trim().split("\n").slice(1).map((line) => JSON.parse(line)));
+    assert.equal(copy.getEntries().at(-1)?.parentId, labelId);
+    assert.equal(source.getLeafId(), labelId);
+    assert.equal(readFileSync(file, "utf8"), beforeBytes);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("tree copy accepts a freshly appended custom message and cleared label", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-live-tree-"));
+  try {
+    const file = writeSession(dir, [message("u1", null, "user", "root")]);
+    const source = SessionManager.open(file, dir);
+    const customId = source.appendCustomMessageEntry("fixture", "custom draft", true);
+    const labelId = source.appendLabelChange(customId, undefined);
+    const beforeBytes = readFileSync(file, "utf8");
+
+    assert.equal(Object.hasOwn(source.getEntry(customId)!, "details"), true);
+    assert.equal(Object.hasOwn(source.getEntry(labelId)!, "label"), true);
+    const created = createFullTreeFromSnapshot(captureTreeSnapshot(source, customId), source);
+    const copy = SessionManager.open(created.path, dir);
+
+    assert.equal(created.editorText, "custom draft");
+    assert.equal(copy.getEntries().at(-1)?.parentId, "u1");
+    assert.deepEqual(copy.getEntries().slice(0, -1), readFileSync(file, "utf8").trim().split("\n").slice(1).map((line) => JSON.parse(line)));
+    assert.equal(source.getLeafId(), labelId);
+    assert.equal(readFileSync(file, "utf8"), beforeBytes);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("root-only complete-tree clone reopens through a root marker with runtime launch state", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-root-clone-"));
+  try {
+    const file = writeSession(dir, [message("u1", null, "user", "only prompt")]);
+    const source = SessionManager.open(file, dir);
+    source.resetLeaf();
+    const runtimeState = {
+      model: { provider: "runtime-provider", modelId: "runtime-model" },
+      thinkingLevel: "max" as const,
+    };
+    const created = createFullTreeFromSnapshot(captureCloneSnapshot(source, "draft", runtimeState), source);
+    const copy = SessionManager.open(created.path, dir);
+    const entries = copy.getEntries();
+
+    assert.deepEqual(entries.slice(0, -1), source.getEntries());
+    assert.equal(entries.at(-1)?.parentId, null);
+    assert.equal(copy.getLeafId(), entries.at(-1)?.id);
+    assert.deepEqual(created.launchState, runtimeState);
+    assert.deepEqual(copy.buildSessionContext().messages, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("tree copies use native draft and target-position semantics without changing the source", () => {
+  const scenarios = [
+    { selected: "u1", target: null, editor: "root" },
+    { selected: "c1", target: "a1", editor: "custom text" },
+    { selected: "a1", target: "a1", editor: "" },
+    { selected: "m1", target: "m1", editor: "" },
+  ];
+  for (const scenario of scenarios) {
+    const dir = mkdtempSync(join(tmpdir(), `session-to-pane-tree-${scenario.selected}-`));
+    try {
+      const timestamp = new Date().toISOString();
+      const file = writeSession(dir, [
+        message("u1", null, "user", "root"),
+        message("a1", "u1", "assistant", "answer"),
+        { type: "custom_message", id: "c1", parentId: "a1", timestamp, customType: "fixture", content: [{ type: "text", text: "custom " }, { type: "image", data: "x" }, { type: "text", text: "text" }], display: true },
+        modelChange("m1", "c1", "provider", "model"),
+      ]);
+      const source = SessionManager.open(file, dir);
+      source.branch("a1");
+      const beforeBytes = readFileSync(file, "utf8");
+      const beforeLeaf = source.getLeafId();
+      const snapshot = captureTreeSnapshot(source, scenario.selected, {
+        model: { provider: "runtime", modelId: "current" },
+        thinkingLevel: "medium",
+      });
+      const created = createFullTreeFromSnapshot(snapshot, source);
+      const copy = SessionManager.open(created.path, dir);
+      const marker = copy.getEntries().at(-1);
+
+      assert.equal(created.editorText, scenario.editor, scenario.selected);
+      assert.equal(marker?.parentId, scenario.target, scenario.selected);
+      assert.deepEqual((marker as any).data, { sourceLeafId: scenario.target, mode: "tree" });
+      assert.deepEqual(created.launchState, {
+        model: { provider: "runtime", modelId: "current" },
+        thinkingLevel: "medium",
+      });
+      assert.equal(source.getLeafId(), beforeLeaf);
+      assert.equal(readFileSync(file, "utf8"), beforeBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("complete-tree creation rejects stale source bytes and clone runtime position before copying", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-stale-tree-"));
+  try {
+    const file = writeSession(dir, [message("u1", null, "user", "root"), message("a1", "u1", "assistant", "answer")]);
+    const source = SessionManager.open(file, dir);
+    source.branch("u1");
+    const snapshot = captureCloneSnapshot(source, "draft");
+    source.branch("a1");
+    assert.throws(() => createFullTreeFromSnapshot(snapshot, source), /position changed/i);
+    assert.equal(readdirSync(dir).length, 1);
+
+    source.branch("u1");
+    const changed = captureCloneSnapshot(source, "draft");
+    writeFileSync(file, readFileSync(file, "utf8") + "\n");
+    assert.throws(() => createFullTreeFromSnapshot(changed, source), /source session changed/i);
+    assert.equal(readdirSync(dir).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a mid-copy failure removes only the identified partial destination", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-partial-copy-"));
+  const originalForkFrom = SessionManager.forkFrom;
+  try {
+    const file = writeSession(dir, [message("u1", null, "user", "root")]);
+    const source = SessionManager.open(file, dir);
+    const snapshot = captureCloneSnapshot(source, "draft");
+    (SessionManager as any).forkFrom = (sourcePath: string, cwd: string, sessionDir: string, options: { id: string }) => {
+      const partial = join(sessionDir, `partial_${options.id}.jsonl`);
+      writeFileSync(partial, JSON.stringify({
+        type: "session",
+        version: 3,
+        id: options.id,
+        timestamp: new Date().toISOString(),
+        cwd,
+        parentSession: sourcePath,
+      }) + "\n");
+      throw new Error("injected mid-copy failure");
+    };
+
+    assert.throws(() => createFullTreeFromSnapshot(snapshot, source), /injected mid-copy failure/);
+    assert.deepEqual(readdirSync(dir), ["source-session.jsonl"]);
+  } finally {
+    (SessionManager as any).forkFrom = originalForkFrom;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("protected handoff acknowledges only after delayed exact-session editor restoration", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-handoff-session-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-handoff-session-"));
   let handoffPath: string | undefined;
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
@@ -242,8 +464,8 @@ test("protected handoff acknowledges only after delayed exact-session editor res
     const readiness = waitForHandoffReady({
       handoffPath: handoff.path,
       nonce: handoff.nonce,
-      forkSessionPath: sessionPath,
-      forkSessionId: "fork-session",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
     }, 250, 5);
 
     await new Promise((resolve) => setTimeout(resolve, 15));
@@ -262,7 +484,7 @@ test("protected handoff acknowledges only after delayed exact-session editor res
 });
 
 test("readiness polling sees no partial acknowledgement before atomic publication", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-atomic-ready-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-atomic-ready-"));
   const handoffPaths: string[] = [];
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
@@ -271,16 +493,16 @@ test("readiness polling sees no partial acknowledgement before atomic publicatio
     const readyPath = getHandoffReadyPath(handoff.path);
     const readyData = {
       version: 1 as const,
-      forkSessionPath: realpathSync(sessionPath),
-      forkSessionId: "fork-session",
+      sessionPath: realpathSync(sessionPath),
+      sessionId: "fork-session",
       nonce: handoff.nonce,
     };
     let settled = false;
     const readiness = waitForHandoffReady({
       handoffPath: handoff.path,
       nonce: handoff.nonce,
-      forkSessionPath: sessionPath,
-      forkSessionId: "fork-session",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
     }, 250, 2).then((result: unknown) => {
       settled = true;
       return result;
@@ -320,7 +542,7 @@ test("readiness polling sees no partial acknowledgement before atomic publicatio
 });
 
 test("missing or mismatched readiness acknowledgement fails within the injected timeout", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-readiness-session-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-readiness-session-"));
   let handoffPath: string | undefined;
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
@@ -329,8 +551,8 @@ test("missing or mismatched readiness acknowledgement fails within the injected 
     const expected = {
       handoffPath: handoff.path,
       nonce: handoff.nonce,
-      forkSessionPath: sessionPath,
-      forkSessionId: "fork-session",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
     };
     const missing = await waitForHandoffReady(expected, 10, 2);
     assert.equal(missing.ok, false);
@@ -338,8 +560,8 @@ test("missing or mismatched readiness acknowledgement fails within the injected 
 
     writeFileSync(getHandoffReadyPath(handoff.path), JSON.stringify({
       version: 1,
-      forkSessionPath: sessionPath,
-      forkSessionId: "fork-session",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
       nonce: "wrong",
     }) + "\n", { mode: 0o600 });
     const mismatched = await waitForHandoffReady(expected, 100, 2);
@@ -352,7 +574,7 @@ test("missing or mismatched readiness acknowledgement fails within the injected 
 });
 
 test("bootstrap editor hydration failure publishes no acknowledgement and removes the prompt", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-bootstrap-failure-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-bootstrap-failure-"));
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
     const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "do not retain" });
@@ -370,8 +592,8 @@ test("bootstrap editor hydration failure publishes no acknowledgement and remove
     const readiness = await waitForHandoffReady({
       handoffPath: handoff.path,
       nonce: handoff.nonce,
-      forkSessionPath: sessionPath,
-      forkSessionId: "fork-session",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
     }, 10, 2);
     assert.equal(readiness.ok, false);
     assert.match(readiness.error ?? "", /Timed out/);
@@ -381,7 +603,7 @@ test("bootstrap editor hydration failure publishes no acknowledgement and remove
 });
 
 test("handoff mismatch never types text and consumes the handoff", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-mismatch-session-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-mismatch-session-"));
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
     const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "do not type" });

@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 export interface HandoffReadinessExpectation {
   handoffPath: string;
   nonce: string;
-  forkSessionPath: string;
-  forkSessionId: string;
+  sessionPath: string;
+  sessionId: string;
 }
 
 export interface HandoffReadinessResult {
@@ -15,8 +15,8 @@ export interface HandoffReadinessResult {
 
 export interface HandoffReadyData {
   version: 1;
-  forkSessionPath: string;
-  forkSessionId: string;
+  sessionPath: string;
+  sessionId: string;
   nonce: string;
 }
 
@@ -41,8 +41,8 @@ function readProtectedReady(readyPath: string): HandoffReadyData {
   const parsed = JSON.parse(readFileSync(readyPath, "utf8")) as Partial<HandoffReadyData>;
   if (
     parsed.version !== 1 ||
-    typeof parsed.forkSessionPath !== "string" ||
-    typeof parsed.forkSessionId !== "string" ||
+    typeof parsed.sessionPath !== "string" ||
+    typeof parsed.sessionId !== "string" ||
     typeof parsed.nonce !== "string"
   ) {
     throw new Error("Invalid readiness acknowledgement");
@@ -56,7 +56,7 @@ export async function waitForHandoffReady(
   pollIntervalMs = 50,
 ): Promise<HandoffReadinessResult> {
   const readyPath = getHandoffReadyPath(expected.handoffPath);
-  const expectedSessionPath = realpathSync(expected.forkSessionPath);
+  const expectedSessionPath = realpathSync(expected.sessionPath);
   const deadline = Date.now() + Math.max(0, timeoutMs);
   while (true) {
     if (existsSync(readyPath)) {
@@ -64,21 +64,21 @@ export async function waitForHandoffReady(
         const ready = readProtectedReady(readyPath);
         if (
           ready.nonce !== expected.nonce ||
-          ready.forkSessionId !== expected.forkSessionId ||
-          ready.forkSessionPath !== expectedSessionPath
+          ready.sessionId !== expected.sessionId ||
+          ready.sessionPath !== expectedSessionPath
         ) {
-          return { ok: false, error: "Forked Pi returned a mismatched readiness acknowledgement" };
+          return { ok: false, error: "Child Pi returned a mismatched readiness acknowledgement" };
         }
         return { ok: true };
       } catch (error) {
         return {
           ok: false,
-          error: `Forked Pi returned an invalid readiness acknowledgement: ${error instanceof Error ? error.message : String(error)}`,
+          error: `Child Pi returned an invalid readiness acknowledgement: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
     }
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return { ok: false, error: "Timed out waiting for forked Pi to restore the editor" };
+    if (remaining <= 0) return { ok: false, error: "Timed out waiting for child Pi to restore the editor" };
     await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(pollIntervalMs, remaining)));
   }
 }

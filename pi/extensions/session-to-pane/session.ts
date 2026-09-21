@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -18,6 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   CURRENT_SESSION_VERSION,
   SessionManager,
@@ -35,12 +37,16 @@ export interface SessionReader {
   getSessionFile(): string | undefined;
   getSessionId(): string;
   getSessionDir(): string;
+  getCwd(): string;
   getEntry(id: string): SessionEntry | undefined;
+  getEntries(): SessionEntry[];
+  getLeafId(): string | null;
 }
 
 const MAX_HANDOFF_BYTES = 1024 * 1024;
-export const HANDOFF_PATH_ENV = "PI_FORK_TO_PANE_HANDOFF";
-export const HANDOFF_NONCE_ENV = "PI_FORK_TO_PANE_NONCE";
+export const HANDOFF_PATH_ENV = "PI_SESSION_TO_PANE_HANDOFF";
+export const HANDOFF_NONCE_ENV = "PI_SESSION_TO_PANE_NONCE";
+export const POSITION_MARKER_TYPE = "session-to-pane-position";
 
 export interface ForkCandidate {
   entryId: string;
@@ -69,10 +75,28 @@ export interface CreatedFork {
   launchState?: ForkRuntimeState;
 }
 
+export type FullTreeCopyMode = "tree" | "clone";
+
+export interface FullTreeSnapshot {
+  mode: FullTreeCopyMode;
+  sourceFile: string;
+  sourceSessionId: string;
+  sourceCwd: string;
+  sessionDir: string;
+  sourceBytes: string;
+  sourceEntries: SessionEntry[];
+  sourceRuntimeLeafId: string | null;
+  targetLeafId: string | null;
+  selectedEntryId?: string;
+  selectedEntry?: SessionEntry;
+  editorText: string;
+  runtimeState?: ForkRuntimeState;
+}
+
 export interface HandoffData {
   version: 1;
-  forkSessionPath: string;
-  forkSessionId: string;
+  sessionPath: string;
+  sessionId: string;
   editorText: string;
   nonce: string;
 }
@@ -101,6 +125,70 @@ export function getForkCandidates(entries: readonly SessionEntry[]): ForkCandida
     if (text) candidates.push({ entryId: entry.id, text });
   }
   return candidates;
+}
+
+// SessionManager keeps undefined optional fields in live entries, while JSONL persistence omits them.
+function persistedClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function captureFullTreeBase(
+  sessionManager: SessionReader,
+  mode: FullTreeCopyMode,
+  editorText: string,
+  targetLeafId: string | null,
+  runtimeState?: ForkRuntimeState,
+): FullTreeSnapshot {
+  const sourceFile = sessionManager.getSessionFile();
+  if (!sourceFile) throw new Error("The current session is not persisted");
+  if (!existsSync(sourceFile)) throw new Error("The current session has not been saved yet");
+  return {
+    mode,
+    sourceFile: resolve(sourceFile),
+    sourceSessionId: sessionManager.getSessionId(),
+    sourceCwd: sessionManager.getCwd(),
+    sessionDir: sessionManager.getSessionDir(),
+    sourceBytes: readFileSync(sourceFile, "utf8"),
+    sourceEntries: persistedClone(sessionManager.getEntries()),
+    sourceRuntimeLeafId: sessionManager.getLeafId(),
+    targetLeafId,
+    editorText,
+    runtimeState,
+  };
+}
+
+export function captureCloneSnapshot(
+  sessionManager: SessionReader,
+  editorText: string,
+  runtimeState?: ForkRuntimeState,
+): FullTreeSnapshot {
+  return captureFullTreeBase(sessionManager, "clone", editorText, sessionManager.getLeafId(), runtimeState);
+}
+
+export function captureTreeSnapshot(
+  sessionManager: SessionReader,
+  selectedEntryId: string,
+  runtimeState?: ForkRuntimeState,
+): FullTreeSnapshot {
+  const selected = sessionManager.getEntry(selectedEntryId);
+  if (!selected) throw new Error("The selected tree entry is no longer available");
+  const editsPrompt = (selected.type === "message" && selected.message.role === "user") || selected.type === "custom_message";
+  const editorText = selected.type === "message" && selected.message.role === "user"
+    ? extractUserText(selected.message.content)
+    : selected.type === "custom_message"
+      ? extractUserText(selected.content)
+      : "";
+  return {
+    ...captureFullTreeBase(
+      sessionManager,
+      "tree",
+      editorText,
+      editsPrompt ? selected.parentId : selected.id,
+      runtimeState,
+    ),
+    selectedEntryId,
+    selectedEntry: persistedClone(selected),
+  };
 }
 
 export function captureForkSnapshot(
@@ -230,12 +318,128 @@ export function createForkFromSnapshot(snapshot: ForkSnapshot): CreatedFork {
   };
 }
 
+function removeOwnedFullTreeCopy(path: string, sessionId: string, sourceFile: string): void {
+  try {
+    const firstLine = readFileSync(path, "utf8").split("\n", 1)[0];
+    const header = JSON.parse(firstLine) as Partial<SessionHeader>;
+    if (
+      header.type === "session" &&
+      header.id === sessionId &&
+      typeof header.parentSession === "string" &&
+      resolve(header.parentSession) === resolve(sourceFile)
+    ) {
+      unlinkSync(path);
+    }
+  } catch {}
+}
+
+/** Copy a complete session tree and append a non-context marker whose parent records the intended active position. */
+export function createFullTreeFromSnapshot(
+  snapshot: FullTreeSnapshot,
+  liveSource?: SessionReader,
+): CreatedFork {
+  if (liveSource) {
+    if (
+      resolve(liveSource.getSessionFile() ?? "") !== snapshot.sourceFile ||
+      liveSource.getSessionId() !== snapshot.sourceSessionId ||
+      (snapshot.mode === "clone" && liveSource.getLeafId() !== snapshot.sourceRuntimeLeafId)
+    ) {
+      throw new Error("The source session position changed while choosing a destination");
+    }
+  }
+  if (readFileSync(snapshot.sourceFile, "utf8") !== snapshot.sourceBytes) {
+    throw new Error("The source session changed while choosing a destination");
+  }
+
+  const source = SessionManager.open(snapshot.sourceFile, snapshot.sessionDir);
+  const sourceHeader = source.getHeader();
+  if (
+    !sourceHeader ||
+    sourceHeader.id !== snapshot.sourceSessionId ||
+    resolve(source.getSessionFile() ?? "") !== snapshot.sourceFile ||
+    !isDeepStrictEqual(source.getEntries(), snapshot.sourceEntries)
+  ) {
+    throw new Error("The source session changed while choosing a destination");
+  }
+  if (snapshot.selectedEntryId) {
+    const selected = source.getEntry(snapshot.selectedEntryId);
+    if (!selected || !isDeepStrictEqual(selected, snapshot.selectedEntry)) {
+      throw new Error("The selected tree entry changed while choosing a destination");
+    }
+  }
+  if (snapshot.targetLeafId !== null && !source.getEntry(snapshot.targetLeafId)) {
+    throw new Error("The selected tree position is no longer available");
+  }
+
+  const copyId = randomUUID();
+  let copyPath: string | undefined;
+  try {
+    const copy = SessionManager.forkFrom(snapshot.sourceFile, snapshot.sourceCwd, snapshot.sessionDir, { id: copyId });
+    copyPath = resolve(copy.getSessionFile() ?? "");
+    if (!copyPath || copy.getSessionId() !== copyId || copyPath === snapshot.sourceFile) {
+      throw new Error("Pi returned an invalid full-tree copy");
+    }
+    const header = copy.getHeader();
+    if (
+      !header ||
+      header.id !== copyId ||
+      resolve(header.parentSession ?? "") !== snapshot.sourceFile ||
+      !isDeepStrictEqual(copy.getEntries(), snapshot.sourceEntries)
+    ) {
+      throw new Error("Pi did not preserve the complete session tree");
+    }
+
+    if (snapshot.targetLeafId === null) copy.resetLeaf();
+    else copy.branch(snapshot.targetLeafId);
+    const markerId = copy.appendCustomEntry(POSITION_MARKER_TYPE, {
+      sourceLeafId: snapshot.targetLeafId,
+      mode: snapshot.mode,
+    });
+
+    const reopened = SessionManager.open(copyPath, snapshot.sessionDir);
+    const entries = reopened.getEntries();
+    const marker = entries.at(-1);
+    if (
+      entries.length !== snapshot.sourceEntries.length + 1 ||
+      !isDeepStrictEqual(entries.slice(0, -1), snapshot.sourceEntries) ||
+      !marker || marker.id !== markerId || marker.type !== "custom" ||
+      marker.customType !== POSITION_MARKER_TYPE || marker.parentId !== snapshot.targetLeafId ||
+      reopened.getLeafId() !== markerId
+    ) {
+      throw new Error("Pi could not verify the copied session position");
+    }
+    if (readFileSync(snapshot.sourceFile, "utf8") !== snapshot.sourceBytes) {
+      throw new Error("The source session changed while creating the copy");
+    }
+    return {
+      path: copyPath,
+      sessionId: copyId,
+      editorText: snapshot.editorText,
+      launchState: snapshot.runtimeState,
+    };
+  } catch (error) {
+    if (copyPath) {
+      removeOwnedFullTreeCopy(copyPath, copyId, snapshot.sourceFile);
+    } else {
+      // forkFrom writes incrementally. A predetermined fresh ID lets us identify and
+      // remove only its partial output if the public API throws after creating it.
+      try {
+        const suffix = `_${copyId}.jsonl`;
+        for (const name of readdirSync(snapshot.sessionDir)) {
+          if (name.endsWith(suffix)) removeOwnedFullTreeCopy(join(snapshot.sessionDir, name), copyId, snapshot.sourceFile);
+        }
+      } catch {}
+    }
+    throw error;
+  }
+}
+
 export function createHandoff(fork: CreatedFork): Handoff {
   const nonce = randomBytes(32).toString("hex");
   const data: HandoffData = {
     version: 1,
-    forkSessionPath: resolve(fork.path),
-    forkSessionId: fork.sessionId,
+    sessionPath: resolve(fork.path),
+    sessionId: fork.sessionId,
     editorText: fork.editorText,
     nonce,
   };
@@ -243,7 +447,7 @@ export function createHandoff(fork: CreatedFork): Handoff {
   if (Buffer.byteLength(serialized, "utf8") > MAX_HANDOFF_BYTES) {
     throw new Error("The selected prompt is too large to restore safely");
   }
-  const dir = mkdtempSync(join(tmpdir(), "pi-fork-to-pane-"));
+  const dir = mkdtempSync(join(tmpdir(), "pi-session-to-pane-"));
   chmodSync(dir, 0o700);
   const handoffPath = join(dir, "handoff.json");
   try {
@@ -287,8 +491,8 @@ function readProtectedHandoff(handoffPath: string): HandoffData {
   const parsed = JSON.parse(readFileSync(handoffPath, "utf8")) as Partial<HandoffData>;
   if (
     parsed.version !== 1 ||
-    typeof parsed.forkSessionPath !== "string" ||
-    typeof parsed.forkSessionId !== "string" ||
+    typeof parsed.sessionPath !== "string" ||
+    typeof parsed.sessionId !== "string" ||
     typeof parsed.editorText !== "string" ||
     typeof parsed.nonce !== "string"
   ) {
@@ -343,16 +547,16 @@ export function restoreEditorFromHandoff(
     renameSync(handoffPath, consumedPath);
     if (ctx.mode !== "tui" || data.nonce !== nonce) return false;
     const currentFile = ctx.sessionManager.getSessionFile();
-    if (!currentFile || ctx.sessionManager.getSessionId() !== data.forkSessionId) return false;
-    const forkSessionPath = realpathSync(data.forkSessionPath);
-    if (realpathSync(currentFile) !== forkSessionPath) return false;
+    if (!currentFile || ctx.sessionManager.getSessionId() !== data.sessionId) return false;
+    const sessionPath = realpathSync(data.sessionPath);
+    if (realpathSync(currentFile) !== sessionPath) return false;
     ctx.ui.setEditorText(data.editorText);
     unlinkSync(consumedPath);
     consumedPath = undefined;
     publishHandoffReady(handoffPath, {
       version: 1,
-      forkSessionPath,
-      forkSessionId: data.forkSessionId,
+      sessionPath,
+      sessionId: data.sessionId,
       nonce: data.nonce,
     });
     acknowledged = true;

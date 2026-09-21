@@ -33,7 +33,7 @@ test("bootstrap registers only a session_start handoff restore", () => {
 });
 
 test("bootstrap hydration failure leaves no acknowledgement or prompt-bearing handoff", () => {
-  const dir = mkdtempSync(join(tmpdir(), "fork-to-pane-bootstrap-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-bootstrap-test-"));
   const previousPath = process.env[HANDOFF_PATH_ENV];
   const previousNonce = process.env[HANDOFF_NONCE_ENV];
   let handoffPath: string | undefined;
