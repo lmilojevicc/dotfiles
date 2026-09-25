@@ -10,7 +10,6 @@
     "npm:pi-web-access",
     "npm:pi-mcp-adapter",
     "npm:pi-subagents",
-    "npm:@aliou/pi-processes",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@narumitw/pi-goal",
     "git:github.com/MasuRii/pi-tool-display",
