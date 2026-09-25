@@ -23,7 +23,7 @@ export class ProcessesUI implements Component, Focusable {
   private confirmation: Confirmation | undefined;
   private help = false;
   private helpOffset = 0;
-  private ignoringPaste = false;
+  private inPaste = false;
   private pasteTail = '';
   private error = '';
   private busy = false;
@@ -50,18 +50,6 @@ export class ProcessesUI implements Component, Focusable {
     });
     this.snapshot = options.runtime.snapshot();
     this.reconcile();
-    this.input.onEscape = () => { this.editing = undefined; this.focused = this._focused; this.changed(); };
-    this.input.onSubmit = value => {
-      const editing = this.editing;
-      this.editing = undefined; this.focused = this._focused;
-      if (editing === 'write' && this.options.state.selected) {
-        this.confirmation = { id: this.options.state.selected, action: 'write', input: safeText(value) };
-      } else if (this.screen === 'logs') {
-        const view = this.logView(); view.query = safeText(value); view.offset = 0;
-        void this.refreshLogs();
-      } else { this.options.state.query = safeText(value); this.reconcile(); }
-      this.changed();
-    };
   }
   get focused(): boolean { return this._focused; }
   set focused(value: boolean) { this._focused = value; this.input.focused = value && !!this.editing; }
@@ -109,6 +97,20 @@ export class ProcessesUI implements Component, Focusable {
   }
   private edit(kind: 'search' | 'write'): void {
     this.editing = kind;
+    // A cancelled prompt must not leave Input's partial paste buffer in the next prompt.
+    this.input = new Input();
+    this.input.onEscape = () => { this.editing = undefined; this.focused = this._focused; this.changed(); };
+    this.input.onSubmit = value => {
+      const editing = this.editing;
+      this.editing = undefined; this.focused = this._focused;
+      if (editing === 'write' && this.options.state.selected) {
+        this.confirmation = { id: this.options.state.selected, action: 'write', input: safeText(value) };
+      } else if (this.screen === 'logs') {
+        const view = this.logView(); view.query = safeText(value); view.offset = 0;
+        void this.refreshLogs();
+      } else { this.options.state.query = safeText(value); this.reconcile(); }
+      this.changed();
+    };
     this.input.setValue(kind === 'write' ? '' : this.screen === 'logs' ? this.logView().query : this.options.state.query);
     this.focused = this._focused; this.changed();
   }
@@ -133,14 +135,15 @@ export class ProcessesUI implements Component, Focusable {
   }
   handleInput(data: string): void {
     if (this.closed) return;
-    if (!this.editing && (this.ignoringPaste || data.includes('\x1b[200~'))) {
+    const pasted = this.inPaste || data.includes('\x1b[200~');
+    if (pasted) {
       const chunk = this.pasteTail + data;
-      this.ignoringPaste = !chunk.includes('\x1b[201~');
-      this.pasteTail = this.ignoringPaste ? chunk.slice(-5) : '';
-      return;
+      this.inPaste = !chunk.includes('\x1b[201~');
+      this.pasteTail = this.inPaste ? chunk.slice(-5) : '';
+      if (!this.editing) return;
     }
     const kb = this.options.keybindings;
-    const cancel = kb.matches(data, 'tui.select.cancel');
+    const cancel = !pasted && kb.matches(data, 'tui.select.cancel');
     if (cancel) {
       if (this.editing) { this.editing = undefined; this.focused = this._focused; }
       else if (this.confirmation) this.confirmation = undefined;
@@ -164,7 +167,7 @@ export class ProcessesUI implements Component, Focusable {
       else if (this.rendered && matchesKey(data, 'y')) void this.perform(this.confirmation);
       return;
     }
-    const delta = kb.matches(data, 'tui.select.up') ? -1 : kb.matches(data, 'tui.select.down') ? 1 :
+    const delta = matchesKey(data, 'k') || kb.matches(data, 'tui.select.up') ? -1 : matchesKey(data, 'j') || kb.matches(data, 'tui.select.down') ? 1 :
       kb.matches(data, 'tui.select.pageUp') ? -this.pageSize : kb.matches(data, 'tui.select.pageDown') ? this.pageSize : 0;
     if (this.help) {
       if (matchesKey(data, '?')) { this.help = false; this.changed(); }
@@ -197,8 +200,7 @@ export class ProcessesUI implements Component, Focusable {
       return;
     }
     if (this.screen === 'list' && this.rendered) {
-      const action = matchesKey(data, 'x') && run.phase !== 'terminal' ? 'stop' :
-        matchesKey(data, 'k') && run.phase === 'stop-timeout' ? 'force' : undefined;
+      const action = matchesKey(data, 'x') && run.phase !== 'terminal' ? (run.phase === 'stop-timeout' ? 'force' : 'stop') : undefined;
       if (action) { this.confirmation = { id: run.id, action }; this.changed(); }
       return;
     }
@@ -209,7 +211,7 @@ export class ProcessesUI implements Component, Focusable {
     }
     let action: Confirmation['action'] | undefined;
     if (matchesKey(data, 's') && run.phase !== 'terminal') action = 'stop';
-    if (matchesKey(data, 'k') && run.phase === 'stop-timeout') action = 'force';
+    if (matchesKey(data, 'x') && run.phase !== 'terminal') action = run.phase === 'stop-timeout' ? 'force' : 'stop';
     if (matchesKey(data, 'c') && run.phase === 'terminal') action = 'clear';
     if (matchesKey(data, 'e') && run.phase === 'running') action = 'eof';
     if (matchesKey(data, 'w') && run.phase === 'running') { this.edit('write'); return; }
@@ -228,22 +230,22 @@ export class ProcessesUI implements Component, Focusable {
     };
     if (!this.usable) return resize();
     const { theme } = this.options, run = this.selected();
-    const listActions = run?.phase === 'stop-timeout' ? 'x Stop · k Force kill' : run && run.phase !== 'terminal' ? 'x Stop' : '';
+    const listActions = run?.phase === 'stop-timeout' ? 'x Force kill' : run && run.phase !== 'terminal' ? 'x Stop' : '';
     const warnings = { stop: 'Send SIGTERM to owned live group?', force: 'Send SIGKILL to owned live group?', clear: 'Delete record and retained logs?', write: 'Send exact text (no newline)?', eof: 'Close stdin permanently (EOF)?' };
-    let title = 'Processes', hint = `Enter details${listActions ? ` · ${listActions}` : ''} · / search · ? help · Esc close`;
+    let title = 'Processes', hint = `j/k select · Enter details${listActions ? ` · ${listActions}` : ''} · / search · ? help · Esc close`;
     if (this.help) {
-      title = 'Processes · Help'; hint = '↑↓ scroll · ? close help · Esc back';
+      title = 'Processes · Help'; hint = 'j/k/↑↓ scroll · ? close help · Esc back';
     } else if (this.confirmation) {
       title = `Confirm ${this.confirmation.action}`; hint = 'y confirm · n cancel · Esc back';
     } else if (this.screen === 'list') {
       title += this.options.state.query ? ` · ${safeText(this.options.state.query)}` : '';
     } else if (run && this.screen === 'details') {
       title = safeText(run.name);
-      hint = `Enter logs · ${run.phase === 'terminal' ? 'c clear' : run.phase === 'stop-timeout' ? 'k force · s stop' : 's stop'}${run.outcome === 'failed' && !run.acknowledged ? ' · a ack' : ''}${run.phase === 'running' ? ' · w stdin · e EOF' : ''} · ? · Esc back`;
+      hint = `j/k scroll · Enter logs · ${run.phase === 'terminal' ? 'c clear' : run.phase === 'stop-timeout' ? 'x force' : 'x stop'}${run.outcome === 'failed' && !run.acknowledged ? ' · a ack' : ''}${run.phase === 'running' ? ' · w stdin · e EOF' : ''} · ? · Esc back`;
     } else if (run) {
       const view = this.logView();
       title = `${safeText(run.name)} · ${view.stream} · ${view.follow ? 'follow' : 'paused'}${view.newer ? ' +new' : ''}`;
-      hint = '↑↓ scroll · f follow · t stream · / search · ? · Esc back';
+      hint = 'j/k/↑↓ scroll · f follow · t stream · / search · ? · Esc back';
     }
     if (this.editing) hint = `${this.editing === 'write' ? 'Exact stdin (no newline)' : 'Literal search'} · Enter apply · Esc cancel`;
     hint = (this.busy ? 'Working… · Esc back' : hint).replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel);
@@ -279,9 +281,9 @@ export class ProcessesUI implements Component, Focusable {
     let body: string[] = [], selectedRow = -1;
     this.pageSize = capacity;
     if (this.help) {
-      const help = this.screen === 'logs' ? ['↑↓/PgUp/PgDn scroll (pauses)', 'f follow · t stream · / literal search', 'Retained tail only; paused view freezes.', '? close help · Esc back'] :
-        this.screen === 'list' ? ['Enter details · ↑↓/PgUp/PgDn select', ...(listActions ? [listActions] : []), '/ search', 'Start/rerun via process tool', 'No daemonized/detached descendants.'] :
-          ['Enter details/logs · ↑↓ scroll', 's stop · k force after timeout', 'a acknowledge · c clear terminal', 'w single-line stdin · e EOF', 'Start/rerun via process tool', 'No daemonized/detached descendants.'];
+      const help = this.screen === 'logs' ? ['j/k/↑↓/PgUp/PgDn scroll (pauses)', 'f follow · t stream · / literal search', 'Retained tail only; paused view freezes.', '? close help · Esc back'] :
+        this.screen === 'list' ? ['Enter details · j/k/↑↓/PgUp/PgDn select', ...(listActions ? [listActions] : []), '/ search', 'Start/rerun via process tool', 'No daemonized/detached descendants.'] :
+          ['Enter logs · j/k/↑↓/PgUp/PgDn scroll', 'x stop; force after timeout · s stop', 'a acknowledge · c clear terminal', 'w single-line stdin · e EOF', 'Start/rerun via process tool', 'No daemonized/detached descendants.'];
       const wrapped = help.flatMap(line => wrap(line.replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel)));
       this.helpOffset = Math.min(this.helpOffset, Math.max(0, wrapped.length - capacity));
       body = wrapped.slice(this.helpOffset, this.helpOffset + capacity);

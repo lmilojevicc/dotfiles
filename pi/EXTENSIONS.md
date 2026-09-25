@@ -25,7 +25,7 @@
 
 Pi discovers these packages through the `~/.pi/agent/extensions` directory symlink. After package or entrypoint changes, a full Pi restart is recommended. Replacing the removed model-favorites extension requires a full restart to remove its old in-process patches; model-picker leaves native `/model` unchanged and reuses legacy favorites only in its own picker (writes only on an explicit favorite toggle).
 
-The local processes directory replaces `npm:@aliou/pi-processes`; do not configure both. Stop old package-owned processes before replacement and restart. Session changes/shutdown attempt to stop owned processes and remove logs; no persistence or guaranteed descendant cleanup. See its README for controls and ownership limits.
+The local processes directory replaces `npm:@aliou/pi-processes`; do not configure both or add a duplicate path registration. It substantially adapts pinned upstream 0.12.0 backend/renderers/skill while retaining `/processes` and the versioned read-only status hook. The extension's `resources_discover` hook advertises `pi-processes` without a separate skill registration; remove same-name skill collisions. Stop old package-owned processes before replacement and restart. Session changes/shutdown attempt to stop owned processes and remove logs; no persistence or guaranteed descendant cleanup. `/processes` uses j/k navigation and confirmed x stop (explicit force only at stop-timeout); k never forces. See its [README](extensions/processes/README.md) for status opt-out/subscriber example, log/watch limits and provenance notices.
 
 ## Other extension-directory content
 

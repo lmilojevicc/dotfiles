@@ -1,11 +1,16 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { fileURLToPath } from 'node:url';
+import { URL } from 'node:url';
 import { createRuntime } from './runtime.ts';
 import type { Runtime, RuntimeEvent } from './types.ts';
 import { attachStatus, readDefaultStatus, safeText } from './status.ts';
 import { registerProcessTool } from './tool.ts';
 import { createUIState, ProcessesUI } from './ui.ts';
+import { notificationMessage, renderNotification } from './render/notification.ts';
 
 export function registerProcesses(pi: ExtensionAPI, factory: () => Runtime = createRuntime, agentDir: () => string = getAgentDir): void {
+  pi.registerMessageRenderer('process-notification', renderNotification);
+  pi.on('resources_discover', () => ({ skillPaths: [fileURLToPath(new URL('./skills/pi-processes/SKILL.md', import.meta.url))] }));
   let generation = 0, blocked = false;
   let owned: { runtime: Runtime; off: () => void; status: ReturnType<typeof attachStatus>; ctx: ExtensionContext } | undefined;
   let interaction: { close: () => void; token: object } | undefined;
@@ -31,7 +36,7 @@ export function registerProcesses(pi: ExtensionAPI, factory: () => Runtime = cre
       const attention = event.attention;
       try {
         pi.sendMessage({ customType: 'process-notification', content: safeText(event.text, true), display: true,
-          details: { id: safeText(event.id), kind: event.kind, attention } },
+          details: notificationMessage(event) },
         attention === 'turn' ? { triggerTurn: true, deliverAs: 'steer' } : { triggerTurn: false, deliverAs: 'nextTurn' });
       } catch (error) { if (started === generation) warn(ctx, `Process notification failed: ${safeText(error instanceof Error ? error.message : error)}`); }
     });

@@ -68,7 +68,8 @@ test('registered tool obtains fresh runtime, sanitizes result and rejects stale 
   registerProcessTool({ registerTool: (d: any) => definition = d } as any, () => { calls++; return { runtime, current: () => current }; });
   const execute = (p: any, signal?: AbortSignal) => definition.execute('call', p, signal, undefined, { cwd: '/' });
   const result = await execute(params('list'));
-  assert.equal(result.details.runs[0].name, 'safe');
+  assert.equal(result.details.data.runs[0].name, 'safe');
+  assert.deepEqual(JSON.parse(result.content[0].text), result.details.data);
   assert.doesNotMatch(result.content[0].text, /secret/);
   current = false; await assert.rejects(execute(params('stop', { id: '1' })), /session changed/);
   await assert.rejects(execute(params('list'), AbortSignal.abort()), /aborted/);
@@ -94,7 +95,7 @@ test('tool call/result renderers sanitize metadata and old untrusted results ind
   const theme = { fg: (_color: string, text: string) => text };
   const attack = '\x1b]52;c;secret\x07\x1b[31mvisible\u202e';
   const call = tool.renderCall({ action: 'start', name: attack, command: attack, cwd: attack }, theme).render(80).join('\n');
-  assert.match(call, /process start visible/); assert.match(call, /cwd: visible/);
+  assert.match(call, /process start visible/); assert.match(call, /\$ visible/);
   assert.doesNotMatch(call, /secret|\u202e|\x1b/);
   const result = tool.renderResult({ content: [{ type: 'text', text: attack }] }, { expanded: true }, theme, { isError: false }).render(80).join('\n');
   assert.match(result, /visible/); assert.doesNotMatch(result, /secret|\u202e|\x1b/);
@@ -116,7 +117,7 @@ test('registered output tool preserves 50 KiB tab-heavy UTF-8 tails and accurate
       ["'\\t界😀'.repeat(8000)", '\t界😀'.repeat(8000)],
     ]) {
       const command = `exec ${quote(process.execPath)} -e ${quote(`process.stdout.write(${expression})`)}`;
-      const started = (await execute({ action: 'start', name: 'bounded tabs', command })).details;
+      const started = (await execute({ action: 'start', name: 'bounded tabs', command })).details.data;
       const deadline = Date.now() + 3000;
       while (!completed.has(started.id)) {
         if (Date.now() >= deadline) throw Error('Owned output fixture did not complete');
@@ -125,19 +126,19 @@ test('registered output tool preserves 50 KiB tab-heavy UTF-8 tails and accurate
       assert.equal(runtime.snapshot().runs.find(r => r.id === started.id)!.outcome, 'successful');
       const core = await runtime.output(started.id);
       const result = await execute({ action: 'output', id: started.id });
-      assert.deepEqual(result.details, core, 'adapter must not expand or alter the bounded tail');
+      assert.deepEqual(result.details.data, core, 'adapter must not expand or alter the bounded tail');
       assert.deepEqual(JSON.parse(result.content[0].text), core, 'model structured output retains the same tail');
-      assert.ok(Buffer.byteLength(result.details.text) <= 50 * 1024);
-      assert.ok(result.details.text.includes('\t'));
-      assert.doesNotMatch(result.details.text, /�/);
-      assert.equal(result.details.rotated, false);
+      assert.ok(Buffer.byteLength(result.details.data.text) <= 50 * 1024);
+      assert.ok(result.details.data.text.includes('\t'));
+      assert.doesNotMatch(result.details.data.text, /�/);
+      assert.equal(result.details.data.rotated, false);
       if (Buffer.byteLength(expected) <= 50 * 1024) {
-        assert.equal(result.details.text, expected);
-        assert.equal(result.details.truncated, false);
+        assert.equal(result.details.data.text, expected);
+        assert.equal(result.details.data.truncated, false);
       } else {
-        assert.equal(result.details.truncated, true);
-        assert.ok(result.details.text.startsWith('[output truncated]\n'));
-        assert.ok(expected.endsWith(result.details.text.slice('[output truncated]\n'.length)));
+        assert.equal(result.details.data.truncated, true);
+        assert.ok(result.details.data.text.startsWith('[output truncated]\n'));
+        assert.ok(expected.endsWith(result.details.data.text.slice('[output truncated]\n'.length)));
       }
     }
   } finally { off(); await runtime.dispose(); }

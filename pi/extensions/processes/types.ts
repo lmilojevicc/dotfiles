@@ -20,6 +20,7 @@ export interface Run {
   phase: Phase; outcome?: Outcome; startedAt: number; endedAt?: number;
   exitCode?: number; signal?: string; error?: string;
   stopRequested: boolean; acknowledged: boolean; notify: Notify;
+  stdoutFile?: string; stderrFile?: string;
 }
 export interface Snapshot {
   version: 1; revision: number; runs: readonly Run[];
@@ -30,17 +31,23 @@ export interface OutputQuery {
 }
 export interface OutputResult {
   text: string; truncated: boolean; rotated: boolean;
+  stdoutFile?: string; stderrFile?: string;
 }
 export interface WatchUpdate {
   mode: 'append'|'replace'|'remove'|'clear';
   items?: (Partial<Watch> & { index?: number })[];
 }
 export interface UpdateInput { name?: string; watches?: WatchUpdate }
+export type NotificationDetails =
+  | { version: 1; timestamp: number; kind: 'completion'; run: Run }
+  | { version: 1; timestamp: number; kind: 'watch'; run: Run;
+      watch: { pattern: string; mode: 'literal'; stream: 'stdout'|'stderr'; line: string; matcherIndex: number } }
+  | { version: 1; timestamp: number; kind: 'suppression'; suppressedCount: number };
 export type RuntimeEvent =
   | { type: 'snapshot'; snapshot: Snapshot }
   | { type: 'output'; id: RunId }
   | { type: 'notification'; key: string; id: RunId;
-      kind: 'completion'|'watch'; attention: Attention; text: string };
+      kind: 'completion'|'watch'; attention: Attention; text: string; details?: NotificationDetails };
 export interface RuntimeOptions {
   logRoot?: string; maxLogBytes?: number; maxRuns?: number;
   stopGraceMs?: number;

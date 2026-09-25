@@ -1,9 +1,9 @@
 import { Type, type Static } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
-import { Text } from '@earendil-works/pi-tui';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Run, Runtime } from './types.ts';
 import { safeData, safeText } from './status.ts';
+import { renderCall, renderResult, type Presentation, type RenderDetails } from './render/actions.ts';
 
 const attention = () => StringEnum(['turn', 'context', 'ignore'] as const);
 const stream = () => StringEnum(['stdout', 'stderr', 'both'] as const);
@@ -88,30 +88,40 @@ export async function executeProcess(runtime: Runtime, params: ProcessParams, cw
 export function registerProcessTool(pi: ExtensionAPI, getRuntime: (ctx: ExtensionContext) => { runtime: Runtime; current: () => boolean }): void {
   pi.registerTool({
     name: 'process', label: 'Process', parameters: processParameters,
+    promptSnippet: 'Manage session-owned long-running processes with process start/list/output/update/write/stop/clear. Start with specific names; notifications bring you back on exit or complete-line literal watches; do not sleep or poll.',
+    promptGuidelines: [
+      'Use process start instead of shell background patterns &, nohup, disown, or setsid; name each process specifically and check process list before starting noisy duplicates.',
+      'After start, continue work or end your turn; no sleep, polling process output, or held turn. Use literal notify.logMatches for readiness and failures, remembering matches wait for newline or final EOF.',
+      'turn attention wakes or steers now; context waits until the next prompt. Failure ignore becomes context. Intentional stop is context. Update noisy watches without restarting.',
+      'Output returns a bounded currently-retained tail; do not refetch completion output redundantly when its notification suffices. For deeper inspection use only currently-retained stdoutFile/stderrFile paths returned by process.',
+      'Read the pi-processes skill for ownership, bounded logs, /processes controls, and limits. No regex, daemon, PTY, automatic restart, or cross-session control.',
+    ],
     description: 'Manage session-owned foreground shell commands: start/list/output/write/update/stop/clear. Use returned opaque IDs. No PTY, daemonization, cross-session control, or automatic restart. Start/rerun via this tool, not /processes. Literal log matching only; regex is rejected. Output is a bounded retained tail, not complete history. Terminal means tracked shell exited, not all descendants; inspect error warnings. Stop is TERM; force=true explicitly escalates KILL only while the tracked owner is live. Clear removes terminal records/logs only. EOF requires end=true.',
     async execute(_id, params, signal, _update, ctx) {
       if (signal?.aborted) throw new Error('Process tool aborted before execution');
       const { runtime, current } = getRuntime(ctx);
       let details: unknown;
-      try { details = safeData(await executeProcess(runtime, params, ctx.cwd)); }
+      let presentation: Presentation = {};
+      try {
+        // Capture event-time presentation only; it never enters model content.
+        const id = params.id;
+        if (id && ['output', 'update', 'write'].includes(params.action)) {
+          const before = runtime.snapshot().runs.find(r => r.id === id);
+          if (before) presentation = { run: before, name: before.name,
+            ...(params.action === 'update' ? { before: before.notify.logMatches ?? [] } : {}) };
+        }
+        if (params.action === 'output') presentation.query = { stream: params.stream, pattern: params.pattern, tailLines: params.tailLines };
+        details = safeData(await executeProcess(runtime, params, ctx.cwd));
+      }
       catch (error) {
         if (!current()) throw new Error('Process session changed; discard this result');
         throw new Error(safeText(error instanceof Error ? error.message : error));
       }
       if (!current()) throw new Error('Process session changed; discard this result');
-      return { content: [{ type: 'text', text: JSON.stringify(details, null, 2) }], details };
+      const envelope: RenderDetails = { version: 1, action: params.action, data: details, presentation: safeData(presentation) };
+      return { content: [{ type: 'text', text: JSON.stringify(details, null, 2) }], details: envelope };
     },
-    renderCall(args, theme) {
-      const label = ['process', safeText(args.action), safeText(args.name ?? args.id)].filter(Boolean).join(' ');
-      const lines = [theme.fg('toolTitle', label)];
-      if (args.command) lines.push(safeText(args.command, true));
-      if (args.cwd) lines.push(`cwd: ${safeText(args.cwd)}`);
-      return new Text(lines.join('\n'), 0, 0);
-    },
-    renderResult(result, options, theme, context) {
-      const lines = safeText(result.content.filter(c => c.type === 'text').map(c => c.text).join('\n'), true).split('\n');
-      const text = options.expanded || lines.length <= 8 ? lines.join('\n') : [...lines.slice(0, 8), '… expand for more'].join('\n');
-      return new Text(theme.fg(context.isError ? 'error' : 'toolOutput', text), 0, 0);
-    },
+    renderCall(args, theme, context) { return renderCall(args, theme, context?.expanded); },
+    renderResult(result, options, theme, context) { return renderResult(result, options, theme, context); },
   });
 }

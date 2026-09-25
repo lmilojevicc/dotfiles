@@ -1,69 +1,100 @@
 # Processes
 
-Session-owned shell commands with the `process` tool and `/processes` overlay.
+Session-owned shell commands with the `process` tool, readable transcript blocks, and `/processes` overlay. The backend, notifications, renderers and skill substantially reuse pinned `@aliou/pi-processes` 0.12.0, adapted to this host and our ownership rules.
 
 ## Use
 
-Start commands through the **process tool**. For example:
+Start through the **process tool**, not shell background tricks:
 
 ```json
 {"action":"start","name":"tests","command":"npm test","notify":{"onSuccess":"context"}}
 ```
 
-Use the returned opaque `id` for `output`, `write`, `update`, and `stop`. `cwd` defaults to the agent's working directory. Commands receive pipes, not a PTY. Keep the command in the foreground: do not append `&`, daemonize, or detach descendants.
+Use returned opaque IDs, never PIDs or names. `cwd` defaults to the agent's working directory. Commands run in detached **bash -lc** with pipes, not a PTY; shell startup files can affect execution. Keep commands in the foreground: no `&`, daemonization or detached descendants.
 
-- `list`: retained runs, with `phase`, `outcome`, and a compatibility `status`.
-- `output`: retained tail (100 lines by default, at most 2000 / 50 KiB). `stream` selects `stdout`, `stderr`, or `both`; `pattern` is a literal filter. Rotation/truncation is marked.
-- `write`: exact `input`, no automatic newline; `end:true` explicitly closes stdin. Maximum payload: 50 KiB.
-- `update`: rename or append/replace/remove/clear log watches. At most 20 watches, 500 characters per pattern. **Regex is unsupported and rejected**, including legacy `mode:"regex"` requests.
-- `stop`: SIGTERM, then a 3-second grace period. A timeout stays active. `force:true` explicitly sends SIGKILL only while the tracked owner is still live.
-- `clear`: delete terminal records and their logs; optional `id`, otherwise all terminal records. Never clears a live run.
+- `list`: retained runs with phase/outcome, compatibility status and real retained log paths. Legacy filters/sorts remain; default limit 100, maximum 10000. `failed` includes stop timeouts and failed outcomes even after acknowledgment; `killed` means signal-ended terminal runs.
+- `output`: retained tail, default 100 lines, maximum 2000 / 50 KiB of text. Literal filtering scans at most 5000 lines within a 2 MiB tail-read budget. `stream` selects stdout/stderr/both. Rotation and truncation are marked.
+- `write`: exact `input`, maximum 50 KiB, no automatic newline; `end:true` explicitly closes stdin.
+- `update`: rename or append/replace/remove/clear watches on a nonterminal run. At most 20 watches, 1–500 characters per pattern. **Regex is unsupported and rejected**, including legacy start/update/output requests.
+- `stop`: SIGTERM, then a 3-second grace period. Timeout stays active; ordinary stop never auto-forces. `force:true` explicitly requests SIGKILL while the tracked owner remains live.
+- `clear`: delete terminal records and logs, optionally by `id`; never clears a live run.
 
-Legacy list filters and the five sort names remain available. `failed` includes stop timeouts and failed outcomes even after acknowledgment; `killed` means signal-ended terminal runs. The default list limit is 100, maximum 10000.
+Tool transcript blocks show readable states/output rather than JSON dumps; native expansion reveals metadata. Model-facing results remain sanitized JSON. Completion/watch messages store event-time details and remain renderable after records are cleared or sessions replaced. Old messages have a safe fallback.
+
+The **pi-processes** skill is advertised to Pi and readable via `/skill:pi-processes`. Essential tool guidelines also tell the model to use specific names, check duplicates, continue working/end its turn after start, and prefer watches over sleep/polling.
 
 ## `/processes`
 
 | View | Keys |
 | --- | --- |
-| List | ↑↓ / PgUp / PgDn, Enter details, `/` search |
-| Details | Enter logs, `s` stop, `k` force after timeout, `a` acknowledge failure, `c` clear terminal |
-| Details, running | `w` single-line stdin (no newline), `e` EOF |
-| Logs | ↑↓ / PgUp / PgDn pause and scroll, `f` follow, `t` stream, `/` literal search |
-| Any | `?` contextual help, Esc back/close |
+| List | `j`/`k` or ↑↓ / PgUp / PgDn; Enter details; `/` search; `x` stop/force |
+| Details | `j`/`k` or ↑↓ scroll; Enter logs; `x` stop/force; `s` graceful stop; `a` acknowledge; `c` clear terminal |
+| Details, running | `w` single-line stdin (no newline); `e` EOF |
+| Logs | `j`/`k` or ↑↓ / PgUp / PgDn pause and scroll; `f` follow; `t` stream; `/` literal search |
+| Any | `?` contextual help (`j`/`k` scroll); Esc back/close |
 
-In the list, `x` stops the selected active process; `k` force-kills it only after `stop-timeout`. Both require confirmation.
+**`x` requires confirmation:** active runs get SIGTERM; at `stop-timeout`, it offers an explicit confirmed SIGKILL. **`k` only navigates, never forces.** Details `s` remains graceful-only, even after timeout. Logs are non-destructive. Clear, stdin and EOF also require confirmation for the captured selected ID, with eligibility checked again before execution.
 
-The table shows default navigation bindings; configured Pi selection/input bindings are honored. Stop, force, clear, stdin, and EOF require confirmation for the selected run. Search and stdin use an IME-aware input. The overlay leaves the editor draft untouched. Selection and per-run log views survive reopening within the session. Paused logs freeze the displayed tail; `f` resumes with the latest retained output. Very small terminals require resizing before controls are enabled.
+Configured Pi selection/input bindings remain supported. Search/stdin consume literal j/k/x and bracketed paste; input is IME-aware. The editor draft is preserved. Selection and per-run log views survive reopening in the same session. Paused logs freeze until `f` resumes. Very small terminals require resizing before controls activate. Inspect cleanup warnings in details.
 
-**Start/rerun via process tool.** UI start/rerun are unsupported in v1 because the public command API cannot re-enter tool permission guards. No direct-spawn workaround is used. Immediate UI navigation/control feedback never requests a model turn. Genuine process completion/watch notifications retain their configured policy, including events caused by UI stdin or EOF. Non-TUI invocation lists runs through notifications (RPC) or stderr (headless), without opening a custom component or writing into JSON stdout.
+Start/rerun only through the tool: the public command API cannot re-enter tool permission guards, so no direct-spawn UI workaround is used. Navigation/control feedback does not request a model turn; genuine completion/watch events keep their attention policy. RPC lists through UI notifications; headless mode uses stderr, never JSON stdout.
 
-The footer shows green **N active** and red **N failed** (unacknowledged failures). Zero segments disappear; an empty status is hidden. Acknowledgment changes attention only, not outcome or failure history. Inspect `Warning` in details when a run has a cleanup error; ↑↓ scroll long details.
+## Notifications and status
 
-## Notifications and status integration
+Success/failure default to `turn` (wake/steer); external signals default to `context` (next turn). Intentional stops always use context. `ignore` suppresses successful/external-signal completions; failure/watch ignore becomes context. Cleanup warnings remain visible.
 
-Success and failure default to `turn` (wake/steer). External signals default to `context` (next turn). Intentional-stop completions always use context; other completion/watch events keep their policy regardless of whether a UI action is pending or finished. `ignore` suppresses successful exits and external-signal notices; failure/watch ignore becomes context. Cleanup warnings remain visible. Watches fire once unless `repeat:true`; repeats coalesce to at most once per watch per second. The adapter additionally deduplicates the most recent 4096 notification keys per session.
+Watches assemble **per-stream complete lines**, matching on newline or final EOF/drain flush, not necessarily immediately on unterminated readiness text. No cross-stream concatenation or historical log replay. One-shot is default; repeat watches have a **15-second cooldown**. Aggregate delivery is **20 watch notifications/minute**, with a context suppression summary. Terminal completion notifications are not throttled. Append/remove preserve matcher identities; replace/clear reset them. Lines over 10,000 characters are skipped; oversized lines and high-volume event buffers can drop matches. This is not lossless log monitoring. Index delivery additionally deduplicates the most recent 4096 event keys per session, not a second throttle.
 
-To use another status renderer, put this in `<agent-dir>/processes.json`, then reload:
+The default footer shows green **N active** and red **N failed** (unacknowledged failures), hiding zero segments. Acknowledgment changes attention, not outcome; counts describe retained records, not permanent failure history.
+
+To replace only the default status renderer, set `<agent-dir>/processes.json` and reload:
 
 ```json
 {"defaultStatus":false}
 ```
 
-This disables only this extension's status, not tools, notifications, or the read-only event protocol:
+Tools, notifications and versioned read-only snapshots remain enabled. Subscribe **before** requesting the initial snapshot:
 
-- Request `processes:snapshot:request:v1` with `{version:1, reply(snapshot) { ... }}`.
-- Subscribe to `processes:snapshot:v1` for version-1 snapshots.
+```ts
+const renderV1 = (snapshot) => {
+  if (snapshot?.version === 1) render(snapshot);
+};
+const off = pi.events.on('processes:snapshot:v1', renderV1);
+pi.events.emit('processes:snapshot:request:v1', {
+  version: 1, reply: renderV1,
+});
+// On subscriber shutdown:
+off();
+```
 
-Subscribe before requesting the initial snapshot. Replies and broadcasts contain detached display-safe data. Receiver faults cannot interrupt process handling. No runtime controls are exposed on the bus. There is no footer replacement or global shortcut.
+Payload stays `{version:1, revision, runs, active, unacknowledgedFailed}`. Replies/broadcasts contain detached display-safe data; receiver faults cannot interrupt handling. The bus exposes no manager or process controls. No footer replacement or global shortcut is installed.
 
-## Ownership and limits
+## Ownership, logs and limits
 
-New, resumed, forked, reloaded, or closed sessions end ownership: cleanup attempts to stop owned processes and remove their logs. Nothing is restored from session history. Cleanup failures are reported, not treated as successful termination. Retained logs are private temporary files, bounded to 1 MiB per stream by default; at most 100 records are retained before new starts require a clear. Logs may contain secrets until cleared or disposed.
+New/resumed/forked/reloaded/closed sessions end ownership. Cleanup attempts bounded TERM/KILL of still-owned live groups and removes owned logs; failures are reported. Nothing is restored from history. No daemon, cross-session authority, automatic restart, PTY, or cleanup guarantee after abrupt host death. POSIX only; Windows unsupported.
 
-**Terminal means the tracked shell exited, not that all descendants terminated.** No group signals are sent after that shell's observed exit, avoiding reused-group targeting. Inherited output pipes still open after 200 ms are closed with a retained warning that descendants may still be running. Background, self-daemonizing, and group-escaping descendants are unsupported; fully redirected descendants cannot be detected. No daemon, cross-session control, automatic restart, or cleanup guarantee after abrupt host death is provided. Bounded synchronous log writes may briefly block on slow storage.
+**Terminal means the tracked shell exited, not that all descendants terminated.** Observed owner exit permanently revokes group signals and liveness probes, avoiding stale/reused group targeting. Inherited pipes still open after **200 ms** are closed with a retained descendant warning. Background, self-daemonizing and group-escaping descendants are unsupported; fully redirected descendants cannot be detected.
 
-This directory's `index.ts` is auto-discovered through the extensions directory; do not add a second package/path registration. It replaces `npm:@aliou/pi-processes`. Its `/ps` commands, dock, and skill are not retained. Stop old package-owned processes before removing that package from settings and restarting with the replacement.
+Logs live in a private session-owned temporary child directory. `stdoutFile`/`stderrFile` are real readable **currently-retained raw files**, not lifetime-complete archives. They may contain secrets and terminal control bytes, rotate independently, and disappear on clear/reaping/disposal. `read` can inspect those returned paths while retained; do not render raw bytes unsanitized. Tool/transcript output is sanitized and bounded. Bounded synchronous disk operations can briefly block on slow storage.
+
+Default cap is **64 MiB each** for stdout, stderr and combined: roughly **192 MiB/run**, not a global disk quota. Only excess **finished records above 50** become eligible for reaping after **five minutes finished**; recent/live records can exceed 50. Runtime options `logRoot`, `maxLogBytes`, explicit `maxRuns` capacity and `stopGraceMs` remain supported (programmatic, not new settings). Caller `logRoot` is a parent, never permission to delete that directory.
+
+## Discovery and migration
+
+`index.ts` is auto-discovered through the extensions-directory symlink. Its supported `resources_discover` hook registers the nested skill after session start and on reload; a nested Markdown file or package manifest alone would not suffice. No separate skill/settings registration is needed. Exactly one extension registers the process tool/command/message renderer and owns one runtime per session. No upstream logs/dock extensions, `/ps` aliases or interception are loaded.
+
+Do not configure both this directory and `npm:@aliou/pi-processes`, or register this path twice. Stop old package-owned processes before removing the old package registration and restarting. Remove a separately configured same-name skill if present: Pi retains the first discovered `pi-processes` skill and reports a collision. A full restart is recommended for activation; no live settings are changed by this package.
+
+## Source provenance
+
+Pinned origin: **`@aliou/pi-processes` 0.12.0**, https://github.com/aliou/pi-processes, research-pinned commit **`16c1080030e5efd175a268e44ce665fb97bcb68f`**. Tar integrity: `sha512-Xf/lWTQ15M0ZJKjZrbmuhWHnJtSD5h9lQKVNJpwqy4njZhlqRwMLyJ55j16tOUDEujbTPPmZpBecBJPuQJ9R9Q==`.
+
+[Backend provenance](backend/UPSTREAM.md) and [renderer/skill provenance](render/UPSTREAM.md) map copied sources, hashes and compatibility/safety patches. Actual upstream manager/registry/controller/log/output/watch/notification code runs behind the existing Runtime facade; it is not a renamed independent backend. The existing safe overlay/status protocol remain local.
+
+Supplied manifest and README declare **MIT**. All supplied selected source comments/notices and exact package/README/CONTRIBUTING metadata are retained in non-discovered audit copies. The manifest supplies **no author field**, and no standalone LICENSE/COPYING/NOTICE was supplied. This is a disclosed provenance limitation; no author, copyright holder/year or permission text is invented. Local package remains private; publication is not authorized.
 
 ## Validation
 
-Run `npm test` here with Node's TypeScript stripping support and Pi installed. The test loader resolves installed Pi dependencies and isolates HOME/agent configuration in temporary directories; no dependency installation or live session is required. Tests exercise owned harmless children, extension discovery/registration, headless behavior, and regular/fullscreen rendering with an in-memory terminal. Real terminal keyboard/IME behavior still requires manual verification.
+Run `npm test` here with Node TypeScript stripping and installed Pi peers. No new dependency or installation is needed. Declared host peers remain `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui`, and `typebox`; backend uses only Node built-ins/local modules. All tests, including backend tests, are in the root `*.test.ts` runner glob.
+
+Tests isolate HOME/agent config, use bounded harmless owned children, and cover manager safety/logs/reaping/watch policies, tool JSON/human rendering, replay, controls, status opt-out/protocol, installed SDK discovery/skill advertisement/collisions/reload, headless/RPC adapters, and actual regular/fullscreen renderers with an in-memory terminal. Policy clocks avoid long real waits. Node stripping is not static typechecking. Physical-terminal keyboard/IME behavior and live activation remain manual validation.

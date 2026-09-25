@@ -76,7 +76,7 @@ test('details requires visible contextual confirmations, no start/rerun, ack and
   assert.match(f.render(), /SIGTERM/); f.component.handleInput('n'); f.render(); assert.equal(f.calls.length, 0);
   f.component.handleInput('s'); f.render(); f.component.handleInput('y'); await tick();
   assert.deepEqual(f.calls.pop(), ['stop', 'a', false]);
-  f.update([run('a', { phase: 'stop-timeout' })]); f.render(); f.component.handleInput('k');
+  f.update([run('a', { phase: 'stop-timeout' })]); f.render(); f.component.handleInput('x');
   assert.match(f.render(), /SIGKILL/); f.component.handleInput('y'); await tick();
   assert.deepEqual(f.calls.pop(), ['stop', 'a', true]);
   f.update([run('a', { phase: 'terminal', outcome: 'failed', error: 'Tracked shell exited; descendants may still be running.' })]);
@@ -238,7 +238,7 @@ test('all views budget chrome, hints and focused input across narrow and short t
     else if (['details', 'details-help', 'clear', 'write', 'write-confirm', 'eof'].includes(screen)) details(f);
     if (screen.endsWith('help')) f.component.handleInput('?');
     if (screen === 'stop') f.component.handleInput('x');
-    if (screen === 'force') f.component.handleInput('k');
+    if (screen === 'force') f.component.handleInput('x');
     if (screen === 'clear') f.component.handleInput('c');
     if (screen === 'eof') f.component.handleInput('e');
     if (screen.endsWith('search')) f.component.handleInput('/');
@@ -271,7 +271,7 @@ test('all views budget chrome, hints and focused input across narrow and short t
 
 test('list actions use selected ID, preserve reorder, require visible confirmation and gate force by timeout', async () => {
   const f = setup();
-  assert.match(f.render(), /x Stop/); assert.doesNotMatch(f.render(), /k Force kill/);
+  assert.match(f.render(), /x Stop/); assert.doesNotMatch(f.render(), /x Force kill/);
   f.component.handleInput(down); f.component.handleInput('x'); assert.doesNotMatch(f.render(), /Confirm stop/);
   f.update([run('b'), run('a')]); f.render(); assert.equal(f.state.selected, 'b');
   f.component.handleInput('k'); assert.doesNotMatch(f.render(), /Confirm force/);
@@ -279,13 +279,13 @@ test('list actions use selected ID, preserve reorder, require visible confirmati
   assert.match(f.render(), /SIGTERM/); f.component.handleInput('y'); await tick();
   assert.deepEqual(f.calls.pop(), ['stop', 'b', false]);
   f.update([run('a'), run('b', { phase: 'stop-timeout' })]);
-  assert.match(f.render(), /x Stop · k Force kill/);
-  f.component.handleInput('?'); assert.match(f.render(), /x Stop · k Force kill/);
-  f.component.handleInput(esc); f.render(); f.component.handleInput('k');
+  assert.match(f.render(), /x Force kill/);
+  f.component.handleInput('?'); assert.match(f.render(), /x Force kill/);
+  f.component.handleInput(esc); f.render(); f.component.handleInput('x');
   assert.match(f.render(), /SIGKILL/); f.component.handleInput('y'); await tick();
   assert.deepEqual(f.calls.pop(), ['stop', 'b', true]);
   f.update([run('b', { phase: 'terminal', outcome: 'failed' })]);
-  assert.doesNotMatch(f.render(), /x Stop|k Force kill/);
+  assert.doesNotMatch(f.render(), /x Stop|x Force kill/);
   for (const key of ['x', 'k']) { f.component.handleInput(key); f.render(); }
   assert.equal(f.calls.length, 0); f.component.dispose();
 });
@@ -293,7 +293,7 @@ test('list actions use selected ID, preserve reorder, require visible confirmati
 test('list confirmations cancel on removal/reselection and revalidate phase before executing', async () => {
   for (const transition of ['removed', 'selected', 'terminal', 'force-running']) {
     const f = setup([run('a', { phase: 'stop-timeout' }), run('b')]);
-    f.component.handleInput(transition === 'force-running' ? 'k' : 'x'); f.render();
+    f.component.handleInput('x'); f.render();
     if (transition === 'removed') f.update([run('b')]);
     if (transition === 'selected') { f.state.selected = 'b'; f.update([run('a'), run('b')]); }
     if (transition === 'terminal') f.update([run('a', { phase: 'terminal', outcome: 'successful' }), run('b')]);
@@ -313,7 +313,7 @@ test('list search and paste isolate x/k; async stop failures remain visible in f
   f.component.handleInput('\x1b[200~'); f.component.handleInput('xky'); f.component.handleInput('\x1b[201~');
   assert.doesNotMatch(f.render(), /Confirm/);
   f.component.handleInput('x'); f.render(); f.component.handleInput('y'); await tick();
-  assert.match(f.render(), /Error: stop denied/); assert.match(f.render(), /x Stop · k Force kill/);
+  assert.match(f.render(), /Error: stop denied/); assert.match(f.render(), /x Force kill/);
   f.component.dispose();
 });
 
@@ -353,8 +353,8 @@ test('short error layouts keep async failures, focused input and all log control
 test('narrow footer never drops selected-row controls and confirms only after resize warning is visible', async () => {
   const f = setup([run('a', { phase: 'stop-timeout' })]);
   f.dimensions(24, 6);
-  for (const hint of ['Enter details', 'x Stop', 'k Force kill', '/ search', '? help', 'Esc close']) assert.ok(f.render().includes(hint));
-  f.component.handleInput('k'); f.render();
+  for (const hint of ['j/k select', 'Enter details', 'x Force kill', '/ search', '? help', 'Esc close']) assert.ok(f.render().includes(hint));
+  f.component.handleInput('x'); f.render();
   f.dimensions(20, 6); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
   f.render(); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
   f.dimensions(24, 6); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
@@ -367,9 +367,154 @@ test('narrow footer never drops selected-row controls and confirms only after re
 test('list execution rechecks runtime eligibility even without a published snapshot', async () => {
   let latest = run('a', { phase: 'stop-timeout' });
   const f = setup([latest], { snapshot: () => ({ version: 1, revision: 1, runs: [latest], active: 1, unacknowledgedFailed: 0 }) });
-  f.component.handleInput('k'); f.render();
+  f.component.handleInput('x'); f.render();
   latest = run('a', { phase: 'terminal', outcome: 'successful' });
   f.component.handleInput('y'); await tick();
   assert.equal(f.calls.length, 0); assert.match(f.render(), /Error: Process is no longer eligible/);
   f.component.dispose();
+});
+
+test('j/k selects by ID with clamped edges and preserves configured arrow/page bindings', () => {
+  const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+    'tui.select.up': 'ctrl+p', 'tui.select.down': 'ctrl+n',
+    'tui.select.pageUp': 'ctrl+u', 'tui.select.pageDown': 'ctrl+d',
+  });
+  const f = setup(Array.from({ length: 50 }, (_, i) => run(`job${i}`)), {}, { keybindings });
+  f.component.handleInput('k'); assert.equal(f.state.selected, 'job0');
+  f.component.handleInput('j'); assert.equal(f.state.selected, 'job1');
+  f.component.handleInput('\x0e'); assert.equal(f.state.selected, 'job2');
+  f.component.handleInput('\x10'); assert.equal(f.state.selected, 'job1');
+  f.component.handleInput('k'); assert.equal(f.state.selected, 'job0');
+  const page = f.component.render(100).filter(line => /job\d+/.test(line)).length;
+  f.component.handleInput('\x04'); assert.equal(f.state.selected, `job${page}`);
+  f.component.handleInput('\x15'); assert.equal(f.state.selected, 'job0');
+  for (let i = 0; i < 55; i++) f.component.handleInput('j');
+  assert.equal(f.state.selected, 'job49'); assert.deepEqual(f.calls, []);
+  f.component.dispose();
+});
+
+test('j/k scrolls details and contextual help without changing selection or invoking controls', async () => {
+  for (const screen of ['details', 'list-help', 'details-help', 'logs-help']) {
+    const f = setup([run('a', { command: 'long command '.repeat(30), phase: 'stop-timeout' }), run('b')]);
+    if (screen === 'logs-help') await logs(f);
+    else if (screen.startsWith('details')) details(f);
+    if (screen.endsWith('help')) f.component.handleInput('?');
+    f.dimensions(40, 8);
+    const before = f.render(); assert.doesNotMatch(before, /Resize required/);
+    f.component.handleInput('j'); const after = f.render();
+    assert.notEqual(after, before, screen);
+    f.component.handleInput('k'); assert.equal(f.render(), before, screen);
+    assert.equal(f.state.selected, 'a');
+    assert.ok(f.calls.every(call => call[0] === 'output'));
+    f.component.dispose();
+  }
+});
+
+test('j/k log scrolling pauses follow, freezes new output, and never enables destructive controls', async () => {
+  const f = setup([run('a', { phase: 'stop-timeout' })]); await logs(f);
+  const view = f.state.logs.get('a')!, tail = view.offset;
+  f.component.handleInput('k'); assert.equal(view.offset, tail - 1); assert.equal(view.follow, false);
+  f.render(); f.component.handleInput('j'); assert.equal(view.offset, tail); assert.equal(view.follow, false);
+  f.output('new output'); await tick(); assert.match(f.render(), /paused \+new/);
+  assert.doesNotMatch(f.render(), /new output/);
+  for (const key of ['x', 's', 'y', 'c', 'w', 'e']) { f.component.handleInput(key); f.render(); }
+  assert.ok(f.calls.every(call => call[0] === 'output'));
+  f.component.handleInput('f'); await tick(); assert.equal(view.follow, true); assert.match(f.render(), /new output/);
+  f.component.dispose();
+});
+
+test('search and stdin receive literal j/k/x keys and segmented pasted keys, not navigation or stop', async () => {
+  for (const screen of ['list', 'logs', 'stdin']) {
+    const f = setup([run('a', { name: 'jkxjkx' }), run('b')]);
+    if (screen === 'logs') await logs(f);
+    if (screen === 'stdin') details(f);
+    f.component.handleInput(screen === 'stdin' ? 'w' : '/'); f.render();
+    for (const key of ['j', 'k', 'x']) f.component.handleInput(key);
+    f.component.handleInput('\x1b[200~');
+    for (const key of ['j', 'k', 'x']) f.component.handleInput(key);
+    f.component.handleInput('\x1b[201'); f.component.handleInput('~');
+    assert.match(f.render(), /jkxjkx/); assert.equal(f.state.selected, 'a');
+    assert.ok(f.calls.every(call => call[0] === 'output'));
+    f.component.handleInput(enter); await tick();
+    if (screen === 'list') assert.equal(f.state.query, 'jkxjkx');
+    else if (screen === 'logs') assert.equal(f.calls.at(-1)[2].pattern, 'jkxjkx');
+    else {
+      assert.match(f.render(), /Send exact text/); f.component.handleInput('y'); await tick();
+      assert.deepEqual(f.calls.at(-1), ['write', 'a', 'jkxjkx', false]);
+    }
+    f.component.dispose();
+  }
+});
+
+test('paste remains isolated when selection removal cancels editing and when payload contains Escape', () => {
+  const f = setup(); f.component.handleInput('/'); f.render();
+  f.component.handleInput('\x1b[200~'); f.component.handleInput(esc); f.component.handleInput('jkx');
+  assert.match(f.render(), /Literal search/);
+  f.update([run('b', { phase: 'stop-timeout' })]); f.render();
+  for (const key of ['x', 'y', 'j', 'k']) { f.component.handleInput(key); f.render(); }
+  f.component.handleInput('\x1b[201'); f.component.handleInput('~');
+  assert.doesNotMatch(f.render(), /Confirm/); assert.deepEqual(f.calls, []);
+  assert.equal(f.state.selected, 'b');
+  f.component.handleInput('x'); assert.match(f.render(), /SIGKILL/);
+  f.component.handleInput('n'); f.render(); f.component.handleInput('/'); f.render();
+  for (const key of ['j', 'k', 'x']) f.component.handleInput(key);
+  f.component.handleInput(enter); assert.equal(f.state.query, 'jkx', 'new prompt has no stale paste buffer');
+  f.component.dispose();
+});
+
+test('x confirms TERM for active phases, force only at timeout; k never stops in list or details', async () => {
+  for (const screen of ['list', 'details']) for (const phase of ['starting', 'running', 'stopping', 'stop-timeout', 'terminal'] as const) {
+    const f = setup([run('a', { phase })]);
+    if (screen === 'details') details(f);
+    f.component.handleInput('k'); f.render(); f.component.handleInput('y');
+    assert.deepEqual(f.calls, [], `${screen} ${phase}: k`);
+    assert.doesNotMatch(f.render(), /Confirm/);
+    f.component.handleInput('x'); f.component.handleInput('y'); assert.deepEqual(f.calls, [], 'unrendered y');
+    if (phase === 'terminal') assert.doesNotMatch(f.render(), /Confirm|x [Ss]top|x [Ff]orce/);
+    else {
+      assert.match(f.render(), phase === 'stop-timeout' ? /SIGKILL/ : /SIGTERM/);
+      f.component.handleInput('k'); assert.deepEqual(f.calls, []);
+      f.component.handleInput('y'); await tick();
+      assert.deepEqual(f.calls, [['stop', 'a', phase === 'stop-timeout']]);
+    }
+    f.component.dispose();
+  }
+});
+
+test('captured x confirmation survives reorder but never silently upgrades TERM after timeout', async () => {
+  for (const screen of ['list', 'details']) {
+    const f = setup(); f.component.handleInput('j'); f.render();
+    if (screen === 'details') details(f);
+    f.component.handleInput('x'); assert.match(f.render(), /SIGTERM/);
+    f.update([run('b', { phase: 'stop-timeout' }), run('a')]);
+    f.component.handleInput('y'); assert.deepEqual(f.calls, []);
+    assert.match(f.render(), /SIGTERM/); f.component.handleInput('y'); await tick();
+    assert.deepEqual(f.calls.pop(), ['stop', 'b', false]);
+    f.render(); f.component.handleInput('x'); assert.match(f.render(), /SIGKILL/);
+    f.update([run('b', { phase: 'stopping' }), run('a')]); f.render();
+    f.component.handleInput('y'); await tick(); assert.deepEqual(f.calls, []);
+    assert.match(f.render(), /no longer eligible/); f.component.dispose();
+  }
+});
+
+test('busy x action blocks navigation/repetition and rechecks eligibility inside deferred act', async () => {
+  let release: () => void = () => {};
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const f = setup([run('a', { phase: 'stop-timeout' }), run('b')], {}, {
+    act: async (_id: string, operation: () => Promise<unknown>) => { await waiting; return operation(); },
+  });
+  f.component.handleInput('x'); f.render(); f.component.handleInput('y');
+  assert.match(f.render(), /Working/);
+  for (const key of ['j', 'k', 'x', 'y']) { f.component.handleInput(key); f.render(); }
+  assert.equal(f.state.selected, 'a'); assert.deepEqual(f.calls, []);
+  f.update([run('a', { phase: 'terminal', outcome: 'successful' }), run('b')]);
+  release(); await tick(); assert.deepEqual(f.calls, []);
+  assert.match(f.render(), /no longer eligible/); f.component.dispose();
+});
+
+test('details s remains a graceful-only alias even after timeout', async () => {
+  const f = setup([run('a', { phase: 'stop-timeout' })]); details(f);
+  f.component.handleInput('s'); assert.match(f.render(), /SIGTERM/);
+  f.component.handleInput('y'); await tick();
+  assert.deepEqual(f.calls, [['stop', 'a', false]]); f.component.dispose();
 });

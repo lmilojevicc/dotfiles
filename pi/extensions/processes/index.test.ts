@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { KeybindingsManager, TUI_KEYBINDINGS } from '@earendil-works/pi-tui';
+import { readFileSync } from 'node:fs';
 import { registerProcesses } from './index.ts';
 import { SNAPSHOT_REQUEST, SNAPSHOT_EVENT } from './status.ts';
 import type { Run, Runtime, RuntimeEvent } from './types.ts';
@@ -9,10 +10,11 @@ const run = (extra = {}): Run => ({ id: 'a', name: 'owned', command: 'true', cwd
 function setup(mode = 'tui', hasUI = true) {
   const handlers = new Map<string, any>(), commands = new Map<string, any>(), bus = new Map<string, Set<any>>();
   const sent: any[] = [], statuses: any[] = [], notices: any[] = [], runtimes: any[] = [], events: any[] = [];
-  let tool: any, component: any, customCalls = 0, doneCalls = 0;
+  let tool: any, component: any, renderer: any, customCalls = 0, doneCalls = 0;
   const pi: any = {
     on: (name: string, fn: any) => handlers.set(name, fn), registerTool: (d: any) => tool = d,
     registerCommand: (name: string, c: any) => commands.set(name, c),
+    registerMessageRenderer: (name: string, fn: any) => { assert.equal(name, 'process-notification'); renderer = fn; },
     sendMessage: (...args: any[]) => sent.push(args),
     events: {
       on: (name: string, fn: any) => { if (!bus.has(name)) bus.set(name, new Set()); bus.get(name)!.add(fn); return () => bus.get(name)!.delete(fn); },
@@ -44,7 +46,7 @@ function setup(mode = 'tui', hasUI = true) {
     runtimes.push(item); return item;
   };
   registerProcesses(pi, factory, () => process.env.PI_CODING_AGENT_DIR!);
-  return { pi, ctx, handlers, bus, sent, statuses, notices, runtimes, events, commands,
+  return { pi, ctx, handlers, bus, sent, statuses, notices, runtimes, events, commands, renderer: () => renderer,
     start: () => handlers.get('session_start')({}, ctx), shutdown: () => handlers.get('session_shutdown')({}, ctx),
     open: () => commands.get('processes').handler('', ctx), tool: (params: any) => tool.execute('call', params, undefined, undefined, ctx),
     component: () => component, customCalls: () => customCalls, doneCalls: () => doneCalls };
@@ -61,6 +63,29 @@ test('registration is lazy, no global shortcuts/footer replacements, one runtime
   assert.equal(f.bus.get(SNAPSHOT_REQUEST)!.size, 1); assert.equal(f.runtimes.length, 2);
   await f.shutdown(); assert.equal(f.bus.get(SNAPSHOT_REQUEST)!.size, 0); assert.deepEqual(f.statuses.at(-1), ['processes', undefined]);
   await f.shutdown(); assert.equal(f.runtimes[1].disposed, 1);
+});
+
+test('supported skill discovery and custom message renderer are registered without starting runtime', () => {
+  const f = setup();
+  const resource = f.handlers.get('resources_discover')({type:'resources_discover',cwd:'/project',reason:'startup'},f.ctx);
+  assert.equal(resource.skillPaths.length,1);
+  assert.match(resource.skillPaths[0],/skills\/pi-processes\/SKILL.md$/);
+  assert.match(readFileSync(resource.skillPaths[0],'utf8'),/name: pi-processes/);
+  assert.equal(f.runtimes.length,0);
+  assert.equal(typeof f.renderer(),'function');
+});
+
+test('notification event metadata persists across clear/replacement; legacy messages render safely', async () => {
+  const f = setup(); await f.start();
+  const completed = run({phase:'terminal',outcome:'successful',startedAt:1000,endedAt:6000,exitCode:0});
+  f.runtimes[0].emit({type:'notification',id:completed.id,key:'complete',kind:'completion',attention:'turn',text:'success',details:{version:1,timestamp:6000,kind:'completion',run:completed}});
+  assert.equal(f.sent.length,1);
+  assert.equal(f.sent[0][0].details.event.run.name,'owned');
+  completed.name = 'renamed'; f.runtimes[0].runs=[];
+  const message = f.sent[0][0]; await f.start();
+  assert.match(f.renderer()(message,{expanded:false,outputPad:0},f.ctx.ui.theme).render(80).join('\n'),/owned completed · 5s · exit 0/);
+  assert.match(f.renderer()({content:'old\x1b]52;c;secret\x07 entry'},{expanded:false,outputPad:0},f.ctx.ui.theme).render(80).join('\n'),/old entry/);
+  await f.shutdown();
 });
 
 test('notification attention maps turn/context/ignore, dedups and rejects stale-generation callbacks', async () => {

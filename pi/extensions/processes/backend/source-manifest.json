@@ -1,0 +1,275 @@
+{
+  "package": "@aliou/pi-processes",
+  "version": "0.12.0",
+  "repository": "https://github.com/aliou/pi-processes",
+  "sourceCommit": "16c1080030e5efd175a268e44ce665fb97bcb68f",
+  "sourceCommitEvidence": "Pinned commit supplied by approved research; no network/Git lookup in this implementation.",
+  "authorField": null,
+  "licenseDeclarations": [
+    "package.json: license = MIT",
+    "README.md: License / MIT"
+  ],
+  "standaloneLicenseCopyingNoticeSupplied": false,
+  "tarballIntegrity": "sha512-Xf/lWTQ15M0ZJKjZrbmuhWHnJtSD5h9lQKVNJpwqy4njZhlqRwMLyJ55j16tOUDEujbTPPmZpBecBJPuQJ9R9Q==",
+  "sources": [
+    {
+      "source": "src/manager/index.ts",
+      "target": "manager/index.ts",
+      "sha256": "a8d89154f942fe3804f92c80f2c29ef64a7e9dc22b231427df525e0c6c9a448f",
+      "originalArchive": "upstream-metadata/source/src/manager/index.ts.txt",
+      "localChanges": "Retain actual manager composition and read/control delegation; use direct .ts imports, local limits/options, observer isolation, bounded output read seam, spawn wait, event flush, awaited cleanup; remove adoption, bulk unguarded kill and unused tagged combined read surface.",
+      "adaptedSha256": "e5b515fd897f41e6830e6e136488127b2fe0ab96769ab9e7277901ced4931c8d",
+      "unchangedSourceLines": 136,
+      "sourceLines": 200,
+      "targetLines": 181
+    },
+    {
+      "source": "src/manager/internal-types.ts",
+      "target": "manager/internal-types.ts",
+      "sha256": "5f66d09235f1cea4f5116220ad04a861b8d848e1926bac1e42fb0389c22b418b",
+      "originalArchive": "upstream-metadata/source/src/manager/internal-types.ts.txt",
+      "localChanges": "Retain explicit public/internal projections; add tracked child authority, starting state, stopRequested, completion/drain/spawn promises and bounded teardown bookkeeping.",
+      "adaptedSha256": "57165993da99d4436f343481a0060699f0a4a7068a99cbfb84b43f53d1076c53",
+      "unchangedSourceLines": 129,
+      "sourceLines": 130,
+      "targetLines": 146
+    },
+    {
+      "source": "src/manager/limits.ts",
+      "target": "manager/limits.ts",
+      "sha256": "532b44177a38e4c2346d8071b74612003243e41bc225bbbbece8e6e7ba7e5fe9",
+      "originalArchive": "upstream-metadata/source/src/manager/limits.ts.txt",
+      "localChanges": "Preserve upstream 64 MiB/file, event/read bounds, 50 excess-finished records and five-minute grace unchanged.",
+      "adaptedSha256": "802b4c6c3597bb4a41c71d4b75bf573674663270245a931c29dc287f8384562c",
+      "unchangedSourceLines": 15,
+      "sourceLines": 15,
+      "targetLines": 16
+    },
+    {
+      "source": "src/manager/process-registry.ts",
+      "target": "manager/process-registry.ts",
+      "sha256": "1b1cbf84229a40e93b054e9dee2804c59f29d806d7529de4d1fe0df55ec10abd",
+      "originalArchive": "upstream-metadata/source/src/manager/process-registry.ts.txt",
+      "localChanges": "Replace reusable short proc IDs with randomUUID; retain registry operations.",
+      "adaptedSha256": "46cb5878f7df02145127842592d00cda79de445d45ce3a5df528f78b9071d0bc",
+      "unchangedSourceLines": 73,
+      "sourceLines": 78,
+      "targetLines": 79
+    },
+    {
+      "source": "src/manager/process-runtime-controller.ts",
+      "target": "manager/process-runtime-controller.ts",
+      "sha256": "ad66b76a9920c5a148ea5839eaa3b648fd5cc0c5a2fd473974f5c9979a5904aa",
+      "originalArchive": "upstream-metadata/source/src/manager/process-runtime-controller.ts.txt",
+      "localChanges": "Retain real controller, registry/log/output wiring, status transitions, watcher/reaper ordering and age/sequence selection. Replace unsafe close-only ownership and unguarded group actions with ChildProcess exit guard, 200ms drain, live timeout, awaited stdin and bounded shutdown; preallocate private logs; retain raw streams plus streaming-sanitized combined chunks; flush each stream's pending watch line after its decoder reaches EOF; capture warnings before one completion; no adoption or automatic ordinary-stop escalation.",
+      "adaptedSha256": "1fdb0b35893dc1f647425b6925468c3c02717e9b9fc06ce16e64c14ad735d13a",
+      "unchangedSourceLines": 225,
+      "sourceLines": 614,
+      "targetLines": 461
+    },
+    {
+      "source": "src/manager/process-log-store.ts",
+      "target": "manager/process-log-store.ts",
+      "sha256": "938d2ad909ba3b3bead1864cc7ee4a6b6d8ac8f5430910053702b4f9a5987dec",
+      "originalArchive": "upstream-metadata/source/src/manager/process-log-store.ts.txt",
+      "localChanges": "Retain disk store and bounded UTF-8 tail reader. Private child root and 0600 exclusive files; cap giant chunks including marker; exact rotation state; no silently recreated logs, swallowed reads/removals/cleanup; combined chunks sanitized by controller, not tagged event lines.",
+      "adaptedSha256": "ed8a156db24fe017a490d96d088147c393190378a2181d31caa3f0276489e796",
+      "unchangedSourceLines": 279,
+      "sourceLines": 403,
+      "targetLines": 350
+    },
+    {
+      "source": "src/manager/process-output.ts",
+      "target": "manager/process-output.ts",
+      "sha256": "6a23ab5fa34d833dba786933e735798bad844a5edb6cc6bfcca3f74478ae4566",
+      "originalArchive": "upstream-metadata/source/src/manager/process-output.ts.txt",
+      "localChanges": "Retain upstream split-line assembly, pending/event byte/line bounds, overflow dropping, final flush and event throttle. Combined storage moved to controller to retain safe unterminated output; add complete-event-only flush before watch changes and per-stream pending-line flush at EOF; local 30ms invalidation cadence.",
+      "adaptedSha256": "c3acad9e43105d7c5d475c2c80f03e61f3bc347f3b550e12fab2c44e6d9d2b25",
+      "unchangedSourceLines": 296,
+      "sourceLines": 324,
+      "targetLines": 318
+    },
+    {
+      "source": "src/types.ts",
+      "target": "types.ts",
+      "sha256": "210700ffab1424f9825264f3cd1f42cbfb2dbefab3b5ec5df65d57cfd85e265b",
+      "originalArchive": "upstream-metadata/source/src/types.ts.txt",
+      "localChanges": "Retain internal process status/info/event types; add starting and stopRequested. No public upstream protocol exposed.",
+      "adaptedSha256": "4c2c93619bf283ce595a8aa23e9e7a6ab5a4cf491a304c39749e88556ca3d5fa",
+      "unchangedSourceLines": 76,
+      "sourceLines": 76,
+      "targetLines": 80
+    },
+    {
+      "source": "src/utils/buffer.ts",
+      "target": "utils/buffer.ts",
+      "sha256": "ebf71bfa38be52c2608c56a684f2f9ce1e8cc2697214182d7f3894c6f6007a4e",
+      "originalArchive": "upstream-metadata/source/src/utils/buffer.ts.txt",
+      "localChanges": "Unchanged upstream UTF-8 helpers.",
+      "adaptedSha256": "3afef92e4de7e13a6ceece17c46242de18acad573ad45fbbc4bb4c8898047e25",
+      "unchangedSourceLines": 28,
+      "sourceLines": 28,
+      "targetLines": 29
+    },
+    {
+      "source": "src/utils/command-executor.ts",
+      "target": "utils/command-executor.ts",
+      "sha256": "babb232078360491cd2d6be7a4a58f5a0672535e35785adf24b8a8457a47b1c0",
+      "originalArchive": "upstream-metadata/source/src/utils/command-executor.ts.txt",
+      "localChanges": "Unchanged upstream built-in bash resolution and detached bash -lc spawning; no AST/framework imports.",
+      "adaptedSha256": "f27aa9d79ba1f6ab6807162c7793d41939a344097c3e6f6f233a7ba19089d53d",
+      "unchangedSourceLines": 60,
+      "sourceLines": 60,
+      "targetLines": 61
+    },
+    {
+      "source": "src/utils/process-group.ts",
+      "target": "utils/process-group.ts",
+      "sha256": "c9d31bf1006d331b7e41a873c1e756e2a6e3694c63d7ddd1ccce2b7182e1a9dc",
+      "originalArchive": "upstream-metadata/source/src/utils/process-group.ts.txt",
+      "localChanges": "Unchanged helpers, called exclusively behind tracked-owner guard in controller.",
+      "adaptedSha256": "febcd72c6dfcee89d0dedd6eaef6e7b41e58c80c24c8ceb4ac362baf471905b0",
+      "unchangedSourceLines": 26,
+      "sourceLines": 26,
+      "targetLines": 27
+    },
+    {
+      "source": "src/utils/signals.ts",
+      "target": "utils/signals.ts",
+      "sha256": "64213d6a98ed1adbd6a1e19204cc29b9573af95d1129327805a1b06c68c30e13",
+      "originalArchive": "upstream-metadata/source/src/utils/signals.ts.txt",
+      "localChanges": "Direct .ts type import; retain upstream signal metadata.",
+      "adaptedSha256": "5e63ce2d946be7e3f70aa10f9232059d87774d5779c0777bd15aaf5762c6f0cd",
+      "unchangedSourceLines": 21,
+      "sourceLines": 22,
+      "targetLines": 23
+    },
+    {
+      "source": "src/utils/match-line.ts",
+      "target": "utils/match-line.ts",
+      "sha256": "b531116512b7c9c5a91c351da76fe9e2827b08aa00c75317b3f1718a7b847163",
+      "originalArchive": "upstream-metadata/source/src/utils/match-line.ts.txt",
+      "localChanges": "Direct literal matching retained; explicitly reject regex instead of unbounded RegExp evaluation.",
+      "adaptedSha256": "bc74a70d8673d57d5c47c9d13cc7428f0d49c5122fc2baeb980f9a6e99982ba4",
+      "unchangedSourceLines": 29,
+      "sourceLines": 32,
+      "targetLines": 32
+    },
+    {
+      "source": "extensions/processes/notifications/registry.ts",
+      "target": "notifications/registry.ts",
+      "sha256": "091fbcae991428acf8096bfb25a54431ba29aba58ccf7a18ad830d4ac6f7eec2",
+      "originalArchive": "upstream-metadata/source/extensions/processes/notifications/registry.ts.txt",
+      "localChanges": "Retain config/generation/revision and append/replace/remove/clear policy. Stable internal identities fix duplicate matcher donor ambiguity; they never leak into public notify data.",
+      "adaptedSha256": "c8ba11ea0ec2dff23b1ab50c923d9f3eb370d0e7281160daf75b5f78da4ad8cc",
+      "unchangedSourceLines": 221,
+      "sourceLines": 225,
+      "targetLines": 231
+    },
+    {
+      "source": "extensions/processes/notifications/service.ts",
+      "target": "notifications/service.ts",
+      "sha256": "2608de2e6df3c9166f2f688529b17b9160a5a6b2332419a432a20402a09f295e",
+      "originalArchive": "upstream-metadata/source/extensions/processes/notifications/service.ts.txt",
+      "localChanges": "Retain actual attention/classification, matching and generation/state-preservation service. Inject private delivery and optional test clock; capture event-time detached Run; handle completion synchronously after drain; warning forces visibility; intentional stop comes from guarded successful signaling.",
+      "adaptedSha256": "315c1d081cb6461828bc635b67f325f380c5b4ffad0235f6d27549940be871b8",
+      "unchangedSourceLines": 307,
+      "sourceLines": 342,
+      "targetLines": 338
+    },
+    {
+      "source": "extensions/processes/notifications/log-matchers.ts",
+      "target": "notifications/log-matchers.ts",
+      "sha256": "2d5312079eb6ef4d9a583c6b5ce5c34a0cc00df11bbd12e90719eb187f572d0b",
+      "originalArchive": "upstream-metadata/source/extensions/processes/notifications/log-matchers.ts.txt",
+      "localChanges": "Retain upstream per-line literal evaluation, 20 matchers/500-character patterns, 10,000-character line ceiling, 15-second cooldown and one-shot policy. Direct local imports, streaming-safe plain normalization, explicit regex rejection, stable identity.",
+      "adaptedSha256": "e064d616367f780583d4f05f20e0652b452bb4ba0d67cc404c53a9d069051269",
+      "unchangedSourceLines": 137,
+      "sourceLines": 151,
+      "targetLines": 145
+    },
+    {
+      "source": "extensions/processes/notifications/classify.ts",
+      "target": "notifications/classify.ts",
+      "sha256": "2ef457ca30ef8ebcfc4f1453c55d76400ec61d15317637044edd622211e819a5",
+      "originalArchive": "upstream-metadata/source/extensions/processes/notifications/classify.ts.txt",
+      "localChanges": "Retain upstream completion classification; correct comment because local timeout stays live.",
+      "adaptedSha256": "ec3544650d0ea91707dba7e28011b1d0cdc8e70ee2d2d9070365e66c7e9e52d9",
+      "unchangedSourceLines": 21,
+      "sourceLines": 27,
+      "targetLines": 25
+    },
+    {
+      "source": "package.json",
+      "target": "upstream-metadata/package.json",
+      "sha256": "7db8469102c30d508165ed2a6afe69def283afbcaad5fa2bf70f12e365f1ae13",
+      "originalArchive": "upstream-metadata/package.json",
+      "localChanges": "Verbatim supplied metadata, not local publishing/discovery configuration.",
+      "adaptedSha256": "7db8469102c30d508165ed2a6afe69def283afbcaad5fa2bf70f12e365f1ae13",
+      "unchangedSourceLines": 105,
+      "sourceLines": 105,
+      "targetLines": 105
+    },
+    {
+      "source": "README.md",
+      "target": "upstream-metadata/README.md",
+      "sha256": "0080f74537dfb4e7a8ec6b40f43c04417ca36d8f789d1b6481d1c26ebb92f976",
+      "originalArchive": "upstream-metadata/README.md",
+      "localChanges": "Verbatim supplied metadata, not local publishing/discovery configuration.",
+      "adaptedSha256": "0080f74537dfb4e7a8ec6b40f43c04417ca36d8f789d1b6481d1c26ebb92f976",
+      "unchangedSourceLines": 198,
+      "sourceLines": 198,
+      "targetLines": 198
+    },
+    {
+      "source": "CONTRIBUTING.md",
+      "target": "upstream-metadata/CONTRIBUTING.md",
+      "sha256": "badf60c2a5785571fed7c5a95478e944228b40784acd86dd0367f6c63bbad94b",
+      "originalArchive": "upstream-metadata/CONTRIBUTING.md",
+      "localChanges": "Verbatim supplied metadata, not local publishing/discovery configuration.",
+      "adaptedSha256": "badf60c2a5785571fed7c5a95478e944228b40784acd86dd0367f6c63bbad94b",
+      "unchangedSourceLines": 121,
+      "sourceLines": 121,
+      "targetLines": 121
+    },
+    {
+      "source": "extensions/processes/handlers/notifications.ts",
+      "target": "notifications/throttle.ts",
+      "sha256": "b04a071378b4f2d0b9379e3b629bb66726c32320bf9540b9ed06490fed781303",
+      "originalArchive": "upstream-metadata/source/extensions/processes/handlers/notifications.ts.txt",
+      "localChanges": "Adapt upstream aggregate delivery implementation to private send/dispose callbacks, preserving 20/minute window and suppression summary; injected monotonic clock for bounded tests; no Pi bus/imports; numeric suppression count.",
+      "adaptedSha256": "4983010b82d990561329acab2c15b8e108de23103b8e0bd3712923a860376687",
+      "unchangedSourceLines": 63,
+      "sourceLines": 114,
+      "targetLines": 85
+    },
+    {
+      "source": "extensions/shared/protocol/notifications.ts",
+      "target": "notifications/types.ts",
+      "sha256": "a80996f198ed3629337516dc8bce94df71c00120160b417bafff8097abb8b081",
+      "originalArchive": "upstream-metadata/source/extensions/shared/protocol/notifications.ts.txt",
+      "localChanges": "Adapt protocol-safe notification payload names locally, add internal captured ProcessInfo/Run and suppression count; no public upstream channels or control protocol.",
+      "adaptedSha256": "fe550fa546981fd40694b47a1a3576e50b39ae00cc5356d231ecc4b1cf2104fc",
+      "unchangedSourceLines": 1,
+      "sourceLines": 48,
+      "targetLines": 16
+    }
+  ],
+  "localSources": [
+    {
+      "target": "utils/safe-text.ts",
+      "origin": "local runtime.ts at a4f57e2",
+      "changes": "Move existing bounded streaming terminal-control parser, not an upstream display framework."
+    },
+    {
+      "target": "validation.ts",
+      "origin": "local runtime.ts at a4f57e2",
+      "changes": "Move existing Runtime validation; explicitly project allowed notify/watch fields."
+    },
+    {
+      "target": "../runtime.ts",
+      "origin": "local Runtime compatibility contract",
+      "changes": "Replace old spawn/log/watch/lifecycle implementation with actual adapted upstream ProcessManager and notification composition."
+    }
+  ]
+}
