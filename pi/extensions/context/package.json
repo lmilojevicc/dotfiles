@@ -1,0 +1,15 @@
+{
+  "name": "pi-extension-context",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ./tests/register-loader.mjs --test tests/*.test.ts"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
