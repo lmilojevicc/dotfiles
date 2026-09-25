@@ -55,10 +55,12 @@ const BatchDelete = Type.Object(
 	{ additionalProperties: false },
 );
 
-export const TodoParameters = Type.Object(
+// Keep the original strict schema for validation before execution. The advertised
+// batch grammar below saves repeated task fields, not runtime checks.
+export const TodoRuntimeParameters = Type.Object(
 	{
 		action: StringEnum(["create", "update", "batch", "list", "get", "delete", "clear"] as const),
-		expectedRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Reject a mutation unless the current revision matches" })),
+		expectedRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Mutations only; must match current revision" })),
 		id: Type.Optional(Id),
 		subject: Type.Optional(Subject),
 		description: Type.Optional(NullableDescription),
@@ -75,4 +77,17 @@ export const TodoParameters = Type.Object(
 	{ additionalProperties: false },
 );
 
-export type TodoParametersType = Static<typeof TodoParameters>;
+export const TodoParameters = Type.Object(
+	{
+		...TodoRuntimeParameters.properties,
+		// Typed optional batch fields would change Pi's null/coercion behavior
+		// before the original strict schema can validate them in execute().
+		operations: Type.Optional(Type.Array(Type.Object({}, {
+			additionalProperties: true,
+			description: 'Batch shapes (? = optional): {op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}; {op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}; {op:"delete",target}. Task fields follow top-level types/limits; create strings cannot be null. ref is a nonempty string. target and dependency array entries are IDs or {ref:"name"} naming preceding creates. No other fields.',
+		}), { minItems: 1, maxItems: 50 })),
+	},
+	{ additionalProperties: false },
+);
+
+export type TodoParametersType = Static<typeof TodoRuntimeParameters>;
