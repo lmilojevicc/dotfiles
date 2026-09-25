@@ -19,15 +19,23 @@ function blend(from: Rgb, to: Rgb, amount: number): Rgb {
 	return from.map((channel, index) => Math.round(channel + (to[index] - channel) * amount)) as Rgb;
 }
 
-function animatedLogoRow(row: string, progress: number, colorDepth: number): string {
-	const shinePosition = progress * (logoWidth + 4) - 2;
-	return [...row]
-		.map((cell, column) => {
-			if (cell === " ") return cell;
-			const position = ((column / logoWidth) * 1.6 + progress * 2.2) % palette.length;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function animatedRow(row: string, progress: number, colorDepth: number, rowOffset = 0): string {
+	const rowWidth = visibleWidth(row);
+	const offset = rowOffset * 0.3;
+	const shinePosition = progress * (rowWidth + 4 + offset) - 2 - offset;
+	let column = 0;
+	return [...graphemes.segment(row)]
+		.map(({ segment: cell }) => {
+			const currentColumn = column;
+			const cellWidth = visibleWidth(cell);
+			column += cellWidth;
+			if (cell === " " || cellWidth === 0) return cell;
+			const position = ((currentColumn / rowWidth) * 1.6 + progress * 2.2 + rowOffset * 0.15) % palette.length;
 			const first = Math.floor(position);
 			const color = blend(palette[first], palette[(first + 1) % palette.length], position - first);
-			const shine = Math.max(0, 1 - Math.abs(column - shinePosition) / 2);
+			const shine = Math.max(0, 1 - Math.abs(currentColumn - shinePosition) / 2);
 			const [red, green, blue] = blend(color, [255, 255, 255], shine * 0.45);
 			const escape =
 				colorDepth >= 24
@@ -46,7 +54,7 @@ function center(line: string, width: number): string {
 function stripTerminalControls(text: string): string {
 	return text
 		.replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x9d[^\x07\x9c]*(?:\x07|\x9c)/g, "")
-		.replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+		.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "");
 }
 
 function displayCwd(cwd: string): string {
@@ -78,6 +86,8 @@ export default function startupHeader(pi: ExtensionAPI): void {
 		let progress = animate ? 0 : 1;
 		let nextFrame = 1;
 		const startTime = performance.now();
+		const version = stripTerminalControls(`Pi Agent v${VERSION}`);
+		const cwd = displayCwd(ctx.cwd);
 		ctx.ui.setHeader((tui, theme) => {
 			requestRender = () => tui.requestRender();
 			const blue = (text: string) => (noColor ? text : theme.fg("accent", text));
@@ -85,16 +95,17 @@ export default function startupHeader(pi: ExtensionAPI): void {
 				invalidate() {},
 				render(width: number): string[] {
 					const logoLines = width < logoWidth ? ["π"] : logo;
+					const renderRow = (text: string, rowOffset: number, colored = animate): string => {
+						const clipped = truncateToWidth(text, width, "");
+						if (!clipped) return center("", width);
+						return center(colored ? animatedRow(clipped, progress, colorDepth, rowOffset) : blue(clipped), width);
+					};
 					return [
 						"",
-						...logoLines.map((line) => {
-							const colored =
-								animate && width >= logoWidth ? animatedLogoRow(line, progress, colorDepth) : blue(line);
-							return center(colored, width);
-						}),
+						...logoLines.map((line) => renderRow(line, 0, animate && width >= logoWidth)),
 						"",
-						center(blue(`Pi Agent v${VERSION}`), width),
-						center(blue(displayCwd(ctx.cwd)), width),
+						renderRow(version, 6),
+						renderRow(cwd, 7),
 						"",
 					];
 				},
