@@ -7,7 +7,7 @@ type LogView = { stream: Stream; query: string; follow: boolean; offset: number;
 export type UIState = { selected?: string; query: string; logs: Map<string, LogView> };
 export const createUIState = (): UIState => ({ query: '', logs: new Map() });
 type Options = {
-  runtime: Runtime; state: UIState; theme: Pick<Theme, 'fg' | 'bold'>; keybindings: KeybindingsManager;
+  runtime: Runtime; state: UIState; theme: Pick<Theme, 'fg' | 'bg' | 'bold'>; keybindings: KeybindingsManager;
   getHeight: () => number; getWidth?: () => number; onChange: () => void; onClose: () => void;
   act: <T>(id: string, operation: () => T | Promise<T>) => Promise<T>;
 };
@@ -80,6 +80,7 @@ export class ProcessesUI implements Component, Focusable {
       this.options.state.selected = runs[0]?.id;
       this.screen = 'list'; this.confirmation = undefined; this.editing = undefined; this.request++;
     }
+    if (this.confirmation && this.confirmation.id !== this.options.state.selected) this.confirmation = undefined;
     for (const id of this.options.state.logs.keys()) if (!this.snapshot.runs.some(r => r.id === id)) this.options.state.logs.delete(id);
   }
   private logView(): LogView {
@@ -117,7 +118,12 @@ export class ProcessesUI implements Component, Focusable {
     try {
       await this.options.act(confirmation.id, async () => {
         const runtime = this.options.runtime;
-        if (confirmation.action === 'stop' || confirmation.action === 'force') await runtime.stop(confirmation.id, confirmation.action === 'force');
+        if (confirmation.action === 'stop' || confirmation.action === 'force') {
+          const target = runtime.snapshot().runs.find(r => r.id === confirmation.id);
+          if (this.options.state.selected !== confirmation.id || !target || target.phase === 'terminal' ||
+            (confirmation.action === 'force' && target.phase !== 'stop-timeout')) throw new Error('Process is no longer eligible for this action');
+          await runtime.stop(confirmation.id, confirmation.action === 'force');
+        }
         else if (confirmation.action === 'clear') runtime.clear(confirmation.id);
         else await runtime.write(confirmation.id, confirmation.input ?? '', confirmation.action === 'eof');
       });
@@ -190,6 +196,12 @@ export class ProcessesUI implements Component, Focusable {
       if (matchesKey(data, 't')) { view.stream = view.stream === 'both' ? 'stdout' : view.stream === 'stdout' ? 'stderr' : 'both'; view.offset = 0; void this.refreshLogs(); this.changed(); }
       return;
     }
+    if (this.screen === 'list' && this.rendered) {
+      const action = matchesKey(data, 'x') && run.phase !== 'terminal' ? 'stop' :
+        matchesKey(data, 'k') && run.phase === 'stop-timeout' ? 'force' : undefined;
+      if (action) { this.confirmation = { id: run.id, action }; this.changed(); }
+      return;
+    }
     if (this.screen !== 'details' || !this.rendered) return;
     if (matchesKey(data, 'a') && run.outcome === 'failed' && !run.acknowledged) {
       try { this.options.runtime.acknowledge(run.id); } catch (error) { this.error = safeText(error instanceof Error ? error.message : error); }
@@ -207,73 +219,118 @@ export class ProcessesUI implements Component, Focusable {
   render(width: number): string[] {
     const height = Math.max(1, this.options.getHeight());
     this.dimensions = this.currentDimensions(); this.usable = width >= 24 && height >= 6;
-    const clip = (line: string) => width < 1 ? '' : truncateToWidth(line, width, '');
     const keyLabel = (key: string | undefined) => key === 'enter' ? 'Enter' : key === 'escape' ? 'Esc' : key ?? 'unbound';
     const confirmLabel = keyLabel(this.options.keybindings.getKeys(this.editing ? 'tui.input.submit' : 'tui.select.confirm')[0]);
     const cancelLabel = keyLabel(this.options.keybindings.getKeys('tui.select.cancel')[0]);
-    if (!this.usable) { this.rendered = false; return [clip(`Resize required · ${cancelLabel} back`)]; }
-    const { theme } = this.options;
-    const run = this.selected();
-    let title = 'Processes', body: string[] = [], hint = 'Enter details · / search · ? help · Esc close';
+    const resize = () => {
+      this.usable = false; this.rendered = false;
+      return [width < 1 ? '' : truncateToWidth(`Resize required · ${cancelLabel} back`, width, '')];
+    };
+    if (!this.usable) return resize();
+    const { theme } = this.options, run = this.selected();
+    const listActions = run?.phase === 'stop-timeout' ? 'x Stop · k Force kill' : run && run.phase !== 'terminal' ? 'x Stop' : '';
+    const warnings = { stop: 'Send SIGTERM to owned live group?', force: 'Send SIGKILL to owned live group?', clear: 'Delete record and retained logs?', write: 'Send exact text (no newline)?', eof: 'Close stdin permanently (EOF)?' };
+    let title = 'Processes', hint = `Enter details${listActions ? ` · ${listActions}` : ''} · / search · ? help · Esc close`;
     if (this.help) {
-      title = 'Processes · Help';
-      body = this.screen === 'logs' ? ['↑↓/PgUp/PgDn scroll (pauses)', 'f follow · t stream · / literal search', 'Retained tail only; paused view freezes.', '? close help · Esc back'] :
-        ['Enter details/logs · ↑↓ scroll', 's stop · k force after timeout', 'a acknowledge · c clear terminal', 'w single-line stdin · e EOF', 'Start/rerun via process tool', 'No daemonized/detached descendants.'];
-      body = body.flatMap(line => wrapTextWithAnsi(line.replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel), width));
-      this.helpOffset = Math.min(this.helpOffset, Math.max(0, body.length - (height - 3 - (this.error ? 1 : 0))));
-      body = body.slice(this.helpOffset);
-      hint = '↑↓ scroll · ? close help · Esc back';
+      title = 'Processes · Help'; hint = '↑↓ scroll · ? close help · Esc back';
     } else if (this.confirmation) {
-      const target = this.snapshot.runs.find(r => r.id === this.confirmation!.id);
-      title = `Confirm ${this.confirmation.action}`;
-      const warnings = { stop: 'Send SIGTERM to owned live group?', force: 'Send SIGKILL to owned live group?', clear: 'Delete record and retained logs?', write: 'Send exact text (no newline)?', eof: 'Close stdin permanently (EOF)?' };
-      body = [...wrapTextWithAnsi(warnings[this.confirmation.action], width), safeText(target?.name),
-        ...(this.confirmation.action === 'write' ? [safeText(this.confirmation.input)] : [`$ ${safeText(target?.command)}`, `cwd: ${safeText(target?.cwd)}`])];
-      hint = 'y confirm · n cancel · Esc back';
+      title = `Confirm ${this.confirmation.action}`; hint = 'y confirm · n cancel · Esc back';
     } else if (this.screen === 'list') {
-      const runs = this.matches(), index = runs.findIndex(r => r.id === this.options.state.selected);
-      const rows = Math.max(1, height - 3 - (this.error ? 1 : 0));
-      const offset = Math.max(0, Math.min(index - rows + 1, runs.length - rows));
       title += this.options.state.query ? ` · ${safeText(this.options.state.query)}` : '';
-      body = runs.slice(offset).map(r => `${r.id === this.options.state.selected ? '›' : ' '} ${safeText(r.name)} · ${this.phase(r)}${r.error ? ' · !' : ''}`);
-      if (!body.length) body = [this.snapshot.runs.length ? 'No matches' : 'No processes'];
     } else if (run && this.screen === 'details') {
       title = safeText(run.name);
-      const detail = [`${this.phase(run)}${run.acknowledged ? ' · acknowledged' : ''}`, `ID: ${safeText(run.id)}`, `$ ${safeText(run.command)}`, `cwd: ${safeText(run.cwd)}`,
-        ...(run.pid !== undefined ? [`PID: ${safeText(run.pid)}`] : []),
-        ...(run.exitCode !== undefined ? [`Exit: ${safeText(run.exitCode)}`] : []), ...(run.signal ? [`Signal: ${safeText(run.signal)}`] : []),
-        ...(run.error ? [`Warning: ${safeText(run.error)}`] : []),
-        ...(run.phase === 'terminal' ? ['Tracked shell exited; descendants not guaranteed.'] : [])];
-      const wrapped = detail.flatMap(line => wrapTextWithAnsi(line, width));
-      this.detailsOffset = Math.min(this.detailsOffset, Math.max(0, wrapped.length - (height - 3 - (this.error ? 1 : 0))));
-      body = wrapped.slice(this.detailsOffset);
       hint = `Enter logs · ${run.phase === 'terminal' ? 'c clear' : run.phase === 'stop-timeout' ? 'k force · s stop' : 's stop'}${run.outcome === 'failed' && !run.acknowledged ? ' · a ack' : ''}${run.phase === 'running' ? ' · w stdin · e EOF' : ''} · ? · Esc back`;
     } else if (run) {
       const view = this.logView();
       title = `${safeText(run.name)} · ${view.stream} · ${view.follow ? 'follow' : 'paused'}${view.newer ? ' +new' : ''}`;
-      const flags = `Retained tail${view.rotated ? ' · rotated' : ''}${view.truncated ? ' · truncated' : ''}${view.query ? ` · /${safeText(view.query)}` : ''}`;
-      this.pageSize = Math.max(1, height - 4 - (this.error ? 1 : 0));
-      if (view.follow) view.offset = Math.max(0, view.lines.length - this.pageSize);
-      body = [theme.fg('muted', flags), ...view.lines.slice(view.offset, view.offset + this.pageSize)];
       hint = '↑↓ scroll · f follow · t stream · / search · ? · Esc back';
     }
-    if (this.screen !== 'logs') this.pageSize = Math.max(1, height - 3 - (this.error ? 1 : 0));
     if (this.editing) hint = `${this.editing === 'write' ? 'Exact stdin (no newline)' : 'Literal search'} · Enter apply · Esc cancel`;
-    hint = hint.replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel);
-    const hints = (this.busy ? `Working… · ${cancelLabel} back` : hint).split(' · ');
-    const priority = [hints[0], ...hints.slice(1).filter(s => s.startsWith(cancelLabel)),
-      ...hints.slice(1).filter(s => s.startsWith('?')), ...hints.slice(1).filter(s => !s.startsWith(cancelLabel) && !s.startsWith('?'))];
-    const hintLines: string[] = [];
-    for (const item of priority) {
-      const combined = hintLines.length ? `${hintLines.at(-1)} · ${item}` : item;
-      if (visibleWidth(combined) <= width && hintLines.length) hintLines[hintLines.length - 1] = combined;
-      else if (hintLines.length < 2) hintLines.push(item);
+    hint = (this.busy ? 'Working… · Esc back' : hint).replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel);
+    const wrapHints = (columns: number): string[] => {
+      const lines: string[] = [];
+      for (const item of hint.split(' · ')) {
+        const last = lines.at(-1), combined = last ? `${last} · ${item}` : item;
+        if (last && visibleWidth(combined) <= columns) lines[lines.length - 1] = combined;
+        else lines.push(...wrapTextWithAnsi(item, columns));
+      }
+      return lines;
+    };
+    // Budget controls first. Shed decoration before sacrificing warning/target or log rows.
+    const layouts = [
+      { frame: true, rules: true, title: true, padding: 1, chrome: 5, minimum: 3 },
+      { frame: true, rules: false, title: true, padding: 0, chrome: 3, minimum: 2 },
+      { frame: false, rules: false, title: true, padding: 0, chrome: 1, minimum: 1 },
+      { frame: false, rules: false, title: false, padding: 0, chrome: 0, minimum: 1 },
+    ].map(layout => {
+      const columns = width - (layout.frame ? 2 : 0) - layout.padding * 2;
+      const hints = wrapHints(columns);
+      const bottom = (this.error ? 1 : 0) + (this.editing ? 1 : 0) + hints.length;
+      const capacity = height - layout.chrome - bottom;
+      const minimum = this.confirmation ? wrapTextWithAnsi(warnings[this.confirmation.action], columns).length + (this.confirmation.action === 'write' ? 2 : 1) :
+        Math.max(layout.minimum, !this.help && this.screen === 'logs' ? 2 : 1);
+      return { ...layout, columns, hints, capacity, minimum };
+    });
+    const layout = layouts.find(candidate => candidate.capacity >= candidate.minimum);
+    if (!layout) return resize();
+    const { columns, capacity } = layout;
+    const wrap = (line: string) => wrapTextWithAnsi(line, columns);
+    const label = (name: string, value: unknown) => `${theme.fg('muted', name)} ${safeText(value)}`;
+    let body: string[] = [], selectedRow = -1;
+    this.pageSize = capacity;
+    if (this.help) {
+      const help = this.screen === 'logs' ? ['↑↓/PgUp/PgDn scroll (pauses)', 'f follow · t stream · / literal search', 'Retained tail only; paused view freezes.', '? close help · Esc back'] :
+        this.screen === 'list' ? ['Enter details · ↑↓/PgUp/PgDn select', ...(listActions ? [listActions] : []), '/ search', 'Start/rerun via process tool', 'No daemonized/detached descendants.'] :
+          ['Enter details/logs · ↑↓ scroll', 's stop · k force after timeout', 'a acknowledge · c clear terminal', 'w single-line stdin · e EOF', 'Start/rerun via process tool', 'No daemonized/detached descendants.'];
+      const wrapped = help.flatMap(line => wrap(line.replaceAll('Enter', confirmLabel).replaceAll('Esc', cancelLabel)));
+      this.helpOffset = Math.min(this.helpOffset, Math.max(0, wrapped.length - capacity));
+      body = wrapped.slice(this.helpOffset, this.helpOffset + capacity);
+    } else if (this.confirmation) {
+      const target = this.snapshot.runs.find(r => r.id === this.confirmation!.id);
+      body = [...wrap(theme.fg('warning', warnings[this.confirmation.action])), safeText(target?.name),
+        ...(this.confirmation.action === 'write' ? [safeText(this.confirmation.input)] : [label('$', target?.command), label('cwd:', target?.cwd)])];
+    } else if (this.screen === 'list') {
+      const runs = this.matches(), index = runs.findIndex(r => r.id === this.options.state.selected);
+      const offset = Math.max(0, Math.min(index - capacity + 1, runs.length - capacity));
+      selectedRow = index - offset;
+      body = runs.slice(offset, offset + capacity).map(r => `${r.id === this.options.state.selected ? '›' : ' '} ${safeText(r.name)} · ${this.phase(r)}${r.error ? ' · !' : ''}`);
+      if (!body.length) { body = [this.snapshot.runs.length ? 'No matches' : 'No processes']; selectedRow = -1; }
+    } else if (run && this.screen === 'details') {
+      const detail = [`${this.phase(run)}${run.acknowledged ? ' · acknowledged' : ''}`, label('ID:', run.id), label('$', run.command), label('cwd:', run.cwd),
+        ...(run.pid !== undefined ? [label('PID:', run.pid)] : []),
+        ...(run.exitCode !== undefined ? [label('Exit:', run.exitCode)] : []), ...(run.signal ? [label('Signal:', run.signal)] : []),
+        ...(run.error ? [theme.fg('error', `Warning: ${safeText(run.error)}`)] : []),
+        ...(run.phase === 'terminal' ? [theme.fg('muted', 'Tracked shell exited; descendants not guaranteed.')] : [])];
+      const wrapped = detail.flatMap(wrap);
+      this.detailsOffset = Math.min(this.detailsOffset, Math.max(0, wrapped.length - capacity));
+      body = wrapped.slice(this.detailsOffset, this.detailsOffset + capacity);
+    } else if (run) {
+      const view = this.logView();
+      const flags = `Retained tail${view.rotated ? ' · rotated' : ''}${view.truncated ? ' · truncated' : ''}${view.query ? ` · /${safeText(view.query)}` : ''}`;
+      this.pageSize = capacity - 1;
+      if (view.follow) view.offset = Math.max(0, view.lines.length - this.pageSize);
+      body = [theme.fg('muted', flags), ...view.lines.slice(view.offset, view.offset + this.pageSize)];
     }
-    const bottom = [ ...(this.error ? [theme.fg('error', `Error: ${this.error}`)] : []),
-      ...(this.editing ? this.input.render(width) : []), ...hintLines.map(line => theme.fg('muted', line)) ];
-    this.rendered = true;
+    const pad = (line: string, size: number) => {
+      const clipped = truncateToWidth(line, size, '…');
+      return clipped + ' '.repeat(Math.max(0, size - visibleWidth(clipped)));
+    };
+    const border = (line: string) => theme.fg('border', line);
+    const row = (line: string, selected = false) => {
+      const padded = ' '.repeat(layout.padding) + pad(line, columns) + ' '.repeat(layout.padding);
+      // Truncation resets styling around the ellipsis; restore selection on each segment.
+      const content = selected ? padded.split('\x1b[0m').map(part => theme.bg('selectedBg', part)).join('\x1b[0m') : padded;
+      return layout.frame ? border('│') + content + border('│') : content;
+    };
     // Input owns its cursor marker; all other data was sanitized before styling.
-    return [theme.bold(clip(title)), ...body.slice(0, Math.max(0, height - 1 - bottom.length)).map(clip), ...bottom.map(clip)].slice(0, height);
+    const bottom = [...(this.error ? [theme.fg('error', `Error: ${this.error}`)] : []),
+      ...(this.editing ? this.input.render(columns) : []), ...layout.hints.map(line => theme.fg('dim', line))];
+    const rule = border(`├${'─'.repeat(width - 2)}┤`);
+    this.rendered = true;
+    return [...(layout.frame ? [border(`╭${'─'.repeat(width - 2)}╮`)] : []), ...(layout.title ? [row(theme.bold(theme.fg('accent', title)))] : []),
+      ...(layout.rules ? [rule] : []), ...body.slice(0, capacity).map((line, index) => row(line, index === selectedRow)),
+      ...(layout.rules ? [rule] : []), ...bottom.map(line => row(line)),
+      ...(layout.frame ? [border(`╰${'─'.repeat(width - 2)}╯`)] : [])];
   }
   private phase(run: Run): string {
     const label = safeText(run.phase === 'terminal' ? run.outcome ?? 'terminal' : run.phase);

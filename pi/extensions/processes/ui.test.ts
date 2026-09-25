@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { stripVTControlCharacters } from 'node:util';
 import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from '@earendil-works/pi-tui';
 import { createUIState, ProcessesUI } from './ui.ts';
 import type { Run, Runtime, RuntimeEvent, Snapshot } from './types.ts';
@@ -22,7 +23,7 @@ function setup(initial = [run('a'), run('b')], overrides: any = {}, options: any
     ...overrides,
   } as Runtime;
   const state = createUIState();
-  const component = new ProcessesUI({ runtime, state, theme: { fg: (_color: string, text: string) => text, bold: (s: string) => s } as any,
+  const component = new ProcessesUI({ runtime, state, theme: { fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (s: string) => s } as any,
     keybindings: new KeybindingsManager(TUI_KEYBINDINGS), getHeight: () => height, getWidth: () => width,
     onClose: () => closed++, onChange: () => renders++, act: async (_id, action) => action(), ...options });
   component.focused = true;
@@ -146,7 +147,7 @@ test('segmented bracketed paste cannot activate controls or confirm destructive 
 test('minimum usable layout preserves destructive warning and contextual help remains scrollable', () => {
   const f = setup([run('a', { phase: 'terminal', outcome: 'failed' })]); details(f);
   f.dimensions(24, 6); f.render(); f.component.handleInput('c');
-  assert.match(f.render(), /Delete record and\nretained logs\?/);
+  assert.match(f.render(), /Delete record and *\nretained logs\?/);
   f.component.handleInput(esc); f.render(); f.component.handleInput('?'); f.render();
   for (let i = 0; i < 6; i++) { f.component.handleInput(down); f.render(); }
   assert.match(f.render(), /Start\/rerun via process/);
@@ -164,4 +165,211 @@ test('injected navigation/input bindings and hints are honored without installin
   f.component.handleInput('\x11'); f.render(); f.component.handleInput('/'); f.component.handleInput('owned');
   assert.match(f.render(), /ctrl\+g apply/); f.component.handleInput('\x07'); assert.equal(f.state.query, 'owned');
   f.render(); f.component.handleInput('\x11'); assert.equal(f.closed(), 1);
+});
+
+const ansiTheme = {
+  fg: (color: string, text: string) => `\x1b[${color === 'success' ? 32 : color === 'error' ? 31 : color === 'accent' ? 36 : 90}m${text}\x1b[39m`,
+  bg: (_color: string, text: string) => `\x1b[44m${text}\x1b[49m`,
+  bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
+};
+const plain = (text: string) => stripVTControlCharacters(text);
+
+test('context-style frame aligns themed borders, Unicode and selected background without stale theme strings', () => {
+  let accent = 36;
+  const theme = { ...ansiTheme, fg: (color: string, text: string) => color === 'accent' ? `\x1b[${accent}m${text}\x1b[39m` : ansiTheme.fg(color, text) };
+  const f = setup([run('a', { name: '编译 👩🏽‍💻 é' }), run('b', { phase: 'terminal', outcome: 'failed' })], {}, { theme });
+  for (const width of [40, 80, 120]) {
+    f.dimensions(width, 18);
+    const lines = f.component.render(width), text = lines.join('\n');
+    assert.match(plain(lines[0]), /^╭─+╮$/); assert.match(plain(lines.at(-1)!), /^╰─+╯$/);
+    assert.ok(lines.every(line => visibleWidth(line) === width));
+    assert.equal(lines.length, 7 + (width === 40 ? 2 : 1));
+    assert.match(text, /\x1b\[32mrunning/); assert.match(text, /\x1b\[31mfailed/);
+    const selection = lines.find(line => line.includes('›'))!;
+    assert.match(selection, /\x1b\[44m/); assert.match(plain(selection), /编译 👩🏽‍💻 é/);
+    assert.equal(visibleWidth(selection.slice(selection.indexOf('\x1b[44m'), selection.indexOf('\x1b[49m'))), width - 2);
+  }
+  accent = 35; f.component.invalidate();
+  assert.match(f.render(), /\x1b\[35mProcesses/); assert.doesNotMatch(f.render(), /\x1b\[36mProcesses/);
+  f.component.dispose();
+});
+
+test('selected-row background survives truncation resets through ellipsis and padding, but not borders', () => {
+  const backgrounds = (line: string): (number | undefined)[] => {
+    let background: number | undefined;
+    const cells: (number | undefined)[] = [];
+    for (const token of line.matchAll(/\x1b\[([\d;]*)m|([^\x1b]+)/g)) {
+      if (token[1] !== undefined) {
+        for (const code of token[1].split(';').map(Number)) {
+          if (code === 0 || code === 49) background = undefined;
+          else if (code >= 40 && code <= 47) background = code;
+        }
+      } else cells.push(...Array(visibleWidth(token[2])).fill(background));
+    }
+    return cells;
+  };
+  for (const reset of [39, 0]) for (const name of ['编译 👩🏽‍💻 é', 'long name '.repeat(8), '界👩🏽‍💻é'.repeat(12)]) {
+    let background = 44;
+    const theme = {
+      ...ansiTheme,
+      fg: (color: string, text: string) => `\x1b[${color === 'success' ? 32 : 90}m${text}\x1b[${reset}m`,
+      bg: (color: string, text: string) => { assert.equal(color, 'selectedBg'); return `\x1b[${background}m${text}\x1b[49m`; },
+    };
+    const f = setup([run('a', { name }), run('b')], {}, { theme });
+    f.dimensions(40, 18);
+    for (const color of [44, 45]) {
+      background = color; f.component.invalidate();
+      const lines = f.component.render(40), selection = lines.find(line => line.includes('›'))!;
+      assert.equal(visibleWidth(selection), 40);
+      assert.deepEqual(backgrounds(selection), [undefined, ...Array(38).fill(color), undefined], `${reset}: ${name}`);
+      assert.deepEqual(backgrounds(lines.find(line => plain(line).includes('b · running'))!), Array(40).fill(undefined));
+      if (name === '编译 👩🏽‍💻 é') assert.ok(plain(selection).includes(name));
+      else { assert.match(plain(selection), /… +│$/); assert.match(selection, /\x1b\[0m/); }
+      assert.doesNotMatch(plain(selection), /�/);
+    }
+    f.component.dispose();
+  }
+});
+
+test('all views budget chrome, hints and focused input across narrow and short terminals', async () => {
+  for (const screen of ['list', 'details', 'logs', 'help', 'details-help', 'logs-help', 'stop', 'force', 'clear', 'search', 'logs-search', 'write', 'write-confirm', 'eof']) {
+    const f = setup([run('a', { name: '编译 😀 é', ...(screen === 'clear' ? { phase: 'terminal', outcome: 'failed' } : screen === 'force' ? { phase: 'stop-timeout' } : {}) })], {}, { theme: ansiTheme });
+    if (screen.startsWith('logs')) await logs(f);
+    else if (['details', 'details-help', 'clear', 'write', 'write-confirm', 'eof'].includes(screen)) details(f);
+    if (screen.endsWith('help')) f.component.handleInput('?');
+    if (screen === 'stop') f.component.handleInput('x');
+    if (screen === 'force') f.component.handleInput('k');
+    if (screen === 'clear') f.component.handleInput('c');
+    if (screen === 'eof') f.component.handleInput('e');
+    if (screen.endsWith('search')) f.component.handleInput('/');
+    if (screen.startsWith('write')) f.component.handleInput('w');
+    if (screen.endsWith('search') || screen.startsWith('write')) { f.render(); f.component.handleInput('界😀xk'); }
+    if (screen === 'write-confirm') f.component.handleInput(enter);
+    for (const width of [1, 20, 24, 40, 80, 120]) for (const height of [1, 2, 5, 6, 10, 18, 24]) {
+      f.dimensions(width, height);
+      const lines = f.component.render(width), text = plain(lines.join('\n'));
+      assert.ok(lines.length <= height, `${screen} ${width}x${height}: height`);
+      assert.ok(lines.every(line => visibleWidth(line) <= width), `${screen} ${width}x${height}: width`);
+      if (text.startsWith('╭')) {
+        assert.ok(lines.every(line => visibleWidth(line) === width));
+        assert.match(plain(lines.at(-1)!), /^╰─+╯$/);
+      }
+      if (width < 24 || height < 6) { f.component.handleInput('y'); assert.equal(f.calls.filter(call => call[0] !== 'output').length, 0); }
+      else if (!text.includes('Resize required')) {
+        if (['stop', 'force', 'clear', 'eof', 'write-confirm'].includes(screen)) {
+          const content = text.replace(/[│\n]/g, ' ').replace(/ +/g, ' ');
+          assert.match(content, /y confirm/); assert.match(content, /n cancel/);
+          assert.match(content, /编译 😀 é/);
+          assert.match(content, screen === 'stop' ? /Send SIGTERM to owned live group\?/ : screen === 'force' ? /Send SIGKILL to owned live group\?/ : screen === 'clear' ? /Delete record and retained logs\?/ : screen === 'eof' ? /Close stdin permanently \(EOF\)\?/ : /Send exact text \(no newline\)\?/);
+        }
+        if (screen.endsWith('search') || screen === 'write') assert.ok(lines.join('\n').includes(CURSOR_MARKER));
+      }
+    }
+    f.component.dispose();
+  }
+});
+
+test('list actions use selected ID, preserve reorder, require visible confirmation and gate force by timeout', async () => {
+  const f = setup();
+  assert.match(f.render(), /x Stop/); assert.doesNotMatch(f.render(), /k Force kill/);
+  f.component.handleInput(down); f.component.handleInput('x'); assert.doesNotMatch(f.render(), /Confirm stop/);
+  f.update([run('b'), run('a')]); f.render(); assert.equal(f.state.selected, 'b');
+  f.component.handleInput('k'); assert.doesNotMatch(f.render(), /Confirm force/);
+  f.component.handleInput('x'); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
+  assert.match(f.render(), /SIGTERM/); f.component.handleInput('y'); await tick();
+  assert.deepEqual(f.calls.pop(), ['stop', 'b', false]);
+  f.update([run('a'), run('b', { phase: 'stop-timeout' })]);
+  assert.match(f.render(), /x Stop · k Force kill/);
+  f.component.handleInput('?'); assert.match(f.render(), /x Stop · k Force kill/);
+  f.component.handleInput(esc); f.render(); f.component.handleInput('k');
+  assert.match(f.render(), /SIGKILL/); f.component.handleInput('y'); await tick();
+  assert.deepEqual(f.calls.pop(), ['stop', 'b', true]);
+  f.update([run('b', { phase: 'terminal', outcome: 'failed' })]);
+  assert.doesNotMatch(f.render(), /x Stop|k Force kill/);
+  for (const key of ['x', 'k']) { f.component.handleInput(key); f.render(); }
+  assert.equal(f.calls.length, 0); f.component.dispose();
+});
+
+test('list confirmations cancel on removal/reselection and revalidate phase before executing', async () => {
+  for (const transition of ['removed', 'selected', 'terminal', 'force-running']) {
+    const f = setup([run('a', { phase: 'stop-timeout' }), run('b')]);
+    f.component.handleInput(transition === 'force-running' ? 'k' : 'x'); f.render();
+    if (transition === 'removed') f.update([run('b')]);
+    if (transition === 'selected') { f.state.selected = 'b'; f.update([run('a'), run('b')]); }
+    if (transition === 'terminal') f.update([run('a', { phase: 'terminal', outcome: 'successful' }), run('b')]);
+    if (transition === 'force-running') f.update([run('a'), run('b')]);
+    f.component.handleInput('y'); assert.equal(f.calls.length, 0);
+    f.render(); f.component.handleInput('y'); await tick(); assert.equal(f.calls.length, 0);
+    if (['terminal', 'force-running'].includes(transition)) assert.match(f.render(), /Error: Process is no longer eligible/);
+    f.component.dispose();
+  }
+});
+
+test('list search and paste isolate x/k; async stop failures remain visible in framed list', async () => {
+  const f = setup([run('a', { phase: 'stop-timeout' })], { stop: async () => { throw Error('stop denied'); } });
+  f.component.handleInput('/'); f.render(); f.component.handleInput('x'); f.component.handleInput('k');
+  assert.match(f.render(), /xk/); assert.equal(f.calls.length, 0);
+  f.component.handleInput(esc); f.render();
+  f.component.handleInput('\x1b[200~'); f.component.handleInput('xky'); f.component.handleInput('\x1b[201~');
+  assert.doesNotMatch(f.render(), /Confirm/);
+  f.component.handleInput('x'); f.render(); f.component.handleInput('y'); await tick();
+  assert.match(f.render(), /Error: stop denied/); assert.match(f.render(), /x Stop · k Force kill/);
+  f.component.dispose();
+});
+
+test('list pages and log follow use actual body capacity after wrapped footer, input and errors', async () => {
+  const f = setup(Array.from({ length: 50 }, (_, n) => run(`job${n}`)));
+  f.dimensions(40, 18); f.render();
+  const initialRows = f.component.render(40).filter(line => /job\d+/.test(line)).length;
+  f.component.handleInput('\x1b[6~'); assert.equal(f.state.selected, `job${initialRows}`);
+  assert.match(f.render(), new RegExp(`› job${initialRows} · running`));
+  await logs(f);
+  const numbers = () => [...f.render().matchAll(/line (\d+)/g)].map(match => Number(match[1]));
+  assert.equal(numbers().at(-1), 29);
+  const page = numbers().length;
+  f.component.handleInput('\x1b[5~'); assert.equal(numbers().at(-1), 29 - page);
+  const paused = numbers(); f.output('replacement'); await tick(); assert.deepEqual(numbers(), paused);
+  f.component.handleInput('/'); f.render(); assert.ok(f.render().includes(CURSOR_MARKER));
+  f.component.handleInput(esc); f.render(); f.component.handleInput('f'); await tick(); assert.match(f.render(), /replacement/);
+  f.output(Array.from({ length: 50 }, (_, n) => `line ${n}`).join('\n')); await tick();
+  for (const [width, height] of [[24, 6], [40, 10], [80, 24]]) {
+    f.dimensions(width, height); assert.equal(numbers().at(-1), 49, `follow ${width}x${height}`);
+  }
+  f.component.dispose();
+});
+
+test('short error layouts keep async failures, focused input and all log controls above chrome', async () => {
+  const f = setup([run('a')], { output: async () => { throw Error('read failed'); } });
+  await logs(f); f.dimensions(24, 6);
+  assert.match(f.render(), /Error: read failed/);
+  for (const hint of ['f follow', 't stream', '/ search', 'Esc back']) assert.ok(f.render().includes(hint));
+  assert.doesNotMatch(f.render(), /Resize required/);
+  f.component.handleInput('/');
+  assert.match(f.render(), /Error: read failed/); assert.ok(f.render().includes(CURSOR_MARKER));
+  assert.ok(f.component.render(24).length <= 6);
+  f.component.dispose();
+});
+
+test('narrow footer never drops selected-row controls and confirms only after resize warning is visible', async () => {
+  const f = setup([run('a', { phase: 'stop-timeout' })]);
+  f.dimensions(24, 6);
+  for (const hint of ['Enter details', 'x Stop', 'k Force kill', '/ search', '? help', 'Esc close']) assert.ok(f.render().includes(hint));
+  f.component.handleInput('k'); f.render();
+  f.dimensions(20, 6); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
+  f.render(); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
+  f.dimensions(24, 6); f.component.handleInput('y'); assert.equal(f.calls.length, 0);
+  const warning = f.render().replace(/\s+/g, ' ');
+  assert.match(warning, /Send SIGKILL to owned live group\?/);
+  f.component.handleInput('y'); await tick(); assert.deepEqual(f.calls.pop(), ['stop', 'a', true]);
+  f.component.dispose();
+});
+
+test('list execution rechecks runtime eligibility even without a published snapshot', async () => {
+  let latest = run('a', { phase: 'stop-timeout' });
+  const f = setup([latest], { snapshot: () => ({ version: 1, revision: 1, runs: [latest], active: 1, unacknowledgedFailed: 0 }) });
+  f.component.handleInput('k'); f.render();
+  latest = run('a', { phase: 'terminal', outcome: 'successful' });
+  f.component.handleInput('y'); await tick();
+  assert.equal(f.calls.length, 0); assert.match(f.render(), /Error: Process is no longer eligible/);
+  f.component.dispose();
 });

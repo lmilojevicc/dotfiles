@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Input, KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, TuiAltScreen, type Terminal, type TUI } from '@earendil-works/pi-tui';
+import { Input, KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, TuiAltScreen, visibleWidth, type Terminal, type TUI } from '@earendil-works/pi-tui';
 import { registerProcesses } from './index.ts';
 import { createRuntime } from './runtime.ts';
 import { SNAPSHOT_REQUEST } from './status.ts';
@@ -48,6 +48,7 @@ function harness(tui?: TUI) {
   const bus = new Map<string, Set<(value: any) => void>>();
   const statuses: (string | undefined)[] = [], messages: any[] = [], notices: string[] = [];
   const runtimes: Runtime[] = [];
+  const frames: { width: number; lines: string[] }[] = [];
   let tool: any;
   const pi: any = {
     on: (name: string, fn: any) => handlers.set(name, fn),
@@ -59,7 +60,7 @@ function harness(tui?: TUI) {
       emit: (name: string, value: any) => { for (const fn of bus.get(name) ?? []) fn(value); },
     },
   };
-  const theme = { fg: (color: string, text: string) => `\x1b[${color === 'success' ? 32 : color === 'error' ? 31 : 39}m${text}\x1b[0m`, bold: (text: string) => text };
+  const theme = { fg: (color: string, text: string) => `\x1b[${color === 'success' ? 32 : color === 'error' ? 31 : 39}m${text}\x1b[0m`, bg: (_color: string, text: string) => `\x1b[44m${text}\x1b[49m`, bold: (text: string) => text };
   const ctx: any = { mode: tui ? 'tui' : 'json', hasUI: !!tui, cwd: root, ui: {
     theme, setStatus: (_key: string, value: string | undefined) => statuses.push(value),
     notify: (text: string) => notices.push(text),
@@ -69,6 +70,10 @@ function harness(tui?: TUI) {
         const component = factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), () => {
           component.dispose(); tui!.hideOverlay(); resolve();
         });
+        const render = component.render.bind(component);
+        component.render = (width: number) => {
+          const lines = render(width); frames.push({ width, lines }); return lines;
+        };
         tui!.showOverlay(component, options.overlayOptions); tui!.renderNow(true);
       });
     },
@@ -77,7 +82,7 @@ function harness(tui?: TUI) {
     const runtime = createRuntime({ logRoot: root, stopGraceMs: 100 }); runtimes.push(runtime); return runtime;
   }, () => root);
   return {
-    root, statuses, messages, notices, runtimes,
+    root, statuses, messages, notices, runtimes, frames,
     start: () => handlers.get('session_start')({}, ctx),
     shutdown: () => handlers.get('session_shutdown')({}, ctx),
     open: () => commands.get('processes').handler('', ctx),
@@ -136,8 +141,17 @@ for (const mode of ['regular', 'fullscreen'] as const) test(`integrated ${mode} 
     assert.match(f.statuses.at(-1)!, /\x1b\[32m1 active/);
     await f.tool({ action: 'write', id: active.id, input: 'owned\n' });
     const second = f.open();
-    terminal.columns = 30; terminal.rows = 10; terminal.resize(); tui.renderNow(true);
-    terminal.columns = 100; terminal.rows = 28; terminal.resize(); tui.renderNow(true);
+    for (const [columns, rows] of [[30, 10], [24, 6], [1, 2], [100, 28]]) {
+      terminal.columns = columns; terminal.rows = rows; terminal.resize(); tui.renderNow(true);
+      const frame = f.frames.at(-1)!;
+      assert.ok(frame.width <= columns);
+      assert.ok(frame.lines.length <= Math.max(1, Math.min(24, rows - 2)));
+      assert.ok(frame.lines.every(line => visibleWidth(line) <= frame.width));
+      if (columns === 100) {
+        assert.match(frame.lines[0], /╭─+╮/); assert.match(frame.lines.at(-1)!, /╰─+╯/);
+        assert.ok(frame.lines.every(line => visibleWidth(line) === frame.width));
+      }
+    }
     await f.shutdown(); await second;
     assert.equal(tui.hasOverlay(), false); assert.equal(f.snapshot(), undefined);
     assert.equal(f.statuses.at(-1), undefined); assert.deepEqual(f.notices, []);
@@ -162,8 +176,8 @@ test('integrated headless command uses stderr and replacement loses session reco
   } finally { console.error = oldError; console.log = oldLog; await f.cleanup(); }
 });
 
-test('confirmed UI stop retains runtime context-only completion despite configured turn attention', async () => {
-  const terminal = new MemoryTerminal(), tui = new TuiMainScreen(terminal);
+for (const mode of ['regular', 'fullscreen'] as const) test(`confirmed list stop in ${mode} retains context-only completion despite configured turn attention`, async () => {
+  const terminal = new MemoryTerminal(), tui = mode === 'regular' ? new TuiMainScreen(terminal) : new TuiAltScreen(terminal);
   tui.start();
   const f = harness(tui);
   const press = (key: string) => { tui.renderNow(true); terminal.input(key); tui.renderNow(true); };
@@ -172,7 +186,11 @@ test('confirmed UI stop retains runtime context-only completion despite configur
     const run: Run = await f.tool({ action: 'start', name: 'owned stop', command: 'exec cat',
       notify: { onSuccess: 'turn', onFailure: 'turn', onKilled: 'turn' } });
     const opening = f.open();
-    press('\r'); press('s');
+    assert.match(f.frames.at(-1)!.lines.join('\n'), /x Stop/);
+    press('x');
+    assert.match(f.frames.at(-1)!.lines.join('\n'), /SIGTERM/);
+    assert.match(f.frames.at(-1)!.lines[0], /╭─+╮/);
+    assert.match(f.frames.at(-1)!.lines.at(-1)!, /╰─+╯/);
     assert.equal(f.messages.length, 0, 'navigation and confirmation feedback do not wake model');
     press('y');
     await until(() => f.messages.length === 1);

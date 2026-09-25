@@ -31,6 +31,8 @@ Legacy list filters and the five sort names remain available. `failed` includes 
 | Logs | ↑↓ / PgUp / PgDn pause and scroll, `f` follow, `t` stream, `/` literal search |
 | Any | `?` contextual help, Esc back/close |
 
+In the list, `x` stops the selected active process; `k` force-kills it only after `stop-timeout`. Both require confirmation.
+
 The table shows default navigation bindings; configured Pi selection/input bindings are honored. Stop, force, clear, stdin, and EOF require confirmation for the selected run. Search and stdin use an IME-aware input. The overlay leaves the editor draft untouched. Selection and per-run log views survive reopening within the session. Paused logs freeze the displayed tail; `f` resumes with the latest retained output. Very small terminals require resizing before controls are enabled.
 
 **Start/rerun via process tool.** UI start/rerun are unsupported in v1 because the public command API cannot re-enter tool permission guards. No direct-spawn workaround is used. Immediate UI navigation/control feedback never requests a model turn. Genuine process completion/watch notifications retain their configured policy, including events caused by UI stdin or EOF. Non-TUI invocation lists runs through notifications (RPC) or stderr (headless), without opening a custom component or writing into JSON stdout.

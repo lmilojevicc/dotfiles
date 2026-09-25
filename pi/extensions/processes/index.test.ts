@@ -20,7 +20,7 @@ function setup(mode = 'tui', hasUI = true) {
     },
   };
   const ctx: any = { mode, hasUI, cwd: '/test', ui: {
-    theme: { fg: (_c: string, text: string) => text, bold: (s: string) => s },
+    theme: { fg: (_c: string, text: string) => text, bg: (_c: string, text: string) => text, bold: (s: string) => s },
     setStatus: (...args: any[]) => statuses.push(args), notify: (...args: any[]) => notices.push(args),
     custom: (factory: any, options: any) => {
       customCalls++; assert.equal(options.overlay, true);
