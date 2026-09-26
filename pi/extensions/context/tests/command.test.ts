@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import contextUsageExtension from "../index.ts";
+import { formatUsageRow } from "../dialog.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 type Handler = (args: string, ctx: any) => Promise<void>;
 
@@ -31,15 +33,10 @@ function runtime(mode: string, usage?: { tokens: number | null; percent: number 
 				return await new Promise((resolve) => {
 					const component = factory(tui, theme, null, resolve);
 					const rendered = component.render(64);
-					if (dialogCount++ === 0) {
-						panels.push(rendered);
-						component.handleInput("\r");
-					} else if (dialogCount === 2) {
-						previews.push(rendered);
-						component.handleInput("\x1b");
-					} else {
-						component.handleInput("\x1b");
-					}
+					const count = dialogCount++;
+					if (count === 0) panels.push(rendered);
+					if (count === 2) previews.push(rendered);
+					component.handleInput(count < 2 ? "\r" : "\x1b");
 				});
 			},
 		},
@@ -70,34 +67,50 @@ test("/context registers and reports a breakdown in non-TUI mode without writing
 	assert.equal(app.name, "context");
 	await app.run();
 	assert.equal(app.toolReads, 1);
-	assert.deepEqual(app.notices, [{
-		message: "System prompt: 6 tokens\nMemory: 0 tokens\nSkills: 0 tokens\nTools definition: 0 tokens\nTool results: 0 tokens\nContext: 0 tokens\nOther: 44 tokens\nFree space: 950 tokens",
-		level: "info",
-	}]);
+	assert.match(app.notices[0].message, /System prompt: 6 estimated tokens \(0.6% window\)/);
+	assert.match(app.notices[0].message, /Other \(unattributed\): 44 estimated tokens/);
+	assert.match(app.notices[0].message, /Free space: 950 estimated tokens/);
 	assert.equal(app.dialogCount, 0);
 });
 
 test("/context falls back to content estimates when usage is unknown after compaction", async () => {
 	const app = runtime("print", { tokens: null, percent: null, contextWindow: 100 });
 	await app.run();
-	assert.match(app.notices[0].message, /System prompt: 6 tokens/);
-	assert.match(app.notices[0].message, /Free space: 94 tokens/);
+	assert.match(app.notices[0].message, /System prompt: 6 estimated tokens/);
+	assert.match(app.notices[0].message, /Free space: 94 estimated tokens/);
 });
 
 test("/context reports estimates with no model, usage, or known context window", async () => {
 	const app = runtime("json");
 	await app.run();
-	assert.match(app.notices[0].message, /System prompt: 6 tokens/);
-	assert.match(app.notices[0].message, /Free space: 0 tokens/);
+	assert.match(app.notices[0].message, /System prompt: 6 estimated tokens/);
+	assert.match(app.notices[0].message, /Free space: n\/a estimated tokens \(n\/a window\)/);
 	assert.doesNotMatch(app.notices[0].message, /NaN|Infinity/);
+});
+
+test("long item labels truncate before numeric columns at minimum dialog width", () => {
+	const line = formatUsageRow({ label: "very-long-source-name-which-would-overflow-the-panel", tokens: 123 }, true, 1000, 200, 32);
+	assert.equal(visibleWidth(line), 32);
+	assert.match(line.replace(/\x1b\[[0-9;]*m/g, ""), /^ › very.*…  123 · 12\.3% · 61\.5%\s*$/);
+	const unknown = formatUsageRow({ label: "Free space", tokens: null }, false, 0, 0, 32);
+	assert.match(unknown, /Free space\s+n\/a · n\/a · n\/a/);
 });
 
 test("/context opens a selectable TUI breakdown and a text preview, then closes both", async () => {
 	const app = runtime("tui", { tokens: 50, percent: 5, contextWindow: 1_000 });
 	await app.run();
-	assert.equal(app.dialogCount, 3);
+	assert.equal(app.dialogCount, 5);
 	assert.match(app.panels[0].join("\n"), /Context Usage/);
 	assert.match(app.panels[0].join("\n"), /System prompt/);
 	assert.match(app.previews[0].join("\n"), /example system prompt/);
 	assert.deepEqual(app.notices, []);
+});
+
+test("/context Free space shows window share but no used share in root TUI", async () => {
+	const app = runtime("tui", { tokens: 50, percent: 5, contextWindow: 1_000 });
+	await app.run();
+	const root = app.panels[0].join("\n");
+	assert.match(root, /CATEGORIES — reconciled est; window%, used%/);
+	assert.match(root, /Free space\s+950 est · 95\.0% win · n\/a parent/);
+	assert.match(root, /Other \(unattributed\)\s+44 est · 4\.4% win · 88\.0% parent/);
 });
