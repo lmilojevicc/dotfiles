@@ -13,7 +13,7 @@ Private Pi 0.84.4 extension for session-branch-native task tracking.
 
 The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `Tab` between wide panes, `/` search, `f` filter, `c` local completed visibility, lowercase `d` for confirmed deletion, page keys for detail scrolling, and `Esc`/`q` to close. Search editing treats `d` as ordinary query text. It adapts from split panes at 96+ columns to compact one-pane layouts at 36+ columns. The board remains inspection-first; `/tasks` provides all other human task management.
 
-The above-editor widget shows a compact `Tasks (done/total)` checklist. IDs and activity metrics remain available in `/tasks-board`. See [widget presentation](docs/widget.md).
+The above-editor widget leaves one blank row after nonempty Tasks content so adjacent telemetry remains visually separate. The sole `in_progress` task uses the upstream 11-frame spinner at 150 ms. Its elapsed time and `↑`/`↓` counters are ephemeral, session-scoped presentation data. The counters are the parent assistant turn's full input/output usage attributed while that task is active; they are not execution or subagent telemetry. Activity starts fresh after reload, session/branch changes, or a different task starts, and is preserved across compaction only while the same task remains active.
 
 ### Global Task Settings
 
@@ -38,4 +38,4 @@ npm run typecheck
 pi --no-extensions -e "$PWD/index.ts" --no-session --offline -p "Reply with OK"
 ```
 
-The interactive manager requires TUI mode. Check widget resizing and optional custom animation manually in Pi at 80, 40, 20, 5, and 1 columns.
+The interactive manager requires TUI mode. Persistent animation should be checked manually in Pi at 80, 40, 20, 5, and 1 columns.
