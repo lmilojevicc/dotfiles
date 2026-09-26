@@ -1,20 +1,22 @@
 {
-  "lastChangelogVersion": "0.84.1",
+  "lastChangelogVersion": "0.87.1",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-sol",
+  "defaultModel": "gpt-6-luna",
   "defaultThinkingLevel": "xhigh",
   "theme": "catppuccin-mocha",
   "packages": [
     "npm:pi-zentui",
     "npm:pi-intercom",
     "npm:pi-web-access",
-    "npm:pi-mcp-adapter",
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@narumitw/pi-goal",
     "git:github.com/MasuRii/pi-tool-display",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-btw"
+    "npm:pi-btw",
+    "npm:pi-mcp-adapter",
+    "npm:pi-antigravity",
+    "npm:pi-commandcode-provider"
   ],
   "skills": [
     ".claude/skills",
@@ -29,5 +31,10 @@
   "hideThinkingBlock": false,
   "editorPaddingX": 0,
   "defaultProjectTrust": "ask",
-  "tuiMode": "fullscreen"
+  "tuiMode": "fullscreen",
+  "treeFilterMode": "no-tools",
+  "extensions": [
+    "-extensions/command-code/index.ts",
+    "-extensions/chadineer/index.ts"
+  ]
 }
