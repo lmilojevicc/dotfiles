@@ -17,7 +17,7 @@ test("category submenu uses root-style semantic ANSI at narrow width, clips labe
  let component: any;
  const items = Array.from({ length: 30 }, (_, i) => ({ label: `${i}: ` + "long label ".repeat(10), tokens: 4, content: `item ${i}`, source: "Session entry" }));
  const run = showCategoryMenu({ ui: { custom: (factory: any, options: any) => {
-  assert.deepEqual(options.overlayOptions, { anchor: "center", width: 64, minWidth: 44, maxHeight: "90%", margin: 1 });
+  assert.deepEqual(options.overlayOptions, { anchor: "center", width: 80, minWidth: 44, maxHeight: "90%", margin: 1 });
   return new Promise((resolve) => {
    component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, null, resolve);
   });
@@ -26,20 +26,20 @@ test("category submenu uses root-style semantic ANSI at narrow width, clips labe
  assert.ok(initial.every((line: string) => visibleWidth(line) === 44));
  assert.match(initial[1], /\x1b\[1m\x1b\[38;5;201mContext/);
  assert.match(initial[3], /\x1b\[38;5;205m█/);
- assert.match(initial[5], /\x1b\[48;5;211m/);
+ assert.match(initial[6], /\x1b\[48;5;211m/);
  assert.match(initial.at(-2), /\x1b\[38;5;208m/);
- assert.match(initial[5], /…/);
- assert.match(initial[5], /0\.4%\s+3%/, "numeric columns remain visible after label truncation");
- // At 24 rows the first page has 13 items; G and gg reposition both view and selection.
+ assert.match(initial[6], /…/);
+ assert.match(initial[6], /0\.4%\s+3%/, "numeric columns remain visible after label truncation");
+ // At 24 rows the first page has 12 items; G and gg reposition both view and selection.
  component.handleInput("G");
- assert.match(component.render(44).join("\n"), /18-30\/30/);
+ assert.match(component.render(44).join("\n"), /19-30\/30/);
  component.handleInput("g"); component.handleInput("g");
- assert.match(component.render(44).join("\n"), /1-13\/30/);
+ assert.match(component.render(44).join("\n"), /1-12\/30/);
  component.handleInput("\x04"); // Ctrl-d pages down.
- assert.match(component.render(44).join("\n"), /2-14\/30/);
+ assert.match(component.render(44).join("\n"), /2-13\/30/);
  component.handleInput("\x15"); // Ctrl-u pages up.
- assert.match(component.render(44).join("\n"), /1-13\/30/);
- component.handleMouse({ type: "move", screenX: 20, screenY: 7 }); // second item row 8
+ assert.match(component.render(44).join("\n"), /1-12\/30/);
+ component.handleMouse({ type: "move", screenX: 20, screenY: 8 }); // second item row 9
  assert.match(component.render(44).join("\n"), /\x1b\[48;5;212m/);
  component.handleInput("\x1b[B");
  component.handleInput("\r");

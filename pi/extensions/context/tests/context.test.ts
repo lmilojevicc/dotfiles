@@ -231,11 +231,11 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 	const preview = showTextPreview({ ui } as any, "Output", "hello");
 	assert.equal(hasActiveTextPreview(), true);
 	assert.equal(escColor, "muted");
-	// 80×24、64 列居中、margin 2 → [esc] 命中 row=4, col=67..71。
-	ui.component.handleInput(`\x1b[<35;67;4M`);
+	// 80×24、64 列居中、margin 1 → [esc] 命中 row=3, col=67..71。
+	ui.component.handleInput(`\x1b[<35;67;3M`);
 	ui.component.render(64);
 	assert.equal(escColor, "text", "[esc] hover switches to text color");
-	ui.component.handleInput(`\x1b[<0;67;4M`);
+	ui.component.handleInput(`\x1b[<0;67;3M`);
 	await preview;
 	assert.equal(hasActiveTextPreview(), false);
 });
@@ -248,11 +248,11 @@ test("raw leaf preview wraps a long single line without losing its end", async (
  const preview = showTextPreview({ ui } as any, "Raw schema", content, true);
  const first = ui.component.render(64);
  assert.ok(first.every((line: string) => visibleWidth(line) === 64));
- assert.match(first.at(-2), /1-13 \/ 16 lines/);
+ assert.match(first.at(-2), /1-15 \/ 16 lines/);
  ui.component.handleInput("G");
  const last = ui.component.render(64);
  assert.ok(last.every((line: string) => visibleWidth(line) === 64));
- assert.match(last.at(-2), /4-16 \/ 16 lines/);
+ assert.match(last.at(-2), /2-16 \/ 16 lines/);
  assert.match(last.join("\n"), /🙂TAIL/);
  ui.component.handleInput("\x1b");
  await preview;
@@ -263,13 +263,13 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 	const content = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
 	const preview = showTextPreview({ ui } as any, "Output", content);
 	const initial = ui.component.render(64).join("\n");
-	assert.match(initial, /1-13 \/ 100 lines/);
-	// scrollbar col=71，body track row=6..18；从顶部 thumb 拖到底部。
-	ui.component.handleInput(`\x1b[<0;71;6M`);
-	ui.component.handleInput(`\x1b[<32;71;18M`);
-	ui.component.handleInput(`\x1b[<0;71;18m`);
+	assert.match(initial, /1-15 \/ 100 lines/);
+	// scrollbar col=71，body track row=5..19；从顶部 thumb 拖到底部。
+	ui.component.handleInput(`\x1b[<0;71;5M`);
+	ui.component.handleInput(`\x1b[<32;71;19M`);
+	ui.component.handleInput(`\x1b[<0;71;19m`);
 	const dragged = ui.component.render(64).join("\n");
-	assert.match(dragged, /88-100 \/ 100 lines/);
+	assert.match(dragged, /86-100 \/ 100 lines/);
 	ui.component.handleInput("\x1b");
 	await preview;
 });
@@ -322,46 +322,46 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 		tui.renderNow();
 	};
 	assert.equal(components.length, 1);
-	// Main dialog: 64 columns, 15 rows centered at (8,4), first category on row 10.
-	send(35, 20, 10);
-	assert.equal((components[0].render(64).join("\n")).includes("{hover esc}"), false);
-	send(0, 20, 10);
-	send(0, 20, 10, true);
+	// All dialogs: 78 columns, 21 rows centered at (1,1), first category on row 8.
+	send(35, 20, 8);
+	assert.equal((components[0].render(78).join("\n")).includes("{hover esc}"), false);
+	send(0, 20, 8);
+	send(0, 20, 8, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(components.length, 2, "category press opens the second menu via fullscreen host");
-    assert.match(components[1].render(64).join("\n"), /System prompt · unattri/);
-    send(0, 20, 13);
-    send(0, 20, 13, true);
+    assert.match(components[1].render(78).join("\n"), /System prompt · unattri/);
+    send(0, 20, 8);
+    send(0, 20, 8, true);
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(components.length, 3, "submenu press opens a leaf");
 	const preview = components[2];
-	assert.match(preview.render(68).join("\n"), /1-13 \/ 100 lines/);
+	assert.match(preview.render(78).join("\n"), /1-15 \/ 100 lines/);
 	const top = tui.viewportTop;
 	send(65, 25, 10); // wheel down inside preview, not transcript
-	assert.match(preview.render(68).join("\n"), /4-16 \/ 100 lines/);
+	assert.match(preview.render(78).join("\n"), /4-18 \/ 100 lines/);
 	assert.equal(tui.viewportTop, top);
-	// Preview scrollbar: overlay left 6, track column 73, rows 6..18.
-	send(0, 73, 6);
+	// Preview scrollbar: overlay left 1, track column 78, rows 5..19.
+	send(0, 78, 5);
 	assert.ok(tui.mouseCapture, "scrollbar press captures subsequent drag");
-	send(32, 2, 18); // drag outside overlay must still reach captured component
-	send(0, 2, 18, true);
+	send(32, 2, 19); // drag outside overlay must still reach captured component
+	send(0, 2, 19, true);
 	assert.equal(tui.mouseCapture, undefined);
-	assert.match(preview.render(68).join("\n"), /88-100 \/ 100 lines/);
-	send(35, 69, 4);
-	assert.match(preview.render(68).join("\n"), /\{hover esc\}/);
-	send(0, 69, 4);
-	send(0, 69, 4, true);
+	assert.match(preview.render(78).join("\n"), /86-100 \/ 100 lines/);
+	send(35, 75, 3);
+	assert.match(preview.render(78).join("\n"), /\{hover esc\}/);
+	send(0, 75, 3);
+	send(0, 75, 3, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(components.length, 4, "preview esc returns to submenu");
-    send(0, 67, 9);
+    send(0, 75, 3);
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(components.length, 5, "submenu esc returns to main dialog");
 	const main = components[4];
 	tui.handleTerminalInput("\x1b[B"); // keyboard navigation still works
 	tui.renderNow();
-	assert.match(main.render(64).join("\n"), /Context Usage/);
-	main.handleMouse({ type: "move", screenX: 66, screenY: 5 });
-    assert.match(main.render(64).join("\n"), /\{hover esc\}/);
+	assert.match(main.render(78).join("\n"), /Context Usage/);
+	main.handleMouse({ type: "move", screenX: 74, screenY: 2 });
+    assert.match(main.render(78).join("\n"), /\{hover esc\}/);
     main.handleInput("\x1b");
 	await run;
 	assert.equal(hasActiveTextPreview(), false);
@@ -377,11 +377,11 @@ test("showTextPreview normalized mouse handles wheel and captured scrollbar inde
 	const mouse = (type: string, screenX: number, screenY: number, wheelDelta?: number) =>
 		ui.component.handleMouse({ type, button: "left", screenX, screenY, wheelDelta });
 	assert.deepEqual(mouse("wheel", 20, 9, 1), { handled: true });
-	assert.match(ui.component.render(64).join("\n"), /4-16 \/ 100 lines/);
-	assert.deepEqual(mouse("press", 70, 5), { handled: true, capture: true });
-	mouse("drag", 0, 17);
-	mouse("release", 0, 17);
-	assert.match(ui.component.render(64).join("\n"), /88-100 \/ 100 lines/);
+	assert.match(ui.component.render(64).join("\n"), /4-18 \/ 100 lines/);
+	assert.deepEqual(mouse("press", 70, 4), { handled: true, capture: true });
+	mouse("drag", 0, 18);
+	mouse("release", 0, 18);
+	assert.match(ui.component.render(64).join("\n"), /86-100 \/ 100 lines/);
 	ui.component.handleInput("\x1b");
 	await preview;
 });

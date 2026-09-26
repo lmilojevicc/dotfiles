@@ -60,11 +60,11 @@ export async function captureRootHome() {
 					component.handleInput("\x1b[B"); // Down selects Memory.
 					record("selected-memory");
 					component.handleInput("\x1b[A"); // Up restores System prompt.
-					// Row 11 (1-based) is Memory at 24 terminal rows; center columns land inside the dialog.
-					component.handleMouse({ type: "move", screenX: 30, screenY: 10 });
+					// Shared 21-row frame starts at row 2; Memory is row 9.
+					component.handleMouse({ type: "move", screenX: 30, screenY: 8 });
 					record("hover-memory");
-					// Title row 6, [esc] at the right edge of the dialog.
-					component.handleMouse({ type: "move", screenX: (80 - width) / 2 + width - 3, screenY: 5 });
+					// Title row 3, [esc] at the right edge of the dialog.
+					component.handleMouse({ type: "move", screenX: (80 - width) / 2 + width - 3, screenY: 2 });
 					record("hover-esc");
 					component.handleMouse({ type: "move", screenX: 0, screenY: 0 });
 				}

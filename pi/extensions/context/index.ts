@@ -3,6 +3,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ToolInfo,
+	type Theme,
 	estimateTokens,
 	formatSkillsForPrompt,
 	getMarkdownTheme,
@@ -75,6 +76,18 @@ export function escCloseHitbox(bounds: DialogBounds): {
 		startCol: bounds.left + bounds.width - 5,
 		endCol: bounds.left + bounds.width - 1,
 	};
+}
+
+const contextOverlayOptions = { anchor: "center" as const, width: 80, minWidth: 44, maxHeight: "90%" as const, margin: 1 };
+
+function contextDialogHeight(rows: number): number {
+	return Math.max(1, Math.min(30, Math.floor(rows * 0.9), rows - 2));
+}
+
+// Below a usable table size, retain keyboard dismissal without overflowing the terminal.
+function compactDialog(width: number, height: number, title: string, theme: Pick<Theme, "fg">): string[] | undefined {
+	if (width >= 38 && height >= 10) return undefined;
+	return Array.from({ length: height }, (_, row) => padLine(theme.fg("dim", row === 0 ? `${title} · [esc]` : ""), width));
 }
 
 let activeContextOverlays = 0;
@@ -266,18 +279,16 @@ export async function showTextPreview(
 						const bodyInner = Math.max(1, inner - 1);
 						const bodyWidth = Math.max(1, bodyInner - 1);
 						const terminalHeight = Math.max(1, tui.terminal.rows);
-						const availableHeight = Math.max(1, terminalHeight - 4);
-						const viewportHeight = Math.min(
-							30,
-							Math.max(1, Math.floor(terminalHeight * 0.8)),
-							availableHeight,
-						);
+						const availableHeight = Math.max(1, terminalHeight - 2);
+						const viewportHeight = contextDialogHeight(terminalHeight);
+						const compact = compactDialog(width, viewportHeight, displayTitle, theme);
+						if (compact) { escHitbox = undefined; scrollbarHitbox = undefined; return compact; }
 						pageSize = Math.max(1, viewportHeight - 6);
 						const wrapped = raw ? wrapRawLines(content, bodyWidth) : markdownView!.render(bodyWidth);
 						totalLines = wrapped.length;
 						scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
-						// Centered overlay with margin 2: mirror TUI resolveOverlayLayout for anchor "center".
-						const overlayTop = 2 + Math.floor((availableHeight - viewportHeight) / 2);
+						// Mirror TUI resolveOverlayLayout for a centered overlay with margin 1.
+						const overlayTop = 1 + Math.floor((availableHeight - viewportHeight) / 2);
 						const overlayLeft = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
 						escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
 						const visible = wrapped.slice(scrollOffset, scrollOffset + pageSize);
@@ -328,13 +339,7 @@ export async function showTextPreview(
 			},
 			{
 				overlay: true,
-				overlayOptions: {
-					anchor: "center",
-					width: "85%",
-					minWidth: 50,
-					maxHeight: "80%",
-					margin: 2,
-				},
+				overlayOptions: contextOverlayOptions,
 			},
 		);
 	} finally {
@@ -649,16 +654,20 @@ export async function showCategoryMenu(
      const inner = Math.max(1, width - 2);
      const border = (text: string) => theme.fg("border", text);
      const terminalHeight = Math.max(1, tui.terminal.rows);
-     const maxHeight = Math.min(Math.max(1, Math.floor(terminalHeight * 0.9)), Math.max(1, terminalHeight - 2));
-     pageSize = Math.max(1, Math.min(Math.max(1, items.length), maxHeight - 8));
+     const maxHeight = contextDialogHeight(terminalHeight);
+     const compact = compactDialog(width, maxHeight, escapeSingleLineLabel(category.label), theme);
+     if (compact) { hitboxes = []; escHitbox = undefined; return compact; }
+     pageSize = maxHeight - 9;
      offset = Math.max(0, Math.min(offset, Math.max(0, items.length - pageSize)));
      if (index < offset) offset = index;
      if (index >= offset + pageSize) offset = index - pageSize + 1;
      const visible = displayedItems.slice(offset, offset + pageSize);
      const parent = Math.max(1, category.tokens);
+     const labelWidth = Math.max(1, Math.min(24, inner - 35));
+     const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window % parent`;
      const rows = visible.map((item, n) => {
-      const amount = `${formatTokens(item.tokens).padStart(7)}  ${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1).padStart(5)}% ${(item.tokens / parent * 100).toFixed(0).padStart(3)}%`;
-      const label = padLine(escapeSingleLineLabel(item.label), Math.max(1, Math.min(24, inner - 5 - visibleWidth(amount))));
+      const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${(item.tokens / parent * 100).toFixed(0)}%`.padStart(8)}`;
+      const label = padLine(escapeSingleLineLabel(item.label), labelWidth);
       const line = padLine(`${offset + n === index ? "› " : "  "}${theme.fg(category.color, "■")} ${label} ${amount}`, inner);
       return `${border("│")}${offset + n === index ? theme.bg("selectedBg", line) : offset + n === hovered ? theme.bg("customMessageBg", line) : line}${border("│")}`;
      });
@@ -672,19 +681,21 @@ export async function showCategoryMenu(
       `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
       `${border("│")}${padLine(` ${theme.fg(category.color, "█".repeat(cells))}${theme.fg("dim", "░".repeat(barWidth - cells))}`, inner)}${border("│")}`,
       `${border("│")}${" ".repeat(inner)}${border("│")}`,
+      `${border("│")}${padLine(theme.fg("dim", heading), inner)}${border("│")}`,
       ...rows,
+      ...Array.from({ length: pageSize - rows.length }, () => `${border("│")}${" ".repeat(inner)}${border("│")}`),
       `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-      `${border("│")}${padLine(theme.fg("dim", ` ${items.length ? `${offset + 1}-${offset + visible.length}/${items.length}` : "No items"} · est. tokens  % window  % parent · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
+      `${border("│")}${padLine(theme.fg("dim", ` ${items.length ? `${offset + 1}-${offset + visible.length}/${items.length}` : "No items"} · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
       border(`╰${"─".repeat(inner)}╯`),
      ];
      const top = 1 + Math.floor((Math.max(1, terminalHeight - 2) - Math.min(lines.length, maxHeight)) / 2);
      const left = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
      escHitbox = escCloseHitbox({ left, top, width });
-     hitboxes = visible.map((_, n) => ({ index: offset + n, row: top + 6 + n, startCol: left + 1, endCol: left + width }));
+     hitboxes = visible.map((_, n) => ({ index: offset + n, row: top + 7 + n, startCol: left + 1, endCol: left + width }));
      return lines;
     },
    };
-  }, { overlay: true, overlayOptions: { anchor: "center", width: 64, minWidth: 44, maxHeight: "90%", margin: 1 } });
+  }, { overlay: true, overlayOptions: contextOverlayOptions });
   return selected === undefined ? undefined : items[selected as number];
  } finally { restoreHover(); activeContextOverlays--; }
 }
@@ -783,10 +794,22 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							let escHovered = false;
 							let hoveredKey: PreviewKey | undefined;
 							let pendingRootG = false;
+							let rowOffset = 0;
+							let rootPageSize = 1;
+							let keepSelectionVisible = true;
+							const scrollRows = (delta: number) => {
+								pendingRootG = false;
+								keepSelectionVisible = false;
+								rowOffset = Math.max(0, Math.min(rowOffset + delta, allParts.length - rootPageSize));
+								tui.requestRender();
+							};
 
 							return {
 								invalidate() {},
 								handleInput(data: string) {
+									if (matchesKey(data, "pageDown")) { scrollRows(rootPageSize); return; }
+									if (matchesKey(data, "pageUp")) { scrollRows(-rootPageSize); return; }
+									if (!parseSgrMousePacket(data)) keepSelectionVisible = true;
 									if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
 										done(undefined);
 										return;
@@ -820,6 +843,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 
 									const mouse = parseSgrMousePacket(data);
 									if (!mouse || mouse.final !== "M") return;
+									if (mouseBaseButton(mouse.code) === 64) { scrollRows(-3); return; }
+									if (mouseBaseButton(mouse.code) === 65) { scrollRows(3); return; }
 									if ((mouse.code & 32) !== 0) {
 										// SGR 1003 的无按键 hover code 为 35，不能按左键事件过滤。
 										const overEsc = Boolean(
@@ -869,7 +894,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									pendingRootG = false;
 									const row = event.screenY + 1;
 									const col = event.screenX + 1;
-									if (event.type === "wheel") return { handled: true };
+									if (event.type === "wheel") { scrollRows(Math.sign(event.wheelDelta ?? 0) * 3); return { handled: true }; }
 									if (event.type === "click" || event.type === "release") return { handled: true };
 									const overEsc = Boolean(escHitbox && row === escHitbox.row &&
 										col >= escHitbox.startCol && col <= escHitbox.endCol);
@@ -892,6 +917,16 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								},
 								render(width: number) {
 									const inner = Math.max(1, width - 2);
+									const terminalHeight = Math.max(1, tui.terminal.rows);
+									const maxHeight = contextDialogHeight(terminalHeight);
+									const compact = compactDialog(width, maxHeight, "Context Usage", theme);
+									if (compact) { previewHitboxes = []; escHitbox = undefined; return compact; }
+									const pageSize = rootPageSize = maxHeight - 9;
+									rowOffset = Math.max(0, Math.min(rowOffset, allParts.length - pageSize));
+									if (keepSelectionVisible) {
+										if (selectedPreviewIndex < rowOffset) rowOffset = selectedPreviewIndex;
+										if (selectedPreviewIndex >= rowOffset + pageSize) rowOffset = selectedPreviewIndex - pageSize + 1;
+									}
 									const escWidth = visibleWidth("[esc]");
 									const percent = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
 									const title = theme.bold(theme.fg("accent", "Context Usage"));
@@ -912,15 +947,16 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 										})
 										.join("");
 									const labelWidth = Math.min(
-										24,
+										24, inner - 26,
 										Math.max(...allParts.map((part) => part.label.length)),
 									);
 									const selectedLabel = visiblePreviews[selectedPreviewIndex]?.label;
-									const partRows = allParts.map((part) => {
+									const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window`;
+									const partRows = allParts.slice(rowOffset, rowOffset + pageSize).map((part) => {
 										const pct = contextWindow > 0 ? (part.tokens / contextWindow) * 100 : 0;
 										const swatch = theme.fg(part.color, "■");
-										const label = part.label.padEnd(labelWidth);
-										const amount = `${formatTokens(part.tokens).padStart(7)}  ${pct.toFixed(1).padStart(5)}%`;
+										const label = padLine(part.label, labelWidth);
+										const amount = `${formatTokens(part.tokens).padStart(11)}  ${`${pct.toFixed(1)}%`.padStart(8)}`;
 										const selected = part.label === selectedLabel;
 										const hoverLabel = visiblePreviews.find((p) => p.key === hoveredKey)?.label;
 										const prefix = selected ? "› " : "  ";
@@ -935,17 +971,14 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 										`${border("│")}${padLine(` ${segments}`, inner)}${border("│")}`,
 										`${border("│")}${" ".repeat(inner)}${border("│")}`,
+										`${border("│")}${padLine(theme.fg("dim", heading), inner)}${border("│")}`,
 										...partRows.map((row) => `${border("│")}${row}${border("│")}`),
+										...Array.from({ length: pageSize - partRows.length }, () => `${border("│")}${" ".repeat(inner)}${border("│")}`),
 										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 										`${border("│")}${padLine(theme.fg("dim", " ↑↓ select · Click / Enter to preview · [esc] close"), inner)}${border("│")}`,
 										border(`╰${"─".repeat(inner)}╯`),
 									];
 
-									const terminalHeight = Math.max(1, tui.terminal.rows);
-									const maxHeight = Math.min(
-										Math.max(1, Math.floor(terminalHeight * 0.9)),
-										Math.max(1, terminalHeight - 2),
-									);
 									const visibleHeight = Math.min(lines.length, maxHeight);
 									const overlayTop =
 										1 + Math.floor((Math.max(1, terminalHeight - 2) - visibleHeight) / 2);
@@ -953,8 +986,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
 									previewHitboxes = visiblePreviews.flatMap((preview) => {
 										const partIndex = allParts.findIndex((part) => part.label === preview.label);
-										const line = 5 + partIndex;
-										return partIndex >= 0 && line < visibleHeight
+										const line = 6 + partIndex - rowOffset;
+										return partIndex >= rowOffset && partIndex < rowOffset + pageSize
 											? [
 													{
 														key: preview.key,
@@ -972,13 +1005,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 						},
 						{
 							overlay: true,
-							overlayOptions: {
-								anchor: "center",
-								width: 64,
-								minWidth: 44,
-								maxHeight: "90%",
-								margin: 1,
-							},
+							overlayOptions: contextOverlayOptions,
 						},
 					);
 				} finally {
