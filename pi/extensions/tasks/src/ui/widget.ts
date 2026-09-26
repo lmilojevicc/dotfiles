@@ -6,7 +6,7 @@ import { taskActivity, type SessionActivity } from "../state/activity.js";
 import { getForeground } from "../state/store.js";
 import { foregroundSnapshot } from "../tool/register.js";
 import { sanitizeTerminalText } from "./sanitize.js";
-import { normalizeTaskGlyphsConfig, resolveTaskGlyphs, type TaskGlyphs } from "./task-glyphs.js";
+import { resolveTaskGlyphs, type TaskGlyphs } from "./task-glyphs.js";
 import { sortTasks } from "./task-sort.js";
 
 export const WIDGET_KEY = "tasks";
@@ -26,17 +26,6 @@ export function formatDuration(milliseconds: number): string {
 export function formatTokens(value: number): string {
 	if (value < 1000) return String(value);
 	return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-}
-
-function resolveWidgetGlyphs(config: TaskDisplayConfig): TaskGlyphs {
-	const overrides = normalizeTaskGlyphsConfig(config.glyphs);
-	// Checklist defaults are local: the board and menus retain their own glyphs.
-	// An explicit spinner takes precedence over the static in-progress glyph.
-	return resolveTaskGlyphs({
-		completed: "✓", inProgress: "◐", pending: "○",
-		...overrides,
-		spinner: overrides.spinner ?? [overrides.inProgress ?? "◐"],
-	});
 }
 
 function renderTask(task: Task, tasks: readonly Task[], theme: Theme, frame: number, glyphs: TaskGlyphs): string {
@@ -76,7 +65,7 @@ export function renderWidget(
 		if (width < 1) return [];
 		const tasks = sortTasks(snapshot.tasks.filter((task) => task.status !== "deleted"), config.sortOrder);
 		if (!tasks.length) return [];
-		const glyphs = resolveWidgetGlyphs(config);
+		const glyphs = resolveTaskGlyphs(config.glyphs);
 		const completed = tasks.filter((task) => task.status === "completed");
 		const clip = (line: string) => truncateToWidth(line, width, glyphs.truncation);
 		const lines = [clip(theme.fg("accent", `${glyphs.header} Tasks (${completed.length}/${tasks.length})`))];
@@ -141,7 +130,7 @@ export class TaskWidget {
 	}
 
 	private needsAnimation(): boolean {
-		return resolveWidgetGlyphs(this.config).spinner.length > 1
+		return resolveTaskGlyphs(this.config.glyphs).spinner.length > 1
 			&& foregroundSnapshot().tasks.some((task) => task.status === "in_progress");
 	}
 
