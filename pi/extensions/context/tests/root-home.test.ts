@@ -9,7 +9,7 @@ import { captureRootHome } from "./root-home.fixture.ts";
 // The file stores every raw ANSI line (not stripped/normalized output); tests never update it.
 const golden = JSON.parse(readFileSync(fileURLToPath(new URL("./root-home.ansi.json", import.meta.url)), "utf8"));
 
-test("/context root home retains historical ANSI except authorized heading, columns and body padding", async () => {
+test("/context root home retains historical ANSI except authorized heading, full-width columns and body padding", async () => {
 	const actual = await captureRootHome();
 	assert.deepEqual(actual.options, [{
 		overlay: true,
@@ -23,18 +23,20 @@ test("/context root home retains historical ANSI except authorized heading, colu
 		assert.equal(capture.lines.length, 21, `${capture.width} ${capture.state}: shared frame height`);
 		for (const line of capture.lines) assert.equal(visibleWidth(line), capture.width);
 		const header = capture.lines[5];
-		assert.match(header, /\x1b\[38;5;208m {21}Est\. tokens  % window/);
+		assert.ok(header.includes(`\x1b[38;5;208m${" ".repeat(capture.width - 23)}Est. tokens  % window`));
 		assert.doesNotMatch(header, /\x1b\[48;/, "heading has no selection/hover background");
 		for (let n = 14; n < 18; n++) assert.equal(capture.lines[n], expected.lines[4], "only blank body padding added");
 		const preserved = [...capture.lines.slice(0, 5), ...capture.lines.slice(6, 14), ...capture.lines.slice(18)];
 		for (const [lineIndex, line] of preserved.entries()) {
-			// Explicit geometry-only migration: token width 7→11 and percentage width 6→8.
+			// Geometry only: token width 7→11, percentage width 6→8, and move the
+			// remaining trailing space into the label column (historically 16 cells).
 			// No ANSI stripping, recoloring, or golden regeneration is permitted.
+			const labelExpansion = capture.width - 28 - 16;
 			const original = expected.lines[lineIndex];
 			const migrated = lineIndex >= 5 && lineIndex <= 12
 				? original.replace(/(\d+(?:\.\d+)?k?)(  )( *\d+\.\d+%)( +)/,
 					(_match: string, tokens: string, gap: string, percent: string, trailing: string) =>
-						`    ${tokens}${gap}  ${percent}${trailing.slice(6)}`)
+						`${" ".repeat(4 + labelExpansion)}${tokens}${gap}  ${percent}${trailing.slice(6 + labelExpansion)}`)
 				: original;
 			assert.deepEqual(Buffer.from(line, "utf8"), Buffer.from(migrated, "utf8"),
 				`${capture.width} ${capture.state}: historical ANSI line ${lineIndex}`);

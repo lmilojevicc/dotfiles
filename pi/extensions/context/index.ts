@@ -663,7 +663,7 @@ export async function showCategoryMenu(
      if (index >= offset + pageSize) offset = index - pageSize + 1;
      const visible = displayedItems.slice(offset, offset + pageSize);
      const parent = Math.max(1, category.tokens);
-     const labelWidth = Math.max(1, Math.min(24, inner - 35));
+     const labelWidth = Math.max(1, inner - 35);
      const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window % parent`;
      const rows = visible.map((item, n) => {
       const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${(item.tokens / parent * 100).toFixed(0)}%`.padStart(8)}`;
@@ -673,7 +673,7 @@ export async function showCategoryMenu(
      });
      const escWidth = visibleWidth("[esc]");
      const percent = contextWindow > 0 ? category.tokens / contextWindow * 100 : 0;
-     const barWidth = Math.max(1, Math.min(60, inner - 2));
+     const barWidth = Math.max(1, inner - 2);
      const cells = Math.min(barWidth, Math.round(percent / 100 * barWidth));
      const lines = [
       border(`╭${"─".repeat(inner)}╮`),
@@ -931,7 +931,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									const percent = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
 									const title = theme.bold(theme.fg("accent", "Context Usage"));
 									const subtitle = `${formatTokens(used)} / ${formatTokens(contextWindow)} tokens (${percent.toFixed(1)}%)`;
-									const barWidth = Math.max(1, Math.min(60, inner - 2));
+									const barWidth = Math.max(1, inner - 2);
 									let remaining = barWidth;
 									const segments = allParts
 										.map((part, index) => {
@@ -946,10 +946,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 											return theme.fg(part.color, "█".repeat(Math.max(0, cells)));
 										})
 										.join("");
-									const labelWidth = Math.min(
-										24, inner - 26,
-										Math.max(...allParts.map((part) => part.label.length)),
-									);
+									const labelWidth = Math.max(1, inner - 26);
 									const selectedLabel = visiblePreviews[selectedPreviewIndex]?.label;
 									const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window`;
 									const partRows = allParts.slice(rowOffset, rowOffset + pageSize).map((part) => {

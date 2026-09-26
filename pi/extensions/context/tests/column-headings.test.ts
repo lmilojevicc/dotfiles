@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import contextUsageExtension, { showCategoryMenu, showTextPreview, type ContextPart } from "../index.ts";
 
 const theme = {
  fg: (_color: string, text: string) => text,
- bg: (_color: string, text: string) => text,
+ bg: (color: string, text: string) => `\x1b[48;5;${color === "selectedBg" ? 211 : 212}m${text}\x1b[49m`,
  bold: (text: string) => text,
 };
 
@@ -31,13 +31,17 @@ function root(ui: any, prompt = "prompt") {
  });
 }
 
+const stripSgr = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
+
 // End boundaries are shared by right-aligned headings and values, including the % sign.
-function assertNumericAlignment(lines: string[], parent: boolean) {
+function assertNumericAlignment(rendered: string[], parent: boolean) {
+ const lines = rendered.map(stripSgr);
  const heading = lines[5];
  assert.equal(lines.filter((line) => line.includes("Est. tokens")).length, 1);
  const labels = parent ? ["Est. tokens", "% window", "% parent"] : ["Est. tokens", "% window"];
  const ends = labels.map((label) => heading.indexOf(label) + label.length);
  assert.ok(labels.every((label) => heading.includes(label)));
+ assert.equal(ends.at(-1), visibleWidth(heading) - 1, "last numeric heading ends at the inner right edge");
  for (const line of lines.filter((line) => line.includes("■"))) {
   const values = [...line.matchAll(/\d+(?:\.\d+)?k?%?/g)].slice(-labels.length);
   assert.deepEqual(values.map((value) => visibleWidth(line.slice(0, value.index! + value[0].length))), ends, line);
@@ -45,13 +49,24 @@ function assertNumericAlignment(lines: string[], parent: boolean) {
  assert.doesNotMatch(lines.at(-2)!, /est\.|tokens|% window|% parent/i, "footer has navigation, not a numeric legend");
 }
 
-for (const width of [64, 44]) {
+function assertFullWidthBody(lines: string[], width: number) {
+ assert.ok(lines.every((line) => visibleWidth(line) === width));
+ assert.match(stripSgr(lines[3]), new RegExp(`^│ [█░]{${width - 4}} │$`), "bar fills the width with one cell of padding at each end");
+ const selection = lines.find((line) => line.includes("\x1b[48;5;211m"))!;
+ const selectedBody = selection.match(/\x1b\[48;5;211m(.*?)\x1b\[49m/)![1];
+ assert.equal(visibleWidth(selectedBody), width - 2, "selection covers every inner column");
+ assert.doesNotMatch(selectedBody, /│/, "selection excludes the borders");
+}
+
+for (const width of [80, 64, 44]) {
  test(`root headings align above all numeric values at ${width} columns and cannot be selected`, async () => {
   const h = harness();
   const run = root(h.ui);
   const lines = h.component.render(width);
   assertNumericAlignment(lines, false);
-  assert.ok(lines.every((line: string) => visibleWidth(line) === width));
+  assertFullWidthBody(lines, width);
+  const labelWidth = width - 28;
+  assert.equal(sliceByColumn(stripSgr(lines[6]), 5, labelWidth), "System prompt".padEnd(labelWidth));
   // 24-row terminal gives top=1, heading row=7 (1-based).
   h.component.handleMouse({ type: "press", button: "left", screenX: 50, screenY: 6 });
   h.component.handleInput("\x1b[<0;51;7M");
@@ -71,8 +86,12 @@ for (const width of [64, 44]) {
    const run = showCategoryMenu({ ui: h.ui } as any, { label: category, tokens: 465, color: "accent" }, items, 1000);
    const initial = h.component.render(width);
    assertNumericAlignment(initial, true);
-   assert.ok(initial.every((line: string) => visibleWidth(line) === width));
-   assert.match(initial[6], /…/);
+   assertFullWidthBody(initial, width);
+   const labelWidth = width - 37;
+   const label = sliceByColumn(stripSgr(initial[6]), 5, labelWidth);
+   assert.equal(visibleWidth(label), labelWidth);
+   assert.match(label, /… ?$/, "long wide labels use all available cells before numeric columns");
+   assert.ok(visibleWidth(label.trimEnd()) >= labelWidth - 1);
    h.component.handleMouse({ type: "press", button: "left", screenX: 50, screenY: 6 });
    h.component.handleInput("\x1b[<0;51;7M");
    assert.equal(h.completions, 0, "both mouse routes ignore the heading");
@@ -80,10 +99,15 @@ for (const width of [64, 44]) {
    const scrolled = h.component.render(width);
    assert.equal(scrolled[5], initial[5], "heading stays above the scrolling body");
    assertNumericAlignment(scrolled, true);
+   assertFullWidthBody(scrolled, width);
    assert.match(scrolled.at(-2), /19-30\/30/);
    // First visible item is 18 after scrolling; heading was inserted before row 8.
-   if (category === "Context") h.component.handleInput("\x1b[<0;51;8M");
-   else h.component.handleMouse({ type: "press", button: "left", screenX: 50, screenY: 7 });
+   const rightInnerX = Math.floor((100 - width) / 2) + width - 2;
+   h.component.handleMouse({ type: "move", screenX: rightInnerX, screenY: 7 });
+   const hover = h.component.render(width)[6].match(/\x1b\[48;5;212m(.*?)\x1b\[49m/)![1];
+   assert.equal(visibleWidth(hover), width - 2, "right-edge hover covers the full row");
+   if (category === "Context") h.component.handleInput(`\x1b[<0;${rightInnerX + 1};8M`);
+   else h.component.handleMouse({ type: "press", button: "left", screenX: rightInnerX, screenY: 7 });
    assert.equal((await run)?.content, "18");
   });
  }
@@ -155,7 +179,7 @@ test("empty submenu heading and padded body are not selectable", async () => {
  assert.equal(await run, undefined);
 });
 
-for (const columns of [80, 46]) {
+for (const columns of [82, 66, 46]) {
  test(`successive root/category/preview mouse coordinates share one frame on a ${columns}-column terminal`, async () => {
   const h = harness(24, columns);
   const run = root(h.ui, Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n"));
@@ -171,14 +195,18 @@ for (const columns of [80, 46]) {
   const press = (screenX: number, screenY: number) => h.component.handleMouse({ type: "press", button: "left", screenX, screenY });
   const close = async () => { press(columns - 4, 2); await next(); };
   assert.match(render()[1], /Context Usage/);
-  press(10, 6); // Heading at terminal row 7.
+  h.component.handleMouse({ type: "move", screenX: width - 1, screenY: 8 });
+  const hover = render()[7].match(/\x1b\[48;5;212m(.*?)\x1b\[49m/)![1];
+  assert.equal(visibleWidth(hover), width - 2, "root hover reaches the inner right edge");
+  press(width - 1, 6); // Heading at terminal row 7.
   assert.equal(h.completions, 0);
-  press(10, 7); // First category at terminal row 8.
+  press(width - 1, 7); // Inner right edge of first category at terminal row 8.
   await next();
   assert.match(render()[1], /System prompt/);
-  press(10, 6);
+  press(width - 1, 6);
   assert.equal(h.completions, 1, "category heading has no hitbox");
-  press(10, 7);
+  // Exercise raw SGR at the same far-right cell as normalized mouse events.
+  h.component.handleInput(`\x1b[<0;${width};8M`);
   await next();
   assert.match(render()[3], /line 1/);
   h.component.handleMouse({ type: "wheel", wheelDelta: 1 });
@@ -195,5 +223,37 @@ for (const columns of [80, 46]) {
   await close();
   await run;
   assert.equal(h.completions, 5);
+ });
+}
+
+for (const width of [80, 64, 44]) {
+ for (const raw of [true, false]) {
+  test(`${raw ? "raw" : "Markdown"} source preview fills usable inner width at ${width} columns`, async () => {
+   const h = harness(50, 120);
+   const bodyWidth = width - 4; // Borders, left padding and the scrollbar lane.
+   const content = "x".repeat(bodyWidth * 3);
+   const run = showTextPreview({ ui: h.ui } as any, "Source", content, raw);
+   const lines = h.component.render(width);
+   assert.equal(lines.length, 30);
+   assert.ok(lines.every((line: string) => visibleWidth(line) === width));
+   for (const row of lines.slice(3, 6)) assert.equal(stripSgr(row), `│ ${"x".repeat(bodyWidth)} │`);
+   assert.match(lines.at(-2), /1-3 \/ 3 lines/);
+   h.component.handleInput("\x1b");
+   await run;
+  });
+ }
+
+ test(`raw preview preserves wide graphemes and escaped controls at ${width} columns`, async () => {
+  const h = harness(50, 120);
+  const content = "# " + "界🙂e\u0301".repeat(20) + "\t\r\x1b\\TAIL";
+  const escaped = "# " + "界🙂e\u0301".repeat(20) + "\\t\\r\\x1b\\\\TAIL";
+  const run = showTextPreview({ ui: h.ui } as any, "Raw source", content, true);
+  const lines = h.component.render(width);
+  assert.ok(lines.every((line: string) => visibleWidth(line) === width));
+  const body = lines.slice(3, -3).map((line: string) => sliceByColumn(stripSgr(line), 2, width - 4).trimEnd());
+  assert.equal(body.join(""), escaped, "wrapping neither drops source columns nor emits control sequences");
+  assert.doesNotMatch(body.join(""), /\x1b|\r|\t|…/);
+  h.component.handleInput("\x1b");
+  await run;
  });
 }
