@@ -15,6 +15,9 @@ export const PROMPT_GUIDELINES = [
 	"Dependencies use existing IDs without cycles: blockedBy on create, addBlockedBy/removeBlockedBy on update.",
 	"Updates preserve omitted fields; null clears description/activeForm/owner. metadata merges; null values delete keys.",
 	"Batch is atomic but validates each operation in order; refs name preceding creates.",
+	'todo create has no status field; status changes require update. Create example: `{"action":"create","subject":"Fix bug"}`.',
+	'todo update example (use the returned task ID; if create returned #1): `{"action":"update","id":1,"status":"in_progress"}`.',
+	'todo batch alternative to those two calls, create and start atomically: `{"action":"batch","operations":[{"op":"create","ref":"fix","subject":"Fix bug"},{"op":"update","target":{"ref":"fix"},"status":"in_progress"}]}`.',
 ];
 
 export function registerTodoTool(pi: ExtensionAPI): void {

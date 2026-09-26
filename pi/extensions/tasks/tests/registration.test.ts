@@ -54,10 +54,12 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"metadata merges; null values delete keys",
 		"atomic but validates each operation in order",
 		"refs name preceding creates",
+		"todo create has no status field; status changes require update",
+		"use the returned task ID",
 	]) assert.ok(guidance.includes(rule), rule);
 
 	const definition = JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters });
 	const renderedGuidance = [`- ${tool.name}: ${tool.promptSnippet}`, ...tool.promptGuidelines.map((rule: string) => `- ${rule}`)].join("\n");
-	// Full-surface byte budget, including batch grammar (original baseline: 4485 bytes).
-	assert.ok(Buffer.byteLength(`${definition}\n${renderedGuidance}`) < 3000);
+	// Full-surface budget including batch grammar and examples (original baseline: 4485 bytes).
+	assert.ok(Buffer.byteLength(`${definition}\n${renderedGuidance}`) < 3300);
 });

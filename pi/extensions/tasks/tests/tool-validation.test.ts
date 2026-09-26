@@ -25,6 +25,50 @@ async function execute(tool: any, args: any): Promise<any> {
 	return tool.execute("validation-test", validateToolArguments(tool, call(args)), undefined, undefined, ctx);
 }
 
+test("todo prompt examples execute through real validation and reduction", async () => {
+	resetStore();
+	const tool = registeredTool();
+	// Parse the model-facing JSON itself so edits to guidance cannot drift from this test.
+	const examples = tool.promptGuidelines.flatMap((rule: string) =>
+		[...rule.matchAll(/`(\{[^`]+\})`/g)].map((match) => JSON.parse(match[1]!)),
+	);
+	assert.deepEqual(examples.map((example: any) => example.action), ["create", "update", "batch"]);
+	const [createExample, updateExample, batchExample] = examples;
+
+	const created = await execute(tool, createExample);
+	assert.equal(created.isError, false);
+	assert.equal(created.details.committed, true);
+	assert.equal(created.details.tasks[0].status, "pending");
+	assert.equal(updateExample.id, created.details.operationResults[0].id);
+	const updated = await execute(tool, updateExample);
+	assert.equal(updated.isError, false);
+	assert.equal(updated.details.revision, 2);
+	assert.deepEqual(updated.details.tasks.map((t: any) => [t.id, t.status]), [[updateExample.id, "in_progress"]]);
+
+	const beforeInvalidCreate = getSnapshot("validation-test");
+	const invalidCreate = await execute(tool, { ...createExample, status: "in_progress" });
+	assert.equal(invalidCreate.details.error.code, "invalid_fields");
+	assert.strictEqual(getSnapshot("validation-test"), beforeInvalidCreate);
+
+	// The batch is an alternative, not a third step; seed another ID to exercise ref resolution.
+	resetStore();
+	commitSnapshot("validation-test", snapshot([task(7)]));
+	const batched = await execute(tool, batchExample);
+	assert.equal(batched.isError, false);
+	assert.equal(batched.details.committed, true);
+	assert.equal(batched.details.revision, 1);
+	assert.deepEqual(batched.details.operationResults, [{ index: 0, op: "create", id: 8 }, { index: 1, op: "update", id: 8 }]);
+	assert.deepEqual(batched.details.tasks.map((t: any) => [t.id, t.status]), [[7, "pending"], [8, "in_progress"]]);
+
+	// The exact same batch rolls back its create if starting would violate single-active.
+	const initial = snapshot([task(7, "in_progress")]);
+	commitSnapshot("validation-test", initial);
+	const rejected = await execute(tool, batchExample);
+	assert.equal(rejected.isError, true);
+	assert.equal(rejected.details.error.operationIndex, 1);
+	assert.strictEqual(getSnapshot("validation-test"), initial);
+});
+
 test("compact advertised batch grammar supports a dependent create/update/delete transaction", async () => {
 	resetStore();
 	const tool = registeredTool();
