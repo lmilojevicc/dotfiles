@@ -3,10 +3,11 @@
 // bounds 为 0-based 的弹框起点（left/top）+ 宽度。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 import contextUsageExtension, {
 	capParts,
+	collectContextBreakdown,
 	escCloseHitbox,
 	hasActiveTextPreview,
 	resolveUsedTokens,
@@ -14,6 +15,142 @@ import contextUsageExtension, {
 } from "../index.ts";
 
 initTheme("dark");
+
+test("context breakdown separates tools, results, and conversation without inflating estimates", () => {
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			cwd: "/repo",
+			selectedTools: ["read"],
+			toolSnippets: { read: "Read files" },
+			contextFiles: [{ path: "AGENTS.md", content: "cccc" }],
+			skills: [
+				{ name: "ok", description: "desc", filePath: "/v" },
+				{
+					name: "hidden",
+					description: "x".repeat(100),
+					filePath: "/hidden",
+					disableModelInvocation: true,
+				},
+			],
+		}),
+		getSystemPrompt: () => "s".repeat(200),
+		sessionManager: {
+			buildContextEntries: () => [
+				{ type: "message", message: { role: "user", content: "uuuuuuuu", timestamp: 0 } },
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "text", text: "aaaa" },
+							{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "1",
+						toolName: "read",
+						content: "rrrrrrrr",
+						timestamp: 0,
+					},
+				},
+				{ type: "compaction", summary: "ssss" },
+			],
+		},
+	} as any;
+	const tools = [
+		{
+			name: "read",
+			description: "Read a file",
+			parameters: { type: "object" },
+			promptGuidelines: [],
+			sourceInfo: {},
+		},
+	] as any;
+
+	const breakdown = collectContextBreakdown(ctx, tools);
+	const parts = breakdown.parts;
+	assert.deepEqual(
+		parts.map(({ label, color }) => [label, color]),
+		[
+			["System prompt", "accent"],
+			["Memory", "error"],
+			["Skills", "warning"],
+			["Tools definition", "success"],
+			["Tool results", "customMessageLabel"],
+			["Context", "warning"],
+		],
+	);
+	assert.equal(parts.find((part) => part.label === "System prompt")?.tokens, 50);
+	assert.equal(parts.find((part) => part.label === "Memory")?.tokens, 0);
+	assert.equal(parts.find((part) => part.label === "Skills")?.tokens, 0);
+	assert.match(breakdown.previews.memoryFiles, /## AGENTS\.md/);
+	assert.match(breakdown.previews.memoryFiles, /cccc/);
+	assert.match(breakdown.previews.skills, /<name>ok<\/name>/);
+	assert.doesNotMatch(breakdown.previews.skills, /hidden/);
+	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
+	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
+	assert.equal(breakdown.previews.systemPrompt, "s".repeat(200));
+	assert.match(breakdown.previews.tools, /Definition: read/);
+	assert.match(breakdown.previews.tools, /"parameters"/);
+	assert.doesNotMatch(breakdown.previews.tools, /Call: read/);
+	assert.match(breakdown.previews.toolResults, /Result: read/);
+	assert.match(breakdown.previews.toolResults, /rrrrrrrr/);
+	assert.match(breakdown.previews.contextFiles, /uuuuuuuu/);
+	assert.match(breakdown.previews.contextFiles, /aaaa/);
+	assert.match(breakdown.previews.contextFiles, /Assistant tool call: read/);
+	assert.match(breakdown.previews.contextFiles, /"path": "a"/);
+	assert.match(breakdown.previews.contextFiles, /Compaction/);
+
+	const fitted = capParts(parts, parts.reduce((sum, part) => sum + part.tokens, 0) + 10);
+	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
+	const fixedTokens = parts.slice(0, 4).reduce((sum, part) => sum + part.tokens, 0);
+	const capped = capParts(parts, fixedTokens + 5, 4);
+	assert.deepEqual(
+		capped.slice(0, 4),
+		parts.slice(0, 4),
+		"system prompt, memory, skills and tools definition stay stable",
+	);
+	assert.equal(
+		capped.reduce((sum, part) => sum + part.tokens, 0),
+		fixedTokens + 5,
+	);
+	const finalParts = [
+		...fitted,
+		{ label: "Other", tokens: 10, color: "muted" },
+		{ label: "Free space", tokens: 100, color: "dim" },
+	];
+	assert.equal(new Set(finalParts.map((part) => part.color)).size, 7);
+});
+
+test("context breakdown attributes embedded memory and skills once", () => {
+	const memory = "cccc";
+	const skills = [{ name: "ok", description: "desc", filePath: "/v" }];
+	const skillsText = formatSkillsForPrompt(skills as any).trim();
+	const systemPrompt = `base\n<project_instructions>\n${memory}\n</project_instructions>\n${skillsText}`;
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			cwd: "/repo",
+			selectedTools: [],
+			contextFiles: [{ path: "AGENTS.md", content: memory }],
+			skills,
+		}),
+		getSystemPrompt: () => systemPrompt,
+		sessionManager: { buildContextEntries: () => [] },
+	} as any;
+
+	const breakdown = collectContextBreakdown(ctx, []);
+	const systemTokens = breakdown.parts.find((part) => part.label === "System prompt")?.tokens ?? -1;
+	const memoryTokens = breakdown.parts.find((part) => part.label === "Memory")?.tokens ?? -1;
+	const skillsTokens = breakdown.parts.find((part) => part.label === "Skills")?.tokens ?? -1;
+	assert.equal(memoryTokens, Math.ceil(memory.length / 4));
+	assert.equal(skillsTokens, Math.ceil(skillsText.length / 4));
+	assert.equal(systemTokens + memoryTokens + skillsTokens, Math.ceil(systemPrompt.length / 4));
+	assert.ok(systemTokens < Math.ceil(systemPrompt.length / 4));
+});
 
 test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {
 	assert.equal(resolveUsedTokens({ tokens: 1, percent: 7 }, 20_000, 272_000), 19_040);
@@ -165,22 +302,18 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 		tui.renderNow();
 	};
 	assert.equal(components.length, 1);
-	// First row in the scrollable category list, then its first detail row.
-	send(35, 20, 5);
-	assert.equal((components[0].render(76).join("\n")).includes("{hover esc}"), false);
-	send(0, 20, 5);
-	send(0, 20, 5, true);
+	// Main dialog: 64 columns, 15 rows centered at (8,4), first category on row 10.
+	send(35, 20, 10);
+	assert.equal((components[0].render(64).join("\n")).includes("{hover esc}"), false);
+	send(0, 20, 10);
+	send(0, 20, 10, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 2, "category press opens a detail list");
-	send(0, 20, 5);
-	send(0, 20, 5, true);
-	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 3, "detail press opens source preview");
-	const preview = components[2];
-	assert.match(preview.render(68).join("\n"), /1-13 \/ 102 lines/);
+	assert.equal(components.length, 2, "category press opens a preview via fullscreen host");
+	const preview = components[1];
+	assert.match(preview.render(68).join("\n"), /1-13 \/ 100 lines/);
 	const top = tui.viewportTop;
 	send(65, 25, 10); // wheel down inside preview, not transcript
-	assert.match(preview.render(68).join("\n"), /4-16 \/ 102 lines/);
+	assert.match(preview.render(68).join("\n"), /4-16 \/ 100 lines/);
 	assert.equal(tui.viewportTop, top);
 	// Preview scrollbar: overlay left 6, track column 73, rows 6..18.
 	send(0, 73, 6);
@@ -188,21 +321,20 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 	send(32, 2, 18); // drag outside overlay must still reach captured component
 	send(0, 2, 18, true);
 	assert.equal(tui.mouseCapture, undefined);
-	assert.match(preview.render(68).join("\n"), /90-102 \/ 102 lines/);
+	assert.match(preview.render(68).join("\n"), /88-100 \/ 100 lines/);
 	send(35, 69, 4);
 	assert.match(preview.render(68).join("\n"), /\{hover esc\}/);
 	send(0, 69, 4);
 	send(0, 69, 4, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 4, "preview esc returns to detail list");
-	const main = components[3];
+	assert.equal(components.length, 3, "preview esc returns to main dialog");
+	const main = components[2];
 	tui.handleTerminalInput("\x1b[B"); // keyboard navigation still works
 	tui.renderNow();
-	assert.match(main.render(76).join("\n"), /System prompt/);
-	tui.handleTerminalInput("\x1b"); // Back to category list.
-	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 5);
-	tui.handleTerminalInput("q");
+	assert.match(main.render(64).join("\n"), /Context Usage/);
+	send(35, 67, 6);
+	assert.match(main.render(64).join("\n"), /\{hover esc\}/);
+	send(0, 67, 6);
 	await run;
 	assert.equal(hasActiveTextPreview(), false);
 	assert.equal(writes.filter((write) => write === "\x1b[?1003h").length, 0,
