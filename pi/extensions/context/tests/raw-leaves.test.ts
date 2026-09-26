@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+
+initTheme("dark");
 import { collectContextBreakdown, showTextPreview } from "../index.ts";
 
 const theme = {
@@ -8,7 +11,7 @@ const theme = {
  bold: (text: string) => text,
 };
 
-test("local memory, prompt, and session text leaves retain Markdown headings and whitespace", async () => {
+test("document leaves default to Markdown with raw headings and whitespace accessible by r", async () => {
  const text = "# Heading  \n  indented  \n\n" + "x".repeat(900) + "TAIL";
  const breakdown = collectContextBreakdown({
   getSystemPrompt: () => text,
@@ -28,7 +31,7 @@ test("local memory, prompt, and session text leaves retain Markdown headings and
  ];
  assert.equal(leaves.length, 6);
  for (const leaf of leaves) {
-  assert.equal(leaf.raw, true, leaf.label);
+  assert.equal(leaf.raw, leaf === breakdown.items.toolResults[0], leaf.label);
   if (leaf === breakdown.items.toolResults[0]) {
    assert.equal(leaf.content, JSON.stringify([{ type: "text", text }], null, 2));
    assert.doesNotMatch(leaf.content, /```json/);
@@ -37,6 +40,12 @@ test("local memory, prompt, and session text leaves retain Markdown headings and
   const preview = showTextPreview({ ui: { custom: (factory: any) => new Promise((resolve) => {
    component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, null, resolve);
   }) } } as any, leaf.label, leaf.content, leaf.raw);
+  if (!leaf.raw) {
+   const markdown = component.render(64).join("\n");
+   assert.doesNotMatch(markdown, /# Heading/);
+   assert.match(markdown, /\[r\] raw/);
+   component.handleInput("r");
+  }
   const first = component.render(64).join("\n");
   if (leaf !== breakdown.items.toolResults[0]) {
    assert.match(first, /# Heading  /);
@@ -60,16 +69,18 @@ test("raw leaves expose reversible tabs, CRLF, ESC and literal backslashes witho
  const leaves = [breakdown.items.memoryFiles[0], breakdown.items.systemPrompt[0], breakdown.items.contextFiles[0]];
  for (const leaf of leaves) {
   assert.equal(leaf.content, original);
-  assert.equal(leaf.raw, true);
+  assert.equal(leaf.raw, false);
   let component: any;
   const preview = showTextPreview({ ui: { custom: (factory: any) => new Promise((resolve) => {
    component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, null, resolve);
   }) } } as any, "Local text", leaf.content, leaf.raw);
+  component.render(64);
+  component.handleInput("r");
   const rendered = component.render(64).join("\n");
   assert.match(rendered, /controls escaped/);
   assert.match(rendered, /# Heading\\t  indented\\r/);
   assert.match(rendered, /\\\\t literal\\x1bEND/);
-  assert.doesNotMatch(rendered, /\t|\r|\x1b/);
+  assert.doesNotMatch(rendered.replace(/\x1b\[[0-9;]*m/g, ""), /\t|\r|\x1b/);
   component.handleInput("\x1b");
   await preview;
  }

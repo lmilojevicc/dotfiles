@@ -119,13 +119,15 @@ test("submenu items identify local schema, advertised skills, unloaded disk sour
    ] },
   } as any, [{ name: "lookup", description: "Find", parameters: { type: "object" } }] as any);
   assert.equal(breakdown.items.memoryFiles[0].content, "MEMORY_SAMPLE");
-  assert.equal(breakdown.items.memoryFiles[0].raw, true);
-  assert.equal(breakdown.items.systemPrompt[0].raw, true);
+  assert.equal(breakdown.items.memoryFiles[0].raw, false);
+  assert.equal(breakdown.items.systemPrompt[0].raw, false);
   assert.match(breakdown.items.skills[0].content, /<name>helper<\/name>/);
   assert.match(breakdown.items.skills[0].source, /Prompt advertisement/);
   assert.equal(breakdown.items.skills[1].tokens, 0);
   assert.match(breakdown.items.skills[1].source, /NOT LOADED/);
   assert.match(breakdown.items.skills[1].content, /Local instructions only/);
+  assert.equal(breakdown.items.skills[1].raw, false);
+  assert.equal(breakdown.items.skills[0].raw, true);
   assert.match(breakdown.items.skills[2].label, /unattributed/);
   assert.equal(breakdown.items.skills.length, 3, "non-advertised skills are not attributed; wrapper is separate");
   assert.match(breakdown.items.tools[0].content, /"parameters"/);
@@ -134,7 +136,7 @@ test("submenu items identify local schema, advertised skills, unloaded disk sour
   assert.equal(breakdown.items.toolResults[0].raw, true);
   assert.equal(breakdown.items.contextFiles[0].content, "question");
   assert.equal(breakdown.items.contextFiles[1].content, "hello");
-  assert.ok(breakdown.items.contextFiles.every((item) => item.raw));
+  assert.ok(breakdown.items.contextFiles.every((item) => item.raw === false));
   assert.match(breakdown.items.contextFiles[0].source, /provider payload unavailable/);
  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

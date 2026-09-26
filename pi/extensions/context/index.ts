@@ -32,6 +32,7 @@ export type ContextItem = {
  tokens: number;
  content: string;
  source: string;
+ // Structured leaves stay raw; document leaves offer Markdown with an optional raw view.
  raw?: boolean;
 };
 
@@ -42,11 +43,12 @@ type ContextPreview = {
 	content: string;
 };
 
+// Preserve Markdown escapes; only raw mode doubles source backslashes for reversibility.
 function normalizePreviewText(text: string): string {
 	return text
 		.replace(/\r\n?/g, "\n")
 		.replace(/\t/g, "  ")
-		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, escapeRawControls);
 }
 
 // Raw leaves retain their source content; escape controls (and backslashes) only for safe, reversible display.
@@ -113,14 +115,14 @@ export async function showTextPreview(
 	rawContent: string,
  raw = false,
 ): Promise<void> {
-	const content = raw ? escapeRawControls(rawContent) : normalizePreviewText(rawContent);
-	const displayTitle = escapeSingleLineLabel(raw ? `controls escaped · ${title}` : title);
+	const rawDisplay = escapeRawControls(rawContent);
 	activeContextOverlays++;
 	let restoreHover = () => {};
 	try {
 		await ctx.ui.custom(
 			(tui, theme, _keybindings, done) => {
 				restoreHover = enableOverlayHover(tui);
+				let showingRaw = raw;
 				let scrollOffset = 0;
                 let pendingG = false;
 				let pageSize = 1;
@@ -138,7 +140,7 @@ export async function showTextPreview(
 					  }
 					| undefined;
 				let scrollbarDragOffset: number | null = null;
-				const markdownView = raw ? undefined : new Markdown(content, 0, 0, getMarkdownTheme());
+				const markdownView = raw ? undefined : new Markdown(normalizePreviewText(rawContent), 0, 0, getMarkdownTheme());
 
 				const scrollTo = (nextOffset: number): void => {
 					const next = Math.max(0, Math.min(nextOffset, Math.max(0, totalLines - pageSize)));
@@ -179,6 +181,14 @@ export async function showTextPreview(
 						}
 						if (data === "g") { if (pendingG) scrollTo(0); pendingG = !pendingG; return; }
                         pendingG = false;
+						if (data === "r" && markdownView) {
+							showingRaw = !showingRaw;
+							scrollOffset = 0;
+							scrollbarDragOffset = null;
+							scrollbarHitbox = undefined;
+							tui.requestRender();
+							return;
+						}
                         if (matchesKey(data, Key.up) || data === "k") scrollTo(scrollOffset - 1);
 						else if (matchesKey(data, Key.down) || data === "j") scrollTo(scrollOffset + 1);
                         else if (data === "G") scrollTo(totalLines - pageSize);
@@ -281,10 +291,11 @@ export async function showTextPreview(
 						const terminalHeight = Math.max(1, tui.terminal.rows);
 						const availableHeight = Math.max(1, terminalHeight - 2);
 						const viewportHeight = contextDialogHeight(terminalHeight);
+						const displayTitle = escapeSingleLineLabel(showingRaw ? `controls escaped · ${title}` : title);
 						const compact = compactDialog(width, viewportHeight, displayTitle, theme);
 						if (compact) { escHitbox = undefined; scrollbarHitbox = undefined; return compact; }
 						pageSize = Math.max(1, viewportHeight - 6);
-						const wrapped = raw ? wrapRawLines(content, bodyWidth) : markdownView!.render(bodyWidth);
+						const wrapped = showingRaw ? wrapRawLines(rawDisplay, bodyWidth) : markdownView!.render(bodyWidth);
 						totalLines = wrapped.length;
 						scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
 						// Mirror TUI resolveOverlayLayout for a centered overlay with margin 1.
@@ -323,7 +334,8 @@ export async function showTextPreview(
 						});
 						const start = totalLines === 0 ? 0 : scrollOffset + 1;
 						const end = Math.min(totalLines, scrollOffset + pageSize);
-						const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · [esc] close`;
+						const toggle = markdownView ? `[r] ${showingRaw ? "markdown" : "raw"} · ` : "";
+						const status = `${toggle}${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · [esc] close`;
 
 						return [
 							border(`╭${"─".repeat(inner)}╮`),
@@ -449,7 +461,7 @@ export function collectContextBreakdown(
 	for (const file of options.contextFiles ?? []) {
 		const tokens = embeddedTokens(systemPrompt, file.content);
         memoryTokens += tokens;
-        items.memoryFiles.push({ label: file.path, tokens, content: file.content, source: "Embedded memory file", raw: true });
+        items.memoryFiles.push({ label: file.path, tokens, content: file.content, source: "Embedded memory file", raw: false });
 		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
 	}
 
@@ -460,7 +472,7 @@ export function collectContextBreakdown(
    if (!advertisement || !skillsText.includes(advertisement)) continue;
    items.skills.push({ label: skill.name, tokens: embeddedTokens(systemPrompt, advertisement), content: advertisement, source: "Prompt advertisement", raw: true });
    if (skill.filePath) {
-     try { items.skills.push({ label: `${skill.name} · SKILL.md`, tokens: 0, content: readFileSync(skill.filePath, "utf8"), source: "On-disk SKILL.md · NOT LOADED", raw: true }); } catch { /* A missing local source is not part of the prompt. */ }
+     try { items.skills.push({ label: `${skill.name} · SKILL.md`, tokens: 0, content: readFileSync(skill.filePath, "utf8"), source: "On-disk SKILL.md · NOT LOADED", raw: false }); } catch { /* A missing local source is not part of the prompt. */ }
    }
  }
  const skillWrapperTokens = Math.max(0, skillsTokens - items.skills.reduce((sum, item) => sum + item.tokens, 0));
@@ -494,12 +506,12 @@ export function collectContextBreakdown(
 					} else if (block.type === "text") {
 						const tokens = tokenEstimate(block.text);
                         contextTokens += tokens;
-                        items.contextFiles.push({ label: "Assistant", tokens, content: block.text, source: "Local session entry · provider payload unavailable", raw: true });
+                        items.contextFiles.push({ label: "Assistant", tokens, content: block.text, source: "Local session entry · provider payload unavailable", raw: false });
 						contextPreview.push(`## Assistant\n\n${block.text}`);
 					} else if (block.type === "thinking") {
 						const tokens = tokenEstimate(block.thinking);
                         contextTokens += tokens;
-                        items.contextFiles.push({ label: "Assistant thinking", tokens, content: block.thinking, source: "Local session entry · provider payload unavailable", raw: true });
+                        items.contextFiles.push({ label: "Assistant thinking", tokens, content: block.thinking, source: "Local session entry · provider payload unavailable", raw: false });
 						contextPreview.push(`## Assistant thinking\n\n${block.thinking}`);
 					}
 				}
@@ -520,31 +532,31 @@ export function collectContextBreakdown(
 			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
 				const tokens = estimateTokens(message);
                 contextTokens += tokens;
-                items.contextFiles.push({ label: message.role, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: true });
+                items.contextFiles.push({ label: message.role, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: false });
 				contextPreview.push(`## ${message.role}\n\n${message.summary}`);
 			} else {
 				const tokens = estimateTokens(message);
                 contextTokens += tokens;
-                items.contextFiles.push({ label: message.role, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: true });
+                items.contextFiles.push({ label: message.role, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: typeof message.content !== "string" });
 				contextPreview.push(`## ${message.role}\n\n${previewValue(message.content)}`);
 			}
 		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
 			const tokens = tokenEstimate(entry.summary);
             contextTokens += tokens;
-            items.contextFiles.push({ label: entry.type, tokens, content: entry.summary, source: "Local session entry · provider payload unavailable", raw: true });
+            items.contextFiles.push({ label: entry.type, tokens, content: entry.summary, source: "Local session entry · provider payload unavailable", raw: false });
 			contextPreview.push(
 				`## ${entry.type === "compaction" ? "Compaction" : "Branch summary"}\n\n${entry.summary}`,
 			);
 		} else if (entry.type === "custom_message") {
 			const tokens = tokenEstimate(entry.content);
             contextTokens += tokens;
-            items.contextFiles.push({ label: `Custom: ${entry.customType}`, tokens, content: leafValue(entry.content), source: "Local session entry · provider payload unavailable", raw: true });
+            items.contextFiles.push({ label: `Custom: ${entry.customType}`, tokens, content: leafValue(entry.content), source: "Local session entry · provider payload unavailable", raw: typeof entry.content !== "string" });
 			contextPreview.push(`## Custom: ${entry.customType}\n\n${previewValue(entry.content)}`);
 		}
 	}
 
 	const systemTokens = Math.max(0, tokenEstimate(systemPrompt) - memoryTokens - skillsTokens);
- items.systemPrompt.push({ label: "System prompt · unattributed", tokens: systemTokens, content: systemPrompt || "No system prompt.", source: "Complete local prompt (includes embedded memory and skills); residual estimate, not isolated provider payload", raw: true });
+ items.systemPrompt.push({ label: "System prompt · unattributed", tokens: systemTokens, content: systemPrompt || "No system prompt.", source: "Complete local prompt (includes embedded memory and skills); residual estimate, not isolated provider payload", raw: false });
 	return {
         items,
 		parts: [
