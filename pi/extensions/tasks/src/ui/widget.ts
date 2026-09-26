@@ -6,7 +6,7 @@ import { taskActivity, type SessionActivity } from "../state/activity.js";
 import { getForeground } from "../state/store.js";
 import { foregroundSnapshot } from "../tool/register.js";
 import { sanitizeTerminalText } from "./sanitize.js";
-import { resolveTaskGlyphs } from "./task-glyphs.js";
+import { normalizeTaskGlyphsConfig, resolveTaskGlyphs, type TaskGlyphs } from "./task-glyphs.js";
 import { sortTasks } from "./task-sort.js";
 
 export const WIDGET_KEY = "tasks";
@@ -28,32 +28,26 @@ export function formatTokens(value: number): string {
 	return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 
-function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivity | undefined, theme: Theme, frame: number, now: number, config: TaskDisplayConfig): string {
-	const glyphs = resolveTaskGlyphs(config.glyphs);
-	// The local domain has exactly one canonical active task, so every in-progress row
-	// is animated. Activity only supplies fresh, session-scoped timing/counters.
-	const isActive = task.status === "in_progress";
-	const id = theme.fg("dim", `#${task.id}`);
-	let glyph: string;
-	if (isActive) glyph = theme.fg("accent", glyphs.spinner[frame % glyphs.spinner.length]!);
-	else if (task.status === "completed") glyph = theme.fg("success", glyphs.completed);
-	else if (task.status === "in_progress") glyph = theme.fg("accent", glyphs.inProgress);
-	else glyph = glyphs.pending;
+function resolveWidgetGlyphs(config: TaskDisplayConfig): TaskGlyphs {
+	const overrides = normalizeTaskGlyphsConfig(config.glyphs);
+	// Checklist defaults are local: the board and menus retain their own glyphs.
+	// An explicit spinner takes precedence over the static in-progress glyph.
+	return resolveTaskGlyphs({
+		completed: "✓", inProgress: "◐", pending: "○",
+		...overrides,
+		spinner: overrides.spinner ?? [overrides.inProgress ?? "◐"],
+	});
+}
 
+function renderTask(task: Task, tasks: readonly Task[], theme: Theme, frame: number, glyphs: TaskGlyphs): string {
+	const subject = sanitizeTerminalText(task.subject);
 	if (task.status === "completed") {
-		return `  ${glyph} ${theme.fg("dim", theme.strikethrough(`#${task.id} ${sanitizeTerminalText(task.subject)}`))}`;
+		return `${theme.fg("success", glyphs.completed)} ${theme.fg("dim", theme.strikethrough(subject))}`;
 	}
-	if (isActive) {
-		const metrics = activity?.activeTaskId === task.id && activity.metrics
-			? activity.metrics
-			: { startedAt: now, inputTokens: 0, outputTokens: 0 };
-		const tokens: string[] = [];
-		if (metrics.inputTokens > 0) tokens.push(`${glyphs.inputTokens} ${formatTokens(metrics.inputTokens)}`);
-		if (metrics.outputTokens > 0) tokens.push(`${glyphs.outputTokens} ${formatTokens(metrics.outputTokens)}`);
-		const elapsed = formatDuration(now - metrics.startedAt);
-		const stats = tokens.length ? `(${elapsed} ${glyphs.statsSeparator} ${tokens.join(" ")})` : `(${elapsed})`;
-		const action = sanitizeTerminalText(task.activeForm || task.subject);
-		return `  ${glyph} ${id} ${theme.fg("accent", `${action}${glyphs.trailingEllipsis}`)} ${theme.fg("dim", stats)}`;
+	if (task.status === "in_progress") {
+		const action = sanitizeTerminalText(task.activeForm);
+		const suffix = action && action !== subject ? theme.fg("dim", ` (${action})`) : "";
+		return `${theme.fg("warning", glyphs.spinner[frame % glyphs.spinner.length]!)} ${theme.fg("text", subject)}${suffix}`;
 	}
 
 	let suffix = "";
@@ -64,10 +58,10 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 		});
 		if (blockers.length) suffix = theme.fg("dim", ` ${glyphs.blocked} blocked by ${blockers.map((id) => `#${id}`).join(", ")}`);
 	}
-	return `  ${glyph} ${id} ${sanitizeTerminalText(task.subject)}${suffix}`;
+	return `${theme.fg("dim", glyphs.pending)} ${theme.fg("text", subject)}${suffix}`;
 }
 
-/** Pure, source-faithful widget renderer with local one-active activity input. */
+/** Pure checklist renderer; activity inputs are retained for caller compatibility. */
 export function renderWidget(
 	snapshot: TaskSnapshot,
 	activity: SessionActivity | undefined,
@@ -82,28 +76,25 @@ export function renderWidget(
 		if (width < 1) return [];
 		const tasks = sortTasks(snapshot.tasks.filter((task) => task.status !== "deleted"), config.sortOrder);
 		if (!tasks.length) return [];
-		const glyphs = resolveTaskGlyphs(config.glyphs);
+		const glyphs = resolveWidgetGlyphs(config);
 		const completed = tasks.filter((task) => task.status === "completed");
-		const inProgress = tasks.filter((task) => task.status === "in_progress");
-		const pending = tasks.filter((task) => task.status === "pending");
-		const groups = [
-			completed.length ? `${completed.length} done` : "",
-			inProgress.length ? `${inProgress.length} in progress` : "",
-			pending.length ? `${pending.length} open` : "",
-		].filter(Boolean);
 		const clip = (line: string) => truncateToWidth(line, width, glyphs.truncation);
-		const lines = [clip(`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} tasks (${groups.join(", ")})`)}`)];
+		const lines = [clip(theme.fg("accent", `${glyphs.header} Tasks (${completed.length}/${tasks.length})`))];
 		const listed = config.collapseCompleted ? tasks.filter((task) => task.status !== "completed") : tasks;
 		const showAll = toggleShowAll ? !config.showAll : config.showAll;
 		const limit = Number.isSafeInteger(config.maxVisible) && config.maxVisible > 0 ? config.maxVisible : 10;
 		const visible = showAll ? listed : config.hiddenAt === "top" ? listed.slice(-limit) : listed.slice(0, limit);
 		const hidden = listed.length - visible.length;
-		const overflow = hidden ? clip(theme.fg("dim", `    ${glyphs.overflow} and ${hidden} more`)) : undefined;
-		if (overflow && config.hiddenAt === "top") lines.push(overflow);
-		for (const task of visible) lines.push(clip(renderTask(task, tasks, activity, theme, frame, now, config)));
-		if (overflow && config.hiddenAt !== "top") lines.push(overflow);
+		const rows: string[] = [];
+		const overflow = hidden ? theme.fg("dim", `${glyphs.overflow} and ${hidden} more`) : undefined;
+		if (overflow && config.hiddenAt === "top") rows.push(overflow);
+		for (const task of visible) rows.push(renderTask(task, tasks, theme, frame, glyphs));
+		if (overflow && config.hiddenAt !== "top") rows.push(overflow);
 		if (config.collapseCompleted && completed.length) {
-			lines.push(clip(`  ${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`));
+			rows.push(`${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`);
+		}
+		for (const [index, row] of rows.entries()) {
+			lines.push(clip(`${theme.fg("dim", index === rows.length - 1 ? "└─" : "├─")} ${row}`));
 		}
 		// A single quiet spacer keeps adjacent above-editor telemetry from reading as
 		// part of the Tasks hierarchy. It is presentation-only, not a visible row.
@@ -149,12 +140,13 @@ export class TaskWidget {
 		return this.config;
 	}
 
-	private hasActiveTask(): boolean {
-		return foregroundSnapshot().tasks.some((task) => task.status === "in_progress");
+	private needsAnimation(): boolean {
+		return resolveWidgetGlyphs(this.config).spinner.length > 1
+			&& foregroundSnapshot().tasks.some((task) => task.status === "in_progress");
 	}
 
 	private startTimer(): void {
-		if (this.interval || !this.tui || !this.hasActiveTask()) return;
+		if (this.interval || !this.tui || !this.needsAnimation()) return;
 		this.interval = setInterval(() => {
 			this.frame++;
 			this.tui?.requestRender();
@@ -168,7 +160,7 @@ export class TaskWidget {
 	}
 
 	private syncTimer(): void {
-		if (this.registered && this.hasActiveTask()) this.startTimer();
+		if (this.registered && this.needsAnimation()) this.startTimer();
 		else this.stopTimer();
 	}
 
