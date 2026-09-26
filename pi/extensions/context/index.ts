@@ -663,10 +663,12 @@ export async function showCategoryMenu(
      if (index >= offset + pageSize) offset = index - pageSize + 1;
      const visible = displayedItems.slice(offset, offset + pageSize);
      const parent = Math.max(1, category.tokens);
-     const labelWidth = Math.max(1, inner - 35);
-     const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window % parent`;
+     const categoryWidth = inner >= 38 ? 10 : 8;
+     const categoryHeading = categoryWidth === 10 ? "% category" : "% cat.";
+     const labelWidth = Math.max(1, inner - 27 - categoryWidth);
+     const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window ${categoryHeading.padStart(categoryWidth)}`;
      const rows = visible.map((item, n) => {
-      const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${(item.tokens / parent * 100).toFixed(0)}%`.padStart(8)}`;
+      const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${(item.tokens / parent * 100).toFixed(0)}%`.padStart(categoryWidth)}`;
       const label = padLine(escapeSingleLineLabel(item.label), labelWidth);
       const line = padLine(`${offset + n === index ? "› " : "  "}${theme.fg(category.color, "■")} ${label} ${amount}`, inner);
       return `${border("│")}${offset + n === index ? theme.bg("selectedBg", line) : offset + n === hovered ? theme.bg("customMessageBg", line) : line}${border("│")}`;

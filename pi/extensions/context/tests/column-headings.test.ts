@@ -38,7 +38,9 @@ function assertNumericAlignment(rendered: string[], parent: boolean) {
  const lines = rendered.map(stripSgr);
  const heading = lines[5];
  assert.equal(lines.filter((line) => line.includes("Est. tokens")).length, 1);
- const labels = parent ? ["Est. tokens", "% window", "% parent"] : ["Est. tokens", "% window"];
+ const categoryLabel = visibleWidth(heading) >= 40 ? "% category" : "% cat.";
+ const labels = parent ? ["Est. tokens", "% window", categoryLabel] : ["Est. tokens", "% window"];
+ assert.doesNotMatch(heading, /% parent/);
  const ends = labels.map((label) => heading.indexOf(label) + label.length);
  assert.ok(labels.every((label) => heading.includes(label)));
  assert.equal(ends.at(-1), visibleWidth(heading) - 1, "last numeric heading ends at the inner right edge");
@@ -46,7 +48,7 @@ function assertNumericAlignment(rendered: string[], parent: boolean) {
   const values = [...line.matchAll(/\d+(?:\.\d+)?k?%?/g)].slice(-labels.length);
   assert.deepEqual(values.map((value) => visibleWidth(line.slice(0, value.index! + value[0].length))), ends, line);
  }
- assert.doesNotMatch(lines.at(-2)!, /est\.|tokens|% window|% parent/i, "footer has navigation, not a numeric legend");
+ assert.doesNotMatch(lines.at(-2)!, /est\.|tokens|% window|% category|% cat\./i, "footer has navigation, not a numeric legend");
 }
 
 function assertFullWidthBody(lines: string[], width: number) {
@@ -87,7 +89,7 @@ for (const width of [80, 64, 44]) {
    const initial = h.component.render(width);
    assertNumericAlignment(initial, true);
    assertFullWidthBody(initial, width);
-   const labelWidth = width - 37;
+   const labelWidth = width - 39;
    const label = sliceByColumn(stripSgr(initial[6]), 5, labelWidth);
    assert.equal(visibleWidth(label), labelWidth);
    assert.match(label, /… ?$/, "long wide labels use all available cells before numeric columns");
@@ -113,6 +115,20 @@ for (const width of [80, 64, 44]) {
  }
 }
 
+test("category label stays clear and aligned at the narrow layout boundary", async () => {
+ for (const width of [38, 39, 40]) {
+  const h = harness();
+  const run = showCategoryMenu({ ui: h.ui } as any, { label: "Tools definition", tokens: 100, color: "accent" },
+   [{ label: "Tool", tokens: 20, content: "schema", source: "Tool definition" }], 1000);
+  const lines = h.component.render(width);
+  assertNumericAlignment(lines, true);
+  assertFullWidthBody(lines, width);
+  assert.ok(stripSgr(lines[5]).includes(width >= 40 ? "% category" : "% cat."));
+  h.component.handleInput("\x1b");
+  await run;
+ }
+});
+
 test("root, short/empty/long categories and raw previews share responsive frame dimensions", async () => {
  const category: ContextPart = { label: "Memory", tokens: 100, color: "error" };
  const item = { label: "AGENTS.md", tokens: 1, content: "text", source: "Memory file" };
@@ -129,7 +145,7 @@ test("root, short/empty/long categories and raw previews share responsive frame 
    const lines = h.component.render(width);
    assert.equal(lines.length, height, `${view} ${columns}x${rows}`);
    assert.ok(lines.every((line: string) => visibleWidth(line) === width), `${view} width`);
-   if (view === "raw") assert.doesNotMatch(lines.join("\n"), /Est\. tokens|% window|% parent/);
+   if (view === "raw") assert.doesNotMatch(lines.join("\n"), /Est\. tokens|% window|% category|% cat\./);
    else if (width >= 38 && height >= 10) assertNumericAlignment(lines, view !== "root");
    h.component.handleInput("\x1b");
    await run;
