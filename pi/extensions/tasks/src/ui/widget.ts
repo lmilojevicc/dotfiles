@@ -41,7 +41,7 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 	else glyph = glyphs.pending;
 
 	if (task.status === "completed") {
-		return `  ${glyph} ${theme.fg("dim", theme.strikethrough(`#${task.id} ${sanitizeTerminalText(task.subject)}`))}`;
+		return `${glyph} ${theme.fg("dim", theme.strikethrough(`#${task.id} ${sanitizeTerminalText(task.subject)}`))}`;
 	}
 	if (isActive) {
 		const metrics = activity?.activeTaskId === task.id && activity.metrics
@@ -53,7 +53,7 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 		const elapsed = formatDuration(now - metrics.startedAt);
 		const stats = tokens.length ? `(${elapsed} ${glyphs.statsSeparator} ${tokens.join(" ")})` : `(${elapsed})`;
 		const action = sanitizeTerminalText(task.activeForm || task.subject);
-		return `  ${glyph} ${id} ${theme.fg("accent", `${action}${glyphs.trailingEllipsis}`)} ${theme.fg("dim", stats)}`;
+		return `${glyph} ${id} ${theme.fg("accent", `${action}${glyphs.trailingEllipsis}`)} ${theme.fg("dim", stats)}`;
 	}
 
 	let suffix = "";
@@ -64,7 +64,7 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 		});
 		if (blockers.length) suffix = theme.fg("dim", ` ${glyphs.blocked} blocked by ${blockers.map((id) => `#${id}`).join(", ")}`);
 	}
-	return `  ${glyph} ${id} ${sanitizeTerminalText(task.subject)}${suffix}`;
+	return `${glyph} ${id} ${sanitizeTerminalText(task.subject)}${suffix}`;
 }
 
 /** Pure, source-faithful widget renderer with local one-active activity input. */
@@ -99,14 +99,14 @@ export function renderWidget(
 		const visible = showAll ? listed : config.hiddenAt === "top" ? listed.slice(-limit) : listed.slice(0, limit);
 		const hidden = listed.length - visible.length;
 		const rows: string[] = [];
-		const overflow = hidden ? theme.fg("dim", `    ${glyphs.overflow} and ${hidden} more`) : undefined;
+		const overflow = hidden ? theme.fg("dim", `${glyphs.overflow} and ${hidden} more`) : undefined;
 		if (overflow && config.hiddenAt === "top") rows.push(overflow);
 		for (const task of visible) rows.push(renderTask(task, tasks, activity, theme, frame, now, config));
 		if (overflow && config.hiddenAt !== "top") rows.push(overflow);
 		if (config.collapseCompleted && completed.length) {
-			rows.push(`  ${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`);
+			rows.push(`${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`);
 		}
-		// Prefix unchanged rows, then clip once with the branch included in the width.
+		// The branch supplies row indentation; clip once with it included in the width.
 		for (const [index, row] of rows.entries()) {
 			lines.push(clip(`${theme.fg("dim", index === rows.length - 1 ? "└─" : "├─")} ${row}`));
 		}

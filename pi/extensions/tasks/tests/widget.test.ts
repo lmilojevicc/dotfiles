@@ -9,8 +9,8 @@ import { plainTheme, snapshot, task } from "./helpers.ts";
 
 test.beforeEach(() => { resetStore(); taskActivity.clear(); });
 
-// Golden rows below retain af28aa8 text, spacing and style boundaries verbatim.
-// Only the new branch prefix is removed; the header and spacer are untouched.
+// Golden rows retain af28aa8 content and styles, without obsolete row indentation.
+// Only the tree prefix is removed; the header and spacer are untouched.
 function stripTree(lines: string[], styled = false): string[] {
 	return lines.map((line, index) => {
 		if (index === 0 || index === lines.length - 1) return line;
@@ -39,9 +39,9 @@ test("renders exact upstream header grammar, source order, rows, and blocker suf
 	const activity = { activeTaskId: 2, metrics: { startedAt: 0, inputTokens: 4100, outputTokens: 1200 } };
 	assert.deepEqual(render(state, {}, activity, 0, 169_000), [
 		"● 3 tasks (1 done, 1 in progress, 1 open)",
-		"  ✔ ~#1 Done~",
-		"  ✳ #2 Working… (2m 49s · ↑ 4.1k ↓ 1.2k)",
-		"  ◻ #3 Open › blocked by #2",
+		"✔ ~#1 Done~",
+		"✳ #2 Working… (2m 49s · ↑ 4.1k ↓ 1.2k)",
+		"◻ #3 Open › blocked by #2",
 		"",
 	]);
 });
@@ -50,17 +50,17 @@ test("stripping dim tree prefixes preserves original sentinel theme roles", () =
 	const state = snapshot([task(1, "completed", [], "Done"), { ...task(2, "in_progress"), activeForm: "Working" }, task(3)]);
 	const lines = stripTree(renderWidget(state, { activeTaskId: 2, metrics: { startedAt: 0, inputTokens: 0, outputTokens: 0 } }, DEFAULT_TASKS_CONFIG, sentinelTheme, 1000, 0, false, 12_000), true);
 	assert.equal(lines[0], "<accent>●</accent> <accent>3 tasks (1 done, 1 in progress, 1 open)</accent>");
-	assert.equal(lines[1], "  <success>✔</success> <dim><strike>#1 Done</strike></dim>");
-	assert.equal(lines[2], "  <accent>✳</accent> <dim>#2</dim> <accent>Working…</accent> <dim>(12s)</dim>");
-	assert.equal(lines[3], "  ◻ <dim>#3</dim> Task 3");
+	assert.equal(lines[1], "<success>✔</success> <dim><strike>#1 Done</strike></dim>");
+	assert.equal(lines[2], "<accent>✳</accent> <dim>#2</dim> <accent>Working…</accent> <dim>(12s)</dim>");
+	assert.equal(lines[3], "◻ <dim>#3</dim> Task 3");
 });
 
 test("supports collapse, limits, top/bottom overflow, show-all toggle, and sort modes", () => {
 	const state = snapshot([task(1, "completed"), task(2), task(3, "in_progress"), task(4), task(5)]);
-	assert.deepEqual(render(state, { maxVisible: 2 }).slice(1, -1).map((line) => line.match(/#\d+/)?.[0] ?? line), ["#1", "#2", "    … and 3 more"]);
-	assert.deepEqual(render(state, { maxVisible: 2, hiddenAt: "top" }).slice(1, -1).map((line) => line.match(/#\d+/)?.[0] ?? line), ["    … and 3 more", "#4", "#5"]);
-	assert.deepEqual(render(state, { collapseCompleted: true, maxVisible: 2 }).slice(1, -1), ["  ◻ #2 Task 2", "  ✳ #3 Task 3… (0s)", "    … and 2 more", "  ✔ 1 completed"]);
-	assert.equal(stripTree(renderWidget(state, undefined, { ...DEFAULT_TASKS_CONFIG, showAll: true, maxVisible: 2 }, plainTheme, 120, 0, true)).at(-2), "    … and 3 more");
+	assert.deepEqual(render(state, { maxVisible: 2 }).slice(1, -1).map((line) => line.match(/#\d+/)?.[0] ?? line), ["#1", "#2", "… and 3 more"]);
+	assert.deepEqual(render(state, { maxVisible: 2, hiddenAt: "top" }).slice(1, -1).map((line) => line.match(/#\d+/)?.[0] ?? line), ["… and 3 more", "#4", "#5"]);
+	assert.deepEqual(render(state, { collapseCompleted: true, maxVisible: 2 }).slice(1, -1), ["◻ #2 Task 2", "✳ #3 Task 3… (0s)", "… and 2 more", "✔ 1 completed"]);
+	assert.equal(stripTree(renderWidget(state, undefined, { ...DEFAULT_TASKS_CONFIG, showAll: true, maxVisible: 2 }, plainTheme, 120, 0, true)).at(-2), "… and 3 more");
 	assert.match(render(state, { sortOrder: "active" })[1]!, /#3/);
 	assert.match(render(state, { sortOrder: "status" })[1]!, /#1/);
 });
@@ -70,7 +70,7 @@ test("uses all eleven spinner frames and exact formatting boundaries", () => {
 	assert.match(render(state)[1]!, /✳ #1 Doing… \(0s\)/);
 	const activity = { activeTaskId: 1, metrics: { startedAt: 0, inputTokens: 0, outputTokens: 0 } };
 	const expected = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽", "✳"];
-	assert.deepEqual(expected.map((_glyph, frame) => render(state, {}, activity, frame, 0)[1]!.split(" ")[2]), expected);
+	assert.deepEqual(expected.map((_glyph, frame) => render(state, {}, activity, frame, 0)[1]!.split(" ")[0]), expected);
 	assert.equal(SPINNER_INTERVAL_MS, 150);
 	assert.deepEqual([59_999, 60_000, 61_000, 3_599_999, 3_600_000, 3_783_000].map(formatDuration), ["59s", "1m", "1m 1s", "59m 59s", "1h", "1h 3m"]);
 	assert.deepEqual([999, 1000, 2000, 4100].map(formatTokens), ["999", "1k", "2k", "4.1k"]);
@@ -105,16 +105,16 @@ test("150ms timer advances spinner and elapsed time, including single-frame glyp
 	widget.bind(harness.ui);
 	widget.refresh();
 	assert.equal(set.mock.callCount(), 1);
-	assert.equal(harness.component.render(120)[1], "└─   ✳ #1 Task 1… (1s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], "└─ ✳ #1 Task 1… (1s · ↑ 4.1k ↓ 1.2k)");
 	now = 2000;
 	callback();
 	assert.deepEqual(harness.requests, [undefined]);
-	assert.equal(harness.component.render(120)[1], "└─   ✴ #1 Task 1… (2s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], "└─ ✴ #1 Task 1… (2s · ↑ 4.1k ↓ 1.2k)");
 	widget.setConfig({ ...DEFAULT_TASKS_CONFIG, glyphs: { spinner: ["x"] } });
 	assert.equal(clear.mock.callCount(), 0);
 	now = 3000;
 	callback();
-	assert.equal(harness.component.render(120)[1], "└─   x #1 Task 1… (3s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], "└─ x #1 Task 1… (3s · ↑ 4.1k ↓ 1.2k)");
 	assert.equal(set.mock.callCount(), 1);
 	commitSnapshot("s", snapshot([task(1, "completed")], 1));
 	widget.refresh();
@@ -192,14 +192,14 @@ test("default spinner stops on rebind, empty tasks and widget disposal", (t) => 
 test("preserves original activeForm fallback and activity attribution", () => {
 	for (const [activeForm, action] of [[undefined, "Run"], ["", "Run"], [" \t\n", ""], ["Run", "Run"], ["  Run\u001b[0m ", "Run"], ["Working", "Working"]]) {
 		const state = snapshot([{ ...task(1, "in_progress", [], "Run"), activeForm }]);
-		assert.equal(render(state)[1], `  ✳ #1 ${action}… (0s)`);
-		assert.equal(render(state, {}, { activeTaskId: 99, metrics: { startedAt: 0, inputTokens: 999, outputTokens: 999 } }, 0, 12000)[1], `  ✳ #1 ${action}… (0s)`);
+		assert.equal(render(state)[1], `✳ #1 ${action}… (0s)`);
+		assert.equal(render(state, {}, { activeTaskId: 99, metrics: { startedAt: 0, inputTokens: 999, outputTokens: 999 } }, 0, 12000)[1], `✳ #1 ${action}… (0s)`);
 	}
 	const state = snapshot([task(1, "in_progress")]);
 	for (const [inputTokens, outputTokens, stats] of [[0, 0, "(12s)"], [1000, 0, "(12s · ↑ 1k)"], [0, 999, "(12s · ↓ 999)"]] as const) {
-		assert.equal(render(state, {}, { activeTaskId: 1, metrics: { startedAt: 0, inputTokens, outputTokens } }, 0, 12000)[1], `  ✳ #1 Task 1… ${stats}`);
+		assert.equal(render(state, {}, { activeTaskId: 1, metrics: { startedAt: 0, inputTokens, outputTokens } }, 0, 12000)[1], `✳ #1 Task 1… ${stats}`);
 	}
-	assert.equal(render(snapshot([{ ...task(1), activeForm: "Not started" }]))[1], "  ◻ #1 Task 1");
+	assert.equal(render(snapshot([{ ...task(1), activeForm: "Not started" }]))[1], "◻ #1 Task 1");
 });
 
 test("stripped custom-glyph rows preserve original text and styles, including summaries and overflow", () => {
@@ -207,16 +207,16 @@ test("stripped custom-glyph rows preserve original text and styles, including su
 	const glyphs = { header: "H", completed: "C", pending: "P", inProgress: "R", spinner: ["a", "b"], completedSummary: "DONE", overflow: "+", blocked: "!", inputTokens: "IN", outputTokens: "OUT", statsSeparator: "|", trailingEllipsis: "..." };
 	const activity = { activeTaskId: 2, metrics: { startedAt: 0, inputTokens: 4100, outputTokens: 1200 } };
 	const header = "<accent>H</accent> <accent>3 tasks (1 done, 1 in progress, 1 open)</accent>";
-	const done = "  <success>C</success> <dim><strike>#1 Task 1</strike></dim>";
-	const active = "  <accent>b</accent> <dim>#2</dim> <accent>Working...</accent> <dim>(2m 49s | IN 4.1k OUT 1.2k)</dim>";
-	const pending = "  P <dim>#3</dim> Task 3<dim> ! blocked by #2</dim>";
-	const summary = "  <success>DONE</success> <dim>1 completed</dim>";
+	const done = "<success>C</success> <dim><strike>#1 Task 1</strike></dim>";
+	const active = "<accent>b</accent> <dim>#2</dim> <accent>Working...</accent> <dim>(2m 49s | IN 4.1k OUT 1.2k)</dim>";
+	const pending = "P <dim>#3</dim> Task 3<dim> ! blocked by #2</dim>";
+	const summary = "<success>DONE</success> <dim>1 completed</dim>";
 	const cases: [Partial<TaskDisplayConfig>, string[]][] = [
 		[{}, [done, active, pending]],
-		[{ maxVisible: 1 }, [done, "<dim>    + and 2 more</dim>"]],
-		[{ maxVisible: 1, hiddenAt: "top" }, ["<dim>    + and 2 more</dim>", pending]],
-		[{ collapseCompleted: true, maxVisible: 1 }, [active, "<dim>    + and 1 more</dim>", summary]],
-		[{ collapseCompleted: true, maxVisible: 1, hiddenAt: "top" }, ["<dim>    + and 1 more</dim>", pending, summary]],
+		[{ maxVisible: 1 }, [done, "<dim>+ and 2 more</dim>"]],
+		[{ maxVisible: 1, hiddenAt: "top" }, ["<dim>+ and 2 more</dim>", pending]],
+		[{ collapseCompleted: true, maxVisible: 1 }, [active, "<dim>+ and 1 more</dim>", summary]],
+		[{ collapseCompleted: true, maxVisible: 1, hiddenAt: "top" }, ["<dim>+ and 1 more</dim>", pending, summary]],
 		[{ collapseCompleted: true, showAll: true, maxVisible: 1 }, [active, pending, summary]],
 	];
 	for (const [options, rows] of cases) {
@@ -224,7 +224,7 @@ test("stripped custom-glyph rows preserve original text and styles, including su
 		assert.deepEqual(stripTree(lines, true), [header, ...rows, ""]);
 	}
 	assert.deepEqual(render(snapshot([task(1, "deleted")])), []);
-	assert.deepEqual(render(snapshot([task(1, "completed"), task(2, "completed")]), { collapseCompleted: true }), ["● 2 tasks (2 done)", "  ✔ 2 completed", ""]);
+	assert.deepEqual(render(snapshot([task(1, "completed"), task(2, "completed")]), { collapseCompleted: true }), ["● 2 tasks (2 done)", "✔ 2 completed", ""]);
 });
 
 test("preserves sort modes, show-all inversion, limit fallback and spinner overrides", () => {
@@ -234,12 +234,12 @@ test("preserves sort modes, show-all inversion, limit fallback and spinner overr
 	}
 	for (const showAll of [false, true]) {
 		const lines = stripTree(renderWidget(state, undefined, { ...DEFAULT_TASKS_CONFIG, showAll, maxVisible: 2 }, plainTheme, 1000, 0, true));
-		assert.equal(lines.at(-2), showAll ? "    … and 3 more" : "  ◻ #5 Task 5");
+		assert.equal(lines.at(-2), showAll ? "… and 3 more" : "◻ #5 Task 5");
 	}
 	assert.deepEqual(render(state, { maxVisible: 0 }), render(state));
-	assert.equal(render(state, { glyphs: { spinner: ["x"] } }, undefined, 9)[3], "  x #3 Task 3… (0s)");
+	assert.equal(render(state, { glyphs: { spinner: ["x"] } }, undefined, 9)[3], "x #3 Task 3… (0s)");
 	for (const spinner of [undefined, [], ["ok", "\n"]]) {
-		assert.equal(render(state, { glyphs: { inProgress: "R", spinner } }, undefined, 1)[3], "  ✴ #3 Task 3… (0s)");
+		assert.equal(render(state, { glyphs: { inProgress: "R", spinner } }, undefined, 1)[3], "✴ #3 Task 3… (0s)");
 	}
 });
 
@@ -253,15 +253,15 @@ test("component keeps toggles local and renders current width and theme", () => 
 	widget.bind(harness.ui);
 	widget.refresh();
 	const limited = harness.component.render(120);
-	assert.equal(limited.at(-2), "└─     … and 2 more");
+	assert.equal(limited.at(-2), "└─ … and 2 more");
 	widget.toggle();
-	assert.equal(harness.component.render(120).at(-2), "└─   ◻ #3 Task 3");
+	assert.equal(harness.component.render(120).at(-2), "└─ ◻ #3 Task 3");
 	widget.refresh(true);
 	assert.deepEqual(harness.component.render(120), limited);
 	assert.ok(harness.component.render(5).every((line: string) => visibleWidth(line) <= 5));
 	assert.deepEqual(harness.component.render(120), limited);
 	harness.ui.theme = sentinelTheme;
-	assert.match(harness.component.render(1000)[1], /^<dim>├─<\/dim>   ◻ <dim>#1<\/dim>/);
+	assert.match(harness.component.render(1000)[1], /^<dim>├─<\/dim> ◻ <dim>#1<\/dim>/);
 	widget.toggle();
 	const other = widgetHarness();
 	widget.bind(other.ui);
