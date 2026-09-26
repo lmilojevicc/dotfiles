@@ -35,8 +35,10 @@ function runtime(mode: string, usage?: { tokens: number | null; percent: number 
 						panels.push(rendered);
 						component.handleInput("\r");
 					} else if (dialogCount === 2) {
-						previews.push(rendered);
-						component.handleInput("\x1b");
+                        component.handleInput("\r");
+                    } else if (dialogCount === 3) {
+                        previews.push(rendered);
+                        component.handleInput("\x1b");
 					} else {
 						component.handleInput("\x1b");
 					}
@@ -92,10 +94,60 @@ test("/context reports estimates with no model, usage, or known context window",
 	assert.doesNotMatch(app.notices[0].message, /NaN|Infinity/);
 });
 
+test("root gg requires consecutive keyboard g's within one home visit", async () => {
+ let handler: Handler | undefined;
+ let homeVisits = 0;
+ let dialogs = 0;
+ const selected = (component: any) => component.render(64).find((line: string) => line.includes("› "));
+ const ctx = {
+  mode: "tui",
+  model: { contextWindow: 1000 },
+  getContextUsage: () => ({ tokens: 50, percent: 5, contextWindow: 1000 }),
+  getSystemPrompt: () => "prompt",
+  getSystemPromptOptions: () => ({ contextFiles: [], skills: [], selectedTools: [] }),
+  sessionManager: { buildContextEntries: () => [] },
+  ui: { custom: (factory: any) => new Promise((resolve) => {
+   const component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, {
+    fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text,
+   }, null, resolve);
+   component.render(64);
+   if (dialogs++ === 0) {
+    homeVisits++;
+    component.handleInput("G");
+    component.handleInput("g");
+    component.handleInput("\r"); // Open last category; the pending g must not leak to the next home.
+   } else if (dialogs === 2) {
+    component.handleInput("\x1b"); // Close submenu.
+   } else {
+    homeVisits++;
+    assert.match(selected(component), /Context/);
+    component.handleInput("g");
+    assert.match(selected(component), /Context/, "reopened home starts with no pending g");
+    component.handleMouse({ type: "move", screenX: 20, screenY: 8 });
+    component.handleInput("g");
+    assert.match(selected(component), /Context/, "mouse move interrupts gg");
+    component.handleInput("k");
+    assert.match(selected(component), /Tool results/);
+    component.handleInput("g");
+    assert.match(selected(component), /Tool results/, "unrelated keyboard action interrupts gg");
+    component.handleInput("g");
+    assert.match(selected(component), /System prompt/, "only consecutive g's return home to first row");
+    component.handleInput("\x1b");
+   }
+  }) },
+ };
+ contextUsageExtension({
+  registerCommand: (_name: string, options: { handler: Handler }) => { handler = options.handler; },
+  getAllTools: () => [],
+ } as any);
+ await handler!("", ctx);
+ assert.equal(homeVisits, 2);
+});
+
 test("/context opens a selectable TUI breakdown and a text preview, then closes both", async () => {
 	const app = runtime("tui", { tokens: 50, percent: 5, contextWindow: 1_000 });
 	await app.run();
-	assert.equal(app.dialogCount, 3);
+	assert.equal(app.dialogCount, 5);
 	assert.match(app.panels[0].join("\n"), /Context Usage/);
 	assert.match(app.panels[0].join("\n"), /System prompt/);
 	assert.match(app.previews[0].join("\n"), /example system prompt/);

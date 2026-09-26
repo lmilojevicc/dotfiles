@@ -7,9 +7,10 @@ import {
 	formatSkillsForPrompt,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
 import { Key, Markdown, matchesKey, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { mouseBaseButton, parseSgrMousePacket } from "./sgr-mouse.ts";
-import { padLine } from "./format.ts";
+import { padLine, wrapRawLines } from "./format.ts";
 
 export type ContextPart = {
 	label: string;
@@ -25,6 +26,14 @@ type PreviewKey =
 	| "toolResults"
 	| "contextFiles";
 
+export type ContextItem = {
+ label: string;
+ tokens: number;
+ content: string;
+ source: string;
+ raw?: boolean;
+};
+
 type ContextPreview = {
 	key: PreviewKey;
 	label: string;
@@ -37,6 +46,20 @@ function normalizePreviewText(text: string): string {
 		.replace(/\r\n?/g, "\n")
 		.replace(/\t/g, "  ")
 		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
+// Raw leaves retain their source content; escape controls (and backslashes) only for safe, reversible display.
+function escapeRawControls(text: string): string {
+	return text.replace(/[\\\u0000-\u0009\u000B-\u001F\u007F-\u009F]/g, (character) => {
+		if (character === "\\") return "\\\\";
+		if (character === "\t") return "\\t";
+		if (character === "\r") return "\\r";
+		return `\\x${character.charCodeAt(0).toString(16).padStart(2, "0")}`;
+	});
+}
+
+function escapeSingleLineLabel(text: string): string {
+	return escapeRawControls(text).replace(/\n/g, "\\n");
 }
 
 export type DialogBounds = { left: number; top: number; width: number };
@@ -75,8 +98,10 @@ export async function showTextPreview(
 	ctx: Pick<ExtensionCommandContext, "ui">,
 	title: string,
 	rawContent: string,
+ raw = false,
 ): Promise<void> {
-	const content = normalizePreviewText(rawContent);
+	const content = raw ? escapeRawControls(rawContent) : normalizePreviewText(rawContent);
+	const displayTitle = escapeSingleLineLabel(raw ? `controls escaped · ${title}` : title);
 	activeContextOverlays++;
 	let restoreHover = () => {};
 	try {
@@ -84,6 +109,7 @@ export async function showTextPreview(
 			(tui, theme, _keybindings, done) => {
 				restoreHover = enableOverlayHover(tui);
 				let scrollOffset = 0;
+                let pendingG = false;
 				let pageSize = 1;
 				let totalLines = 1;
 				let escHovered = false;
@@ -99,7 +125,7 @@ export async function showTextPreview(
 					  }
 					| undefined;
 				let scrollbarDragOffset: number | null = null;
-				const markdownView = new Markdown(content, 0, 0, getMarkdownTheme());
+				const markdownView = raw ? undefined : new Markdown(content, 0, 0, getMarkdownTheme());
 
 				const scrollTo = (nextOffset: number): void => {
 					const next = Math.max(0, Math.min(nextOffset, Math.max(0, totalLines - pageSize)));
@@ -131,15 +157,20 @@ export async function showTextPreview(
 
 				return {
 					invalidate() {
-						markdownView.invalidate();
+						markdownView?.invalidate();
 					},
 					handleInput(data: string) {
-						if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+						if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
 							done(undefined);
 							return;
 						}
-						if (matchesKey(data, Key.up)) scrollTo(scrollOffset - 1);
-						else if (matchesKey(data, Key.down)) scrollTo(scrollOffset + 1);
+						if (data === "g") { if (pendingG) scrollTo(0); pendingG = !pendingG; return; }
+                        pendingG = false;
+                        if (matchesKey(data, Key.up) || data === "k") scrollTo(scrollOffset - 1);
+						else if (matchesKey(data, Key.down) || data === "j") scrollTo(scrollOffset + 1);
+                        else if (data === "G") scrollTo(totalLines - pageSize);
+                        else if (matchesKey(data, Key.ctrl("u"))) scrollTo(scrollOffset - Math.max(1, Math.floor(pageSize / 2)));
+                        else if (matchesKey(data, Key.ctrl("d"))) scrollTo(scrollOffset + Math.max(1, Math.floor(pageSize / 2)));
 						else if (matchesKey(data, "pageUp")) scrollTo(scrollOffset - pageSize);
 						else if (matchesKey(data, "pageDown")) scrollTo(scrollOffset + pageSize);
 						else if (matchesKey(data, Key.home)) scrollTo(0);
@@ -242,7 +273,7 @@ export async function showTextPreview(
 							availableHeight,
 						);
 						pageSize = Math.max(1, viewportHeight - 6);
-						const wrapped = markdownView.render(bodyWidth);
+						const wrapped = raw ? wrapRawLines(content, bodyWidth) : markdownView!.render(bodyWidth);
 						totalLines = wrapped.length;
 						scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
 						// Centered overlay with margin 2: mirror TUI resolveOverlayLayout for anchor "center".
@@ -285,7 +316,7 @@ export async function showTextPreview(
 
 						return [
 							border(`╭${"─".repeat(inner)}╮`),
-							`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
+							`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", displayTitle))}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
 							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 							...bodyRows,
 							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
@@ -380,11 +411,16 @@ export function resolveUsedTokens(
 type ContextBreakdown = {
 	parts: ContextPart[];
 	previews: Record<PreviewKey, string>;
+ items: Record<PreviewKey, ContextItem[]>;
 };
 
 function previewValue(value: unknown): string {
 	if (typeof value === "string") return value;
 	return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+}
+
+function leafValue(value: unknown): string {
+	return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? String(value);
 }
 
 /** 按真实请求的 systemPrompt、tools、messages 三部分同步组装计数与预览。 */
@@ -402,15 +438,28 @@ export function collectContextBreakdown(
 	let toolResultTokens = 0;
 	let contextTokens = 0;
 
-	const memoryPreview: string[] = [];
+	const items: Record<PreviewKey, ContextItem[]> = { systemPrompt: [], memoryFiles: [], skills: [], tools: [], toolResults: [], contextFiles: [] };
+ const memoryPreview: string[] = [];
 	let memoryTokens = 0;
 	for (const file of options.contextFiles ?? []) {
-		memoryTokens += embeddedTokens(systemPrompt, file.content);
+		const tokens = embeddedTokens(systemPrompt, file.content);
+        memoryTokens += tokens;
+        items.memoryFiles.push({ label: file.path, tokens, content: file.content, source: "Embedded memory file", raw: true });
 		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
 	}
 
 	const skillsText = formatSkillsForPrompt(options.skills ?? []).trim();
 	const skillsTokens = embeddedTokens(systemPrompt, skillsText);
+ for (const skill of options.skills ?? []) {
+   const advertisement = formatSkillsForPrompt([skill]).match(/<skill>[\s\S]*?<\/skill>/)?.[0];
+   if (!advertisement || !skillsText.includes(advertisement)) continue;
+   items.skills.push({ label: skill.name, tokens: embeddedTokens(systemPrompt, advertisement), content: advertisement, source: "Prompt advertisement", raw: true });
+   if (skill.filePath) {
+     try { items.skills.push({ label: `${skill.name} · SKILL.md`, tokens: 0, content: readFileSync(skill.filePath, "utf8"), source: "On-disk SKILL.md · NOT LOADED", raw: true }); } catch { /* A missing local source is not part of the prompt. */ }
+   }
+ }
+ const skillWrapperTokens = Math.max(0, skillsTokens - items.skills.reduce((sum, item) => sum + item.tokens, 0));
+ if (skillWrapperTokens > 0) items.skills.push({ label: "Skill prompt wrapper · unattributed", tokens: skillWrapperTokens, content: skillsText, source: "Complete skill prompt (includes advertisements); wrapper estimate", raw: true });
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
@@ -419,7 +468,9 @@ export function collectContextBreakdown(
 			description: tool.description,
 			parameters: tool.parameters,
 		};
-		toolDefinitionTokens += tokenEstimate(definition);
+		const tokens = tokenEstimate(definition);
+        toolDefinitionTokens += tokens;
+        items.tools.push({ label: tool.name, tokens, content: JSON.stringify(definition, null, 2), source: "Local registered tool schema · estimate", raw: true });
 		toolDefinitionPreview.push(`## Definition: ${tool.name}\n\n${previewValue(definition)}`);
 	}
 
@@ -429,48 +480,68 @@ export function collectContextBreakdown(
 			if (message.role === "assistant") {
 				for (const block of message.content) {
 					if (block.type === "toolCall") {
-						contextTokens += tokenEstimate(block.name) + tokenEstimate(block.arguments);
+						const tokens = tokenEstimate(block.name) + tokenEstimate(block.arguments);
+                        contextTokens += tokens;
+                        items.contextFiles.push({ label: `Assistant tool call: ${block.name}`, tokens, content: leafValue(block.arguments), source: "Local session entry · provider payload unavailable", raw: true });
 						contextPreview.push(
 							`## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
 						);
 					} else if (block.type === "text") {
-						contextTokens += tokenEstimate(block.text);
+						const tokens = tokenEstimate(block.text);
+                        contextTokens += tokens;
+                        items.contextFiles.push({ label: "Assistant", tokens, content: block.text, source: "Local session entry · provider payload unavailable", raw: true });
 						contextPreview.push(`## Assistant\n\n${block.text}`);
 					} else if (block.type === "thinking") {
-						contextTokens += tokenEstimate(block.thinking);
+						const tokens = tokenEstimate(block.thinking);
+                        contextTokens += tokens;
+                        items.contextFiles.push({ label: "Assistant thinking", tokens, content: block.thinking, source: "Local session entry · provider payload unavailable", raw: true });
 						contextPreview.push(`## Assistant thinking\n\n${block.thinking}`);
 					}
 				}
 			} else if (message.role === "toolResult") {
-				toolResultTokens += estimateTokens(message);
+				const tokens = estimateTokens(message);
+                toolResultTokens += tokens;
+                items.toolResults.push({ label: `Result: ${message.toolName}`, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: true });
 				toolResultPreview.push(
 					`## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
 				);
 			} else if (message.role === "bashExecution") {
-				toolResultTokens += estimateTokens(message);
+                const tokens = estimateTokens(message);
+				toolResultTokens += tokens;
+                items.toolResults.push({ label: `Bash: ${message.command}`, tokens, content: leafValue(message.output), source: "Local session entry · provider payload unavailable", raw: true });
 				toolResultPreview.push(
 					`## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
 				);
 			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
-				contextTokens += estimateTokens(message);
+				const tokens = estimateTokens(message);
+                contextTokens += tokens;
+                items.contextFiles.push({ label: message.role, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: true });
 				contextPreview.push(`## ${message.role}\n\n${message.summary}`);
 			} else {
-				contextTokens += estimateTokens(message);
+				const tokens = estimateTokens(message);
+                contextTokens += tokens;
+                items.contextFiles.push({ label: message.role, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: true });
 				contextPreview.push(`## ${message.role}\n\n${previewValue(message.content)}`);
 			}
 		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
-			contextTokens += tokenEstimate(entry.summary);
+			const tokens = tokenEstimate(entry.summary);
+            contextTokens += tokens;
+            items.contextFiles.push({ label: entry.type, tokens, content: entry.summary, source: "Local session entry · provider payload unavailable", raw: true });
 			contextPreview.push(
 				`## ${entry.type === "compaction" ? "Compaction" : "Branch summary"}\n\n${entry.summary}`,
 			);
 		} else if (entry.type === "custom_message") {
-			contextTokens += tokenEstimate(entry.content);
+			const tokens = tokenEstimate(entry.content);
+            contextTokens += tokens;
+            items.contextFiles.push({ label: `Custom: ${entry.customType}`, tokens, content: leafValue(entry.content), source: "Local session entry · provider payload unavailable", raw: true });
 			contextPreview.push(`## Custom: ${entry.customType}\n\n${previewValue(entry.content)}`);
 		}
 	}
 
 	const systemTokens = Math.max(0, tokenEstimate(systemPrompt) - memoryTokens - skillsTokens);
+ items.systemPrompt.push({ label: "System prompt · unattributed", tokens: systemTokens, content: systemPrompt || "No system prompt.", source: "Complete local prompt (includes embedded memory and skills); residual estimate, not isolated provider payload", raw: true });
 	return {
+        items,
 		parts: [
 			{ label: "System prompt", tokens: systemTokens, color: "accent" },
 			{ label: "Memory", tokens: memoryTokens, color: "error" },
@@ -488,6 +559,134 @@ export function collectContextBreakdown(
 			contextFiles: contextPreview.join("\n\n") || "No conversation context.",
 		},
 	};
+}
+
+/** Reconcile per-leaf estimates to a capped category; never assign unestimated provider usage to leaves. */
+export function normalizeCategoryItems(items: ContextItem[], categoryTokens: number): ContextItem[] {
+ const estimated = items.reduce((sum, item) => sum + item.tokens, 0);
+ const target = Math.max(0, categoryTokens);
+ if (estimated <= target) return items;
+ let cumulative = 0;
+ let previous = 0;
+ return items.map((item, index) => {
+  cumulative += item.tokens;
+  const next = index === items.length - 1 ? target : Math.round(cumulative / estimated * target);
+  const tokens = next - previous;
+  previous = next;
+  return { ...item, tokens };
+ });
+}
+
+/** A sequential second layer: the root overlay is never rendered or styled by this component. */
+export async function showCategoryMenu(
+ ctx: Pick<ExtensionCommandContext, "ui">,
+ category: ContextPart,
+ items: ContextItem[],
+ contextWindow: number,
+): Promise<ContextItem | undefined> {
+ activeContextOverlays++;
+ let restoreHover = () => {};
+ const displayedItems = normalizeCategoryItems(items, category.tokens);
+ try {
+  const selected = await ctx.ui.custom((tui, theme, _keys, done) => {
+   restoreHover = enableOverlayHover(tui);
+   let index = 0;
+   let offset = 0;
+   let pageSize = 1;
+   let pendingG = false;
+   let hovered = -1;
+   let escHovered = false;
+   let hitboxes: { index: number; row: number; startCol: number; endCol: number }[] = [];
+   let escHitbox: ReturnType<typeof escCloseHitbox> | undefined;
+   const choose = (next: number) => {
+    index = Math.max(0, Math.min(items.length - 1, next));
+    if (index < offset) offset = index;
+    if (index >= offset + pageSize) offset = index - pageSize + 1;
+    tui.requestRender();
+   };
+   const mouseAt = (row: number, col: number, press: boolean) => {
+    const overEsc = Boolean(escHitbox && row === escHitbox.row && col >= escHitbox.startCol && col <= escHitbox.endCol);
+    const match = hitboxes.find((box) => box.row === row && col >= box.startCol && col <= box.endCol);
+    if (press) {
+     if (overEsc) done(undefined);
+     else if (match) { choose(match.index); done(match.index); }
+    } else if (escHovered !== overEsc || hovered !== (match?.index ?? -1)) {
+     escHovered = overEsc;
+     hovered = match?.index ?? -1;
+     tui.requestRender();
+    }
+   };
+   return {
+    invalidate() {},
+    handleInput(data: string) {
+     if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "h" || data === "q") { done(undefined); return; }
+     if (data === "g") { if (pendingG) choose(0); pendingG = !pendingG; return; }
+     pendingG = false;
+     if (matchesKey(data, Key.up) || data === "k") choose(index - 1);
+     else if (matchesKey(data, Key.down) || data === "j") choose(index + 1);
+     else if (data === "G" || matchesKey(data, Key.end)) choose(items.length - 1);
+     else if (matchesKey(data, Key.home)) choose(0);
+     else if (matchesKey(data, Key.ctrl("d")) || matchesKey(data, "pageDown")) choose(index + pageSize);
+     else if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, "pageUp")) choose(index - pageSize);
+     else if (matchesKey(data, Key.enter) || data === "l") { if (items.length) done(index); }
+     else {
+      const mouse = parseSgrMousePacket(data);
+      if (!mouse || mouse.final !== "M") return;
+      const button = mouseBaseButton(mouse.code);
+      if (button === 64) choose(index - 3);
+      else if (button === 65) choose(index + 3);
+      else if ((mouse.code & 32) !== 0) mouseAt(mouse.row, mouse.col, false);
+      else if (button === 0) mouseAt(mouse.row, mouse.col, true);
+     }
+    },
+    handleMouse(event: TuiMouseEvent) {
+     if (event.type === "wheel") choose(index + Math.sign(event.wheelDelta ?? 0) * 3);
+     else if (event.type === "press" || event.type === "move")
+      mouseAt(event.screenY + 1, event.screenX + 1, event.type === "press" && event.button === "left");
+     return { handled: true };
+    },
+    render(width: number) {
+     const inner = Math.max(1, width - 2);
+     const border = (text: string) => theme.fg("border", text);
+     const terminalHeight = Math.max(1, tui.terminal.rows);
+     const maxHeight = Math.min(Math.max(1, Math.floor(terminalHeight * 0.9)), Math.max(1, terminalHeight - 2));
+     pageSize = Math.max(1, Math.min(Math.max(1, items.length), maxHeight - 8));
+     offset = Math.max(0, Math.min(offset, Math.max(0, items.length - pageSize)));
+     if (index < offset) offset = index;
+     if (index >= offset + pageSize) offset = index - pageSize + 1;
+     const visible = displayedItems.slice(offset, offset + pageSize);
+     const parent = Math.max(1, category.tokens);
+     const rows = visible.map((item, n) => {
+      const amount = `${formatTokens(item.tokens).padStart(7)}  ${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1).padStart(5)}% ${(item.tokens / parent * 100).toFixed(0).padStart(3)}%`;
+      const label = padLine(escapeSingleLineLabel(item.label), Math.max(1, Math.min(24, inner - 5 - visibleWidth(amount))));
+      const line = padLine(`${offset + n === index ? "› " : "  "}${theme.fg(category.color, "■")} ${label} ${amount}`, inner);
+      return `${border("│")}${offset + n === index ? theme.bg("selectedBg", line) : offset + n === hovered ? theme.bg("customMessageBg", line) : line}${border("│")}`;
+     });
+     const escWidth = visibleWidth("[esc]");
+     const percent = contextWindow > 0 ? category.tokens / contextWindow * 100 : 0;
+     const barWidth = Math.max(1, Math.min(60, inner - 2));
+     const cells = Math.min(barWidth, Math.round(percent / 100 * barWidth));
+     const lines = [
+      border(`╭${"─".repeat(inner)}╮`),
+      `${border("│")}${padLine(` ${theme.bold(theme.fg("accent", escapeSingleLineLabel(category.label)))}  ${theme.fg("muted", `${formatTokens(category.tokens)} tokens (${percent.toFixed(1)}%)`)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
+      `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
+      `${border("│")}${padLine(` ${theme.fg(category.color, "█".repeat(cells))}${theme.fg("dim", "░".repeat(barWidth - cells))}`, inner)}${border("│")}`,
+      `${border("│")}${" ".repeat(inner)}${border("│")}`,
+      ...rows,
+      `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
+      `${border("│")}${padLine(theme.fg("dim", ` ${items.length ? `${offset + 1}-${offset + visible.length}/${items.length}` : "No items"} · est. tokens  % window  % parent · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
+      border(`╰${"─".repeat(inner)}╯`),
+     ];
+     const top = 1 + Math.floor((Math.max(1, terminalHeight - 2) - Math.min(lines.length, maxHeight)) / 2);
+     const left = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
+     escHitbox = escCloseHitbox({ left, top, width });
+     hitboxes = visible.map((_, n) => ({ index: offset + n, row: top + 6 + n, startCol: left + 1, endCol: left + width }));
+     return lines;
+    },
+   };
+  }, { overlay: true, overlayOptions: { anchor: "center", width: 64, minWidth: 44, maxHeight: "90%", margin: 1 } });
+  return selected === undefined ? undefined : items[selected as number];
+ } finally { restoreHover(); activeContextOverlays--; }
 }
 
 export default function contextUsageExtension(pi: ExtensionAPI) {
@@ -583,26 +782,38 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
 							let escHovered = false;
 							let hoveredKey: PreviewKey | undefined;
+							let pendingRootG = false;
 
 							return {
 								invalidate() {},
 								handleInput(data: string) {
-									if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+									if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
 										done(undefined);
 										return;
 									}
-									if (matchesKey(data, Key.up) && visiblePreviews.length > 0) {
+									if (data === "g") {
+                                        if (pendingRootG) { selectedPreviewIndex = 0; tui.requestRender(); }
+                                        pendingRootG = !pendingRootG;
+                                        return;
+                                    }
+                                    pendingRootG = false;
+                                    if (data === "G") { selectedPreviewIndex = visiblePreviews.length - 1; tui.requestRender(); return; }
+                                    if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, Key.ctrl("d"))) {
+                                        selectedPreviewIndex = Math.max(0, Math.min(visiblePreviews.length - 1, selectedPreviewIndex + (matchesKey(data, Key.ctrl("d")) ? 3 : -3)));
+                                        tui.requestRender(); return;
+                                    }
+                                    if ((matchesKey(data, Key.up) || data === "k") && visiblePreviews.length > 0) {
 										selectedPreviewIndex =
 											(selectedPreviewIndex - 1 + visiblePreviews.length) % visiblePreviews.length;
 										tui.requestRender();
 										return;
 									}
-									if (matchesKey(data, Key.down) && visiblePreviews.length > 0) {
+									if ((matchesKey(data, Key.down) || data === "j") && visiblePreviews.length > 0) {
 										selectedPreviewIndex = (selectedPreviewIndex + 1) % visiblePreviews.length;
 										tui.requestRender();
 										return;
 									}
-									if (matchesKey(data, Key.enter)) {
+									if (matchesKey(data, Key.enter) || data === "l") {
 										done(visiblePreviews[selectedPreviewIndex]?.key);
 										return;
 									}
@@ -655,6 +866,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									}
 								},
 								handleMouse(event: TuiMouseEvent) {
+									pendingRootG = false;
 									const row = event.screenY + 1;
 									const col = event.screenX + 1;
 									if (event.type === "wheel") return { handled: true };
@@ -776,9 +988,14 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 
 				if (!action) break;
 				const preview = previewByKey.get(action as PreviewKey);
-				if (!preview) continue;
-
-				await showTextPreview(ctx, preview.title, preview.content);
+                if (!preview) continue;
+                const part = allParts.find((part) => part.label === preview.label)!;
+                const entries = breakdown.items[preview.key];
+                while (true) {
+                    const item = await showCategoryMenu(ctx, part, entries, contextWindow);
+                    if (!item) break;
+                    await showTextPreview(ctx, `${item.source} · ${item.label}`, item.content, item.raw);
+                }
 			}
 		},
 	});

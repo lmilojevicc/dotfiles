@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { wrapRawLines } from "../format.ts";
 import contextUsageExtension, {
 	capParts,
 	collectContextBreakdown,
@@ -238,6 +240,24 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 	assert.equal(hasActiveTextPreview(), false);
 });
 
+test("raw leaf preview wraps a long single line without losing its end", async () => {
+ const ui = textPreviewHarness();
+ const content = "x".repeat(900) + "🙂TAIL";
+ const expected = wrapRawLines(content, 60);
+ assert.equal(expected.join(""), content);
+ const preview = showTextPreview({ ui } as any, "Raw schema", content, true);
+ const first = ui.component.render(64);
+ assert.ok(first.every((line: string) => visibleWidth(line) === 64));
+ assert.match(first.at(-2), /1-13 \/ 16 lines/);
+ ui.component.handleInput("G");
+ const last = ui.component.render(64);
+ assert.ok(last.every((line: string) => visibleWidth(line) === 64));
+ assert.match(last.at(-2), /4-16 \/ 16 lines/);
+ assert.match(last.join("\n"), /🙂TAIL/);
+ ui.component.handleInput("\x1b");
+ await preview;
+});
+
 test("showTextPreview scrollbar supports press and drag", async () => {
 	const ui = textPreviewHarness();
 	const content = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n");
@@ -308,8 +328,13 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 	send(0, 20, 10);
 	send(0, 20, 10, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 2, "category press opens a preview via fullscreen host");
-	const preview = components[1];
+	assert.equal(components.length, 2, "category press opens the second menu via fullscreen host");
+    assert.match(components[1].render(64).join("\n"), /System prompt · unattri/);
+    send(0, 20, 13);
+    send(0, 20, 13, true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(components.length, 3, "submenu press opens a leaf");
+	const preview = components[2];
 	assert.match(preview.render(68).join("\n"), /1-13 \/ 100 lines/);
 	const top = tui.viewportTop;
 	send(65, 25, 10); // wheel down inside preview, not transcript
@@ -327,14 +352,17 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 	send(0, 69, 4);
 	send(0, 69, 4, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
-	assert.equal(components.length, 3, "preview esc returns to main dialog");
-	const main = components[2];
+	assert.equal(components.length, 4, "preview esc returns to submenu");
+    send(0, 67, 9);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(components.length, 5, "submenu esc returns to main dialog");
+	const main = components[4];
 	tui.handleTerminalInput("\x1b[B"); // keyboard navigation still works
 	tui.renderNow();
 	assert.match(main.render(64).join("\n"), /Context Usage/);
-	send(35, 67, 6);
-	assert.match(main.render(64).join("\n"), /\{hover esc\}/);
-	send(0, 67, 6);
+	main.handleMouse({ type: "move", screenX: 66, screenY: 5 });
+    assert.match(main.render(64).join("\n"), /\{hover esc\}/);
+    main.handleInput("\x1b");
 	await run;
 	assert.equal(hasActiveTextPreview(), false);
 	assert.equal(writes.filter((write) => write === "\x1b[?1003h").length, 0,
