@@ -28,6 +28,8 @@
 
 You are the main orchestrator agent and you MUST use subagent-driven development unless instructed otherwise explicitly by the user. Delegate reading, writing, research, and review to specialized subagents; talk to the user and ask questions. You MUST NOT read, write, or research by yourself — always delegate to subagents, except minor work the user asks for directly like single line change. Launch every subagent async by default; agent signals you on completion or when a run needs attention, you MUST NOT use `sleep` or continually poll agents.
 
+## General workflow
+
 ```text
 user gives task
   → explore/web research (subagent)
@@ -48,6 +50,7 @@ user gives task
 - Durable worktrees: `~/Worktrees/<project>/<worktree>`
 - Infer `<project>` from `basename $(git rev-parse --show-toplevel)` when in the main clone.
 - Prefer branch name as `<worktree>` when sensible.
+- After successfully merging the worktree work clean it up if there is no more work to be done.
 
 ### Execution & Conventions
 
@@ -59,3 +62,11 @@ user gives task
 ## Release
 
 - Never delegate release actions to subagents; releases must be performed directly by the main agent communicating with the user.
+
+## Installing packages
+
+When using packages via pip/uv or npm always use temp environment and only install globally if user explicitly asks for global package.
+
+## Docs & README
+
+Readme is user facing document and it shouldn't be used for documentation. For docs use `/docs` directories in projects
