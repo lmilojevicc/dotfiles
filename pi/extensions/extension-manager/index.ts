@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { ExtensionManagerComponent, type ExtensionManagerResult, type ExtensionManagerRow } from "./component.ts";
 import { applyExtensionChanges, type ExtensionChange } from "./state.ts";
 
-export const APPLY_CHOICE = "Apply changes and reload";
+export const SAVE_CHOICE = "Save changes";
 export const CANCEL_CHOICE = "Cancel";
 
 const selfPath = canonicalPath(fileURLToPath(import.meta.url));
@@ -217,10 +217,10 @@ async function openSelectManager(
 		const count = stagedCount(resources, desired);
 		const choice = await ctx.ui.select(
 			count > 0 ? `Extensions (${count} staged)` : "Extensions (select to toggle)",
-			[...choices, APPLY_CHOICE, CANCEL_CHOICE],
+			[...choices, SAVE_CHOICE, CANCEL_CHOICE],
 		);
 		if (choice === undefined || choice === CANCEL_CHOICE) return "cancel";
-		if (choice === APPLY_CHOICE) return "apply";
+		if (choice === SAVE_CHOICE) return "save";
 		const resource = choiceToResource.get(choice);
 		if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);
 	}
@@ -294,24 +294,23 @@ async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 	const result = ctx.mode === "tui"
 		? await openTuiManager(ctx, resources, desired, localFilePackageSources, agentDir)
 		: await openSelectManager(ctx, resources, desired, localFilePackageSources, agentDir);
-	if (result !== "apply") {
+	if (result !== "save") {
 		if (stagedCount(resources, desired) > 0) ctx.ui.notify("Extension changes discarded", "info");
 		return;
 	}
 
 	const changed = await persistChanges(settingsManager, resources, desired, agentDir);
 	if (changed === 0) {
-		ctx.ui.notify("No extension changes to apply", "info");
+		ctx.ui.notify("No extension changes to save", "info");
 		return;
 	}
-	ctx.ui.notify(`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reloading`, "info");
-	await ctx.reload();
+	ctx.ui.notify(`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reload Pi for changes to take effect`, "info");
 }
 
 export default function extensionManager(pi: ExtensionAPI): void {
 	let opening = false;
 	pi.registerCommand("extensions-manager", {
-		description: "Enable or disable global extensions, then reload Pi",
+		description: "Save global extension settings (reload Pi to apply)",
 		handler: async (_args, ctx) => {
 			if (opening) return;
 			opening = true;

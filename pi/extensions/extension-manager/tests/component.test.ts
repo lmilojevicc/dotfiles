@@ -23,7 +23,7 @@ const row = (name: string, options: Partial<ExtensionManagerRow> = {}): Extensio
 	...options,
 });
 
-function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initialWidth = 100, theme = plainTheme) {
+function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initialWidth = 100, theme = plainTheme, keybindings = keys()) {
 	const desired = new Map(rows.map((item) => [item.id, item.enabled]));
 	const done: ExtensionManagerResult[] = [];
 	let changed = 0;
@@ -31,7 +31,7 @@ function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initial
 	const component = new ExtensionManagerComponent({
 		rows,
 		theme: theme as never,
-		keybindings: keys(),
+		keybindings,
 		getHeight: () => terminal.height,
 		getWidth: () => terminal.width,
 		getTerminalHeight: () => terminal.height,
@@ -136,15 +136,15 @@ test("navigation wraps, pages clamp, and actions stay outside filtering", () => 
 	assert.equal(component.getSelectedRow(), rows[5]);
 	component.handleInput("no-match");
 	assert.equal(component.getFilteredRows().length, 0);
-	assert.equal(component.getSelectedKind(), "apply");
+	assert.equal(component.getSelectedKind(), "save");
 	assert.match(component.render(80).join("\n"), /No matching extensions/);
-	assert.match(component.render(80).join("\n"), /Apply changes and reload/);
+	assert.match(component.render(80).join("\n"), /Save changes/);
 	component.handleInput(down);
 	component.handleInput(enter);
 	assert.deepEqual(done, ["cancel"]);
 });
 
-test("toggles remain staged across searches and Apply returns all staged state", () => {
+test("toggles remain staged across searches and Save returns all staged state", () => {
 	const rows = [row("alpha"), row("beta"), row("gamma")];
 	const { component, desired, done } = setup(rows);
 	component.handleInput(enter);
@@ -155,9 +155,61 @@ test("toggles remain staged across searches and Apply returns all staged state",
 	assert.equal(desired.get(rows[1].id), false);
 	assert.match(component.render(100).join("\n"), /Extensions \(2 staged\)/);
 	component.handleInput(down);
-	assert.equal(component.getSelectedKind(), "apply");
+	assert.equal(component.getSelectedKind(), "save");
 	component.handleInput(enter);
-	assert.deepEqual(done, ["apply"]);
+	assert.deepEqual(done, ["save"]);
+});
+
+test("bare s saves from an extension row without toggling and is shown in the footer", () => {
+	const rows = [row("alpha"), row("beta")];
+	const { component, desired, done } = setup(rows);
+	component.handleInput(down);
+	assert.match(component.render(100).join("\n"), /Save changes/);
+	assert.match(component.render(100).join("\n"), /s save/);
+	component.handleInput("s");
+	assert.deepEqual(done, ["save"]);
+	assert.equal(desired.get(rows[1].id), true);
+	assert.equal(component.getQuery(), "");
+	component.handleInput(enter);
+	assert.deepEqual(done, ["save"], "a completed overlay ignores further input");
+});
+
+test("bare s saves even when Cancel is selected", () => {
+	const { component, done } = setup([row("alpha")]);
+	component.handleInput(up);
+	assert.equal(component.getSelectedKind(), "cancel");
+	component.handleInput("s");
+	assert.deepEqual(done, ["save"]);
+});
+
+test("bare s saves with a nonempty or unmatched search query", () => {
+	const rows = [row("alpha"), row("beta")];
+	for (const query of ["alpha", "no-match"]) {
+		const { component, done } = setup(rows);
+		component.handleInput(query);
+		component.render(100);
+		component.handleInput("s");
+		assert.equal(component.getQuery(), query, "s is reserved for save rather than search");
+		assert.deepEqual(done, ["save"]);
+	}
+});
+
+test("bare s takes precedence over a remapped cancel=s only on a usable frame", () => {
+	const bindings = () => new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": "s" });
+	const rows = [row("alpha")];
+	const ready = setup(rows, 19, 100, plainTheme, bindings());
+	ready.component.handleInput("s");
+	assert.deepEqual(ready.done, ["save"]);
+	assert.equal(ready.desired.get(rows[0].id), true);
+
+	const stale = setup(rows, 19, 100, plainTheme, bindings());
+	stale.terminal.width = 24;
+	stale.component.handleInput("s");
+	assert.deepEqual(stale.done, ["cancel"], "stale frames cannot save");
+
+	const resizeRequired = setup(rows, 19, 20, plainTheme, bindings());
+	resizeRequired.component.handleInput("s");
+	assert.deepEqual(resizeRequired.done, ["cancel"], "Resize required frames cannot save");
 });
 
 for (const [name, space] of [["raw", " "], ["Kitty CSI-u", "\x1b[32u"]] as const) {
@@ -176,16 +228,31 @@ for (const [name, space] of [["raw", " "], ["Kitty CSI-u", "\x1b[32u"]] as const
 	});
 }
 
-test("resize recomputes framed capacity and stale frames cannot toggle or apply", () => {
+test("resize recomputes framed capacity and stale frames cannot toggle or save", () => {
 	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
 	const { component, desired, terminal } = setup(rows, 19, 80);
 	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 10);
 	terminal.height = 13;
+	component.handleInput("s");
+	assert.equal(component.getQuery(), "");
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), true);
 	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 4);
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), false);
+});
+
+test("save is unavailable on stale or Resize required frames but cancel remains available", () => {
+	const rows = [row("alpha")];
+	const { component, done, terminal } = setup(rows);
+	terminal.width = 24;
+	component.handleInput("s");
+	assert.deepEqual(done, []);
+	component.render(24);
+	component.handleInput("s");
+	assert.deepEqual(done, []);
+	component.handleInput(escape);
+	assert.deepEqual(done, ["cancel"]);
 });
 
 test("feasible Resize required layouts use a compact themed frame without enabling actions", () => {
@@ -217,7 +284,7 @@ test("feasible Resize required layouts use a compact themed frame without enabli
 
 	const blocked = setup([disabled], 19, 80);
 	blocked.component.handleInput(down);
-	assert.equal(blocked.component.getSelectedKind(), "apply");
+	assert.equal(blocked.component.getSelectedKind(), "save");
 	blocked.terminal.width = 24;
 	blocked.terminal.height = 17;
 	blocked.component.render(24);

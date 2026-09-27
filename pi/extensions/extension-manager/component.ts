@@ -18,7 +18,7 @@ export type ExtensionManagerRow = {
 	lock?: "required" | "local-file-package";
 };
 
-export type ExtensionManagerResult = "apply" | "cancel";
+export type ExtensionManagerResult = "save" | "cancel";
 
 type Options = {
 	rows: readonly ExtensionManagerRow[];
@@ -75,8 +75,8 @@ export class ExtensionManagerComponent implements Component, Focusable {
 
 	getQuery(): string { return this.input.getValue(); }
 	getFilteredRows(): readonly ExtensionManagerRow[] { return this.filtered; }
-	getSelectedKind(): "extension" | "apply" | "cancel" {
-		return this.selected < this.filtered.length ? "extension" : this.selected === this.filtered.length ? "apply" : "cancel";
+	getSelectedKind(): "extension" | "save" | "cancel" {
+		return this.selected < this.filtered.length ? "extension" : this.selected === this.filtered.length ? "save" : "cancel";
 	}
 	getSelectedRow(): ExtensionManagerRow | undefined { return this.filtered[this.selected]; }
 
@@ -105,6 +105,11 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const usable = this.usable && this.options.getHeight() === this.renderedHeight &&
 			this.options.getWidth?.() === this.renderedTerminalWidth &&
 			this.options.getTerminalHeight?.() === this.renderedTerminalHeight;
+		if (usable && matchesKey(data, "s")) {
+			this.dispose();
+			this.options.onDone("save");
+			return;
+		}
 		if (kb.matches(data, "tui.select.cancel")) {
 			this.dispose();
 			this.options.onDone("cancel");
@@ -201,13 +206,13 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		}
 		lines.push(bordered(theme.fg("borderMuted", clip(down, contentWidth))));
 
-		const action = (kind: "apply" | "cancel", label: string): string => {
+		const action = (kind: "save" | "cancel", label: string): string => {
 			const active = this.getSelectedKind() === kind;
 			return clip(`${active ? theme.fg("accent", "›") : " "} ${active ? theme.bold(label) : label}`, contentWidth);
 		};
-		lines.push(bordered(action("apply", "Apply changes and reload")), bordered(action("cancel", "Cancel")));
-		const fullHint = `Type search · ↑↓ move · ${primaryHint}`;
-		const moveHint = `↑↓ move · ${primaryHint}`;
+		lines.push(bordered(action("save", "Save changes")), bordered(action("cancel", "Cancel")));
+		const fullHint = `Type search · ↑↓ move · s save · ${primaryHint}`;
+		const moveHint = `↑↓ move · s save · ${primaryHint}`;
 		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : primaryHint;
 		lines.push(bordered(theme.fg("dim", footer)));
 		lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
