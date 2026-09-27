@@ -97,7 +97,7 @@ test("rounded frame uses themed borders, one-cell padding, and exact ANSI-safe w
 	const { component } = setup(rows, 19, 64, ansiTheme);
 	const lines = component.render(64);
 
-	assert.equal(lines.length, 19);
+	assert.equal(lines.length, 17);
 	assert.ok(calls.some(({ role, value }) => role === "border" && /^╭─+╮$/.test(value)));
 	assert.ok(calls.some(({ role, value }) => role === "border" && value === "│"));
 	assert.ok(calls.some(({ role, value }) => role === "border" && /^╰─+╯$/.test(value)));
@@ -113,38 +113,53 @@ test("rounded frame uses themed borders, one-cell padding, and exact ANSI-safe w
 	}
 });
 
+test("footer keeps s Save visible at narrow usable widths without action rows", () => {
+	const rows = [row("alpha"), row("beta")];
+	for (const width of [24, 30, 35, 64]) {
+		const { component, done } = setup(rows, 10, width);
+		const lines = component.render(width);
+		assert.ok(lines.at(-2)?.includes("s Save"), `${width}: ${lines.at(-2)}`);
+		assert.doesNotMatch(lines.join("\n"), /Save changes|│\s*›?\s*Cancel\s*│/);
+		for (const line of lines) assert.equal(visibleWidth(line), width);
+		component.handleInput("s");
+		assert.deepEqual(done, ["save"]);
+	}
+});
+
 test("frame accounting preserves adaptive one-to-ten-row list capacity", () => {
 	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
-	for (const [height, count] of [[10, 1], [13, 4], [19, 10]] as const) {
+	for (const [height, count, linesExpected] of [[10, 3, 10], [13, 6, 13], [19, 10, 17]] as const) {
 		const { component } = setup(rows, height, 80);
 		const lines = component.render(80);
-		assert.equal(lines.length, height);
+		assert.equal(lines.length, linesExpected);
 		assert.equal(lines.join("\n").match(/\[[ x]\]/g)?.length, count);
 		assert.equal(visibleWidth(lines[0]), 80);
 		assert.equal(visibleWidth(lines.at(-1)!), 80);
 	}
 });
 
-test("navigation wraps, pages clamp, and actions stay outside filtering", () => {
+test("navigation wraps among extensions, pages clamp, and empty filters have no action rows", () => {
 	const rows = Array.from({ length: 12 }, (_, index) => row(`item-${index}`));
 	const { component, done } = setup(rows, 14);
 	component.handleInput(up);
-	assert.equal(component.getSelectedKind(), "cancel");
+	assert.equal(component.getSelectedRow(), rows.at(-1));
 	component.handleInput(down);
-	assert.equal(component.getSelectedKind(), "extension");
+	assert.equal(component.getSelectedRow(), rows[0]);
 	component.handleInput(pageDown);
-	assert.equal(component.getSelectedRow(), rows[5]);
+	assert.equal(component.getSelectedRow(), rows[7]);
 	component.handleInput("no-match");
 	assert.equal(component.getFilteredRows().length, 0);
-	assert.equal(component.getSelectedKind(), "save");
-	assert.match(component.render(80).join("\n"), /No matching extensions/);
-	assert.match(component.render(80).join("\n"), /Save changes/);
+	const output = component.render(80).join("\n");
+	assert.match(output, /No matching extensions/);
+	assert.doesNotMatch(output, /Save changes|│\s*›?\s*Cancel\s*│/);
 	component.handleInput(down);
 	component.handleInput(enter);
+	assert.deepEqual(done, []);
+	component.handleInput(escape);
 	assert.deepEqual(done, ["cancel"]);
 });
 
-test("toggles remain staged across searches and Save returns all staged state", () => {
+test("toggles remain staged across searches and s saves from the last filtered extension", () => {
 	const rows = [row("alpha"), row("beta"), row("gamma")];
 	const { component, desired, done } = setup(rows);
 	component.handleInput(enter);
@@ -155,17 +170,18 @@ test("toggles remain staged across searches and Save returns all staged state", 
 	assert.equal(desired.get(rows[1].id), false);
 	assert.match(component.render(100).join("\n"), /Extensions \(2 staged\)/);
 	component.handleInput(down);
-	assert.equal(component.getSelectedKind(), "save");
-	component.handleInput(enter);
+	assert.equal(component.getSelectedRow(), rows[1], "single-result navigation cannot reach an action row");
+	component.handleInput("s");
 	assert.deepEqual(done, ["save"]);
 });
 
-test("bare s saves from an extension row without toggling and is shown in the footer", () => {
+test("bare s saves from the last extension without toggling and is shown in the footer", () => {
 	const rows = [row("alpha"), row("beta")];
 	const { component, desired, done } = setup(rows);
 	component.handleInput(down);
-	assert.match(component.render(100).join("\n"), /Save changes/);
-	assert.match(component.render(100).join("\n"), /s save/);
+	const rendered = component.render(100).join("\n");
+	assert.doesNotMatch(rendered, /Save changes|│\s*›?\s*Cancel\s*│/);
+	assert.match(rendered, /s Save/);
 	component.handleInput("s");
 	assert.deepEqual(done, ["save"]);
 	assert.equal(desired.get(rows[1].id), true);
@@ -174,10 +190,11 @@ test("bare s saves from an extension row without toggling and is shown in the fo
 	assert.deepEqual(done, ["save"], "a completed overlay ignores further input");
 });
 
-test("bare s saves even when Cancel is selected", () => {
-	const { component, done } = setup([row("alpha")]);
+test("bare s saves when navigation wraps to the last extension", () => {
+	const rows = [row("alpha"), row("beta")];
+	const { component, done } = setup(rows);
 	component.handleInput(up);
-	assert.equal(component.getSelectedKind(), "cancel");
+	assert.equal(component.getSelectedRow(), rows[1]);
 	component.handleInput("s");
 	assert.deepEqual(done, ["save"]);
 });
@@ -203,7 +220,7 @@ test("bare s takes precedence over a remapped cancel=s only on a usable frame", 
 	assert.equal(ready.desired.get(rows[0].id), true);
 
 	const stale = setup(rows, 19, 100, plainTheme, bindings());
-	stale.terminal.width = 24;
+	stale.terminal.width = 20;
 	stale.component.handleInput("s");
 	assert.deepEqual(stale.done, ["cancel"], "stale frames cannot save");
 
@@ -237,7 +254,7 @@ test("resize recomputes framed capacity and stale frames cannot toggle or save",
 	assert.equal(component.getQuery(), "");
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), true);
-	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 4);
+	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 6);
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), false);
 });
@@ -245,10 +262,10 @@ test("resize recomputes framed capacity and stale frames cannot toggle or save",
 test("save is unavailable on stale or Resize required frames but cancel remains available", () => {
 	const rows = [row("alpha")];
 	const { component, done, terminal } = setup(rows);
-	terminal.width = 24;
+	terminal.width = 20;
 	component.handleInput("s");
 	assert.deepEqual(done, []);
-	component.render(24);
+	component.render(20);
 	component.handleInput("s");
 	assert.deepEqual(done, []);
 	component.handleInput(escape);
@@ -257,7 +274,7 @@ test("save is unavailable on stale or Resize required frames but cancel remains 
 
 test("feasible Resize required layouts use a compact themed frame without enabling actions", () => {
 	const disabled = row("disabled", { enabled: false });
-	for (const [width, height] of [[35, 8], [24, 17]] as const) {
+	for (const [width, height] of [[35, 8], [20, 17]] as const) {
 		const { component } = setup([disabled], height, width);
 		const lines = component.render(width);
 		assert.equal(lines.length, 4);
@@ -284,10 +301,10 @@ test("feasible Resize required layouts use a compact themed frame without enabli
 
 	const blocked = setup([disabled], 19, 80);
 	blocked.component.handleInput(down);
-	assert.equal(blocked.component.getSelectedKind(), "save");
-	blocked.terminal.width = 24;
+	assert.equal(blocked.component.getSelectedRow(), disabled);
+	blocked.terminal.width = 20;
 	blocked.terminal.height = 17;
-	blocked.component.render(24);
+	blocked.component.render(20);
 	blocked.component.handleInput(enter);
 	assert.equal(blocked.desired.get(disabled.id), false);
 	assert.deepEqual(blocked.done, []);

@@ -75,28 +75,18 @@ export class ExtensionManagerComponent implements Component, Focusable {
 
 	getQuery(): string { return this.input.getValue(); }
 	getFilteredRows(): readonly ExtensionManagerRow[] { return this.filtered; }
-	getSelectedKind(): "extension" | "save" | "cancel" {
-		return this.selected < this.filtered.length ? "extension" : this.selected === this.filtered.length ? "save" : "cancel";
-	}
 	getSelectedRow(): ExtensionManagerRow | undefined { return this.filtered[this.selected]; }
 
-	private selectableCount(): number { return this.filtered.length + 2; }
-
 	private move(delta: number, page = false): void {
-		const count = this.selectableCount();
+		const count = this.filtered.length;
+		if (count === 0) return;
 		if (page) this.selected = Math.max(0, Math.min(count - 1, this.selected + delta));
 		else this.selected = (this.selected + delta + count) % count;
 	}
 
 	private activate(): void {
 		const row = this.getSelectedRow();
-		if (row) {
-			this.options.onToggle(row);
-			return;
-		}
-		const result = this.getSelectedKind();
-		this.dispose();
-		this.options.onDone(result);
+		if (row) this.options.onToggle(row);
 	}
 
 	handleInput(data: string): void {
@@ -153,10 +143,11 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelName = cancelKey === "escape" ? "Esc" : cancelKey;
 		const confirmName = confirmKey === "enter" ? "Enter" : confirmKey;
-		const primaryHint = `${confirmName} act · ${cancelName} cancel`;
+		const compactHint = `s Save · ${cancelName} cancel`;
+		const actionHint = `s Save · ${confirmName} toggle · ${cancelName} cancel`;
 		const contentWidth = Math.max(0, width - 4);
 		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
-		if (width < 24 || height < 10 || visibleWidth(primaryHint) > contentWidth) {
+		if (width < 24 || height < 10 || visibleWidth(compactHint) > contentWidth) {
 			if (width >= 4 && height >= 3) {
 				const lines = [
 					theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
@@ -176,7 +167,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const title = staged > 0 ? `Extensions (${staged} staged)` : "Extensions";
 		const searchPrefix = theme.fg("muted", "Search: ");
 		const search = searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
-		const bodyRows = Math.min(10, Math.max(1, height - 9), Math.max(1, this.options.rows.length));
+		const bodyRows = Math.min(10, Math.max(1, height - 7), Math.max(1, this.options.rows.length));
 		this.pageSize = bodyRows;
 		const selectedExtension = this.filtered.length === 0 ? 0 : Math.min(this.selected, this.filtered.length - 1);
 		const { start, end } = extensionViewport(selectedExtension, this.filtered.length, bodyRows);
@@ -206,14 +197,9 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		}
 		lines.push(bordered(theme.fg("borderMuted", clip(down, contentWidth))));
 
-		const action = (kind: "save" | "cancel", label: string): string => {
-			const active = this.getSelectedKind() === kind;
-			return clip(`${active ? theme.fg("accent", "›") : " "} ${active ? theme.bold(label) : label}`, contentWidth);
-		};
-		lines.push(bordered(action("save", "Save changes")), bordered(action("cancel", "Cancel")));
-		const fullHint = `Type search · ↑↓ move · s save · ${primaryHint}`;
-		const moveHint = `↑↓ move · s save · ${primaryHint}`;
-		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : primaryHint;
+		const fullHint = `s Save · Type search · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const moveHint = `s Save · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : visibleWidth(actionHint) <= contentWidth ? actionHint : compactHint;
 		lines.push(bordered(theme.fg("dim", footer)));
 		lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
 		return lines.slice(0, height).map((line) => clip(line));

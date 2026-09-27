@@ -334,7 +334,7 @@ test("TUI saves staged toggles across single-result filters", async () => {
 	writeExtension("qqqqqqqq");
 	writeFileSync(join(agentDir, "settings.json"), "{}");
 
-	// Save directly from a filtered extension row without navigating to the action.
+	// Save directly from a filtered extension row without an action row.
 	const inputs = ["aaaaaaaa", "\r", ...Array.from({ length: 8 }, () => "\x7f"), "qqqqqqqq", "\r", "s"];
 	const result = await runTuiCommand(inputs);
 	assert.equal(result.customCount, 1);
@@ -347,9 +347,9 @@ test("TUI saves staged toggles across single-result filters", async () => {
 	]);
 });
 
-test("TUI bottom Save changes action persists staged changes without runtime reload", async () => {
+test("TUI s on the last extension persists staged changes without runtime reload", async () => {
 	writeExtension("first");
-	const result = await runTuiCommand(["\r", "\x1b[B", "\r"]);
+	const result = await runTuiCommand(["\r", "\x1b[B", "s"]);
 	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
 		"-extensions/first/index.ts",
 	]);

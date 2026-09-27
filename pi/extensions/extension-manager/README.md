@@ -5,13 +5,13 @@
 1. Run `/extensions-manager`.
 2. Type to search by extension source or path. Use Pi's configured selection keys (normally Up/Down and Page Up/Page Down) to navigate.
 3. Press Enter on an extension to stage a toggle. Space also toggles while the search field is empty.
-4. In the TUI, press bare `s` from any row or search query to save immediately, or select **Save changes** at the bottom. In RPC, select **Save changes**. Bare `s` is reserved for saving and cannot be typed into the search field as a raw key. On a usable menu it saves even if cancel is remapped to `s`; stale or resize-required frames still cannot save.
+4. In the TUI, press bare `s` from any extension or search query to save immediately; the on-screen footer shows **s Save**. In RPC, select **Save changes** (RPC selection does not accept arbitrary keypresses). Bare `s` is reserved for saving and cannot be typed into the search field as a raw key. On a usable menu it saves even if cancel is remapped to `s`; stale or resize-required frames still cannot save.
 
 The menu includes extensions auto-discovered under `~/.pi/agent/extensions/` and extensions supplied by globally installed Pi packages. It writes Pi's native resource filters to `~/.pi/agent/settings.json` through `SettingsManager`. Reload Pi after saving for the changes to take effect; the current runtime is not reloaded automatically. Existing unrelated resource patterns and package filters for skills, prompts, and themes are preserved.
 
 The list stays compact as the terminal changes size and shows exact `↑ N more` / `↓ N more` counts for matching extensions outside the viewport. Filtering does not discard staged toggles.
 
-The manager marks itself as required and cannot disable itself. This keeps `/extensions-manager` available for re-enabling anything previously disabled. Press Escape (or the configured cancel binding) or select **Cancel** to discard staged changes.
+The manager marks itself as required and cannot disable itself. This keeps `/extensions-manager` available for re-enabling anything previously disabled. In the TUI, press Escape (or the configured cancel binding) to discard staged changes; in RPC, select **Cancel**.
 
 Pi does not apply package resource filters when a package source points directly to a local file. The menu marks those rows unavailable and will not pretend to save a toggle; configure the source as a directory package if it needs per-extension filtering.
 
