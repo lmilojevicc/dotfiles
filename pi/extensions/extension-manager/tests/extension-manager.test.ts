@@ -208,7 +208,7 @@ function registerExtensionCommand(): RegisteredCommand {
 	let command: RegisteredCommand | undefined;
 	extensionManager({
 		registerCommand(name: string, value: RegisteredCommand) {
-			assert.equal(name, "extensions");
+			assert.equal(name, "extensions-manager");
 			command = value;
 		},
 	} as never);
@@ -361,7 +361,7 @@ test("non-UI mode rejects the command instead of silently opening a custom UI", 
 	writeExtension("first");
 	const command = registerExtensionCommand();
 	const ctx = { cwd: agentDir, hasUI: false, mode: "json" } as unknown as ExtensionCommandContext;
-	await assert.rejects(command.handler("", ctx), /requires interactive or RPC UI mode/);
+	await assert.rejects(command.handler("", ctx), /\/extensions-manager requires interactive or RPC UI mode/);
 });
 
 test("the slash command stages multiple local toggles, applies them, and can re-enable them", async () => {

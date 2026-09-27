@@ -280,7 +280,7 @@ async function openTuiManager(
 }
 
 async function openManager(ctx: ExtensionCommandContext): Promise<void> {
-	if (!ctx.hasUI) throw new Error("/extensions requires interactive or RPC UI mode");
+	if (!ctx.hasUI) throw new Error("/extensions-manager requires interactive or RPC UI mode");
 
 	const { settingsManager, resources, localFilePackageSources, agentDir } = await loadGlobalExtensions(ctx);
 	if (resources.length === 0) {
@@ -310,7 +310,7 @@ async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 
 export default function extensionManager(pi: ExtensionAPI): void {
 	let opening = false;
-	pi.registerCommand("extensions", {
+	pi.registerCommand("extensions-manager", {
 		description: "Enable or disable global extensions, then reload Pi",
 		handler: async (_args, ctx) => {
 			if (opening) return;

@@ -13,7 +13,7 @@
 | [codex-enhanced](extensions/codex-enhanced/README.md) | Codex quota, banked resets, and Fast processing | `/codex-enhanced` | `npm test` |
 | [context](extensions/context/README.md) | Context-window usage breakdown and previews | `/context` | `npm test` |
 | [command-code](extensions/command-code/README.md) | Command Code provider, model catalogue, and account usage | Select a `command-code/...` model; `/command-code-usage` | `npm test` |
-| [extension-manager](extensions/extension-manager/README.md) | Enable or disable global extensions without deleting or uninstalling them | `/extensions` | `npm test` |
+| [extension-manager](extensions/extension-manager/README.md) | Enable or disable global extensions without deleting or uninstalling them | `/extensions-manager` | `npm test` |
 | [terminal-focus-cursor](extensions/terminal-focus-cursor/README.md) | Hide the editor cursor when its terminal pane is unfocused | TUI under Herdr (`HERDR_ENV=1`) or tmux (`TMUX`) | `npm test` |
 | [tasks](extensions/tasks/README.md) | Session-branch-native task tracking with atomic batches, management menus, and a read-only board | `todo`; `/tasks`, `/todos`, or `/tasks-board`; `Ctrl+Shift+T` | `npm test` |
 | [model-instructions](extensions/model-instructions/README.md) | JSON-configured instructions for the active model | Automatic; edit `instructions.json` beside the extension | `npm test` |
