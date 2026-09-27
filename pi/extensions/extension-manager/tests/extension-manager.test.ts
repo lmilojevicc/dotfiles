@@ -217,13 +217,15 @@ function registerExtensionCommand(): RegisteredCommand {
 }
 
 async function runCommand(
-	selections: Array<string | ((choices: string[]) => string | undefined)>,
+	selections: Array<string | undefined | ((choices: string[]) => string | undefined)>,
 	cwd = agentDir,
-): Promise<{ reloadCount: number; notifications: string[]; titles: string[] }> {
+	confirmations: boolean[] = [],
+): Promise<{ reloadCount: number; notifications: string[]; titles: string[]; prompts: string[] }> {
 	const command = registerExtensionCommand();
 	let reloadCount = 0;
 	const notifications: string[] = [];
 	const titles: string[] = [];
+	const prompts: string[] = [];
 	const ctx = {
 		cwd,
 		hasUI: true,
@@ -233,6 +235,12 @@ async function runCommand(
 				titles.push(title);
 				const selection = selections.shift();
 				return typeof selection === "function" ? selection(choices) : selection;
+			},
+			async confirm(title: string, message: string) {
+				prompts.push(`${title}: ${message}`);
+				const answer = confirmations.shift();
+				assert.notEqual(answer, undefined, "unexpected discard confirmation");
+				return answer;
 			},
 			notify(message: string) {
 				notifications.push(message);
@@ -244,7 +252,7 @@ async function runCommand(
 	} as unknown as ExtensionCommandContext;
 
 	await command.handler("", ctx);
-	return { reloadCount, notifications, titles };
+	return { reloadCount, notifications, titles, prompts };
 }
 
 type CapturedCustomOptions = {
@@ -259,11 +267,13 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 	selectCount: number;
 	customOptions: CapturedCustomOptions | undefined;
 	terminal: { rows: number; columns: number };
+	frames: string[];
 }> {
 	const command = registerExtensionCommand();
 	let reloadCount = 0, customCount = 0, selectCount = 0;
 	let customOptions: CapturedCustomOptions | undefined;
 	const notifications: string[] = [];
+	const frames: string[] = [];
 	const theme = {
 		fg: (_color: string, value: string) => value,
 		bold: (value: string) => value,
@@ -287,10 +297,10 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 					return tui.terminal.columns;
 				};
 				component.focused = true;
-				component.render(renderWidth());
+				frames.push(component.render(renderWidth()).join("\n"));
 				for (const input of inputs) {
 					component.handleInput(input);
-					component.render(renderWidth());
+					frames.push(component.render(renderWidth()).join("\n"));
 				}
 				return result;
 			},
@@ -300,7 +310,7 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 		async reload() { reloadCount++; },
 	} as unknown as ExtensionCommandContext;
 	await command.handler("", ctx);
-	return { reloadCount, notifications, customCount, selectCount, customOptions, terminal: tui.terminal };
+	return { reloadCount, notifications, customCount, selectCount, customOptions, terminal: tui.terminal, frames };
 }
 
 function writeExtension(name: string): void {
@@ -371,10 +381,38 @@ test("TUI cancel discards staged changes without saving or reloading", async () 
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
 	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
-	const result = await runTuiCommand(["\r", "\x1b"]);
+	const result = await runTuiCommand(["\r", "\x1b", "\x1b", "\x1b", "\x1b[B", "\r"]);
+	assert.match(result.frames[2], /› Keep editing/);
+	assert.match(result.frames[4], /› Keep editing/);
 	assert.equal(result.reloadCount, 0);
 	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
 	assert.ok(result.notifications.includes("Extension changes discarded"));
+});
+
+test("TUI clean and toggled-back cancel exit without a confirmation", async () => {
+	writeExtension("first");
+	const settingsPath = join(agentDir, "settings.json");
+	writeFileSync(settingsPath, "{}\n");
+	for (const inputs of [["\x1b"], ["\r", "\r", "\x1b"]]) {
+		const result = await runTuiCommand(inputs);
+		assert.ok(result.frames.every((frame) => !frame.includes("Discard changes")));
+		assert.deepEqual(result.notifications, []);
+		assert.equal(result.reloadCount, 0);
+		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
+	}
+});
+
+test("TUI keeps filtered draft after declining discard and can still save it", async () => {
+	writeExtension("first");
+	writeExtension("second");
+	const result = await runTuiCommand(["first", "\r", "\x1b", "\r", "s"]);
+	assert.match(result.frames[3], /› Keep editing/);
+	assert.match(result.frames[4], /Search: > first/);
+	assert.match(result.frames[4], /Extensions \(1 staged\)/);
+	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions,
+		["-extensions/first/index.ts"]);
+	assert.equal(result.reloadCount, 0);
+	assert.deepEqual(result.notifications, ["Saved 1 extension change; reload Pi for changes to take effect"]);
 });
 
 test("non-UI mode rejects the command instead of silently opening a custom UI", async () => {
@@ -443,11 +481,54 @@ test("cancel discards all staged changes without writing or reloading", async ()
 		(choices) => choices.find((choice) => choice.includes("first/index.ts")),
 		(choices) => choices.find((choice) => choice.includes("second/index.ts")),
 		CANCEL_CHOICE,
-	]);
+	], agentDir, [true]);
 
+	assert.equal(result.prompts.length, 1);
 	assert.equal(readFileSync(join(agentDir, "settings.json"), "utf8"), originalSettings);
 	assert.equal(result.reloadCount, 0);
 	assert.ok(result.notifications.includes("Extension changes discarded"));
+});
+
+test("RPC cancellation confirms only net changes, and No resumes the same draft", async () => {
+	writeExtension("first");
+	writeExtension("second");
+	const settingsPath = join(agentDir, "settings.json");
+	writeFileSync(settingsPath, "{}\n");
+	for (const cancellation of [undefined, CANCEL_CHOICE]) {
+		const clean = await runCommand([cancellation]);
+		assert.deepEqual(clean.prompts, []);
+		const back = await runCommand([
+			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+			cancellation,
+		]);
+		assert.deepEqual(back.prompts, []);
+		const resumed = await runCommand([
+			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+			cancellation,
+			(titleChoices) => {
+				assert.match(titleChoices.find((choice) => choice.includes("first/index.ts")) ?? "", /^\[ \]/);
+				return titleChoices.find((choice) => choice.includes("second/index.ts"));
+			},
+			cancellation,
+			SAVE_CHOICE,
+		], agentDir, [false, false]);
+		assert.equal(resumed.prompts.length, 2);
+		assert.ok(resumed.prompts.every((prompt) => prompt.includes("Discard staged changes?")));
+		assert.ok(resumed.titles.includes("Extensions (1 staged)"));
+		assert.ok(resumed.titles.includes("Extensions (2 staged)"));
+		assert.equal(resumed.reloadCount, 0);
+		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions,
+			["-extensions/first/index.ts", "-extensions/second/index.ts"]);
+		writeFileSync(settingsPath, "{}\n");
+		const confirmed = await runCommand([
+			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+			cancellation,
+		], agentDir, [true]);
+		assert.equal(confirmed.prompts.length, 1);
+		assert.deepEqual(confirmed.notifications, ["Extension changes discarded"]);
+		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
+	}
 });
 
 test("project-local resources and settings stay outside the global menu", async () => {
@@ -725,6 +806,39 @@ test("a persistence lock failure is surfaced and suppresses reload", async () =>
 	assert.equal(readFileSync(settingsPath, "utf8"), "{}");
 	assert.equal(result.reloadCount, 0);
 	assert.ok(result.notifications.some((message) => /Could not save extension settings.*lock/i.test(message)));
+});
+
+test("initial self-manager repair is dirty and asks before RPC cancellation", async () => {
+	const managerDirectory = join(agentDir, "extensions", "extension-manager");
+	mkdirSync(managerDirectory, { recursive: true });
+	const managerPath = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
+	symlinkSync(managerPath, join(managerDirectory, "index.ts"));
+	const settingsPath = join(agentDir, "settings.json");
+	const initial = JSON.stringify({ extensions: ["-extensions/extension-manager/index.ts"] });
+	writeFileSync(settingsPath, initial);
+	const result = await runCommand([CANCEL_CHOICE, SAVE_CHOICE], agentDir, [false]);
+	assert.equal(result.prompts.length, 1);
+	assert.ok(result.titles.every((title) => title === "Extensions (1 staged)"));
+	assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions,
+		["+extensions/extension-manager/index.ts"]);
+	assert.equal(result.reloadCount, 0);
+});
+
+test("initial self-manager repair prompts on TUI cancel even without a toggle", async () => {
+	const managerDirectory = join(agentDir, "extensions", "extension-manager");
+	mkdirSync(managerDirectory, { recursive: true });
+	const managerPath = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
+	symlinkSync(managerPath, join(managerDirectory, "index.ts"));
+	const settingsPath = join(agentDir, "settings.json");
+	const initial = JSON.stringify({ extensions: ["-extensions/extension-manager/index.ts"] });
+	writeFileSync(settingsPath, initial);
+	const result = await runTuiCommand(["\x1b", "\x1b", "\x1b", "\x1b[B", "\r"]);
+	assert.match(result.frames[0], /Extensions \(1 staged\)/);
+	assert.match(result.frames[1], /› Keep editing/);
+	assert.match(result.frames[2], /Extensions \(1 staged\)/);
+	assert.deepEqual(result.notifications, ["Extension changes discarded"]);
+	assert.equal(readFileSync(settingsPath, "utf8"), initial);
+	assert.equal(result.reloadCount, 0);
 });
 
 test("a stale self-disable setting is repaired before saving", async () => {

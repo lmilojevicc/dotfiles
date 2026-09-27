@@ -345,6 +345,104 @@ test("tiny layouts remain cancellable; focus, clipping, and Unicode widths are s
 	assert.ok(focused.component.render(80).every((line) => !line.includes(CURSOR_MARKER)));
 });
 
+test("clean cancel exits directly; toggling back removes the discard prompt", () => {
+	const rows = [row("alpha")];
+	const clean = setup(rows);
+	clean.component.handleInput(escape);
+	assert.deepEqual(clean.done, ["cancel"]);
+	const back = setup(rows);
+	back.component.handleInput(enter);
+	back.component.handleInput(enter);
+	assert.equal(back.desired.get(rows[0].id), true);
+	back.component.handleInput(escape);
+	assert.deepEqual(back.done, ["cancel"]);
+});
+
+test("dirty cancel keeps the draft, search, and selection until explicit discard", () => {
+	const rows = [row("alpha"), row("beta"), row("gamma")];
+	const { component, desired, done } = setup(rows);
+	component.handleInput(enter);
+	component.handleInput("beta");
+	component.handleInput(escape);
+	let frame = component.render(100).join("\n");
+	assert.match(frame, /Discard 1 staged change\?/);
+	assert.match(frame, /› Keep editing/);
+	assert.match(frame, /Discard changes/);
+	component.handleInput("s");
+	component.handleInput(enter);
+	assert.deepEqual(done, [], "save does not run during confirmation and Keep editing is the default");
+	assert.equal(component.getQuery(), "beta");
+	assert.equal(component.getSelectedRow(), rows[1]);
+	assert.equal(desired.get(rows[0].id), false);
+	component.handleInput(escape);
+	assert.match(component.render(100).join("\n"), /› Keep editing/);
+	component.handleInput(escape);
+	assert.match(component.render(100).join("\n"), /Search: > beta/);
+	component.handleInput(escape);
+	frame = component.render(100).join("\n");
+	assert.match(frame, /› Keep editing/);
+	component.handleInput(down);
+	assert.match(component.render(100).join("\n"), /› Discard changes/);
+	component.handleInput(enter);
+	assert.deepEqual(done, ["cancel"]);
+	assert.equal(desired.get(rows[0].id), false);
+});
+
+test("confirmation handles narrow, short, and stale frames without destructive input", () => {
+	const rows = [row("alpha")];
+	const { component, done, terminal } = setup(rows, 19, 80);
+	component.handleInput(enter);
+	terminal.width = 20;
+	component.handleInput(escape);
+	let lines = component.render(20);
+	assert.match(lines.join("\n"), /Discard\? Resize requ/);
+	for (const line of lines) assert.ok(visibleWidth(line) <= 20);
+	component.handleInput(down);
+	component.handleInput(enter);
+	assert.deepEqual(done, []);
+	terminal.width = 21;
+	terminal.height = 5;
+	lines = component.render(21);
+	assert.equal(lines.length, 5);
+	assert.ok(lines.every((line) => visibleWidth(line) <= 21));
+	component.handleInput(down);
+	terminal.height = 4;
+	component.handleInput(enter);
+	assert.deepEqual(done, [], "stale confirmation cannot discard");
+	lines = component.render(21);
+	assert.ok(lines.every((line) => visibleWidth(line) <= 21));
+	terminal.height = 5;
+	component.handleInput(enter);
+	assert.deepEqual(done, [], "discard is blocked until a usable prompt has been rendered");
+	component.render(21);
+	component.handleInput(enter);
+	assert.deepEqual(done, ["cancel"]);
+});
+
+test("remapped cancel keeps editing inside the prompt, including when mapped to s", () => {
+	for (const [binding, input] of [["ctrl+q", "\x11"], ["s", "s"]] as const) {
+		const rows = [row("alpha")];
+		const { component, done, desired, terminal } = setup(rows, 19, 80, plainTheme,
+			new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": binding }));
+		component.handleInput(enter);
+		if (binding === "s") terminal.width = 20;
+		component.handleInput(input);
+		if (binding === "s") terminal.width = 80;
+		assert.match(component.render(80).join("\n"), /› Keep editing/);
+		component.handleInput(input);
+		assert.deepEqual(done, []);
+		assert.equal(desired.get(rows[0].id), false);
+		if (binding === "s") terminal.width = 20;
+		component.handleInput(input);
+		if (binding === "s") terminal.width = 80;
+		component.render(80);
+		component.handleInput(down);
+		component.render(80);
+		component.handleInput(enter);
+		assert.deepEqual(done, ["cancel"]);
+	}
+});
+
 test("remapped native bindings control navigation, confirmation, and cancellation", () => {
 	const rows = [row("alpha"), row("beta")];
 	const done: ExtensionManagerResult[] = [];

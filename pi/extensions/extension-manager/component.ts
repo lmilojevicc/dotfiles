@@ -57,6 +57,8 @@ export class ExtensionManagerComponent implements Component, Focusable {
 	private pageSize = 1;
 	private disposed = false;
 	private usable = false;
+	private confirmingDiscard = false;
+	private discardSelected = false;
 	private renderedHeight = 0;
 	private renderedTerminalWidth: number | undefined;
 	private renderedTerminalHeight: number | undefined;
@@ -95,14 +97,41 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const usable = this.usable && this.options.getHeight() === this.renderedHeight &&
 			this.options.getWidth?.() === this.renderedTerminalWidth &&
 			this.options.getTerminalHeight?.() === this.renderedTerminalHeight;
+		if (this.confirmingDiscard) {
+			if (kb.matches(data, "tui.select.cancel")) {
+				this.confirmingDiscard = false;
+				this.discardSelected = false;
+			} else if (usable && (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.pageUp"))) {
+				this.discardSelected = false;
+			} else if (usable && (kb.matches(data, "tui.select.down") || kb.matches(data, "tui.select.pageDown"))) {
+				this.discardSelected = true;
+			} else if (usable && kb.matches(data, "tui.select.confirm")) {
+				if (this.discardSelected) {
+					this.dispose();
+					this.options.onDone("cancel");
+					return;
+				}
+				this.confirmingDiscard = false;
+			}
+			this.invalidate();
+			this.options.onChange();
+			return;
+		}
 		if (usable && matchesKey(data, "s")) {
 			this.dispose();
 			this.options.onDone("save");
 			return;
 		}
 		if (kb.matches(data, "tui.select.cancel")) {
-			this.dispose();
-			this.options.onDone("cancel");
+			if (this.options.getStagedCount() === 0) {
+				this.dispose();
+				this.options.onDone("cancel");
+			} else {
+				this.confirmingDiscard = true;
+				this.discardSelected = false;
+				this.invalidate();
+				this.options.onChange();
+			}
 			return;
 		}
 		if (!usable) return;
@@ -147,6 +176,22 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const actionHint = `s Save · ${confirmName} toggle · ${cancelName} cancel`;
 		const contentWidth = Math.max(0, width - 4);
 		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
+		if (this.confirmingDiscard) {
+			if (width < 21 || height < 5) {
+				const text = [`Discard? Resize required`, `${cancelName} keep editing`];
+				return text.slice(0, height).map((line) => theme.fg("warning", clip(line)));
+			}
+			this.usable = true;
+			const lines = [
+				theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
+				bordered(theme.fg("warning", `Discard ${this.options.getStagedCount()} staged change${this.options.getStagedCount() === 1 ? "" : "s"}?`)),
+				bordered(this.discardSelected ? "  Keep editing" : theme.fg("accent", "› Keep editing")),
+				bordered(this.discardSelected ? theme.fg("accent", "› Discard changes") : "  Discard changes"),
+			];
+			if (height >= 6) lines.push(bordered(theme.fg("dim", `${confirmName} choose · ${cancelName} keep`)));
+			lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
+			return lines.map((line) => clip(line));
+		}
 		if (width < 24 || height < 10 || visibleWidth(compactHint) > contentWidth) {
 			if (width >= 4 && height >= 3) {
 				const lines = [

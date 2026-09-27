@@ -219,7 +219,13 @@ async function openSelectManager(
 			count > 0 ? `Extensions (${count} staged)` : "Extensions (select to toggle)",
 			[...choices, SAVE_CHOICE, CANCEL_CHOICE],
 		);
-		if (choice === undefined || choice === CANCEL_CHOICE) return "cancel";
+		if (choice === undefined || choice === CANCEL_CHOICE) {
+			if (stagedCount(resources, desired) === 0 || await ctx.ui.confirm(
+				"Discard extension changes?",
+				"Discard staged changes? Choose No to keep editing.",
+			)) return "cancel";
+			continue;
+		}
 		if (choice === SAVE_CHOICE) return "save";
 		const resource = choiceToResource.get(choice);
 		if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);

@@ -11,7 +11,7 @@ The menu includes extensions auto-discovered under `~/.pi/agent/extensions/` and
 
 The list stays compact as the terminal changes size and shows exact `↑ N more` / `↓ N more` counts for matching extensions outside the viewport. Filtering does not discard staged toggles.
 
-The manager marks itself as required and cannot disable itself. This keeps `/extensions-manager` available for re-enabling anything previously disabled. In the TUI, press Escape (or the configured cancel binding) to discard staged changes; in RPC, select **Cancel**.
+The manager marks itself as required and cannot disable itself. This keeps `/extensions-manager` available for re-enabling anything previously disabled. Escape (or the configured cancel binding) in the TUI, and **Cancel** or dismissing the selection in RPC, exit immediately when there are no net staged changes. Otherwise, cancellation asks before discarding (including when a disabled manager needs repair). The TUI prompt defaults to **Keep editing**; use the selection keys to choose **Discard changes** and confirm explicitly. Escape during the prompt keeps editing, preserving the search and staged toggles. RPC asks for confirmation; declining returns to the menu with the same staged changes. Toggling an extension back to its original state removes its pending change.
 
 Pi does not apply package resource filters when a package source points directly to a local file. The menu marks those rows unavailable and will not pretend to save a toggle; configure the source as a directory package if it needs per-extension filtering.
 
