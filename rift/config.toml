@@ -56,6 +56,7 @@
     { app_id = "com.hnc.Discord", workspace = 8 },
     { app_id = "com.github.th-ch.youtube-music", workspace = 8 },
     { app_id = "org.localsend.localsendApp", workspace = 9 },
+    { app_id = "com.apple.finder", title_substring = "Deleting", floating = true },
     { app_id = "pl.maketheweb.cleanshotx", floating = true },
     { app_id = "com.apple.systempreference", floating = true },
     { app_id = "com.objective-see.lulu.app", floating = true },
