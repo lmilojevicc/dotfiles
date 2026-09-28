@@ -13,6 +13,7 @@ export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export DENO_INSTALL="$HOME/.deno"
 export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
+export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 # PATH
 export PATH="$HOME/go/bin:$PATH"
@@ -190,7 +191,7 @@ alias gdoc="stdsym | fzf | xargs go doc "
 
 alias ddgr='ddgr -x -n 5'
 
-alias oc='opencode'
+alias oc='opencode --yolo'
 alias cc='claude --dangerously-skip-permissions'
 alias agy='agy --dangerously-skip-permissions'
 alias cursor='cursor-agent'

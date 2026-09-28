@@ -3,12 +3,6 @@ version = 1
 [packages.aerospace]
   links = [{ source = ".", target = "~/.config/aerospace" }]
 
-[packages.agent-instructions]
-  links = [
-    { source = "GEMINI.md", target = "~/.gemini/GEMINI.md" },
-    { source = "CLAUDE.md", target = "~/.claude/CLAUDE.md" },
-  ]
-
 [packages.bat]
   links = [{ source = ".", target = "~/.config/bat" }]
 
@@ -19,10 +13,7 @@ version = 1
   links = [{ source = ".gitconfig", target = "~/.gitconfig" }]
 
 [packages.herdr]
-  links = [
-    { source = "config.toml", target = "~/.config/herdr/config.toml" },
-    { source = "agent-detection", target = "~/.config/herdr/agent-detection" },
-  ]
+  links = [{ source = "config.toml", target = "~/.config/herdr/config.toml" }]
 
 [packages.ideavim]
   links = [{ source = ".ideavimrc", target = "~/.ideavimrc" }]
@@ -41,6 +32,13 @@ version = 1
 
 [packages.omniwm]
   links = [{ source = ".", target = "~/.config/omniwm" }]
+
+[packages.opencode]
+  links = [
+    { source = "AGENTS.md", target = "~/.config/opencode/AGENTS.md" },
+    { source = "agents", target = "~/.config/opencode/agents" },
+    { source = "opencode.jsonc", target = "~/.config/opencode/opencode.jsonc" },
+  ]
 
 [packages.pi]
   links = [
