@@ -1,0 +1,130 @@
+# Rift v0.6.2 translation of aerospace/aerospace.toml.
+# Virtual workspaces are per macOS Space; indices 0–9 correspond to AeroSpace 1–10.
+[settings]
+  default_disable = false
+  hot_reload = true
+  animate = true
+  mouse_follows_focus = true
+  mouse_hides_on_focus = false
+  focus_follows_mouse = false
+
+  [settings.layout]
+    mode = "scrolling"
+
+    [settings.layout.scrolling]
+      column_width_ratio = 1.0
+      max_column_width_ratio = 1.0
+      preserve_window_sizes = false
+
+    [settings.layout.traditional]
+      equalize_nodes = true
+
+    [settings.layout.stack]
+      # Exposed edges approximate AeroSpace accordion padding, not accordion behavior.
+      stack_offset = 24.0
+      default_orientation = "perpendicular"
+
+    [settings.layout.gaps.outer]
+      left = 12
+      right = 12
+      top = 12
+      bottom = 12
+
+    [settings.layout.gaps.inner]
+      horizontal = 12
+      vertical = 12
+
+  [settings.ui.menu_bar]
+    enabled = true
+    mode = "active"
+
+[virtual_workspaces]
+  enabled = true
+  default_workspace_count = 10
+  default_workspace = 0
+  auto_assign_windows = true
+  preserve_focus_per_workspace = true
+  workspace_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+  app_rules = [
+    { app_id = "com.github.wez.wezterm", workspace = 0 },
+    { app_id = "com.mitchellh.ghostty", workspace = 0 },
+    { app_id = "net.imput.helium", workspace = 1 },
+    { app_id = "app.zen-browser.zen", workspace = 1 },
+    { app_id = "com.brave.Browser", workspace = 1 },
+    { app_id = "md.obsidian", workspace = 2 },
+    { app_id = "com.spotify.client", workspace = 8 },
+    { app_id = "com.hnc.Discord", workspace = 8 },
+    { app_id = "com.github.th-ch.youtube-music", workspace = 8 },
+    { app_id = "org.localsend.localsendApp", workspace = 9 },
+    { app_id = "pl.maketheweb.cleanshotx", floating = true },
+    { app_id = "com.apple.systempreference", floating = true },
+    { app_id = "com.objective-see.lulu.app", floating = true },
+    { app_id = "com.superace.updf.mac", floating = false },
+  ]
+
+[keys]
+  # Unbound macOS hide/minimize shortcuts pass through; Rift cannot suppress them as AeroSpace does.
+  "Alt + Shift + F" = "toggle_fullscreen"
+  "Alt + Shift + T" = "toggle_window_floating"
+  # Select a workspace layout; orientation toggles separately, not on repeated layout selection.
+  "Alt + Comma" = { set_workspace_layout = { mode = "bsp" } }
+  "Alt + Period" = { set_workspace_layout = { mode = "stack" } }
+  "Alt + Quote" = { set_workspace_layout = { mode = "scrolling" } }
+  "Alt + Shift + Slash" = "toggle_orientation"
+
+  "Alt + H" = { move_focus = "left" }
+  "Alt + J" = { move_focus = "down" }
+  "Alt + K" = { move_focus = "up" }
+  "Alt + L" = { move_focus = "right" }
+  "Alt + Shift + H" = { move_node = "left" }
+  "Alt + Shift + J" = { move_node = "down" }
+  "Alt + Shift + K" = { move_node = "up" }
+  "Alt + Shift + L" = { move_node = "right" }
+  # Rift smart resize uses proportional steps, not AeroSpace pixel increments.
+  "Alt + Minus" = { resize_window_shrink = "smart" }
+  "Alt + Equal" = { resize_window_grow = "smart" }
+
+  "Alt + 1" = { switch_to_workspace = 0 }
+  "Alt + 2" = { switch_to_workspace = 1 }
+  "Alt + 3" = { switch_to_workspace = 2 }
+  "Alt + 4" = { switch_to_workspace = 3 }
+  "Alt + 5" = { switch_to_workspace = 4 }
+  "Alt + 6" = { switch_to_workspace = 5 }
+  "Alt + 7" = { switch_to_workspace = 6 }
+  "Alt + 8" = { switch_to_workspace = 7 }
+  "Alt + 9" = { switch_to_workspace = 8 }
+  "Alt + 0" = { switch_to_workspace = 9 }
+  "Alt + Shift + 1" = { move_window_to_workspace = 0 }
+  "Alt + Shift + 2" = { move_window_to_workspace = 1 }
+  "Alt + Shift + 3" = { move_window_to_workspace = 2 }
+  "Alt + Shift + 4" = { move_window_to_workspace = 3 }
+  "Alt + Shift + 5" = { move_window_to_workspace = 4 }
+  "Alt + Shift + 6" = { move_window_to_workspace = 5 }
+  "Alt + Shift + 7" = { move_window_to_workspace = 6 }
+  "Alt + Shift + 8" = { move_window_to_workspace = 7 }
+  "Alt + Shift + 9" = { move_window_to_workspace = 8 }
+  "Alt + Shift + 0" = { move_window_to_workspace = 9 }
+
+  "Alt + Shift + R" = "reload_config"
+  "Ctrl + Alt + Shift + L" = { binding_mode = "layout" }
+
+# Modes replace the main keymap until explicitly exited.
+[binding_modes.layout]
+  "Escape" = { binding_mode = "default" }
+  "Minus" = { resize_window_shrink = "smart" }
+  "Equal" = { resize_window_grow = "smart" }
+  "T" = { set_workspace_layout = { mode = "traditional" } }
+  "A" = { set_workspace_layout = { mode = "stack" } }
+  # AeroSpace balance-sizes (E) and flatten-workspace-tree (W) have no documented Rift equivalents.
+  "F" = "toggle_window_floating"
+  "R" = { binding_mode = "resize" }
+  "Shift + F" = "toggle_fullscreen"
+
+[binding_modes.resize]
+  "Escape" = { binding_mode = "layout" }
+  "Minus" = { resize_window_shrink = "smart" }
+  "Equal" = { resize_window_grow = "smart" }
+  "H" = { resize_window_shrink = "horizontal" }
+  "J" = { resize_window_grow = "vertical" }
+  "K" = { resize_window_shrink = "vertical" }
+  "L" = { resize_window_grow = "horizontal" }

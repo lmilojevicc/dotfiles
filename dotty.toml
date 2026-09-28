@@ -56,6 +56,9 @@ version = 1
 [packages.posting]
   links = [{ source = ".", target = "~/.config/posting" }]
 
+[packages.rift]
+  links = [{ source = "config.toml", target = "~/.config/rift/config.toml" }]
+
 [packages.scripts]
   links = [
     { source = "docx2pdf", target = "~/.local/bin/docx2pdf" },
