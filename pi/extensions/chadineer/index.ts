@@ -8,6 +8,9 @@ import type {
 export const CHADINEER_STATE_ENTRY = "dotfiles.chadineer";
 export const CHADINEER_STATUS_KEY = "chadineer";
 export const CHADINEER_USAGE = "Usage: /chadineer [on|off|status]";
+// Wire markers let agent-policy remove only text owned by this hook, in either load order.
+export const CHADINEER_BLOCK_START = "<!-- chadineer:v1:start -->";
+export const CHADINEER_BLOCK_END = "<!-- chadineer:v1:end -->";
 
 export const CHADINEER_PROMPT = readFileSync(
 	new URL("./PROMPT.md", import.meta.url),
@@ -99,7 +102,9 @@ export default function chadineerExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => restore(ctx));
 	pi.on("session_tree", (_event, ctx) => restore(ctx));
 	pi.on("before_agent_start", (event) => {
-		if (!enabled) return;
-		return { systemPrompt: `${event.systemPrompt}\n\n${CHADINEER_PROMPT}` };
+		if (!enabled || event.systemPrompt.includes("<!-- agent-policy:v1:subagent -->")) return;
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${CHADINEER_BLOCK_START}\n${CHADINEER_PROMPT}\n${CHADINEER_BLOCK_END}`,
+		};
 	});
 }

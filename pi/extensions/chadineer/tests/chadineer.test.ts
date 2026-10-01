@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import chadineerExtension, {
 	CHADINEER_PROMPT,
+	CHADINEER_BLOCK_START,
+	CHADINEER_BLOCK_END,
 	CHADINEER_STATE_ENTRY,
 	CHADINEER_STATUS_KEY,
 	CHADINEER_USAGE,
@@ -144,8 +146,20 @@ test("enabled mode appends the Markdown prompt after prior prompt modifications"
 	runtime.start();
 	runtime.command("on");
 	assert.deepEqual(runtime.before("base plus earlier extension"), {
-		systemPrompt: `base plus earlier extension\n\n${promptFile}`,
+		systemPrompt: `base plus earlier extension\n\n${CHADINEER_BLOCK_START}\n${promptFile}\n${CHADINEER_BLOCK_END}`,
 	});
+});
+
+test("child policy marker suppresses only injection, preserving standalone and root command state", () => {
+	const runtime = createRuntime();
+	runtime.start();
+	runtime.command("on");
+	assert.equal(runtime.before("role\n<!-- agent-policy:v1:subagent -->"), undefined);
+	assert.equal(runtime.statuses.get(CHADINEER_STATUS_KEY), "chadineer");
+	assert.ok(runtime.before("root role")?.systemPrompt.includes(CHADINEER_PROMPT));
+	assert.ok(runtime.before("standalone child role")?.systemPrompt.includes(CHADINEER_BLOCK_START));
+	runtime.command("off");
+	assert.equal(runtime.before("root role"), undefined);
 });
 
 test("restores the latest valid branch state on session start and tree changes", () => {
@@ -157,7 +171,7 @@ test("restores the latest valid branch state on session start and tree changes",
 	]);
 	runtime.start();
 	assert.equal(runtime.statuses.get(CHADINEER_STATUS_KEY), "chadineer");
-	assert.ok(runtime.before()?.systemPrompt.endsWith(CHADINEER_PROMPT));
+	assert.ok(runtime.before()?.systemPrompt.includes(CHADINEER_PROMPT));
 	assert.deepEqual(runtime.appended, [], "restoration does not persist another entry");
 
 	runtime.setEntries([customEntry({ enabled: false })]);
@@ -168,7 +182,7 @@ test("restores the latest valid branch state on session start and tree changes",
 	runtime.setEntries([customEntry({ enabled: true })]);
 	runtime.tree();
 	assert.equal(runtime.statuses.get(CHADINEER_STATUS_KEY), "chadineer");
-	assert.ok(runtime.before()?.systemPrompt.endsWith(CHADINEER_PROMPT));
+	assert.ok(runtime.before()?.systemPrompt.includes(CHADINEER_PROMPT));
 	assert.deepEqual(runtime.statusChanges.slice(-2), [
 		{ key: CHADINEER_STATUS_KEY, text: undefined },
 		{ key: CHADINEER_STATUS_KEY, text: "chadineer" },

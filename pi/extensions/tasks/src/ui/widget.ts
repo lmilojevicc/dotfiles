@@ -1,5 +1,5 @@
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, type TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { DEFAULT_TASKS_CONFIG, type TaskDisplayConfig } from "../config/tasks-config.js";
 import type { Task, TaskSnapshot } from "../domain/types.js";
 import { taskActivity, type SessionActivity } from "../state/activity.js";
@@ -77,6 +77,7 @@ export function renderWidget(
 	frame = 0,
 	toggleShowAll = false,
 	now = Date.now(),
+	collapsed = false,
 ): string[] {
 	try {
 		if (width < 1) return [];
@@ -93,6 +94,7 @@ export function renderWidget(
 		].filter(Boolean);
 		const clip = (line: string) => truncateToWidth(line, width, glyphs.truncation);
 		const lines = [clip(`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} tasks (${groups.join(", ")})`)}`)];
+		if (collapsed) return [...lines, ""];
 		const listed = config.collapseCompleted ? tasks.filter((task) => task.status !== "completed") : tasks;
 		const showAll = toggleShowAll ? !config.showAll : config.showAll;
 		const limit = Number.isSafeInteger(config.maxVisible) && config.maxVisible > 0 ? config.maxVisible : 10;
@@ -124,6 +126,7 @@ export class TaskWidget {
 	private tui?: TUI;
 	private registered = false;
 	private toggleShowAllOverride = false;
+	private collapsed = false;
 	private frame = 0;
 	private interval?: ReturnType<typeof setInterval>;
 	private config: TaskDisplayConfig;
@@ -142,6 +145,7 @@ export class TaskWidget {
 		this.tui = undefined;
 		this.registered = false;
 		this.toggleShowAllOverride = false;
+		this.collapsed = false;
 		this.frame = 0;
 	}
 
@@ -181,6 +185,7 @@ export class TaskWidget {
 		if (!this.ui) return;
 		if (reset) {
 			this.toggleShowAllOverride = false;
+			this.collapsed = false;
 			this.frame = 0;
 		}
 		const hasTasks = foregroundSnapshot().tasks.some((task) => task.status !== "deleted");
@@ -195,13 +200,23 @@ export class TaskWidget {
 			this.ui.setWidget(WIDGET_KEY, (tui, theme) => {
 				this.tui = tui;
 				this.startTimer();
+				let disposed = false;
 				return {
 					render: (width: number) => renderWidget(
 						foregroundSnapshot(), taskActivity.get(getForeground()), this.config,
 						this.ui?.theme ?? theme, width, this.frame, this.toggleShowAllOverride,
+						Date.now(), this.collapsed,
 					),
+					handleMouse: (event: TuiMouseEvent) => {
+						if (disposed || this.tui !== tui || event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
+						if (event.shift || event.alt || event.ctrl) return undefined;
+						this.collapsed = !this.collapsed;
+						tui.requestRender(true);
+						return { handled: true };
+					},
 					invalidate() {},
 					dispose: () => {
+						disposed = true;
 						if (this.tui === tui) this.tui = undefined;
 						this.stopTimer();
 					},
@@ -233,6 +248,7 @@ export class TaskWidget {
 			this.tui = undefined;
 			this.registered = false;
 			this.toggleShowAllOverride = false;
+			this.collapsed = false;
 			this.frame = 0;
 		}
 	}
