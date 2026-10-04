@@ -35,7 +35,7 @@
       vertical = 12
 
   [settings.ui.menu_bar]
-    enabled = true
+    enabled = false
     mode = "active"
 
 [virtual_workspaces]
@@ -67,6 +67,8 @@
   # Unbound macOS hide/minimize shortcuts pass through; Rift cannot suppress them as AeroSpace does.
   "Alt + Shift + F" = "toggle_fullscreen"
   "Alt + Shift + T" = "toggle_window_floating"
+  "Alt + Shift + C" = { toggle_window_floating = { center = true, size = { w = 2048, h = 1152 } } }
+  "Alt + Shift + M" = { toggle_window_floating = { center = true, size = { w = 1024, h = 576 } } }
   # Select a workspace layout; orientation toggles separately, not on repeated layout selection.
   "Alt + Comma" = { set_workspace_layout = { mode = "bsp" } }
   "Alt + Period" = { set_workspace_layout = { mode = "stack" } }
