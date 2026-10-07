@@ -1,12 +1,8 @@
 {
-	"providers": {},
-	"global": [],
-	"_examples": {
-		"providers": {
-			"opencode-go": ["glm-5.3-flash", "grok-4.6"],
-			"openrouter": ["x-ai/*", "*-free"],
-			"cliproxyapi": ["gpt-6.1-sol"]
-		},
-		"global": ["*-preview"]
-	}
+	"providers": {
+		"commandcode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*"],
+		"opencode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*"],
+		"opencode-go": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*"]
+	},
+	"global": []
 }
