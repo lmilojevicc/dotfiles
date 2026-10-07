@@ -18,6 +18,7 @@
 | [tasks](extensions/tasks/README.md) | Session-branch-native task tracking with atomic batches, management menus, and a read-only board | `todo`; `/tasks`, `/todos`, or `/tasks-board`; `Ctrl+Shift+T` | `npm test` |
 | [model-instructions](extensions/model-instructions/README.md) | JSON-configured instructions for the active model | Automatic; edit `instructions.json` beside the extension | `npm test` |
 | [model-picker](extensions/model-picker/README.md) | Browse/favorite models; switch session and save global default | `/model-picker`; configured prefix then `m` | `npm test` |
+| [model-blacklist](extensions/model-blacklist/README.md) | Hide configured model IDs on configured providers from in-session model surfaces | Automatic on `session_start`; `/model-blacklist` reapplies | `npm test` |
 | [prefix-keybinds](extensions/prefix-keybinds/README.md) | Configurable prefix-key command layer | Configured prefix then mapped key; `/prefix-keybinds` | `npm test` |
 | [processes](extensions/processes/README.md) | Session-owned processes, retained logs, and active/failure status | `process`; `/processes` | `npm test` |
 | [reader-mode](extensions/reader-mode/README.md) | Experimental private-internals centered session column | `/reader` | `npm test` |
