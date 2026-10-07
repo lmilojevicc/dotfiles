@@ -34,6 +34,10 @@ type Options = {
 	onDone: (result: ExtensionManagerResult) => void;
 };
 
+const SAVE_KEY = "ctrl+s";
+const SAVE_HINT = "ctrl+s Save";
+const COMPACT_SAVE_HINT = "^S Save";
+
 const cleanText = (value: string): string => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 
 export function filterExtensionRows(rows: readonly ExtensionManagerRow[], query: string): ExtensionManagerRow[] {
@@ -117,7 +121,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 			this.options.onChange();
 			return;
 		}
-		if (usable && matchesKey(data, "s")) {
+		if (usable && matchesKey(data, SAVE_KEY)) {
 			this.dispose();
 			this.options.onDone("save");
 			return;
@@ -172,8 +176,8 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelName = cancelKey === "escape" ? "Esc" : cancelKey;
 		const confirmName = confirmKey === "enter" ? "Enter" : confirmKey;
-		const compactHint = `s Save · ${cancelName} cancel`;
-		const actionHint = `s Save · ${confirmName} toggle · ${cancelName} cancel`;
+		const compactHint = `${COMPACT_SAVE_HINT} · ${cancelName} cancel`;
+		const actionHint = `${SAVE_HINT} · ${confirmName} toggle · ${cancelName} cancel`;
 		const contentWidth = Math.max(0, width - 4);
 		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
 		if (this.confirmingDiscard) {
@@ -242,8 +246,8 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		}
 		lines.push(bordered(theme.fg("borderMuted", clip(down, contentWidth))));
 
-		const fullHint = `s Save · Type search · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
-		const moveHint = `s Save · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const fullHint = `${SAVE_HINT} · Type search · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const moveHint = `${SAVE_HINT} · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
 		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : visibleWidth(actionHint) <= contentWidth ? actionHint : compactHint;
 		lines.push(bordered(theme.fg("dim", footer)));
 		lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));

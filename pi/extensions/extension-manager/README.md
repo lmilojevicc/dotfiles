@@ -5,7 +5,7 @@
 1. Run `/extensions-manager`.
 2. Type to search by extension source or path. Use Pi's configured selection keys (normally Up/Down and Page Up/Page Down) to navigate.
 3. Press Enter on an extension to stage a toggle. Space also toggles while the search field is empty.
-4. In the TUI, press bare `s` from any extension or search query to save immediately; the on-screen footer shows **s Save**. In RPC, select **Save changes** (RPC selection does not accept arbitrary keypresses). Bare `s` is reserved for saving and cannot be typed into the search field as a raw key. On a usable menu it saves even if cancel is remapped to `s`; stale or resize-required frames still cannot save.
+4. In the TUI, press `ctrl+s` from any extension or search query to save immediately; the on-screen footer shows **ctrl+s Save** (abbreviated **^S Save** on narrow frames). Plain letters, including `s`, are always typed into the search field. In RPC, select **Save changes** (RPC selection does not accept arbitrary keypresses). On a usable menu `ctrl+s` saves even if confirm or cancel is remapped onto it; stale or resize-required frames still cannot save.
 
 The menu includes extensions auto-discovered under `~/.pi/agent/extensions/` and extensions supplied by globally installed Pi packages. It writes Pi's native resource filters to `~/.pi/agent/settings.json` through `SettingsManager`. Reload Pi after saving for the changes to take effect; the current runtime is not reloaded automatically. Existing unrelated resource patterns and package filters for skills, prompts, and themes are preserved.
 

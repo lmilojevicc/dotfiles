@@ -113,15 +113,15 @@ test("rounded frame uses themed borders, one-cell padding, and exact ANSI-safe w
 	}
 });
 
-test("footer keeps s Save visible at narrow usable widths without action rows", () => {
+test("footer keeps the save hint visible at narrow usable widths without action rows", () => {
 	const rows = [row("alpha"), row("beta")];
 	for (const width of [24, 30, 35, 64]) {
 		const { component, done } = setup(rows, 10, width);
 		const lines = component.render(width);
-		assert.ok(lines.at(-2)?.includes("s Save"), `${width}: ${lines.at(-2)}`);
+		assert.ok(/ctrl\+s Save|\^S Save/.test(lines.at(-2) ?? ""), `${width}: ${lines.at(-2)}`);
 		assert.doesNotMatch(lines.join("\n"), /Save changes|│\s*›?\s*Cancel\s*│/);
 		for (const line of lines) assert.equal(visibleWidth(line), width);
-		component.handleInput("s");
+		component.handleInput("\x13");
 		assert.deepEqual(done, ["save"]);
 	}
 });
@@ -159,7 +159,7 @@ test("navigation wraps among extensions, pages clamp, and empty filters have no 
 	assert.deepEqual(done, ["cancel"]);
 });
 
-test("toggles remain staged across searches and s saves from the last filtered extension", () => {
+test("toggles remain staged across searches and ctrl+s saves from the last filtered extension", () => {
 	const rows = [row("alpha"), row("beta"), row("gamma")];
 	const { component, desired, done } = setup(rows);
 	component.handleInput(enter);
@@ -171,18 +171,18 @@ test("toggles remain staged across searches and s saves from the last filtered e
 	assert.match(component.render(100).join("\n"), /Extensions \(2 staged\)/);
 	component.handleInput(down);
 	assert.equal(component.getSelectedRow(), rows[1], "single-result navigation cannot reach an action row");
-	component.handleInput("s");
+	component.handleInput("\x13");
 	assert.deepEqual(done, ["save"]);
 });
 
-test("bare s saves from the last extension without toggling and is shown in the footer", () => {
+test("ctrl+s saves from the last extension without toggling and is shown in the footer", () => {
 	const rows = [row("alpha"), row("beta")];
 	const { component, desired, done } = setup(rows);
 	component.handleInput(down);
 	const rendered = component.render(100).join("\n");
 	assert.doesNotMatch(rendered, /Save changes|│\s*›?\s*Cancel\s*│/);
-	assert.match(rendered, /s Save/);
-	component.handleInput("s");
+	assert.match(rendered, /ctrl\+s Save/);
+	component.handleInput("\x13");
 	assert.deepEqual(done, ["save"]);
 	assert.equal(desired.get(rows[1].id), true);
 	assert.equal(component.getQuery(), "");
@@ -190,42 +190,54 @@ test("bare s saves from the last extension without toggling and is shown in the 
 	assert.deepEqual(done, ["save"], "a completed overlay ignores further input");
 });
 
-test("bare s saves when navigation wraps to the last extension", () => {
+test("ctrl+s saves when navigation wraps to the last extension", () => {
 	const rows = [row("alpha"), row("beta")];
 	const { component, done } = setup(rows);
 	component.handleInput(up);
 	assert.equal(component.getSelectedRow(), rows[1]);
-	component.handleInput("s");
+	component.handleInput("\x13");
 	assert.deepEqual(done, ["save"]);
 });
 
-test("bare s saves with a nonempty or unmatched search query", () => {
+test("plain s filters the list instead of saving", () => {
+	const rows = [row("alpha", { searchText: "alpha" }), row("beta", { searchText: "beta" })];
+	const { component, done } = setup(rows);
+	component.handleInput("s");
+	assert.equal(component.getQuery(), "s");
+	assert.equal(component.getFilteredRows().length, 0);
+	assert.deepEqual(done, []);
+	component.render(100);
+	component.handleInput("\x13");
+	assert.deepEqual(done, ["save"], "ctrl+s still saves from an unmatched query");
+});
+
+test("ctrl+s saves with a nonempty or unmatched search query", () => {
 	const rows = [row("alpha"), row("beta")];
 	for (const query of ["alpha", "no-match"]) {
 		const { component, done } = setup(rows);
 		component.handleInput(query);
 		component.render(100);
-		component.handleInput("s");
-		assert.equal(component.getQuery(), query, "s is reserved for save rather than search");
+		component.handleInput("\x13");
+		assert.equal(component.getQuery(), query, "ctrl+s does not alter the search query");
 		assert.deepEqual(done, ["save"]);
 	}
 });
 
-test("bare s takes precedence over a remapped cancel=s only on a usable frame", () => {
-	const bindings = () => new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": "s" });
+test("ctrl+s takes precedence over a remapped cancel=ctrl+s only on a usable frame", () => {
+	const bindings = () => new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": "ctrl+s" });
 	const rows = [row("alpha")];
 	const ready = setup(rows, 19, 100, plainTheme, bindings());
-	ready.component.handleInput("s");
+	ready.component.handleInput("\x13");
 	assert.deepEqual(ready.done, ["save"]);
 	assert.equal(ready.desired.get(rows[0].id), true);
 
 	const stale = setup(rows, 19, 100, plainTheme, bindings());
 	stale.terminal.width = 20;
-	stale.component.handleInput("s");
+	stale.component.handleInput("\x13");
 	assert.deepEqual(stale.done, ["cancel"], "stale frames cannot save");
 
 	const resizeRequired = setup(rows, 19, 20, plainTheme, bindings());
-	resizeRequired.component.handleInput("s");
+	resizeRequired.component.handleInput("\x13");
 	assert.deepEqual(resizeRequired.done, ["cancel"], "Resize required frames cannot save");
 });
 
@@ -250,7 +262,7 @@ test("resize recomputes framed capacity and stale frames cannot toggle or save",
 	const { component, desired, terminal } = setup(rows, 19, 80);
 	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 10);
 	terminal.height = 13;
-	component.handleInput("s");
+	component.handleInput("\x13");
 	assert.equal(component.getQuery(), "");
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), true);
@@ -263,10 +275,10 @@ test("save is unavailable on stale or Resize required frames but cancel remains 
 	const rows = [row("alpha")];
 	const { component, done, terminal } = setup(rows);
 	terminal.width = 20;
-	component.handleInput("s");
+	component.handleInput("\x13");
 	assert.deepEqual(done, []);
 	component.render(20);
-	component.handleInput("s");
+	component.handleInput("\x13");
 	assert.deepEqual(done, []);
 	component.handleInput(escape);
 	assert.deepEqual(done, ["cancel"]);
@@ -368,7 +380,7 @@ test("dirty cancel keeps the draft, search, and selection until explicit discard
 	assert.match(frame, /Discard 1 staged change\?/);
 	assert.match(frame, /› Keep editing/);
 	assert.match(frame, /Discard changes/);
-	component.handleInput("s");
+	component.handleInput("\x13");
 	component.handleInput(enter);
 	assert.deepEqual(done, [], "save does not run during confirmation and Keep editing is the default");
 	assert.equal(component.getQuery(), "beta");
@@ -422,19 +434,15 @@ test("confirmation handles narrow, short, and stale frames without destructive i
 test("remapped cancel keeps editing inside the prompt, including when mapped to s", () => {
 	for (const [binding, input] of [["ctrl+q", "\x11"], ["s", "s"]] as const) {
 		const rows = [row("alpha")];
-		const { component, done, desired, terminal } = setup(rows, 19, 80, plainTheme,
+		const { component, done, desired } = setup(rows, 19, 80, plainTheme,
 			new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": binding }));
 		component.handleInput(enter);
-		if (binding === "s") terminal.width = 20;
 		component.handleInput(input);
-		if (binding === "s") terminal.width = 80;
 		assert.match(component.render(80).join("\n"), /› Keep editing/);
 		component.handleInput(input);
 		assert.deepEqual(done, []);
 		assert.equal(desired.get(rows[0].id), false);
-		if (binding === "s") terminal.width = 20;
 		component.handleInput(input);
-		if (binding === "s") terminal.width = 80;
 		component.render(80);
 		component.handleInput(down);
 		component.render(80);
@@ -445,19 +453,37 @@ test("remapped cancel keeps editing inside the prompt, including when mapped to 
 
 test("remapped native bindings control navigation, confirmation, and cancellation", () => {
 	const rows = [row("alpha"), row("beta")];
+	let toggles = 0;
 	const done: ExtensionManagerResult[] = [];
 	const component = new ExtensionManagerComponent({
 		rows, theme: plainTheme as never,
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS, {
-			"tui.select.down": "ctrl+n", "tui.select.confirm": "ctrl+s", "tui.select.cancel": "ctrl+q",
+			"tui.select.down": "ctrl+n", "tui.select.confirm": "ctrl+g", "tui.select.cancel": "ctrl+q",
 		}),
 		getHeight: () => 17, getEnabled: (item) => item.enabled, getStagedCount: () => 0,
-		onToggle: () => {}, onChange: () => {}, onDone: (result) => done.push(result),
+		onToggle: () => { toggles++; }, onChange: () => {}, onDone: (result) => done.push(result),
 	});
 	component.render(80);
 	component.handleInput("\x0e");
 	assert.equal(component.getSelectedRow(), rows[1]);
-	component.handleInput("\x13");
+	component.handleInput("\x07");
+	assert.equal(toggles, 1, "remapped confirmation toggles the selected row");
 	component.handleInput("\x11");
 	assert.deepEqual(done, ["cancel"], "toggle confirmation does not close; remapped cancel does");
+});
+
+test("ctrl+s saves rather than confirming when a native binding is remapped onto it", () => {
+	const rows = [row("alpha")];
+	let toggles = 0;
+	const done: ExtensionManagerResult[] = [];
+	const component = new ExtensionManagerComponent({
+		rows, theme: plainTheme as never,
+		keybindings: new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.confirm": "ctrl+s" }),
+		getHeight: () => 17, getEnabled: (item) => item.enabled, getStagedCount: () => 0,
+		onToggle: () => { toggles++; }, onChange: () => {}, onDone: (result) => done.push(result),
+	});
+	component.render(80);
+	component.handleInput("\x13");
+	assert.equal(toggles, 0, "save takes precedence over a remapped confirm binding");
+	assert.deepEqual(done, ["save"]);
 });

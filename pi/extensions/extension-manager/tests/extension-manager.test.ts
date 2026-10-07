@@ -345,7 +345,7 @@ test("TUI saves staged toggles across single-result filters", async () => {
 	writeFileSync(join(agentDir, "settings.json"), "{}");
 
 	// Save directly from a filtered extension row without an action row.
-	const inputs = ["aaaaaaaa", "\r", ...Array.from({ length: 8 }, () => "\x7f"), "qqqqqqqq", "\r", "s"];
+	const inputs = ["aaaaaaaa", "\r", ...Array.from({ length: 8 }, () => "\x7f"), "qqqqqqqq", "\r", "\x13"];
 	const result = await runTuiCommand(inputs);
 	assert.equal(result.customCount, 1);
 	assert.equal(result.selectCount, 0);
@@ -357,9 +357,9 @@ test("TUI saves staged toggles across single-result filters", async () => {
 	]);
 });
 
-test("TUI s on the last extension persists staged changes without runtime reload", async () => {
+test("TUI ctrl+s on the last extension persists staged changes without runtime reload", async () => {
 	writeExtension("first");
-	const result = await runTuiCommand(["\r", "\x1b[B", "s"]);
+	const result = await runTuiCommand(["\r", "\x1b[B", "\x13"]);
 	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
 		"-extensions/first/index.ts",
 	]);
@@ -371,7 +371,7 @@ test("TUI save without staged changes is a no-op", async () => {
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
 	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
-	const result = await runTuiCommand(["s"]);
+	const result = await runTuiCommand(["\x13"]);
 	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
 	assert.equal(result.reloadCount, 0);
 	assert.deepEqual(result.notifications, ["No extension changes to save"]);
@@ -405,7 +405,7 @@ test("TUI clean and toggled-back cancel exit without a confirmation", async () =
 test("TUI keeps filtered draft after declining discard and can still save it", async () => {
 	writeExtension("first");
 	writeExtension("second");
-	const result = await runTuiCommand(["first", "\r", "\x1b", "\r", "s"]);
+	const result = await runTuiCommand(["first", "\r", "\x1b", "\r", "\x13"]);
 	assert.match(result.frames[3], /› Keep editing/);
 	assert.match(result.frames[4], /Search: > first/);
 	assert.match(result.frames[4], /Extensions \(1 staged\)/);
