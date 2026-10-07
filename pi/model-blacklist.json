@@ -1,8 +1,8 @@
 {
 	"providers": {
-		"commandcode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*"],
-		"opencode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*"],
-		"opencode-go": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*"]
+		"commandcode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*"],
+		"opencode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*"],
+		"opencode-go": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*"]
 	},
 	"global": []
 }
