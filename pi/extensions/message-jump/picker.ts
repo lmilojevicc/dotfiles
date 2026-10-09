@@ -1,4 +1,4 @@
-import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, Input, Spacer, Text, matchesKey, truncateToWidth, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { filterMessages, type JumpMessage } from "./messages.ts";
 
@@ -9,6 +9,10 @@ export class MessagePicker extends Container {
 	private selected = 0;
 	private visible = 10;
 	private closed = false;
+	private copying = false;
+	private copyStatus = "";
+	private copyColor: "muted" | "success" | "warning" = "muted";
+	onCopy: (text: string) => void | Promise<void> = copyToClipboard;
 	private positions: Map<string, number>;
 	private messages: JumpMessage[];
 	private tui: TUI;
@@ -27,7 +31,8 @@ export class MessagePicker extends Container {
 		this.addChild({ render: (width) => new Text(this.theme.bold("Jump to Message"), 1, 0).render(width), invalidate() {} });
 		this.addChild({ render: (width) => new Text(this.theme.fg("muted", "Select a user message to scroll to in the current transcript"), 1, 0).render(width), invalidate() {} });
 		this.addChild(this.input);
-		this.addChild(new Spacer(1));
+		// Reuse the native spacer row for clipboard feedback without changing the layout height.
+		this.addChild({ render: (width) => this.copyStatus ? [truncateToWidth(this.theme.fg(this.copyColor, ` ${this.copyStatus}`), Math.max(1, width), "")] : [""], invalidate() {} });
 		this.addChild(new DynamicBorder((s) => this.theme.fg("border", s)));
 		this.addChild(new Spacer(1));
 		this.addChild({ render: (width) => this.renderMessages(width), invalidate() {} });
@@ -46,9 +51,40 @@ export class MessagePicker extends Container {
 		this.closed = true;
 		this.done(id);
 	}
+	private async copyHighlighted(): Promise<void> {
+		if (this.copying) return;
+		const item = this.matches[this.selected];
+		if (!item) return;
+		if (!item.text) {
+			this.copyStatus = "Selected message has no text to copy";
+			this.copyColor = "warning";
+			return;
+		}
+		this.copying = true;
+		this.copyStatus = "Copying message…";
+		this.copyColor = "muted";
+		try {
+			await this.onCopy(item.text);
+			if (!this.closed) {
+				this.copyStatus = `Copied message ${this.positions.get(item.id)} to clipboard`;
+				this.copyColor = "success";
+			}
+		} catch (error) {
+			if (!this.closed) {
+				const reason = error instanceof Error ? error.message : String(error);
+				this.copyStatus = `Copy failed: ${reason.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")}`;
+				this.copyColor = "warning";
+			}
+		} finally {
+			this.copying = false;
+			if (!this.closed) this.tui.requestRender();
+		}
+	}
 	handleInput(data: string): void {
 		if (this.closed) return;
-		if (matchesKey(data, "escape") || this.kb.matches(data, "tui.select.cancel")) this.cancel();
+		// Ctrl+Y is reserved for copying, before configurable selector or Input yank bindings.
+		if (matchesKey(data, "ctrl+y")) void this.copyHighlighted();
+		else if (matchesKey(data, "escape") || this.kb.matches(data, "tui.select.cancel")) this.cancel();
 		else if (this.kb.matches(data, "tui.select.confirm")) {
 			const item = this.matches[this.selected];
 			if (item) this.finish(item.id);

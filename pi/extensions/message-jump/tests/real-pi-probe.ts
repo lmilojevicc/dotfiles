@@ -68,6 +68,10 @@ export default function (pi: ExtensionAPI) {
 					assert.equal(options, undefined, "public inline custom UI, never an overlay");
 					return originalCustom(async (...args: any[]) => {
 						const picker = factory(...args);
+						if (stage === "copy") picker.onCopy = (text: string) => {
+							assert.equal(text, chosen.text, "Ctrl+Y copies the highlighted full text");
+							report("copied", { stage }); // Test-only clipboard sink; never mutate the user's clipboard.
+						};
 						// Probe-only mutation after custom() has saved the draft proves its internal restoration.
 						mode.editor.setText("probe-only hidden editor change");
 						// Test-only native source oracle. It is rendered offscreen, never mounted.
@@ -113,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 				assert.equal(JSON.stringify(ctx.sessionManager.buildContextEntries()), before.context);
 				assert.equal(ctx.ui.getEditorText(), before.draft, "public inline custom restores its saved draft internally");
 				assert.equal(mode.renderer.getFocusedComponent(), before.focus);
-				if (stage === "cancel" || stage === "layout") assert.equal(mode.transcriptScrollView.scrollTop, before.scroll);
+				if (stage === "cancel" || stage === "layout" || stage === "copy") assert.equal(mode.transcriptScrollView.scrollTop, before.scroll);
 				else if (stage === "compacted") { assert.match(warning, /Not rendered/); assert.equal(mode.transcriptScrollView.scrollTop, before.scroll); }
 				else {
 					assert.equal(warning, "");

@@ -6,6 +6,8 @@ Multiline prompts get single-line previews; images are counted (`[1 image]`), an
 
 Selection scrolls the existing fullscreen transcript, disables automatic end-following, and returns focus to the editor. Near the end, viewport clamping can leave the selected prompt visible rather than exactly top-aligned. Use Pi's normal jump-to-end action (default Ctrl+End) to resume following new output. The extension never forks, navigates the session tree, appends session entries, sends model messages, changes context/model, or calls editor-draft setters. The picker uses public nonoverlay `ctx.ui.custom()` to replace the editor area inline, like native `/fork`, with full-width themed borders, two-line message rows and an integrated search field. Pi internally saves the existing editor text and restores it when the picker closes, on jump or cancel; the final draft remains unchanged. Pi's normal slash-command submission behavior still applies before the picker opens.
 
+**Ctrl+Y** copies the highlighted message's full original text to the system clipboard, preserving newlines and Unicode. It keeps the picker open and leaves the search, selection, transcript and draft unchanged. Feedback appears in the existing spacer below the search field. Compacted/unavailable messages can still be copied; image-only/empty messages report that there is no text to copy. Clipboard errors are shown without closing the picker. Ctrl+Y is reserved for copying inside this picker, even if a selector action is rebound to it.
+
 ## Load and supported modes
 
 Supported host: **Pi 1.0.4, interactive fullscreen, standard transcript layout, one InteractiveMode instance per process**. From this checkout:

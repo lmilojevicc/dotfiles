@@ -77,7 +77,7 @@ def run(start_mode):
                 send("/jump-smoke unsupported\r")
                 event("unsupported")
             else:
-                for stage, key in (("layout", "\x1b"), ("cancel", "\x1b"), ("newer", "\r"), ("older", "\x1b[A\r"), ("live", "\r")):
+                for stage, key in (("layout", "\x1b"), ("cancel", "\x1b"), ("copy", "\x1b"), ("newer", "\r"), ("older", "\x1b[A\r"), ("live", "\r")):
                     send(f"/jump-smoke {stage}\r")
                     wait(lambda events: any(e["event"] == "opened" and e["stage"] == stage for e in events))
                     if stage in ("layout", "older"):
@@ -86,6 +86,9 @@ def run(start_mode):
                         time.sleep(0.2)
                         if stage == "layout":
                             wait(lambda events: any(e["event"] == "native-layout" and e["dimensions"] == "65x32" for e in events))
+                    if stage == "copy":
+                        send("\x19")
+                        event("copied")
                     send(key)
                     event(stage)
                 send("/reload\r")
@@ -112,7 +115,7 @@ def run(start_mode):
             wait(lambda _: process.poll() is not None)
             assert process.returncode == 0
             print(f"PASS installed CLI {start_mode}: " + ("truthful unsupported-mode feedback" if start_mode == "regular" else
-                  "native /fork source snapshots at 100x50 and 65x32, inline mounting, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
+                  "native /fork source snapshots at 100x50 and 65x32, inline mounting, Ctrl+Y copy without closing/jumping, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
         except Exception:
             print(output.decode(errors="replace")[-12000:], file=sys.stderr)
             if report.exists():

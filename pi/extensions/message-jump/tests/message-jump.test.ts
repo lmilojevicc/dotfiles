@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container, Text, ScrollView, VStack, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import extension from "../index.ts";
@@ -112,23 +113,23 @@ test("bridge: ownership, inert reload handoff, old cleanup, quit restoration, co
 
 test("picker: full-text filter, configurable keys, Escape, focus, Unicode widths, no-result Enter and resize", () => {
 	const values = collectMessages([entry("old", "duplicate"), entry("new", "duplicate"), entry("unicode", "世界\nend needle")]);
-	const kb = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+n", "tui.select.up": "ctrl+p", "tui.select.confirm": "ctrl+y", "tui.select.cancel": "ctrl+x" });
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+n", "tui.select.up": "ctrl+p", "tui.select.confirm": "ctrl+o", "tui.select.cancel": "ctrl+x" });
 	const tui = { terminal: { rows: 20 }, requestRender() {} } as any;
 	const results: any[] = [];
 	const picker = new MessagePicker(values, tui, theme, kb, id => results.push(id), "duplicate");
 	picker.focused = true; assert.equal(picker.focused, true);
 	for (const width of [1, 2, 4, 10, 40, 90]) assert.ok(picker.render(width).every(line => visibleWidth(line) <= width));
 	tui.terminal.rows = 8; picker.render(10);
-	picker.handleInput("\x0e"); picker.handleInput("\x19"); assert.deepEqual(results, ["old"]);
-	picker.handleInput("\x19"); assert.equal(results.length, 1);
+	picker.handleInput("\x0e"); picker.handleInput("\x0f"); assert.deepEqual(results, ["old"]);
+	picker.handleInput("\x0f"); assert.equal(results.length, 1);
 	const filtered = new MessagePicker(values, tui, theme, kb, id => results.push(id), "needle 世界");
-	filtered.handleInput("\x19"); assert.equal(results[1], "unicode");
+	filtered.handleInput("\x0f"); assert.equal(results[1], "unicode");
 	const empty = new MessagePicker(values, tui, theme, kb, id => results.push(id), "absent");
-	empty.handleInput("\x19"); assert.equal(results.length, 2);
+	empty.handleInput("\x0f"); assert.equal(results.length, 2);
 	empty.handleInput("\x1b"); assert.equal(results[2], undefined);
 	const cancel = new MessagePicker(values, tui, theme, kb, id => results.push(id)); cancel.handleInput("\x18"); assert.equal(results[3], undefined);
 	const paging = new MessagePicker(values, tui, theme, kb, id => results.push(id));
-	paging.render(80); paging.handleInput("\x1b[5~"); paging.handleInput("\x19"); assert.equal(results[4], "new");
+	paging.render(80); paging.handleInput("\x1b[5~"); paging.handleInput("\x0f"); assert.equal(results[4], "new");
 });
 
 test("picker: native-shaped inline snapshot, chronological metadata, latest defaults, wrapping and live search", () => {
@@ -165,6 +166,56 @@ test("picker: native-shaped inline snapshot, chronological metadata, latest defa
 		assert.ok(resized.length <= rows - 4, "height leaves room for the host footer");
 		assert.ok(resized.includes("› prompt 12"), "resize preserves latest selection");
 	}
+});
+
+test("picker: Ctrl+Y copies full highlighted text, keeps search/selection open, and takes precedence over confirm", async () => {
+	const oldText = `duplicate\nneedle 世界\t${"long tail ".repeat(30)}`;
+	const values = collectMessages([entry("old", oldText), entry("new", "duplicate\nneedle 世界 new")]);
+	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.confirm": "ctrl+y" });
+	const done: any[] = []; const copied: string[] = [];
+	const picker = new MessagePicker(values, tui, theme, kb, id => done.push(id), "needle");
+	picker.onCopy = (text) => { copied.push(text); };
+	picker.handleInput("\x19"); await Promise.resolve();
+	assert.deepEqual(copied, [values[1].text]); assert.deepEqual(done, []);
+	assert.ok(picker.render(80).some(line => line.includes("Copied message 2 to clipboard")));
+	picker.handleInput("\x1b[A"); picker.handleInput("\x19"); await Promise.resolve();
+	assert.equal(copied[1], oldText, "copy original multiline text, never truncated preview or metadata");
+	assert.ok(picker.render(80).some(line => line.startsWith("› duplicate needle 世界")));
+	assert.ok(stripVTControlCharacters(picker.render(80)[3]).includes("needle"), "Ctrl+Y does not yank into the search field");
+	assert.deepEqual(done, []);
+	for (const width of [1, 2, 10, 40, 80]) assert.ok(picker.render(width).every(line => visibleWidth(line) <= width));
+	picker.handleInput("\x1b"); assert.deepEqual(done, [undefined]);
+	picker.handleInput("\x19"); assert.equal(copied.length, 2, "closed picker ignores copy");
+});
+
+test("picker: copying unavailable text works; empty/no-result/failure/pending copies are safe", async () => {
+	let renders = 0; const tui = { terminal: { rows: 50 }, requestRender() { renders++; } } as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS); const copied: string[] = [];
+	const values = collectMessages([entry("text", "compacted text"), entry("image", [{ type: "image" }])]);
+	const unavailable = new MessagePicker([{ ...values[0], unavailable: "compacted" }], tui, theme, kb, () => {});
+	unavailable.onCopy = text => { copied.push(text); };
+	unavailable.handleInput("\x19"); await Promise.resolve(); assert.deepEqual(copied, ["compacted text"]);
+	const image = new MessagePicker([values[1]], tui, theme, kb, () => {});
+	image.onCopy = () => { throw new Error("must not copy image placeholders"); };
+	image.handleInput("\x19"); await Promise.resolve();
+	assert.ok(image.render(80).some(line => line.includes("no text to copy")));
+	const empty = new MessagePicker(values, tui, theme, kb, () => {}, "absent");
+	empty.onCopy = () => { throw new Error("must not copy without a match"); };
+	empty.handleInput("\x19"); await Promise.resolve();
+	assert.ok(empty.render(80).some(line => line.includes("No matching messages")));
+	const failure = new MessagePicker([values[0]], tui, theme, kb, () => {});
+	failure.onCopy = async () => { throw new Error("clipboard denied\x1b[2J"); };
+	failure.handleInput("\x19"); await Promise.resolve();
+	const feedback = failure.render(80).find(line => line.includes("Copy failed"))!;
+	assert.ok(feedback.includes("clipboard denied")); assert.equal(feedback.includes("\x1b"), false);
+	const done: any[] = []; let resolveCopy!: () => void; let calls = 0;
+	const pending = new MessagePicker([values[0]], tui, theme, kb, id => done.push(id));
+	pending.onCopy = () => { calls++; return new Promise<void>(resolve => { resolveCopy = resolve; }); };
+	pending.handleInput("\x19"); pending.handleInput("\x19"); assert.equal(calls, 1);
+	pending.handleInput("\x1b"); assert.deepEqual(done, [undefined]);
+	const before = renders; resolveCopy(); await Promise.resolve();
+	assert.equal(renders, before, "late clipboard completion does not render a closed picker");
 });
 
 function runtime() {
