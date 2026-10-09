@@ -1,4 +1,4 @@
-import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, type EditorComponent, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 
 export const FOCUS_IN = "\x1b[I";
@@ -110,17 +110,11 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 		const originalDispose = nextEditor.dispose?.bind(nextEditor);
 
 		nextEditor.render = (width: number): string[] => {
-			const previousFocused = nextEditor.focused;
-			if (!paneFocused && previousFocused !== undefined) nextEditor.focused = false;
-
-			try {
-				const lines = originalRender(width);
-				return paneFocused
-					? lines
-					: lines.map((line) => line.replace(INVERSE_VIDEO_SPAN, "$1"));
-			} finally {
-				if (previousFocused !== undefined) nextEditor.focused = previousFocused;
-			}
+			// Host focus controls cursor presentation, not the editor's keyboard ownership.
+			const lines = originalRender(width);
+			return paneFocused
+				? lines
+				: lines.map((line) => line.replaceAll(CURSOR_MARKER, "").replace(INVERSE_VIDEO_SPAN, "$1"));
 		};
 
 		nextEditor.handleInput = (data: string): void => {

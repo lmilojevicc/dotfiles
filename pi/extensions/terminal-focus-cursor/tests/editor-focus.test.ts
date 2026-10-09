@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 
-import { createEditorFocus, FOCUS_OUT, type Scheduler } from "../editor-focus.ts";
+import { createEditorFocus, FOCUS_IN, FOCUS_OUT, type Scheduler } from "../editor-focus.ts";
 
 function manualScheduler() {
 	let nextId = 0;
@@ -84,8 +85,8 @@ test("deferred install composes the editor factory present when the timer fires"
 	assert.equal(latest.invalidations(), 1);
 	assert.equal(renders, 1);
 	assert.deepEqual(editor.render(), ["cursor and other"]);
-	assert.deepEqual(latest.renderFocused, [false]);
-	assert.equal(editor.focused, true, "temporary focused override is restored");
+	assert.deepEqual(latest.renderFocused, [true]);
+	assert.equal(editor.focused, true, "host blur does not change keyboard ownership");
 
 	editor.handleInput("text");
 	editor.handleInput(FOCUS_OUT);
@@ -113,4 +114,94 @@ test("reinstall and cleanup cancel pending editor timers", () => {
 	assert.equal(clock.pending.size, 0);
 	clock.runAll();
 	assert.equal(installations, 0);
+});
+
+function installObservedEditor(render: (width: number) => string[], initiallyFocused = true) {
+	const clock = manualScheduler();
+	let focused = initiallyFocused;
+	const writes: boolean[] = [];
+	const editor = {
+		get focused() { return focused; },
+		set focused(value: boolean) { writes.push(value); focused = value; },
+		render,
+		handleInput(_data: string) {},
+		invalidate() {},
+	};
+	let factory = () => editor;
+	const focus = createEditorFocus({
+		createDefaultEditor: () => { throw new Error("must use predecessor"); },
+		scheduler: clock.scheduler,
+	});
+	focus.install({
+		getEditorComponent: () => factory as never,
+		setEditorComponent: (next) => { factory = next as never; },
+	});
+	clock.runAll();
+	const installed = (factory as (...args: unknown[]) => typeof editor)({ requestRender() {} }, {}, {});
+	assert.equal(installed, editor, "cursor decoration retains editor identity");
+	return { editor, focus, writes };
+}
+
+test("host blur/refocus hides native markers and inverse cursor without any focus writes", () => {
+	const source = [`draft 界 ${CURSOR_MARKER}\x1b[7m \x1b[27m`, `other ${CURSOR_MARKER}`];
+	const widths: number[] = [];
+	const h = installObservedEditor((width) => { widths.push(width); return source; });
+	assert.equal(h.editor.render(40), source, "focused render passes through unchanged");
+	h.focus.handleTerminalInput(FOCUS_OUT);
+	const unfocused = h.editor.render(40);
+	assert.deepEqual(unfocused, ["draft 界  ", "other "]);
+	assert.deepEqual(unfocused.map(visibleWidth), source.map(visibleWidth));
+	assert.ok(source[0].includes(CURSOR_MARKER), "never mutate predecessor's cached rows");
+	assert.equal(h.editor.focused, true);
+	h.focus.handleTerminalInput(FOCUS_IN);
+	assert.equal(h.editor.render(40), source);
+	assert.deepEqual(widths, [40, 40, 40]);
+	assert.deepEqual(h.writes, [], "presentation-only host events must not call focused setter");
+	h.focus.cleanup();
+});
+
+test("throwing render keeps exception identity and makes no host focus writes", () => {
+	const failure = new Error("render failed");
+	const h = installObservedEditor(() => { throw failure; });
+	for (const event of [FOCUS_OUT, FOCUS_IN]) {
+		h.focus.handleTerminalInput(event);
+		assert.throws(() => h.editor.render(40), (error) => error === failure);
+		assert.equal(h.editor.focused, true);
+	}
+	assert.deepEqual(h.writes, []);
+	h.focus.cleanup();
+});
+
+test("real keyboard blur and ownership changes inside render are not overwritten", () => {
+	const h = installObservedEditor(() => ["native unfocused"], false);
+	h.focus.handleTerminalInput(FOCUS_OUT);
+	assert.deepEqual(h.editor.render(40), ["native unfocused"]);
+	h.focus.handleTerminalInput(FOCUS_IN);
+	h.editor.render(40);
+	assert.equal(h.editor.focused, false);
+	assert.deepEqual(h.writes, []);
+	h.focus.cleanup();
+
+	const changed = installObservedEditor(() => {
+		changed.editor.focused = false;
+		return ["ownership transferred"];
+	});
+	changed.focus.handleTerminalInput(FOCUS_OUT);
+	changed.editor.render(40);
+	assert.equal(changed.editor.focused, false, "render's genuine transfer survives decoration");
+	assert.deepEqual(changed.writes, [false], "only predecessor can write ownership");
+	changed.focus.cleanup();
+});
+
+test("throwing predecessor's genuine ownership transfer is not restored", () => {
+	const failure = new Error("transfer then fail");
+	const h = installObservedEditor(() => {
+		h.editor.focused = false;
+		throw failure;
+	});
+	h.focus.handleTerminalInput(FOCUS_OUT);
+	assert.throws(() => h.editor.render(40), (error) => error === failure);
+	assert.equal(h.editor.focused, false);
+	assert.deepEqual(h.writes, [false]);
+	h.focus.cleanup();
 });

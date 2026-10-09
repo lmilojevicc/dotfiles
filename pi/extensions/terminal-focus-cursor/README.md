@@ -1,6 +1,8 @@
 # Terminal focus cursor
 
-Hides Pi's inverse-video editor cursor while its terminal pane is unfocused.
+Hides Pi's inverse-video editor cursor and native cursor marker while its terminal pane is unfocused.
+
+Host focus changes are presentation-only: the wrapper leaves the editor's `focused` keyboard-ownership flag untouched and filters cursor output after rendering. This preserves other editor consumers such as Zentui's Working border. Genuine dialog/overlay focus transfers still use Pi's normal `focused` lifecycle.
 
 | Environment | Activation | Focus ingress | DECSET 1004 behavior |
 | --- | --- | --- | --- |

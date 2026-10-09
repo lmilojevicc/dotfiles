@@ -1,19 +1,27 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 
 async function loadIndex() {
 	const cli = realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim());
-	const packageRoot = dirname(dirname(cli));
-	const { createJiti } = await import(pathToFileURL(join(packageRoot, "node_modules/jiti/lib/jiti-static.mjs")).href);
+	// Pi has shipped both dist/cli.js and dist/cli/index.js entry points.
+	const candidates = [dirname(cli), dirname(dirname(cli)), dirname(dirname(dirname(cli)))];
+	const packageRoot = candidates.find((directory) => {
+		const manifest = join(directory, "package.json");
+		return existsSync(manifest) && JSON.parse(readFileSync(manifest, "utf8")).name === "@earendil-works/pi-coding-agent";
+	});
+	assert.ok(packageRoot, "CLI must belong to the Pi coding-agent package");
+	const require = createRequire(join(packageRoot, "package.json"));
+	const { createJiti } = await import(pathToFileURL(require.resolve("jiti")).href);
 	const jiti = createJiti(import.meta.url, {
 		alias: {
 			"@earendil-works/pi-coding-agent": join(packageRoot, "dist/index.js"),
-			"@earendil-works/pi-tui": join(dirname(packageRoot), "pi-tui/dist/index.js"),
+			"@earendil-works/pi-tui": require.resolve("@earendil-works/pi-tui"),
 		},
 		moduleCache: false,
 	});
