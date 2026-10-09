@@ -1,0 +1,14 @@
+{
+  "name": "pi-extension-message-jump",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --import ./tests/register-loader.mjs --test tests/message-jump.test.ts",
+    "test:real-pi": "node ./tests/real-pi-smoke.mjs"
+  },
+  "pi": { "extensions": ["./index.ts"] },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
