@@ -38,9 +38,9 @@ def run(start_mode):
         report = root / "report.jsonl"
         env = {"PATH": os.environ["PATH"], "HOME": str(root / "home"), "TERM": "xterm-256color", "LANG": "en_US.UTF-8",
                "PI_CODING_AGENT_DIR": str(root / "agent"), "PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0",
-               "MESSAGE_JUMP_REPORT": str(report)}
+               "MESSAGE_JUMP_REPORT": str(report), "MESSAGE_JUMP_PI_ROOT": str(Path(cli).parents[2])}
         master, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 100, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 100, 0, 0))
         process = subprocess.Popen([cli, "--offline", "--session", str(session), "--session-dir", str(root / "sessions"),
                                     "--no-approve", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes",
                                     "--no-extensions", "--no-tools", "--tui-mode", start_mode, "-e", extension, "-e", probe],
@@ -77,13 +77,15 @@ def run(start_mode):
                 send("/jump-smoke unsupported\r")
                 event("unsupported")
             else:
-                for stage, key in (("cancel", "\x1b"), ("newer", "\r"), ("older", "\x1b[B\r"), ("live", "\r")):
+                for stage, key in (("layout", "\x1b"), ("cancel", "\x1b"), ("newer", "\r"), ("older", "\x1b[A\r"), ("live", "\r")):
                     send(f"/jump-smoke {stage}\r")
                     wait(lambda events: any(e["event"] == "opened" and e["stage"] == stage for e in events))
-                    if stage == "older":
+                    if stage in ("layout", "older"):
                         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 65, 0, 0))
                         os.killpg(process.pid, signal.SIGWINCH)
                         time.sleep(0.2)
+                        if stage == "layout":
+                            wait(lambda events: any(e["event"] == "native-layout" and e["dimensions"] == "65x32" for e in events))
                     send(key)
                     event(stage)
                 send("/reload\r")
@@ -110,7 +112,7 @@ def run(start_mode):
             wait(lambda _: process.poll() is not None)
             assert process.returncode == 0
             print(f"PASS installed CLI {start_mode}: " + ("truthful unsupported-mode feedback" if start_mode == "regular" else
-                  "restored/live identity, duplicate stable IDs, real scrollTop, unchanged leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
+                  "native /fork source snapshots at 100x50 and 65x32, inline mounting, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
         except Exception:
             print(output.decode(errors="replace")[-12000:], file=sys.stderr)
             if report.exists():

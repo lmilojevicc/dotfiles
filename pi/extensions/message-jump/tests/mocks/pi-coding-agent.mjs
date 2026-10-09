@@ -1,3 +1,6 @@
+import { installedHost } from "../installed-host.mjs";
+import { pathToFileURL } from "node:url";
+export const { DynamicBorder } = await import(pathToFileURL(`${installedHost()}/dist/modes/interactive/components/dynamic-border.js`).href);
 import { Spacer, Text } from "@earendil-works/pi-tui";
 export const VERSION = "1.0.4";
 export class InteractiveMode {

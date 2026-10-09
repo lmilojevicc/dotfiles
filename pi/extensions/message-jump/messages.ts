@@ -14,7 +14,7 @@ export function collectMessages(branch: readonly SessionEntry[]): JumpMessage[] 
 		// Do not let persisted prompt control sequences execute in the picker.
 		const readable = text.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/gu, " ").trim();
 		return [{ id: entry.id, message: entry.message, text, preview: [readable, imageLabel].filter(Boolean).join(" ") || "[Empty prompt]" }];
-	}).reverse();
+	});
 }
 
 export function filterMessages(messages: readonly JumpMessage[], query: string): JumpMessage[] {

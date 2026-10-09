@@ -1,14 +1,15 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Input, SelectList, matchesKey, truncateToWidth, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, Input, Spacer, Text, matchesKey, truncateToWidth, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { filterMessages, type JumpMessage } from "./messages.ts";
 
-export class MessagePicker {
-	private input = new Input({ prompt: "Search: ", placeholder: "full prompt text" });
-	private list!: SelectList;
+/** Inline /fork-style layout; only the search field owns a text cursor. */
+export class MessagePicker extends Container {
+	private input: Input;
 	private matches: JumpMessage[] = [];
 	private selected = 0;
-	private visible = 8;
+	private visible = 10;
 	private closed = false;
+	private positions: Map<string, number>;
 	private messages: JumpMessage[];
 	private tui: TUI;
 	private theme: Theme;
@@ -16,21 +17,28 @@ export class MessagePicker {
 	private done: (id: string | undefined) => void;
 	constructor(messages: JumpMessage[], tui: TUI, theme: Theme,
 		kb: KeybindingsManager, done: (id: string | undefined) => void, query = "") {
+		super();
 		this.messages = messages; this.tui = tui; this.theme = theme; this.kb = kb; this.done = done;
+		this.positions = new Map(messages.map((message, i) => [message.id, i + 1]));
+		this.input = new Input({ prompt: " Search: ", placeholder: "type to filter messages", placeholderStyle: (s) => this.theme.fg("muted", s) });
 		this.input.setValue(query);
 		this.rebuild();
+		this.addChild(new Spacer(1));
+		this.addChild({ render: (width) => new Text(this.theme.bold("Jump to Message"), 1, 0).render(width), invalidate() {} });
+		this.addChild({ render: (width) => new Text(this.theme.fg("muted", "Select a user message to scroll to in the current transcript"), 1, 0).render(width), invalidate() {} });
+		this.addChild(this.input);
+		this.addChild(new Spacer(1));
+		this.addChild(new DynamicBorder((s) => this.theme.fg("border", s)));
+		this.addChild(new Spacer(1));
+		this.addChild({ render: (width) => this.renderMessages(width), invalidate() {} });
+		this.addChild(new Spacer(1));
+		this.addChild(new DynamicBorder((s) => this.theme.fg("border", s)));
 	}
 	get focused(): boolean { return this.input.focused; }
 	set focused(value: boolean) { this.input.focused = value; }
 	private rebuild(): void {
 		this.matches = filterMessages(this.messages, this.input.getValue());
-		this.selected = Math.max(0, Math.min(this.selected, this.matches.length - 1));
-		this.list = new SelectList(this.matches.map((item) => ({ value: item.id,
-			label: `${item.unavailable ? "[unavailable] " : ""}${item.preview}` })), this.visible, {
-			selectedPrefix: (s) => this.theme.fg("accent", s), selectedText: (s) => this.theme.fg("accent", s),
-			description: (s) => this.theme.fg("muted", s), scrollInfo: (s) => this.theme.fg("dim", s), noMatch: (s) => this.theme.fg("warning", s),
-		});
-		this.list.setSelectedIndex(this.selected);
+		this.selected = Math.max(0, this.matches.length - 1);
 	}
 	cancel(): void { this.finish(undefined); }
 	private finish(id: string | undefined): void {
@@ -47,28 +55,39 @@ export class MessagePicker {
 		} else if (this.kb.matches(data, "tui.select.up") || this.kb.matches(data, "tui.select.down")) {
 			const delta = this.kb.matches(data, "tui.select.up") ? -1 : 1;
 			if (this.matches.length) this.selected = (this.selected + delta + this.matches.length) % this.matches.length;
-			this.list.setSelectedIndex(this.selected);
 		} else if (this.kb.matches(data, "tui.select.pageUp") || this.kb.matches(data, "tui.select.pageDown")) {
 			const delta = this.kb.matches(data, "tui.select.pageUp") ? -this.visible : this.visible;
 			this.selected = Math.max(0, Math.min(this.matches.length - 1, this.selected + delta));
-			this.list.setSelectedIndex(this.selected);
 		} else {
 			const before = this.input.getValue();
 			this.input.handleInput(data);
-			if (this.input.getValue() !== before) { this.selected = 0; this.rebuild(); }
+			if (this.input.getValue() !== before) this.rebuild();
 		}
 		this.tui.requestRender();
 	}
-	render(width: number): string[] {
-		const visible = Math.max(1, Math.min(8, (this.tui.terminal.rows || 24) - 7));
-		if (visible !== this.visible) { this.visible = visible; this.rebuild(); }
-		const keys = (action: "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel") => this.kb.getKeys(action).join("/") || "unbound";
-		const lines = [this.theme.fg("accent", `Jump to user message (${this.matches.length}/${this.messages.length})`),
-			...this.input.render(Math.max(1, width)),
-			...(this.matches.length ? this.list.render(Math.max(4, width)) : [this.theme.fg("warning", "No matching messages")]),
-			this.theme.fg("dim", `${keys("tui.select.up")}/${keys("tui.select.down")} navigate · ${keys("tui.select.confirm")} jump · Esc/${keys("tui.select.cancel")} cancel`)];
-		return lines.map((line) => truncateToWidth(line, Math.max(1, width), ""));
+	private renderMessages(width: number): string[] {
+		if (!this.matches.length) return [this.theme.fg("muted", "  No matching messages")];
+		const start = Math.max(0, Math.min(this.selected - Math.floor(this.visible / 2), this.matches.length - this.visible));
+		const end = Math.min(start + this.visible, this.matches.length);
+		const lines: string[] = [];
+		for (let i = start; i < end; i++) {
+			const message = this.matches[i];
+			const selected = i === this.selected;
+			const cursor = selected ? this.theme.fg("accent", "› ") : "  ";
+			const prompt = truncateToWidth(`${message.unavailable ? "[unavailable] " : ""}${message.preview}`, Math.max(0, width - 2));
+			lines.push(cursor + (selected ? this.theme.bold(prompt) : prompt));
+			lines.push(this.theme.fg("muted", `  Message ${this.positions.get(message.id)} of ${this.messages.length}`));
+			lines.push("");
+		}
+		if (start > 0 || end < this.matches.length) lines.push(this.theme.fg("muted", `  (${this.selected + 1}/${this.matches.length})`));
+		return lines;
 	}
-	invalidate(): void { this.input.invalidate(); this.list.invalidate(); }
+	render(width: number): string[] {
+		width = Math.max(1, width);
+		// Three rows per message; reserve seven chrome rows, one indicator and four host-footer rows.
+		const headerRows = this.children[1].render(width).length + this.children[2].render(width).length;
+		this.visible = Math.max(1, Math.min(10, Math.floor(((this.tui.terminal.rows || 24) - headerRows - 12) / 3)));
+		return super.render(width).map((line) => truncateToWidth(line, width, ""));
+	}
 	dispose(): void { this.closed = true; }
 }

@@ -8,7 +8,7 @@ import { collectMessages, filterMessages } from "../messages.ts";
 import { MessagePicker } from "../picker.ts";
 
 const entry = (id: string, content: any = "same") => ({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
-const theme = { fg: (_: string, s: string) => s } as any;
+const theme = { fg: (_: string, s: string) => s, bold: (s: string) => s } as any;
 function host(mode = "fullscreen") {
 	const instance = new InteractiveMode() as any;
 	instance.version = "1.0.4";
@@ -28,14 +28,14 @@ function host(mode = "fullscreen") {
 }
 const item = (e: any) => collectMessages([e])[0];
 
- test("collectMessages: newest active-branch IDs, duplicates, multiline Unicode, image/empty previews and safe controls", () => {
+ test("collectMessages: chronological active-branch IDs, duplicates, multiline Unicode, image/empty previews and safe controls", () => {
 	const a = entry("a", "same\n世界 long tail"); const b = entry("b", "same\n世界 long tail");
 	const image = entry("i", [{ type: "image", data: "secret", mimeType: "image/png" }]);
 	const mixed = entry("mix", [{ type: "text", text: "text" }, { type: "image", data: "abc" }]);
 	const result = collectMessages([a, { type: "message", id: "assistant", message: { role: "assistant" } } as any, b, image, entry("empty", null), mixed]);
-	assert.deepEqual(result.map(i => i.id), ["mix", "empty", "i", "b", "a"]);
-	assert.equal(result[0].preview, "text [1 image]"); assert.equal(result[1].preview, "[Empty prompt]"); assert.equal(result[2].preview, "[1 image]");
-	assert.deepEqual(filterMessages(result, "TAIL 世界").map(i => i.id), ["b", "a"]);
+	assert.deepEqual(result.map(i => i.id), ["a", "b", "i", "empty", "mix"]);
+	assert.equal(result[4].preview, "text [1 image]"); assert.equal(result[3].preview, "[Empty prompt]"); assert.equal(result[2].preview, "[1 image]");
+	assert.deepEqual(filterMessages(result, "TAIL 世界").map(i => i.id), ["a", "b"]);
 	assert.equal(item(entry("ctl", "x\x1b[2J\nnext")).preview.includes("\x1b"), false);
 	assert.equal(filterMessages(result, "secret").length, 0);
 });
@@ -128,7 +128,43 @@ test("picker: full-text filter, configurable keys, Escape, focus, Unicode widths
 	empty.handleInput("\x1b"); assert.equal(results[2], undefined);
 	const cancel = new MessagePicker(values, tui, theme, kb, id => results.push(id)); cancel.handleInput("\x18"); assert.equal(results[3], undefined);
 	const paging = new MessagePicker(values, tui, theme, kb, id => results.push(id));
-	paging.handleInput("\x1b[6~"); paging.handleInput("\x19"); assert.equal(results[4], "old");
+	paging.render(80); paging.handleInput("\x1b[5~"); paging.handleInput("\x19"); assert.equal(results[4], "new");
+});
+
+test("picker: native-shaped inline snapshot, chronological metadata, latest defaults, wrapping and live search", () => {
+	const values = collectMessages(Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)));
+	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
+	const results: any[] = [];
+	const picker = new MessagePicker(values, tui, theme, kb, id => results.push(id));
+	const lines = picker.render(80).map(line => line.trimEnd());
+	assert.deepEqual(lines.slice(0, 3), ["", " Jump to Message", " Select a user message to scroll to in the current transcript"]);
+	assert.ok(lines[3].startsWith(" Search: "));
+	assert.deepEqual(lines.slice(4, 7), ["", "─".repeat(80), ""]);
+	assert.deepEqual(lines.slice(7, 10), ["  prompt 3", "  Message 3 of 12", ""]);
+	assert.deepEqual(lines.slice(-6), ["› prompt 12", "  Message 12 of 12", "", "  (12/12)", "", "─".repeat(80)]);
+	picker.handleInput("\x1b[B"); // Newest wraps to oldest.
+	assert.ok(picker.render(80).includes("› prompt 1"));
+	picker.handleInput("\x1b[A"); // Oldest wraps to newest.
+	assert.ok(picker.render(80).includes("› prompt 12"));
+	picker.handleInput("\x1b[A"); // Up is older.
+	assert.ok(picker.render(80).includes("› prompt 11"));
+	picker.handleInput("\x1b[200~PROMPT 1\x1b[201~");
+	const filtered = picker.render(80);
+	assert.ok(filtered.includes("› prompt 12"), "changed query defaults to latest match");
+	assert.ok(filtered.includes("  Message 12 of 12"), "filtered metadata retains branch ordinals");
+	picker.handleInput("\r"); assert.deepEqual(results, ["id-11"]);
+	const marked = new MessagePicker([{ ...values[11], unavailable: "not rendered" }], tui, theme, kb, () => {});
+	assert.ok(marked.render(80).includes("› [unavailable] prompt 12"));
+	const styled = { fg: (token: string, text: string) => `<${token}>${text}</${token}>`, bold: (text: string) => `<bold>${text}</bold>` } as any;
+	const colored = new MessagePicker(values.slice(0, 1), tui, styled, kb, () => {}).render(200);
+	assert.ok(colored.includes("<accent>› </accent><bold>prompt 1</bold>"), "only the caret is accent, only the selected prompt is bold");
+	for (const width of [20, 30, 40, 65, 80]) for (const rows of [20, 24, 32, 40, 50]) {
+		tui.terminal.rows = rows;
+		const resized = new MessagePicker(values, tui, theme, kb, () => {}).render(width);
+		assert.ok(resized.length <= rows - 4, "height leaves room for the host footer");
+		assert.ok(resized.includes("› prompt 12"), "resize preserves latest selection");
+	}
 });
 
 function runtime() {
@@ -136,7 +172,7 @@ function runtime() {
 	extension({ on: (n: string, f: any) => events.set(n, f), registerCommand: (n: string, c: any) => commands.set(n, c) } as any);
 	return { events, jump: commands.get("jump").handler };
 }
-test("command: only active branch, overlay cancellation preserves draft/scroll/context; commit rechecks stale IDs", async () => {
+test("command: only active branch, inline cancellation preserves draft/scroll/context; commit rechecks stale IDs", async () => {
 	const r = runtime(); const h = host(); const a = entry("a"); const b = entry("b");
 	h.addMessageToChat(a.message); h.addMessageToChat(b.message);
 	let branch = [a, b]; let session = "one"; let draft = "untouched";
@@ -144,7 +180,7 @@ test("command: only active branch, overlay cancellation preserves draft/scroll/c
 	const forbidden = () => { throw new Error("session/draft mutation forbidden"); };
 	const ctx = { mode: "tui", hasUI: true, sessionManager: { getBranch: () => branch, getSessionId: () => session },
 		fork: forbidden, navigateTree: forbidden, ui: { notify: (s: string) => notifications.push(s), setEditorText: forbidden,
-			custom: async (factory: any, options: any) => { assert.equal(options.overlay, true); const picker = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, new KeybindingsManager(TUI_KEYBINDINGS), (id: any) => {}); picker.dispose(); return choose?.(); } } } as any;
+			custom: async (factory: any, options: any) => { assert.equal(options, undefined); const picker = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, new KeybindingsManager(TUI_KEYBINDINGS), (id: any) => {}); picker.dispose(); return choose?.(); } } } as any;
 	try {
 		const before = h.transcriptScrollView.scrollTop;
 		await r.jump("", ctx); assert.equal(h.transcriptScrollView.scrollTop, before); assert.equal(draft, "untouched"); assert.deepEqual(branch, [a,b]);
@@ -156,7 +192,7 @@ test("command: only active branch, overlay cancellation preserves draft/scroll/c
 	} finally { r.events.get("session_shutdown")({ reason: "quit" }); }
 });
 
-test("command: session replacement shutdown closes a live overlay, lifecycle resources released", async () => {
+test("command: session replacement shutdown closes a live inline picker, lifecycle resources released", async () => {
 	const r = runtime(); const h = host(); const a = entry("a"); h.addMessageToChat(a.message);
 	let picker: any; let result: any;
 	const ctx = { mode: "tui", hasUI: true, sessionManager: { getBranch: () => [a], getSessionId: () => "one" }, ui: {

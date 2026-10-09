@@ -30,7 +30,7 @@ export default function messageJump(pi: ExtensionAPI): void {
 					picker = new MessagePicker(messages, tui, theme, kb, done, query);
 					active = picker;
 					return picker;
-				}, { overlay: true, overlayOptions: { anchor: "center", width: "90%", maxHeight: "90%" } });
+				});
 			} finally { if (active === picker) active = undefined; }
 			if (id === undefined) return;
 			if (token !== generation || sessionId !== ctx.sessionManager.getSessionId()) { notify("Session changed while /jump was open. Run /jump again."); return; }
