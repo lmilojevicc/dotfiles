@@ -167,8 +167,6 @@ bindkey -M vicmd '^X^E' edit-command-line
 bindkey ' ' magic-space
 
 # Aliases and bindkeys
-alias lvim='NVIM_APPNAME=nvim-lazy nvim'
-alias lvi='NVIM_APPNAME=nvim-lazy nvim'
 alias vi="nvim"
 alias vim="nvim"
 
