@@ -69,12 +69,6 @@ version = 1
     { source = "screenshot-mode", target = "~/.local/bin/screenshot-mode" },
   ]
 
-[packages.skills]
-  links = [
-    { source = "oss-repo-setup", target = "~/.agents/skills/oss-repo-setup" },
-    { source = "oss-repo-setup", target = "~/.claude/skills/oss-repo-setup" },
-  ]
-
 [packages.starship]
   links = [{ source = ".", target = "~/.config/starship" }]
 
