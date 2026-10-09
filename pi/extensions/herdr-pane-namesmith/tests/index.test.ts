@@ -23,6 +23,7 @@ function harness(env: NodeJS.ProcessEnv = { ...validEnv }, rename?: NamesmithDep
 	createHerdrPaneNamesmith(pi, { env, rename: rename ?? ((pane, socket, nextName) => new Promise<void>((resolve, reject) => {
 		calls.push({ pane, socket, name: nextName, resolve, reject });
 	})) });
+	const shutdown = (reason = "quit") => handlers.get("session_shutdown")!({ type: "session_shutdown", reason }, ctx);
 	return {
 		calls, warnings, ctx, env, nameReads: () => nameReads,
 		start: (nextName: string | undefined, reason = "startup", context = ctx) => {
@@ -30,7 +31,19 @@ function harness(env: NodeJS.ProcessEnv = { ...validEnv }, rename?: NamesmithDep
 			return handlers.get("session_start")!({ type: "session_start", reason }, context);
 		},
 		change: (nextName: string | undefined, context = ctx) => handlers.get("session_info_changed")!({ type: "session_info_changed", name: nextName }, context),
-		shutdown: (reason = "quit") => handlers.get("session_shutdown")!({ type: "session_shutdown", reason }, ctx),
+		shutdown,
+		// Existing naming tests explicitly acknowledge the additional normal-quit clear.
+		settleQuit: async () => {
+			const count = calls.length;
+			const stopping = shutdown();
+			await checkpoint();
+			if (calls.length > count) {
+				assert.equal(calls.length, count + 1);
+				assert.equal(calls[count].name, undefined, "normal quit clears the label");
+				calls[count].resolve();
+			}
+			await stopping;
+		},
 	};
 }
 
@@ -46,7 +59,7 @@ test("factory only registers handlers; manual /name and automatic naming share m
 	assert.equal(h.calls[1].name, "Automatic title");
 	assert.equal(h.nameReads(), 0, "metadata handler uses the normalized event name");
 	h.calls[1].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 for (const reason of ["startup", "reload", "new", "resume", "fork"]) {
@@ -57,7 +70,7 @@ for (const reason of ["startup", "reload", "new", "resume", "fork"]) {
 			assert.equal(h.nameReads(), 1);
 			assert.equal(h.calls[0].name, name);
 			h.calls[0].resolve();
-			await h.shutdown();
+			await h.settleQuit();
 		});
 	}
 }
@@ -68,7 +81,7 @@ for (const name of [undefined, ""]) {
 		h.change(name);
 		assert.equal(h.calls[0].name, undefined);
 		h.calls[0].resolve();
-		await h.shutdown();
+		await h.settleQuit();
 	});
 }
 
@@ -82,6 +95,7 @@ for (const mode of ["rpc", "json", "print", undefined, "unknown"]) {
 			assert.equal(h.calls.length, 0);
 			assert.equal(h.warnings.length, 0);
 			await h.shutdown();
+			assert.equal(h.calls.length, 0);
 		});
 	}
 }
@@ -97,6 +111,7 @@ for (const [key, value] of [
 		h.change("name");
 		assert.equal(h.calls.length, 0);
 		await h.shutdown();
+		assert.equal(h.calls.length, 0);
 	});
 }
 
@@ -111,7 +126,7 @@ test("uses only own env pane and socket, snapshots identity, deduplicates only s
 	await checkpoint();
 	assert.deepEqual([h.calls[1].pane, h.calls[1].socket], ["other-own-pane", "/other/socket"]);
 	h.calls[1].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("serializes requests and coalesces pending names to the latest, including clear", async () => {
@@ -129,7 +144,7 @@ test("serializes requests and coalesces pending names to the latest, including c
 	await checkpoint();
 	assert.deepEqual(h.calls.map((call) => call.name), ["A", "C", undefined]);
 	h.calls[2].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("deduplicates only within a burst and reasserts idle names and clears", async () => {
@@ -155,7 +170,7 @@ test("deduplicates only within a burst and reasserts idle names and clears", asy
 	h.change("");
 	assert.equal(h.calls.length, 5, "an idle clear reasserts the unnamed state");
 	h.calls[4].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("repeating /name A restores A after a manual Herdr rename to B", async () => {
@@ -168,7 +183,7 @@ test("repeating /name A restores A after a manual Herdr rename to B", async () =
 	h.change("A");
 	await checkpoint();
 	assert.equal(paneLabel, "A");
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("new metadata event in drain-completion continuation is not lost", async () => {
@@ -180,7 +195,7 @@ test("new metadata event in drain-completion continuation is not lost", async ()
 	await checkpoint();
 	assert.deepEqual(h.calls.map((call) => call.name), ["A", "B"]);
 	h.calls[1].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("failures retry on future events, bound warnings until success, and invalidate previous dedup", async () => {
@@ -208,7 +223,7 @@ test("failures retry on future events, bound warnings until success, and invalid
 	h.calls[4].reject(new Error("new failure streak"));
 	await checkpoint();
 	assert.equal(h.warnings.length, 2);
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("synchronous transport throws and notification throws stay nonfatal and retryable", async () => {
@@ -220,10 +235,10 @@ test("synchronous transport throws and notification throws stay nonfatal and ret
 	h.change("A");
 	await checkpoint();
 	assert.equal(attempts, 2);
-	await h.shutdown();
+	await h.settleQuit();
 });
 
-for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
+for (const reason of ["reload", "new", "resume", "fork"]) {
 	test(`shutdown ${reason} drops pending writes, waits for in-flight settlement, and ignores stale contexts`, async () => {
 		const h = harness();
 		h.change("old in-flight");
@@ -239,13 +254,13 @@ for (const reason of ["quit", "reload", "new", "resume", "fork"]) {
 		assert.equal(h.calls.length, 1);
 		assert.equal(h.warnings.length, 0);
 		await h.shutdown(reason);
-		if (reason !== "quit") {
-			const fresh = harness();
-			fresh.start(reason === "new" ? undefined : "fresh name", reason);
-			assert.equal(fresh.calls.length, 1, "replacement factory has no stale dedup or closed state");
-			fresh.calls[0].resolve();
-			await fresh.shutdown();
-		}
+		await h.shutdown("quit");
+		assert.equal(h.calls.length, 1, "a closed replacement runtime never exit-clears");
+		const fresh = harness();
+		fresh.start(reason === "new" ? undefined : "fresh name", reason);
+		assert.equal(fresh.calls.length, 1, "replacement factory has no stale dedup or closed state");
+		fresh.calls[0].resolve();
+		await fresh.settleQuit();
 	});
 }
 
@@ -254,7 +269,7 @@ test("TUI mode does not depend on the RPC-compatible hasUI flag", async () => {
 	h.change("TUI name", { ...h.ctx, hasUI: false });
 	assert.equal(h.calls.length, 1);
 	h.calls[0].resolve();
-	await h.shutdown();
+	await h.settleQuit();
 });
 
 test("successful in-flight rename settles shutdown without sending the discarded pending name", async () => {
@@ -266,4 +281,152 @@ test("successful in-flight rename settles shutdown without sending the discarded
 	await shutdown;
 	assert.equal(h.calls.length, 1);
 	assert.equal(h.warnings.length, 0);
+});
+
+test("normal quit clears an idle named session and awaits the clear", async () => {
+	const h = harness();
+	h.start("Saved name");
+	h.calls[0].resolve();
+	await checkpoint();
+	let stopped = false;
+	const shutdown = Promise.resolve(h.shutdown()).then(() => { stopped = true; });
+	await checkpoint();
+	assert.deepEqual(h.calls.map(({ pane, socket, name }) => ({ pane, socket, name })), [
+		{ pane: "own-pane", socket: "/own/socket", name: "Saved name" },
+		{ pane: "own-pane", socket: "/own/socket", name: undefined },
+	]);
+	assert.equal(stopped, false, "Pi must wait for cleanup settlement");
+	h.calls[1].resolve();
+	await shutdown;
+	assert.equal(stopped, true);
+});
+
+for (const fails of [false, true]) {
+	test(`quit serializes clear after ${fails ? "failed" : "successful"} in-flight rename and drops pending updates`, async () => {
+		const h = harness();
+		h.change("in-flight");
+		h.change("pending");
+		const shutdown = h.shutdown();
+		h.change("stale metadata");
+		h.start("stale session");
+		await checkpoint();
+		assert.equal(h.calls.length, 1, "clear cannot overtake the in-flight request");
+		if (fails) h.calls[0].reject(new Error("failed initial write"));
+		else h.calls[0].resolve();
+		await checkpoint();
+		assert.deepEqual(h.calls.map((call) => call.name), ["in-flight", undefined]);
+		h.calls[1].resolve();
+		await shutdown;
+		assert.equal(h.warnings.length, 0);
+	});
+}
+
+test("repeated and concurrent quit handlers share one awaited cleanup", async () => {
+	const h = harness();
+	h.change("name");
+	const first = h.shutdown();
+	const second = h.shutdown();
+	assert.equal(first, second);
+	h.calls[0].resolve();
+	await checkpoint();
+	const third = h.shutdown();
+	assert.equal(first, third);
+	assert.equal(h.calls.length, 2);
+	h.calls[1].resolve();
+	await Promise.all([first, second, third]);
+	await h.shutdown();
+	assert.equal(h.calls.length, 2);
+});
+
+test("a failed idle initial write still records the pane for quit cleanup", async () => {
+	const h = harness();
+	h.change("name");
+	h.calls[0].reject(new Error("response lost after write"));
+	await checkpoint();
+	assert.equal(h.warnings.length, 1);
+	const shutdown = h.shutdown();
+	await checkpoint();
+	assert.deepEqual([h.calls[1].pane, h.calls[1].socket, h.calls[1].name], ["own-pane", "/own/socket", undefined]);
+	h.calls[1].resolve();
+	await shutdown;
+	assert.equal(h.warnings.length, 1);
+});
+
+test("a rejected quit clear stays nonfatal without warnings or retries", async () => {
+	const h = harness();
+	h.change("name");
+	h.calls[0].resolve();
+	await checkpoint();
+	const shutdown = h.shutdown();
+	await checkpoint();
+	h.calls[1].reject(new Error("socket unavailable"));
+	await shutdown;
+	await h.shutdown();
+	assert.equal(h.calls.length, 2);
+	assert.equal(h.warnings.length, 0);
+});
+
+test("synchronous initial and cleanup throws remain nonfatal and cleanup is attempted once", async () => {
+	const names: (string | undefined)[] = [];
+	const h = harness({ ...validEnv }, (_pane, _socket, name) => {
+		names.push(name);
+		throw new Error("socket failed synchronously");
+	});
+	h.change("name");
+	await checkpoint();
+	await Promise.all([h.shutdown(), h.shutdown()]);
+	await h.shutdown();
+	assert.deepEqual(names, ["name", undefined]);
+	assert.equal(h.warnings.length, 1, "cleanup never warns through the stopped TUI");
+});
+
+for (const pending of [false, true]) {
+	test(`quit retains attempted own identity despite env change${pending ? " and a pending new target" : ""}`, async () => {
+		const h = harness({ ...validEnv, HERDR_FOCUSED_PANE_ID: "focused-pane" });
+		h.change("name");
+		if (!pending) {
+			h.calls[0].resolve();
+			await checkpoint();
+		}
+		h.env.HERDR_PANE_ID = "changed-pane";
+		h.env.HERDR_SOCKET_PATH = "/changed/socket";
+		h.env.HERDR_ENV = "0";
+		if (pending) {
+			h.env.HERDR_ENV = "1";
+			h.change("pending new target");
+		}
+		const shutdown = h.shutdown();
+		if (pending) h.calls[0].resolve();
+		await checkpoint();
+		assert.deepEqual([h.calls[1].pane, h.calls[1].socket, h.calls[1].name], ["own-pane", "/own/socket", undefined]);
+		h.calls[1].resolve();
+		await shutdown;
+		assert.equal(h.calls.length, 2);
+	});
+}
+
+test("quit clears the last actually attempted target, not an earlier target", async () => {
+	const h = harness();
+	h.change("first");
+	h.env.HERDR_PANE_ID = "second-pane";
+	h.env.HERDR_SOCKET_PATH = "/second/socket";
+	h.change("second");
+	h.calls[0].resolve();
+	await checkpoint();
+	h.calls[1].resolve();
+	await checkpoint();
+	const shutdown = h.shutdown();
+	await checkpoint();
+	assert.deepEqual([h.calls[2].pane, h.calls[2].socket, h.calls[2].name], ["second-pane", "/second/socket", undefined]);
+	h.calls[2].resolve();
+	await shutdown;
+});
+
+test("a never-active runtime with valid inherited environment does not clear", async () => {
+	const h = harness();
+	await Promise.all([h.shutdown(), h.shutdown()]);
+	h.start("too late");
+	h.change("too late");
+	await h.shutdown();
+	assert.equal(h.calls.length, 0);
 });

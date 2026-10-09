@@ -34,7 +34,9 @@ The asynchronous Node socket transport sends newline-delimited JSON:
 
 Requests are serialized; only the newest pending name survives a burst. Only acknowledged successes deduplicate within an active burst. Once the queue is idle, repeating `/name <name>` or clearing the name reapplies the label even if it was edited manually in Herdr. Failures remain nonfatal, emit one concise warning per failure streak (reset by success), and retry on a future name/session event, not a polling timer. Each request has a 2-second wall-clock deadline and a 16-KiB response limit; it requires a matching response ID, a result object, and no error. Fragmented responses are buffered until newline. Every settlement destroys the socket.
 
-`session_shutdown` drops pending work and waits for the bounded in-flight request to settle before Pi invalidates the old context. It does not clear or restore the label on shutdown. Reload and session replacement create fresh extension factories; those read the current name on `session_start` without retaining old queue/dedup state.
+`session_shutdown` drops pending work and waits for the bounded in-flight request to settle before Pi invalidates the old context. On normal Pi exit (`reason: "quit"`), it then clears the label on the last own pane/socket this TUI runtime actually attempted to synchronize, even if that write failed. Cleanup uses the captured identity, not later environment changes, focused panes, or discarded pending targets. Inactive and non-TUI runtimes never clear a parent pane. Repeated/concurrent shutdown calls share one awaited cleanup.
+
+Exit cleanup is bounded and best effort: the clear uses the same 2-second transport deadline, after any in-flight request settles, and failures remain nonfatal without notifying the stopped TUI. Forced kill, crash, or power loss cannot guarantee cleanup. No previous manual label is restored. Reload and session replacement (`reload/new/resume/fork`) do **not** clear in the old runtime; they create fresh extension factories that read the current name on `session_start` without retaining old queue/dedup state.
 
 ## Tests and contract sources
 
@@ -48,9 +50,9 @@ Checked against installed Pi 1.0.4:
 
 - `docs/extensions.md`, plus pertinent `configuration.md`, `settings.md` (resources), `packages.md`, `security.md` (trust), `cli.md` (resources/modes), and `sessions.md`: directory discovery, manifest paths, terminal-only mode guard, context invalidation and cleanup.
 - `dist/core/extensions/types.d.ts`: normalized `session_info_changed.name`; start reasons `startup/reload/new/resume/fork`; shutdown reasons `quit/reload/new/resume/fork`.
-- `dist/modes/interactive/interactive-mode.js`, `handleNameCommand`: `/name` uses `session.setSessionName`.
+- `dist/modes/interactive/interactive-mode.js`, `handleNameCommand`: `/name` uses `session.setSessionName`; normal interactive `shutdown` awaits `runtimeHost.dispose()` before `process.exit(0)`.
 - `dist/core/agent-session.js`, `setSessionName` and extension bindings: both manual and API naming emit the metadata event; reload awaits shutdown, replaces the runtime, then emits start.
-- `dist/core/agent-session-runtime.js`, `teardownCurrent` and session replacement methods: await shutdown before creating/rebinding the replacement runtime.
+- `dist/core/agent-session-runtime.js`, `teardownCurrent` and session replacement methods: await shutdown before creating/rebinding the replacement runtime; `dispose` awaits `session_shutdown` with reason `quit` before invalidating the session.
 - `dist/core/extensions/loader.js`, `resolveExtensionEntries`: `pi.extensions` manifest first, `index.ts` fallback; no recursive test discovery. A read-only installed-loader check discovered exactly `index.ts` with the three lifecycle handlers and zero errors/warnings, without starting a session.
 
 Herdr `pane.rename` request/result envelopes were verified by the parent against installed Herdr 0.9.1 schema and a temporary pane, including exact `--clear`, quoted Unicode labels, and null clearing. No worker tests touch live Herdr. Future protocol changes and actual Windows runtime behavior remain outside these unit tests.

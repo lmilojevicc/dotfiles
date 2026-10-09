@@ -25,6 +25,8 @@ export function createHerdrPaneNamesmith(
 	let pending: Rename | undefined;
 	let running: Promise<void> | undefined;
 	let successful: Rename | undefined;
+	let attemptedTarget: Pick<Rename, "paneId" | "socketPath"> | undefined;
+	let shutdown: Promise<void> | undefined;
 	let warned = false;
 
 	async function drain(): Promise<void> {
@@ -32,6 +34,8 @@ export function createHerdrPaneNamesmith(
 			const rename = pending;
 			pending = undefined;
 			if (sameRename(successful, rename)) continue;
+			// Even a failed request may have changed this target's label.
+			attemptedTarget = { paneId: rename.paneId, socketPath: rename.socketPath };
 			try {
 				await dependencies.rename(rename.paneId, rename.socketPath, rename.name);
 				successful = rename;
@@ -77,10 +81,20 @@ export function createHerdrPaneNamesmith(
 	pi.on("session_start", (_event, ctx) => synchronize(pi.getSessionName(), ctx));
 	pi.on("session_info_changed", (event, ctx) => synchronize(event.name, ctx));
 	// Pi creates a fresh extension runtime after reload/new/resume/fork; never reopen this one.
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", (event) => {
+		if (shutdown) return shutdown;
 		closed = true;
 		pending = undefined;
-		await running;
+		shutdown = (async () => {
+			await running;
+			if (event.reason !== "quit" || !attemptedTarget) return;
+			try {
+				await dependencies.rename(attemptedTarget.paneId, attemptedTarget.socketPath, undefined);
+			} catch {
+				// Exit cleanup is bounded and best effort; never notify a stopped TUI.
+			}
+		})();
+		return shutdown;
 	});
 }
 
