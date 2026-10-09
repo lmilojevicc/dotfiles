@@ -141,7 +141,7 @@ test("picker: native-shaped inline snapshot, chronological metadata, latest defa
 	const lines = picker.render(80).map(line => line.trimEnd());
 	assert.deepEqual(lines.slice(0, 3), ["", " Jump to Message", " Select a user message to scroll to in the current transcript"]);
 	assert.ok(lines[3].startsWith(" Search: "));
-	assert.deepEqual(lines.slice(4, 7), ["", "─".repeat(80), ""]);
+	assert.deepEqual(lines.slice(4, 7), [" Ctrl+Y copy highlighted message", "─".repeat(80), ""]);
 	assert.deepEqual(lines.slice(7, 10), ["  prompt 3", "  Message 3 of 12", ""]);
 	assert.deepEqual(lines.slice(-6), ["› prompt 12", "  Message 12 of 12", "", "  (12/12)", "", "─".repeat(80)]);
 	picker.handleInput("\x1b[B"); // Newest wraps to oldest.

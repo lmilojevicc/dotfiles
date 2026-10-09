@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { InteractiveMode, VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { collectMessages } from "../messages.ts";
 const report = (event: string, details = {}) => appendFileSync(process.env.MESSAGE_JUMP_REPORT!, `${JSON.stringify({ event, ...details })}\n`);
@@ -80,9 +80,10 @@ export default function (pi: ExtensionAPI) {
 							const root = process.env.MESSAGE_JUMP_PI_ROOT!;
 							const { UserMessageSelectorComponent } = await import(pathToFileURL(`${root}/dist/modes/interactive/components/user-message-selector.js`).href);
 							native = new UserMessageSelectorComponent(messages.map(item => ({ id: item.id, text: item.preview })), () => {}, () => {});
-							// Substitute only the jump-specific copy, retaining native header components/spacing.
+							// Substitute jump-specific copy/help, retaining native header components/spacing.
 							native.children[1] = new Text(args[1].bold("Jump to Message"), 1, 0);
 							native.children[2] = new Text(args[1].fg("muted", "Select a user message to scroll to in the current transcript"), 1, 0);
+							native.children[3] = { render: (width: number) => [truncateToWidth(args[1].fg("muted", " Ctrl+Y copy highlighted message"), width, "")], invalidate() {} };
 						}
 						const render = picker.render.bind(picker);
 						const seen = new Set<string>();

@@ -31,8 +31,8 @@ export class MessagePicker extends Container {
 		this.addChild({ render: (width) => new Text(this.theme.bold("Jump to Message"), 1, 0).render(width), invalidate() {} });
 		this.addChild({ render: (width) => new Text(this.theme.fg("muted", "Select a user message to scroll to in the current transcript"), 1, 0).render(width), invalidate() {} });
 		this.addChild(this.input);
-		// Reuse the native spacer row for clipboard feedback without changing the layout height.
-		this.addChild({ render: (width) => this.copyStatus ? [truncateToWidth(this.theme.fg(this.copyColor, ` ${this.copyStatus}`), Math.max(1, width), "")] : [""], invalidate() {} });
+		// Reuse the native spacer row for copy help and feedback without changing the layout height.
+		this.addChild({ render: (width) => [truncateToWidth(this.theme.fg(this.copyColor, ` ${this.copyStatus || "Ctrl+Y copy highlighted message"}`), Math.max(1, width), "")], invalidate() {} });
 		this.addChild(new DynamicBorder((s) => this.theme.fg("border", s)));
 		this.addChild(new Spacer(1));
 		this.addChild({ render: (width) => this.renderMessages(width), invalidate() {} });
