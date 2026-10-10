@@ -38,7 +38,8 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	mkdirSync(cwd, { recursive: true });
 	mkdirSync(join(agentDir, "npm/node_modules"), { recursive: true });
 	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
-	symlinkSync(fileURLToPath(new URL("../../../APPEND_SYSTEM.md", import.meta.url)), join(agentDir, "APPEND_SYSTEM.md"));
+	// Keep independent native APPEND discovery explicit and immune to unrelated user draft edits.
+	writeFileSync(join(agentDir, "APPEND_SYSTEM.md"), "## Tone and Behavior\nIndependent native APPEND fixture.\n");
 	const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const oldChild = process.env.PI_SUBAGENT_CHILD;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
