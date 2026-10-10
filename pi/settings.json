@@ -8,7 +8,10 @@
     "npm:pi-zentui",
     "npm:pi-intercom",
     "npm:pi-web-access",
-    "npm:pi-subagents",
+    {
+      "source": "npm:pi-subagents",
+      "extensions": []
+    },
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@narumitw/pi-goal",
     "git:github.com/MasuRii/pi-tool-display",
@@ -34,6 +37,7 @@
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
   "extensions": [
+    "extensions/pi-subagents-host-gate/loader.ts",
     "-extensions/command-code/index.ts",
     "-extensions/chadineer/index.ts"
   ]
