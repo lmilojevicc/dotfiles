@@ -27,7 +27,13 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
       return redactor.redact(value);
     } catch { failed = true; throw new Error("Redaction unavailable"); }
   };
-  const text = (value: string): string => scan(value).text;
+  const text = (value: string): string => {
+    if (failed) throw new Error("Redaction unavailable");
+    try {
+      redactor ??= (deps.createRedactor ?? createNativeRedactor)(config);
+      return redactor.redactText ? redactor.redactText(value) : redactor.redact(value).text;
+    } catch { failed = true; throw new Error("Redaction unavailable"); }
+  };
   const hasAutomaticDetectors = Object.values(config.detectors).some(Boolean);
   let reservedFor: ExtensionContext["sessionManager"] | undefined;
   const reserveHistory = (ctx: Pick<ExtensionContext, "sessionManager">): void => {

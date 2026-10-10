@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds and installs tooling ONLY in TEMP; never launches Pi or reads a live policy.
 set -euo pipefail
+[[ "$(node --version)" == "v26.10.0" ]] || { echo 'Use normal-shell Node26.10.0' >&2; exit 1; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUTPUT=${1:-"$ROOT/benchmarks/results/latest.json"}
 TEMP=$(mktemp -d "${TMPDIR:-/tmp}/pi-redaction-benchmark.XXXXXX")
@@ -11,7 +12,10 @@ export NPM_CONFIG_USERCONFIG="$TEMP/empty-user.npmrc" NPM_CONFIG_GLOBALCONFIG="$
 # HOME is overridden for the measured Node process below, not Cargo/toolchain lookup.
 python3 - "$ROOT" "$TEMP" <<'PY'
 import sys,shutil,pathlib
-shutil.copytree(sys.argv[1], pathlib.Path(sys.argv[2])/'local', ignore=shutil.ignore_patterns('target','*.node','node_modules','results'))
+source=pathlib.Path(sys.argv[1]); local=pathlib.Path(sys.argv[2])/'local'
+shutil.copytree(source, local, ignore=shutil.ignore_patterns('target','*.node','node_modules','results','config.json','.npmrc','*.log','*.tgz','comparator','upstream','logs'))
+(local/'benchmarks'/'results').mkdir()
+shutil.copyfile(source/'benchmarks'/'results'/'latest.json',local/'benchmarks'/'results'/'latest.json')
 PY
 export BENCH_TEMP="$TEMP"
 python3 - <<'PY'

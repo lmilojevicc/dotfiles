@@ -43,6 +43,28 @@ test("bridge refuses malformed, overlapping, non-boundary, invented output and l
   assert.throws(() => convertNativeResult("\ud800", JSON.stringify({ text: "\ud800", matches: [] })));
   assert.throws(() => convertNativeResult("input", "synthetic raw engine error"), { message: "Redaction engine unavailable" });
 });
+test("legacy validation rejects malformed output/replacements and excessive span counts", () => {
+  for (const result of [
+    null, { text: "\ud800", matches: [] },
+    { text: "\ud800", matches: [{ start: 0, end: 1, replacement: "\ud800", kind: "literal" }] },
+    { text: "X", matches: new Array(100_001).fill({ start: 0, end: 1, replacement: "X", kind: "literal" }) },
+  ]) assert.throws(() => convertNativeResult("x", JSON.stringify(result)), { message: "Redaction engine unavailable" });
+});
+
+test("legacy input and serialized response caps remain enforced on no-match scans", () => {
+  let calls = 0;
+  const bridge = createNativeRedactor(offConfig(), () => ({ NativeRedactor: class {
+    redact(text: string) { calls++; return JSON.stringify({ text, matches: [] }); }
+    reset() {}
+  } }));
+  const input = "x".repeat(8 * 1024 * 1024);
+  assert.equal(bridge.redactText!(input), input);
+  assert.throws(() => bridge.redactText!(input + "x"), { message: "Redaction engine unavailable" });
+  assert.throws(() => bridge.redact("\ud800"), { message: "Redaction engine unavailable" });
+  assert.equal(calls, 1);
+  assert.throws(() => convertNativeResult("x", " ".repeat(64 * 1024 * 1024 + 1)), { message: "Redaction engine unavailable" });
+});
+
 test("large Unicode dense spans have correct indices without prefix slicing", () => {
   const count = 10000;
   const input = "😀x".repeat(count);

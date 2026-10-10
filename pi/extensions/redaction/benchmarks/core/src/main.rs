@@ -10,37 +10,69 @@ fn main() {
     let mut rows = Vec::new();
     for task in tasks.as_array().unwrap() {
         let config = task["config"].to_string();
-        let input = task["text"].as_str().unwrap();
+        let checks = task["coreChecks"].as_array().unwrap();
+        let inputs: Vec<&str> = checks
+            .iter()
+            .map(|check| check["text"].as_str().unwrap())
+            .collect();
         let start = Instant::now();
         let mut engine = Engine::from_json(&config).unwrap();
         let construction_ms = start.elapsed().as_secs_f64() * 1000.0;
-        let result = engine.redact(input).unwrap();
-        assert_eq!(
-            result.matches.len(),
-            task["expectedMatches"].as_u64().unwrap() as usize
-        );
-        for secret in task["secrets"].as_array().unwrap() {
-            assert!(!result.text.contains(secret.as_str().unwrap()));
+        for check in checks {
+            let result = engine.redact(check["text"].as_str().unwrap()).unwrap();
+            assert_eq!(result.text, check["output"].as_str().unwrap());
+            assert_eq!(
+                result.matches.len(),
+                check["matches"].as_u64().unwrap() as usize
+            );
         }
-        for _ in 0..5 {
-            black_box(engine.redact(black_box(input)).unwrap());
+        let multi = matches!(task["shape"].as_str(), Some("multi-text" | "nested"));
+        let mut index = 0;
+        let mut run = || {
+            if multi {
+                for input in &inputs {
+                    black_box(engine.redact(black_box(input)).unwrap());
+                }
+            } else {
+                black_box(
+                    engine
+                        .redact(black_box(inputs[index % inputs.len()]))
+                        .unwrap(),
+                );
+                index += 1;
+            }
+        };
+        let start = Instant::now();
+        let mut warmup = 0;
+        while warmup < 20 || start.elapsed().as_secs_f64() < 0.05 {
+            run();
+            warmup += 1;
+        }
+        let mut batch = 1;
+        loop {
+            let start = Instant::now();
+            for _ in 0..batch {
+                run();
+            }
+            if start.elapsed().as_secs_f64() >= 0.005 || batch == 8192 {
+                break;
+            }
+            batch *= 2;
         }
         let mut samples = Vec::new();
         for _ in 0..21 {
             let start = Instant::now();
-            for _ in 0..3 {
-                black_box(engine.redact(black_box(input)).unwrap());
+            for _ in 0..batch {
+                run();
             }
-            samples.push(start.elapsed().as_secs_f64() * 1000.0 / 3.0);
+            samples.push(start.elapsed().as_secs_f64() * 1000.0 / batch as f64);
         }
         let mut sorted = samples.clone();
         sorted.sort_by(f64::total_cmp);
-        let p50 = sorted[10];
-        let p95 = sorted[19];
         rows.push(json!({"id":task["id"],"implementation":"local-rust-core",
-            "constructionMs":construction_ms,"samplesMs":samples,"p50Ms":p50,"p95Ms":p95,
-            "throughputMiBs":input.len() as f64 / 1048576.0 / (p50 / 1000.0),
-            "correctness":"passed"}));
+            "constructionMs":construction_ms,"warmupIterations":warmup,"batch":batch,
+            "samplesMs":samples,"p50Ms":sorted[10],"p95Ms":sorted[19],
+            "minMs":sorted[0],"maxMs":sorted[20],"correctness":"passed"}));
     }
     println!("{}", serde_json::to_string(&rows).unwrap());
 }

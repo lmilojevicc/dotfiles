@@ -2,6 +2,7 @@
 use aho_corasick::{AhoCorasick, MatchKind};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
@@ -76,6 +77,27 @@ impl Kind {
             Self::Literal => unreachable!(),
         }
     }
+    #[cfg(any(test, feature = "node"))]
+    fn serialized_name(self) -> &'static str {
+        match self {
+            Self::Literal => "literal",
+            Self::Email => "email",
+            Self::Phone => "phone",
+            Self::ApiToken => "apiToken",
+            Self::PrivateKey => "privateKey",
+            Self::CredentialUrl => "credentialUrl",
+        }
+    }
+    fn alias_prefix(self) -> &'static [u8] {
+        match self {
+            Self::Email => b"[EMAIL_",
+            Self::Phone => b"[PHONE_",
+            Self::ApiToken => b"[API_TOKEN_",
+            Self::PrivateKey => b"[PRIVATE_KEY_",
+            Self::CredentialUrl => b"[CREDENTIAL_URL_",
+            Self::Literal => unreachable!(),
+        }
+    }
     fn priority(self) -> u8 {
         match self {
             Self::Literal => 0,
@@ -100,6 +122,142 @@ pub struct RedactionResult {
     pub text: String,
     pub matches: Vec<RedactionMatch>,
 }
+#[derive(Debug, Serialize)]
+struct BorrowedRedactionResult<'a> {
+    text: Cow<'a, str>,
+    matches: Vec<RedactionMatch>,
+}
+
+// Every accepted phone candidate requires at least seven ASCII digits.
+// SIMD-backed searches count only up to seven; all alias/literal work still runs.
+fn has_phone_digits(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut count = 0;
+    for (a, b, c) in [(b'0', b'1', b'2'), (b'3', b'4', b'5'), (b'6', b'7', b'8')] {
+        count += memchr::memchr3_iter(a, b, c, bytes).take(7 - count).count();
+        if count == 7 {
+            return true;
+        }
+    }
+    count + memchr::memchr_iter(b'9', bytes).take(7 - count).count() == 7
+}
+
+#[cfg(any(test, feature = "node"))]
+const MARKER_DIGIT: u8 = 1;
+#[cfg(any(test, feature = "node"))]
+const MARKER_AT: u8 = 2;
+#[cfg(any(test, feature = "node"))]
+const MARKER_DASH: u8 = 4;
+#[cfg(any(test, feature = "node"))]
+const MARKER_API_INITIAL: u8 = 8;
+#[cfg(any(test, feature = "node"))]
+const MARKER_BRACKET: u8 = 16;
+
+#[cfg(any(test, feature = "node"))]
+const PREFLIGHT_ASCII_MARKERS: [u8; 128] = {
+    let mut markers = [0; 128];
+    let mut digit = b'0';
+    while digit <= b'9' {
+        markers[digit as usize] = MARKER_DIGIT;
+        digit += 1;
+    }
+    markers[b'@' as usize] = MARKER_AT;
+    markers[b'-' as usize] = MARKER_DASH;
+    // All current API alternatives start with sk-, gh*/github_pat_, AKIA/AIza,
+    // or xox*. These are necessary markers, not sufficient detector matches.
+    markers[b's' as usize] = MARKER_API_INITIAL;
+    markers[b'g' as usize] = MARKER_API_INITIAL;
+    markers[b'A' as usize] = MARKER_API_INITIAL;
+    markers[b'x' as usize] = MARKER_API_INITIAL;
+    markers[b'[' as usize] = MARKER_BRACKET;
+    markers
+};
+
+#[cfg(any(test, feature = "node"))]
+fn json_byte_width(byte: u8) -> usize {
+    match byte {
+        b'"' | b'\\' | b'\n' | b'\r' | b'\t' | 8 | 12 => 2,
+        0..=31 => 6,
+        _ => 1,
+    }
+}
+
+#[cfg(any(test, feature = "node"))]
+struct Utf16Token {
+    kind: Kind,
+    end: usize,
+    id: Result<u64, SafeError>,
+}
+
+#[cfg(any(test, feature = "node"))]
+struct Utf16Segment {
+    consumed: usize,
+    bytes: usize,
+    json_bytes: usize,
+    phone_digits: u8,
+    fallback: bool,
+}
+
+// Keep the hot scalar loop separate from cold token/map bookkeeping. The caller
+// checks the six-bytes-per-unit bound before these unchecked local additions.
+#[cfg(any(test, feature = "node"))]
+#[inline(never)]
+fn utf16_negative_segment(
+    units: &[u16],
+    markers: u8,
+    mut phone_digits: u8,
+) -> Result<Utf16Segment, SafeError> {
+    let mut index = 0;
+    let mut bytes = 0;
+    let mut json_bytes = 0;
+    let mut fallback = false;
+    while index < units.len() {
+        let unit = units[index];
+        let (width, json_width) = if unit < 128 {
+            let present = PREFLIGHT_ASCII_MARKERS[unit as usize] & markers;
+            if present != 0 {
+                if present == MARKER_BRACKET {
+                    break;
+                }
+                if present == MARKER_DIGIT {
+                    phone_digits += 1;
+                    if phone_digits == 7 {
+                        fallback = true;
+                        break;
+                    }
+                } else {
+                    fallback = true;
+                    break;
+                }
+            }
+            (1, json_byte_width(unit as u8))
+        } else if unit < 0x800 {
+            (2, 2)
+        } else if (0xd800..=0xdbff).contains(&unit) {
+            let low = units.get(index + 1).ok_or(SafeError)?;
+            if !(0xdc00..=0xdfff).contains(low) {
+                return Err(SafeError);
+            }
+            index += 1;
+            (4, 4)
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            return Err(SafeError);
+        } else {
+            (3, 3)
+        };
+        bytes += width;
+        json_bytes += json_width;
+        index += 1;
+    }
+    Ok(Utf16Segment {
+        consumed: index,
+        bytes,
+        json_bytes,
+        phone_digits,
+        fallback,
+    })
+}
+
 #[derive(Clone, Copy)]
 struct Candidate {
     start: usize,
@@ -113,7 +271,7 @@ struct Scanner {
     regex: Regex,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Limits {
     config_bytes: usize,
     rules: usize,
@@ -166,8 +324,11 @@ pub struct Engine {
     literal_safety: Option<AhoCorasick>,
     replacements: Vec<String>,
     protected_literals: Option<AhoCorasick>,
+    #[cfg(test)]
     protected_auto: Option<Regex>,
     scanners: Vec<Scanner>,
+    #[cfg(any(test, feature = "node"))]
+    preflight_markers: u8,
     aliases: HashMap<Kind, HashMap<String, String>>,
     counters: HashMap<Kind, u64>,
 }
@@ -300,6 +461,7 @@ impl Engine {
                 return Err(SafeError);
             }
         }
+        #[cfg(test)]
         let protected_auto = if enabled.is_empty() {
             None
         } else {
@@ -312,6 +474,17 @@ impl Engine {
                     .join("|")
             ))?)
         };
+        #[cfg(any(test, feature = "node"))]
+        let preflight_markers = enabled.iter().fold(0, |mask, kind| {
+            mask | MARKER_BRACKET
+                | match kind {
+                    Kind::Email | Kind::CredentialUrl => MARKER_AT,
+                    Kind::Phone => MARKER_DIGIT,
+                    Kind::PrivateKey => MARKER_DASH,
+                    Kind::ApiToken => MARKER_API_INITIAL,
+                    Kind::Literal => unreachable!(),
+                }
+        });
         let mut scanners = Vec::new();
         for kind in enabled {
             // Fixed local heuristics; no secret validation or external calls.
@@ -344,8 +517,11 @@ impl Engine {
             literal_safety: source_collisions,
             protected_literals,
             replacements,
+            #[cfg(test)]
             protected_auto,
             scanners,
+            #[cfg(any(test, feature = "node"))]
+            preflight_markers,
             aliases: HashMap::new(),
             counters: HashMap::new(),
         })
@@ -358,7 +534,229 @@ impl Engine {
         self.identity_bytes = 0;
     }
 
-    fn protected_ranges(&self, text: &str) -> Result<ProtectedText, SafeError> {
+    fn reserve_auto_tokens(
+        &self,
+        text: &str,
+        ranges: &mut Vec<(usize, usize)>,
+        counters: &mut HashMap<Kind, u64>,
+        prerequisites: bool,
+    ) -> Result<(), SafeError> {
+        // Keep the previous regex recognizer as the deliberately unoptimized
+        // oracle, including its error timing and non-overlapping recognition.
+        #[cfg(test)]
+        if !prerequisites {
+            if let Some(regex) = &self.protected_auto {
+                for captures in regex.captures_iter(text) {
+                    let digits = &captures[2];
+                    if digits.starts_with('0') || digits.len() > 20 {
+                        return Err(SafeError);
+                    }
+                    let id: u64 = digits.parse().map_err(|_| SafeError)?;
+                    let kind = self
+                        .scanners
+                        .iter()
+                        .find(|scanner| scanner.kind.label() == &captures[1])
+                        .ok_or(SafeError)?
+                        .kind;
+                    let count = counters.entry(kind).or_default();
+                    *count = (*count).max(id);
+                    let m = captures.get(0).ok_or(SafeError)?;
+                    push_bounded(ranges, (m.start(), m.end()), self.limits.matches)?;
+                }
+            }
+            return Ok(());
+        }
+        #[cfg(not(test))]
+        let _ = prerequisites;
+        if self.scanners.is_empty() {
+            return Ok(());
+        }
+        let bytes = text.as_bytes();
+        for start in memchr::memchr_iter(b'[', bytes) {
+            let tail = &bytes[start..];
+            let kind = match tail.get(1) {
+                Some(b'E') => Kind::Email,
+                Some(b'P') if tail.starts_with(Kind::Phone.alias_prefix()) => Kind::Phone,
+                Some(b'P') => Kind::PrivateKey,
+                Some(b'A') => Kind::ApiToken,
+                Some(b'C') => Kind::CredentialUrl,
+                _ => continue,
+            };
+            let prefix = kind.alias_prefix();
+            if !tail.starts_with(prefix) || !self.scanners.iter().any(|s| s.kind == kind) {
+                continue;
+            }
+            let digit_start = start + prefix.len();
+            let mut end = digit_start;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            // Validate numbers ONLY after recognizing the complete old regex
+            // language. Overlong/zero decimals with another suffix are near
+            // misses, not refusals. Searching every '[' retains nested matches.
+            if end == digit_start || bytes.get(end) != Some(&b']') {
+                continue;
+            }
+            let digits = &text[digit_start..end];
+            if digits.starts_with('0') || digits.len() > 20 {
+                return Err(SafeError);
+            }
+            let id: u64 = digits.parse().map_err(|_| SafeError)?;
+            let count = counters.entry(kind).or_default();
+            *count = (*count).max(id);
+            push_bounded(ranges, (start, end + 1), self.limits.matches)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "node"))]
+    fn negative_proof_ascii(&self) -> Option<String> {
+        if self.literals.is_some() || self.limits != Limits::default() {
+            return None;
+        }
+        Some(
+            PREFLIGHT_ASCII_MARKERS
+                .iter()
+                .enumerate()
+                .filter(|(_, flags)| **flags & self.preflight_markers != 0)
+                .map(|(byte, _)| byte as u8 as char)
+                .collect(),
+        )
+    }
+
+    #[cfg(any(test, feature = "node"))]
+    fn utf16_token(&self, units: &[u16], start: usize) -> Option<Utf16Token> {
+        let tail = units.get(start..)?;
+        let has_prefix = |prefix: &[u8]| {
+            tail.get(..prefix.len()).is_some_and(|head| {
+                head.iter()
+                    .zip(prefix)
+                    .all(|(&unit, &byte)| unit == u16::from(byte))
+            })
+        };
+        let kind = match tail.get(1).and_then(|&unit| u8::try_from(unit).ok()) {
+            Some(b'E') => Kind::Email,
+            Some(b'P') if has_prefix(Kind::Phone.alias_prefix()) => Kind::Phone,
+            Some(b'P') => Kind::PrivateKey,
+            Some(b'A') => Kind::ApiToken,
+            Some(b'C') => Kind::CredentialUrl,
+            _ => return None,
+        };
+        let prefix = kind.alias_prefix();
+        if !has_prefix(prefix) || !self.scanners.iter().any(|s| s.kind == kind) {
+            return None;
+        }
+        let digit_start = start + prefix.len();
+        let mut end = digit_start;
+        while units
+            .get(end)
+            .is_some_and(|unit| (u16::from(b'0')..=u16::from(b'9')).contains(unit))
+        {
+            end += 1;
+        }
+        if end == digit_start || units.get(end) != Some(&u16::from(b']')) {
+            return None;
+        }
+        let digits = &units[digit_start..end];
+        let id = if digits[0] == u16::from(b'0') || digits.len() > 20 {
+            Err(SafeError)
+        } else {
+            digits.iter().try_fold(0u64, |id, &unit| {
+                id.checked_mul(10)
+                    .and_then(|n| n.checked_add(u64::from(unit - u16::from(b'0'))))
+                    .ok_or(SafeError)
+            })
+        };
+        Some(Utf16Token {
+            kind,
+            end: end + 1,
+            id,
+        })
+    }
+
+    // Literal-free negative proof: complete tokens isolate email/phone/API
+    // candidates because none can cross '[' or ']'. PEM/URL markers OUTSIDE
+    // tokens still force full scanning. Unknown token forms also fall back.
+    // Reservations are staged until complete Unicode/input/parser validation;
+    // later output refusal retains them exactly like the full core.
+    #[cfg(any(test, feature = "node"))]
+    fn utf16_no_candidates(&mut self, units: &[u16]) -> Result<bool, SafeError> {
+        if self.literals.is_some() {
+            return Ok(false);
+        }
+        if units.len() > self.limits.input_bytes {
+            return Err(SafeError);
+        }
+        // At most six serialized bytes per UTF-16 unit plus fixed metadata.
+        // Prove arithmetic fits once; reservations remain staged, so exact
+        // input/parser decisions can be made after validating the entire input.
+        units
+            .len()
+            .checked_mul(6)
+            .and_then(|n| n.checked_add(24))
+            .ok_or(SafeError)?;
+        let mut bytes = 0usize;
+        let mut serialized_bytes = 24usize;
+        let mut reservations = None;
+        let mut tokens = 0usize;
+        let mut parser_error = false;
+        let mut phone_digits = 0;
+        let mut index = 0;
+        while index < units.len() {
+            let segment =
+                utf16_negative_segment(&units[index..], self.preflight_markers, phone_digits)?;
+            if segment.fallback {
+                return Ok(false);
+            }
+            bytes += segment.bytes;
+            serialized_bytes += segment.json_bytes;
+            phone_digits = segment.phone_digits;
+            index += segment.consumed;
+            if index == units.len() {
+                break;
+            }
+            let Some(token) = self.utf16_token(units, index) else {
+                return Ok(false);
+            };
+            tokens += 1;
+            if tokens > self.limits.matches {
+                parser_error = true;
+            }
+            match token.id {
+                Ok(id) => {
+                    let counters = reservations.get_or_insert_with(|| self.counters.clone());
+                    let count = counters.entry(token.kind).or_default();
+                    *count = (*count).max(id);
+                }
+                Err(_) => parser_error = true,
+            }
+            // Recognized syntax consists solely of unescaped ASCII. Its body
+            // cannot contain another token, surrogate or outside marker.
+            let width = token.end - index;
+            bytes += width;
+            serialized_bytes += width;
+            index = token.end;
+        }
+        if bytes > self.limits.input_bytes || parser_error {
+            return Err(SafeError);
+        }
+        // A completed proof has no new identities/candidates. Historical IDs
+        // survive later rendering/transport refusal, but never input/parser or
+        // Unicode refusal, nor a false proof which leaves all work to the core.
+        if let Some(counters) = reservations {
+            self.counters = counters;
+        }
+        if bytes > self.limits.output_bytes || serialized_bytes > self.limits.output_bytes {
+            return Err(SafeError);
+        }
+        Ok(true)
+    }
+
+    fn protected_ranges(
+        &self,
+        text: &str,
+        prerequisites: bool,
+    ) -> Result<ProtectedText, SafeError> {
         let mut ranges = Vec::new();
         if let Some(matcher) = &self.protected_literals {
             for m in matcher.find_overlapping_iter(text) {
@@ -366,25 +764,7 @@ impl Engine {
             }
         }
         let mut counters = self.counters.clone();
-        if let Some(regex) = &self.protected_auto {
-            for captures in regex.captures_iter(text) {
-                let digits = &captures[2];
-                if digits.starts_with('0') || digits.len() > 20 {
-                    return Err(SafeError);
-                }
-                let id: u64 = digits.parse().map_err(|_| SafeError)?;
-                let kind = self
-                    .scanners
-                    .iter()
-                    .find(|scanner| scanner.kind.label() == &captures[1])
-                    .ok_or(SafeError)?
-                    .kind;
-                let count = counters.entry(kind).or_default();
-                *count = (*count).max(id);
-                let m = captures.get(0).ok_or(SafeError)?;
-                push_bounded(&mut ranges, (m.start(), m.end()), self.limits.matches)?;
-            }
-        }
+        self.reserve_auto_tokens(text, &mut ranges, &mut counters, prerequisites)?;
         ranges.sort_unstable();
         let mut merged: Vec<(usize, usize)> = Vec::new();
         for (start, end) in ranges {
@@ -403,13 +783,33 @@ impl Engine {
     }
 
     pub fn redact(&mut self, text: &str) -> Result<RedactionResult, SafeError> {
+        let result = self.redact_borrowed(text)?;
+        Ok(RedactionResult {
+            text: result.text.into_owned(),
+            matches: result.matches,
+        })
+    }
+
+    fn redact_borrowed<'a>(
+        &mut self,
+        text: &'a str,
+    ) -> Result<BorrowedRedactionResult<'a>, SafeError> {
+        self.redact_with_prerequisites(text, true)
+    }
+
+    // Tests use false as the deliberately unoptimized, identical-semantic oracle.
+    fn redact_with_prerequisites<'a>(
+        &mut self,
+        text: &'a str,
+        prerequisites: bool,
+    ) -> Result<BorrowedRedactionResult<'a>, SafeError> {
         if text.len() > self.limits.input_bytes {
             return Err(SafeError);
         }
         let ProtectedText {
             ranges: protected,
             mut counters,
-        } = self.protected_ranges(text)?;
+        } = self.protected_ranges(text, prerequisites)?;
         // Reservations never reuse historical IDs, even if later matching refuses.
         self.counters = counters.clone();
         if !protected.is_empty() {
@@ -451,6 +851,9 @@ impl Engine {
         }
         let literals: Vec<(usize, usize)> = candidates.iter().map(|c| (c.start, c.end)).collect();
         for scanner in &self.scanners {
+            if prerequisites && scanner.kind == Kind::Phone && !has_phone_digits(text) {
+                continue;
+            }
             let mut key_endings: HashMap<String, Vec<usize>> = HashMap::new();
             for m in scanner.regex.find_iter(text) {
                 let start = m.start();
@@ -528,7 +931,15 @@ impl Engine {
         let mut identity_count = self.identity_count;
         let mut identity_bytes = self.identity_bytes;
         let mut matches = Vec::new();
-        let mut output = String::with_capacity(text.len().min(self.limits.output_bytes));
+        // A completed zero-span scan still enforces rendering and literal safety,
+        // but need not copy unchanged text into a new allocation.
+        let mut output = if selected.is_empty() {
+            Cow::Borrowed(text)
+        } else {
+            Cow::Owned(String::with_capacity(
+                text.len().min(self.limits.output_bytes),
+            ))
+        };
         let mut cursor = 0;
         for candidate in selected {
             let replacement = if let Some(index) = candidate.literal {
@@ -564,11 +975,11 @@ impl Engine {
                 }
             };
             append_bounded(
-                &mut output,
+                output.to_mut(),
                 &text[cursor..candidate.start],
                 self.limits.output_bytes,
             )?;
-            append_bounded(&mut output, replacement, self.limits.output_bytes)?;
+            append_bounded(output.to_mut(), replacement, self.limits.output_bytes)?;
             matches.push(RedactionMatch {
                 start: candidate.start,
                 end: candidate.end,
@@ -577,13 +988,19 @@ impl Engine {
             });
             cursor = candidate.end;
         }
-        append_bounded(&mut output, &text[cursor..], self.limits.output_bytes)?;
+        if matches.is_empty() {
+            if text.len() > self.limits.output_bytes {
+                return Err(SafeError);
+            }
+        } else {
+            append_bounded(output.to_mut(), &text[cursor..], self.limits.output_bytes)?;
+        }
         // Replacements can reconstruct a source at their boundaries. Refuse rather
         // than cascade replacements, before committing any new private identities.
         if self
             .literal_safety
             .as_ref()
-            .is_some_and(|matcher| matcher.is_match(&output))
+            .is_some_and(|matcher| matcher.is_match(output.as_ref()))
         {
             return Err(SafeError);
         }
@@ -593,7 +1010,7 @@ impl Engine {
         self.counters = counters;
         self.identity_count = identity_count;
         self.identity_bytes = identity_bytes;
-        Ok(RedactionResult {
+        Ok(BorrowedRedactionResult {
             text: output,
             matches,
         })
@@ -642,7 +1059,7 @@ fn email_boundaries(text: &str, start: usize, end: usize) -> bool {
 }
 
 #[cfg(any(test, feature = "node"))]
-fn serialize_result(result: &RedactionResult, limit: usize) -> Result<String, SafeError> {
+fn serialize_result(result: &impl Serialize, limit: usize) -> Result<String, SafeError> {
     struct BoundedWriter {
         bytes: Vec<u8>,
         limit: usize,
@@ -672,10 +1089,84 @@ fn serialize_result(result: &RedactionResult, limit: usize) -> Result<String, Sa
     String::from_utf8(writer.bytes).map_err(|_| SafeError)
 }
 
+// Match the legacy serde JSON budget without allocating a serialized response.
+#[cfg(any(test, feature = "node"))]
+fn transport_budget(result: &BorrowedRedactionResult<'_>, limit: usize) -> Result<(), SafeError> {
+    fn digits(value: usize) -> usize {
+        if value == 0 {
+            1
+        } else {
+            value.ilog10() as usize + 1
+        }
+    }
+    fn escaped_bytes(text: &str) -> Result<usize, SafeError> {
+        text.bytes().try_fold(0usize, |total, byte| {
+            let size = json_byte_width(byte);
+            total.checked_add(size).ok_or(SafeError)
+        })
+    }
+    fn count(result: &BorrowedRedactionResult<'_>, upper: bool) -> Result<usize, SafeError> {
+        let string_bytes = |text: &str| {
+            if upper {
+                text.len().checked_mul(6).ok_or(SafeError)
+            } else {
+                escaped_bytes(text)
+            }
+        };
+        let mut total = 24usize
+            .checked_add(string_bytes(&result.text)?)
+            .ok_or(SafeError)?;
+        for m in &result.matches {
+            total = total
+                .checked_add(44)
+                .and_then(|n| n.checked_add(digits(m.start)))
+                .and_then(|n| n.checked_add(digits(m.end)))
+                .and_then(|n| n.checked_add(m.kind.serialized_name().len()))
+                .and_then(|n| n.checked_add(string_bytes(&m.replacement).ok()?))
+                .ok_or(SafeError)?;
+        }
+        total
+            .checked_add(result.matches.len().saturating_sub(1))
+            .ok_or(SafeError)
+    }
+    if count(result, true).is_ok_and(|n| n <= limit) || count(result, false)? <= limit {
+        Ok(())
+    } else {
+        Err(SafeError)
+    }
+}
+
+#[cfg(any(test, feature = "node"))]
+fn spans_to_utf16(text: &str, matches: &mut [RedactionMatch]) -> Result<(), SafeError> {
+    let mut byte_cursor = 0;
+    let mut units = 0usize;
+    for m in matches {
+        if m.start < byte_cursor || m.end <= m.start {
+            return Err(SafeError);
+        }
+        let before = text.get(byte_cursor..m.start).ok_or(SafeError)?;
+        let replaced = text.get(m.start..m.end).ok_or(SafeError)?;
+        let unit_count = |s: &str| {
+            if s.is_ascii() {
+                s.len()
+            } else {
+                s.chars().map(char::len_utf16).sum()
+            }
+        };
+        units = units.checked_add(unit_count(before)).ok_or(SafeError)?;
+        let start = units;
+        units = units.checked_add(unit_count(replaced)).ok_or(SafeError)?;
+        byte_cursor = m.end;
+        m.start = start;
+        m.end = units;
+    }
+    Ok(())
+}
+
 #[cfg(feature = "node")]
 mod node {
     use super::Engine;
-    use napi::{Error, JsUnknown, Result, Status, ValueType};
+    use napi::{Env, Error, JsString, JsStringUtf8, JsUnknown, NapiRaw, Result, Status, ValueType};
     use napi_derive::napi;
 
     fn safe_error() -> Error {
@@ -685,18 +1176,111 @@ mod node {
         )
     }
 
-    // N-API's generated String conversion errors stringify wrong-typed arguments,
-    // including object contents. Validate unknown values before string conversion.
-    fn string_argument(value: JsUnknown, max_bytes: usize) -> Result<String> {
+    // Do not stringify wrong types. Hold N-API storage and borrow its UTF-8 view.
+    fn string_value(value: JsUnknown) -> Result<JsString> {
         if value.get_type().map_err(|_| safe_error())? != ValueType::String {
             return Err(safe_error());
         }
-        let string = value.coerce_to_string().map_err(|_| safe_error())?;
-        if string.utf8_len().map_err(|_| safe_error())? > max_bytes {
+        value.coerce_to_string().map_err(|_| safe_error())
+    }
+
+    fn checked_string(value: JsUnknown, max_bytes: usize) -> Result<JsString> {
+        let string = string_value(value)?;
+        let bytes = string.utf8_len().map_err(|_| safe_error())?;
+        if bytes > max_bytes {
             return Err(safe_error());
         }
+        Ok(string)
+    }
+
+    fn string_argument(value: JsUnknown, max_bytes: usize) -> Result<JsStringUtf8> {
+        string_storage(checked_string(value, max_bytes)?)
+    }
+
+    fn non_ascii_prefix(env: Env, string: JsString) -> Result<bool> {
+        let mut prefix = [0u16; 64];
+        let mut written = 0usize;
+        // Safety: env/string are live handles from this synchronous N-API call;
+        // the stack buffer has the advertised capacity, and N-API reports the
+        // copied units excluding its terminator. No callback or coercion occurs.
+        let status = unsafe {
+            napi::sys::napi_get_value_string_utf16(
+                env.raw(),
+                string.raw(),
+                prefix.as_mut_ptr(),
+                prefix.len(),
+                &mut written,
+            )
+        };
+        if status != napi::sys::Status::napi_ok || written >= prefix.len() {
+            return Err(safe_error());
+        }
+        Ok(prefix[..written].iter().any(|&unit| unit >= 128))
+    }
+
+    fn v1_argument(
+        env: Env,
+        value: JsUnknown,
+        engine: &mut Engine,
+    ) -> Result<Option<JsStringUtf8>> {
+        let string = string_value(value)?;
+        // This bounded sample chooses a representation, NOT a negative result.
+        // Late Unicode or any failed proof takes the complete original route.
+        // Avoid even UTF-8 length conversion on successfully proved Unicode.
+        if engine.literals.is_none() && non_ascii_prefix(env, string)? {
+            if string.utf16_len().map_err(|_| safe_error())? > engine.limits.input_bytes {
+                return Err(safe_error());
+            }
+            let utf16 = string.into_utf16().map_err(|_| safe_error())?;
+            let units = utf16.as_slice();
+            let units = units
+                .get(..units.len().checked_sub(1).ok_or_else(safe_error)?)
+                .ok_or_else(safe_error)?;
+            if engine
+                .utf16_no_candidates(units)
+                .map_err(|_| safe_error())?
+            {
+                return Ok(None);
+            }
+        }
+        if string.utf8_len().map_err(|_| safe_error())? > engine.limits.input_bytes {
+            return Err(safe_error());
+        }
+        string_storage(string).map(Some)
+    }
+
+    fn string_storage(string: JsString) -> Result<JsStringUtf8> {
         let utf8 = string.into_utf8().map_err(|_| safe_error())?;
-        Ok(utf8.as_str().map_err(|_| safe_error())?.to_owned())
+        let text = utf8.as_str().map_err(|_| safe_error())?;
+        // Node's N-API WriteUtf8 uses REPLACE_INVALID_UTF8 (WriteUtf8V2:
+        // kReplaceInvalidUtf8): every orphan surrogate becomes U+FFFD. Therefore
+        // absent EF BF BD proves well-formedness, including ASCII, without a
+        // second large buffer. Genuine U+FFFD falls back to explicit validation.
+        // Supported Node source/version evidence is recorded in native/README.md.
+        if memchr::memmem::find(text.as_bytes(), b"\xef\xbf\xbd").is_some() {
+            let utf16 = string.into_utf16().map_err(|_| safe_error())?;
+            let units = utf16.as_slice();
+            let units = units
+                .get(..units.len().checked_sub(1).ok_or_else(safe_error)?)
+                .ok_or_else(safe_error)?;
+            if char::decode_utf16(units.iter().copied()).any(|c| c.is_err()) {
+                return Err(safe_error());
+            }
+        }
+        Ok(utf8)
+    }
+
+    #[napi(object)]
+    pub struct NativeMatchV1 {
+        pub start: u32,
+        pub end: u32,
+        pub replacement: String,
+        pub kind: String,
+    }
+    #[napi(object)]
+    pub struct NativeResultV1 {
+        pub text: String,
+        pub matches: Vec<NativeMatchV1>,
     }
 
     #[napi]
@@ -709,15 +1293,77 @@ mod node {
         pub fn new(config_json: JsUnknown) -> Result<Self> {
             let config_json = string_argument(config_json, super::Limits::default().config_bytes)?;
             Ok(Self {
-                engine: Engine::from_json(&config_json).map_err(|_| safe_error())?,
+                engine: Engine::from_json(config_json.as_str().map_err(|_| safe_error())?)
+                    .map_err(|_| safe_error())?,
             })
         }
         #[napi]
         pub fn redact(&mut self, text: JsUnknown) -> Result<String> {
-            let text = string_argument(text, self.engine.limits.input_bytes)?;
-            let result = self.engine.redact(&text).map_err(|_| safe_error())?;
+            let storage = string_argument(text, self.engine.limits.input_bytes)?;
+            let result = self
+                .engine
+                .redact_borrowed(storage.as_str().map_err(|_| safe_error())?)
+                .map_err(|_| safe_error())?;
             super::serialize_result(&result, self.engine.limits.output_bytes)
                 .map_err(|_| safe_error())
+        }
+        #[napi(js_name = "redactTextV1")]
+        pub fn redact_text_v1(&mut self, env: Env, text: JsUnknown) -> Result<Option<String>> {
+            let Some(storage) = v1_argument(env, text, &mut self.engine)? else {
+                return Ok(None);
+            };
+            let result = self
+                .engine
+                .redact_borrowed(storage.as_str().map_err(|_| safe_error())?)
+                .map_err(|_| safe_error())?;
+            super::transport_budget(&result, self.engine.limits.output_bytes)
+                .map_err(|_| safe_error())?;
+            if result.matches.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(result.text.into_owned()))
+            }
+        }
+        #[napi(js_name = "redactSpansUtf16V1")]
+        pub fn redact_spans_utf16_v1(
+            &mut self,
+            env: Env,
+            text: JsUnknown,
+        ) -> Result<Option<NativeResultV1>> {
+            let Some(storage) = v1_argument(env, text, &mut self.engine)? else {
+                return Ok(None);
+            };
+            let text = storage.as_str().map_err(|_| safe_error())?;
+            let mut result = self
+                .engine
+                .redact_borrowed(text)
+                .map_err(|_| safe_error())?;
+            super::transport_budget(&result, self.engine.limits.output_bytes)
+                .map_err(|_| safe_error())?;
+            if result.matches.is_empty() {
+                return Ok(None);
+            }
+            super::spans_to_utf16(text, &mut result.matches).map_err(|_| safe_error())?;
+            let matches = result
+                .matches
+                .into_iter()
+                .map(|m| {
+                    Ok(NativeMatchV1 {
+                        start: u32::try_from(m.start).map_err(|_| safe_error())?,
+                        end: u32::try_from(m.end).map_err(|_| safe_error())?,
+                        replacement: m.replacement,
+                        kind: m.kind.serialized_name().to_owned(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(Some(NativeResultV1 {
+                text: result.text.into_owned(),
+                matches,
+            }))
+        }
+        #[napi(js_name = "negativeProofAsciiV1")]
+        pub fn negative_proof_ascii_v1(&self) -> Option<String> {
+            self.engine.negative_proof_ascii()
         }
         #[napi]
         pub fn reset(&mut self) {
@@ -909,3 +1555,6 @@ mod resource_limit_tests {
         assert_eq!(serialize_result(&result, expected.len()).unwrap(), expected);
     }
 }
+
+#[cfg(test)]
+mod optimization_tests;

@@ -206,6 +206,73 @@ test("batch adapter refusal and cancellation produce safe error results; no retr
   assert.equal(cancelled.isError, true);
   assert.equal(calls, 1);
 });
+test("text-only fast seam filters every protected source and tool JSON without calling the span seam", async () => {
+  const calls: string[] = [];
+  const h = await setup(undefined, { createRedactor: () => ({
+    redact() { throw new Error("hooks must not request spans"); },
+    redactText(value) { calls.push(value); return value.replaceAll("synthetic-secret", "PRIVATE"); },
+    reset() {},
+  }) });
+  const event = toolEvent();
+  const result = h.hooks.get("tool_result")!(event);
+  assert.equal(result.content[0].text, "PRIVATE");
+  assert.equal(result.details.PRIVATE.nested[0], "PRIVATE");
+  assert.equal(result.structuredContent.value, "PRIVATE");
+  assert.equal(result.usage, usage);
+  assert.equal(result.isError, true);
+  assert.deepEqual(h.hooks.get("input")!({ text: "synthetic-secret" }), { action: "continue" });
+  const direct = { role: "user", content: "synthetic-secret" };
+  const context = h.hooks.get("context_with_system")!({ messages: [
+    { role: "system", content: "synthetic-secret" }, direct,
+    { role: "toolResult", content: [{ type: "text", text: "synthetic-secret" }], details: { value: "synthetic-secret" } },
+  ] }).messages;
+  assert.equal(context[0].content, "PRIVATE");
+  assert.equal(context[1], direct);
+  assert.equal(context[2].details.value, "PRIVATE");
+  assert.equal(h.hooks.get("before_agent_start")!({ systemPrompt: "synthetic-secret", systemPromptOptions: { forceSystemPrompt: "synthetic-secret" } }).systemPrompt, "PRIVATE");
+  assert.ok(calls.includes("synthetic-secret"));
+  assert.deepEqual(h.hooks.get("before_provider_request")!({ payload: {} }), undefined);
+  const userOnly = await setup({ toolResults: false, userMessages: true, systemPrompt: false }, { createRedactor: () => ({
+    redact() { throw new Error("must use text"); }, redactText: value => value.replaceAll("synthetic-secret", "PRIVATE"), reset() {},
+  }) });
+  assert.equal(userOnly.hooks.get("input")!({ text: "synthetic-secret" }).text, "PRIVATE");
+  assert.equal(userOnly.hooks.get("tool_result")!(event), undefined);
+});
+
+test("text-only refusal latches censorship and does not retry through a working span method", async () => {
+  let fastCalls = 0, spanCalls = 0;
+  const h = await setup(undefined, { createRedactor: () => ({
+    redact(value) { spanCalls++; return { text: value, matches: [] }; },
+    redactText() { fastCalls++; throw new Error("synthetic-secret native overlap refusal"); },
+    reset() {},
+  }) });
+  const result = h.hooks.get("tool_result")!(toolEvent());
+  assert.equal(result.content[0].text, CENSORED);
+  assert.equal(result.details, null);
+  assert.equal(result.structuredContent, null);
+  assert.equal(result.usage, usage);
+  const direct = { role: "user", content: "synthetic-secret" };
+  const context = h.hooks.get("context_with_system")!({ messages: [direct] }).messages;
+  assert.ok(context.includes(direct));
+  assert.equal(h.hooks.get("tool_result")!(toolEvent()).content[0].text, CENSORED);
+  assert.deepEqual(h.hooks.get("before_provider_request")!({ payload: { raw: "synthetic-secret" } }), {});
+  assert.equal(fastCalls, 1);
+  assert.equal(spanCalls, 0);
+});
+
+test("file consumers keep the guarded span seam even when hooks have a fast method", async () => {
+  let spans = 0, fast = 0;
+  const h = await setup(undefined, {
+    createRedactor: () => ({ redact(value) { spans++; return { text: value, matches: [] }; }, redactText(value) { fast++; return value; }, reset() {} }),
+    createFileSession(options) {
+      return { ...fileSession(), async read() { return { text: options.redactor.redact("ordinary").text, path: "safe" }; } };
+    },
+  });
+  assert.equal((await h.tools.get("read").execute("id", { path: "safe" }, undefined, undefined, { cwd: "/synthetic" })).content[0].text, "ordinary");
+  assert.equal(spans, 1);
+  assert.equal(fast, 0);
+});
+
 test("unsupported tool details fail safely and missing file adapter initialization blocks built-in file tools", async () => {
   const h = await setup();
   const cyclic: any = {}; cyclic.self = cyclic;

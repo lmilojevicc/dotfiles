@@ -12,6 +12,8 @@ export interface RedactionResult {
 }
 export interface Redactor {
   redact(text: string): RedactionResult;
+  /** Optional text-only scan with identical safety, reservation and resource guarantees. */
+  redactText?(text: string): string;
   reset(): void;
 }
 export interface NativeConfig {

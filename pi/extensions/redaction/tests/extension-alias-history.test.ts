@@ -5,6 +5,7 @@ import type { Dependencies } from "../src/index.ts";
 import type { NativeConfig, Redactor } from "../src/contracts.ts";
 import { offConfig } from "../src/config.ts";
 import { installRedaction } from "../src/index.ts";
+import { createNativeRedactor } from "../src/native.ts";
 import { CENSORED } from "../src/sanitize.ts";
 
 const messageEntry = (content: string, role = "toolResult") => ({ type: "message", message: { role, content: role === "user" ? content : [{ type: "text", text: content }], timestamp: 0 } });
@@ -174,9 +175,42 @@ test("native reset failure is latched before history reservation or new allocati
   assert.deepEqual(engine.calls, ["[EMAIL_1]", "first@example.test"]);
   assert.deepEqual(h.hooks.get("before_provider_request")!({ payload: {} }), {});
 });
+test("paired V1 no-match history scans reserve IDs before text-only allocation and preserve the user exception", async () => {
+  let next = 0n;
+  const calls: string[] = [];
+  const native = createNativeRedactor(offConfig(), () => ({ NativeRedactor: class {
+    redact(): string { throw new Error("no legacy JSON allowed"); }
+    redactSpansUtf16V1(value: string) {
+      calls.push(`spans:${value}`);
+      const id = /^\[EMAIL_([1-9][0-9]*)\]$/.exec(value)?.[1];
+      if (!id) throw new Error("mock history must contain tokens only");
+      if (BigInt(id) > next) next = BigInt(id);
+      return null; // Completed successful reservation, not a scan bypass.
+    }
+    redactTextV1(value: string) {
+      calls.push(`text:${value}`);
+      return value === "fresh@example.test" ? `[EMAIL_${++next}]` : null;
+    }
+    reset() { next = 0n; }
+  } }));
+  const h = await setup(false, [messageEntry("retained@example.test [EMAIL_9]", "user")], native);
+  h.hooks.get("session_start")!({}, h.ctx);
+  assert.deepEqual(calls, ["spans:[EMAIL_9]"]);
+  assert.deepEqual(h.hooks.get("input")!({ text: "intentional@example.test [EMAIL_15]" }, h.ctx), { action: "continue" });
+  const result = h.hooks.get("tool_result")!(toolResult("fresh@example.test"), h.ctx);
+  assert.equal(result.content[0].text, "[EMAIL_16]");
+  assert.deepEqual(calls, ["spans:[EMAIL_9]", "spans:[EMAIL_15]", "text:fresh@example.test"]);
+  assert.equal(h.reads, 1);
+  h.setBranch([messageEntry("[EMAIL_30]")]);
+  h.hooks.get("session_tree")!({}, h.ctx);
+  assert.equal(h.hooks.get("tool_result")!(toolResult("fresh@example.test"), h.ctx).content[0].text, "[EMAIL_31]");
+  assert.deepEqual(calls.slice(-2), ["spans:[EMAIL_30]", "text:fresh@example.test"]);
+});
+
 test("overlapping literal/alias native refusal censors registered result/context and latches request failure", async () => {
-  for (const firstHook of ["tool_result", "context_with_system"] as const) {
-    const h = await setup(true, [], { redact(text) { if (text.includes("secretMASK")) throw new Error("secret->cretMASK overlap: secretMASK"); return { text, matches: [] }; }, reset() {} }, { secret: "cretMASK" });
+  for (const fast of [false, true]) for (const firstHook of ["tool_result", "context_with_system"] as const) {
+    const filter = (text: string) => { if (text.includes("secretMASK")) throw new Error("secret->cretMASK overlap: secretMASK"); return text; };
+    const h = await setup(true, [], { redact(text) { return { text: filter(text), matches: [] }; }, ...(fast ? { redactText: filter } : {}), reset() {} }, { secret: "cretMASK" });
     const event = firstHook === "tool_result" ? toolResult("secretMASK") : { messages: [{ role: "system", content: "safe" }, { role: "toolResult", content: [{ type: "text", text: "secretMASK" }] }] };
     const first = h.hooks.get(firstHook)!(event, h.ctx);
     assert.ok(!JSON.stringify(first).includes("secret"));

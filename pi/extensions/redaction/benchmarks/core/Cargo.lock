@@ -34,6 +34,7 @@ name = "pi-local-redaction-native"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "memchr",
  "napi-build",
  "regex",
  "serde",
