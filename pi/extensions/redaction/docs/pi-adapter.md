@@ -1,0 +1,84 @@
+# Pi adapter: alpha coverage and API
+
+This is an opt-in local text filter, **not universal model-egress enforcement**. Contract investigation used installed `@earendil-works/pi-coding-agent` **1.0.4**, Node **26.10.0**, and its shipped declarations/docs. No live configuration/history was inspected. Load only trusted extensions/providers; later handlers can override earlier safe results.
+
+## Policy and native bridge
+
+`src/config.ts` reads only the global XDG policy path. Relative/empty `XDG_CONFIG_HOME` falls back to `~/.config`. Missing file: inactive. Omitted flags: false. No project override, environment enable switch, policy-changing tool, or populated private config. Unknown fields, non-booleans, duplicate JSON keys, empty/ambiguous/cyclic literal mappings are refused. Native validation additionally owns reserved/generated alias collisions. A policy file must be a regular owner-owned file with no group/world permissions, non-symlink at its final component, at most 1 MiB, in an owner-owned non-group/world-writable immediate directory. This is Unix permission defense-in-depth, not protection against the same account or malicious ancestor-directory changes. Policy changes require reload.
+
+Activation requires at least one source and one detector/literal rule. Inactive: status command only; no native load, file adapter import, file overrides, filters or warming changes. Explicit invalid policy: censor transmission because affected sources cannot be determined safely. `/redaction-status` displays booleans and literal count only, never mappings, aliases, errors or paths.
+
+`src/native.ts` lazily uses `createRequire(import.meta.url)("../native/redaction.node")`. Expected export: `NativeRedactor(configJson)`, `redact(text): string` containing JSON, `reset(): void`. Only `{literals,detectors}` goes to native. Every error is generic. Sorted original UTF-8 spans are converted to UTF-16 in one forward scan, with boundary/order/kind checks and output reconstruction verification; no per-match prefix encoding. Unpaired JS surrogates are refused. Recognized previously emitted aliases must be idempotent in native; this bridge does not reverse-map aliases.
+
+## Retained alias reservation
+
+After initialization/session-start/tree reset, **reserve retained generated IDs before allocating any new identity**. `src/alias-history.ts` walks the supported `ctx.sessionManager.getBranch()` result, considering context-bearing messages, custom messages, summaries/system checkpoints and context-edit replacements. It extracts only `[EMAIL_n]`, `[PHONE_n]`, `[API_TOKEN_n]`, `[PRIVATE_KEY_n]`, `[CREDENTIAL_URL_n]` numeric token substrings for currently enabled detector families and calls `redactor.redact(token)` individually. It never sends raw history to native, redacts exempt user history, concatenates the transcript, decodes image/signature fields, or reconstructs reverse mappings. Ancestor/edited-out IDs may be conservatively reserved; abandoned branches are not traversed.
+
+Native validates positive decimal u64 IDs (no zero/leading zeros/overflow); IDs are never converted to JavaScript Number. Invalid reserved-looking tokens fail rather than being silently skipped. Disabled families do not reserve/enable a detector. Only IDs are retained across reset, not the old original-value identity map: this prevents alias reuse/conflation without claiming to reconstruct historical originals.
+
+Session start/tree handlers reserve synchronously after reset. Allocating input/result/system/context/file boundaries also guard reservation, including first calls before `session_start`. Traversal is memoized for the session-manager identity until reset/tree navigation; guarded file-redactor resets invalidate it. New exempt user inputs also reserve only their token substrings while returning `{action:"continue"}` and leaving raw text untouched.
+
+Traversal refuses more than 100,000 visited nodes/branch entries, depth 100, a string over 8 Mi UTF-16 units, total text over 64 Mi units, over 10,000 distinct tokens, or a token over 64 characters. No unbounded transcript copy is constructed. Missing/throwing history APIs, reservation/native/reset errors and budget exhaustion latch the existing safe result/context/request censorship. Direct user text still remains exempt when its filter is off; failed instrumented requests withhold the whole payload. Test/benchmark mocks with automatic detectors enabled must provide a stable `ctx.sessionManager` with benign `getBranch(): []`; actual missing history must not fail open. Literal-only/inactive configurations do not inspect history for automatic IDs.
+
+## Registered hook contracts
+
+- `input`: `{action:"continue"}` when direct user filtering is off; otherwise `{action:"transform",text,images:[]}`. Protected attached images are removed; no OCR. Failure returns censored text plus no images, not a thrown error. Pi input hooks run before prompt-template/skill expansion; request context also filters role=user when enabled.
+- `tool_result`: replaces `content`, `details`, `structuredContent` together. Usage and existing error state are preserved; failure marks error and returns censored content, `details:null`, `structuredContent:null`. Pi treats `details:undefined` as **keep original**, so it is not a safe failure replacement. Generic JSON recursion is restricted to tool-owned data, including property names, with collision/cycle/type checks. Known binary/signature fields are withheld. Numeric fields are not textual detectors.
+- `context_with_system`: returns `{messages}` before AgentMessage → provider-message conversion. Leading system message, IDs, tool names, usage and timestamps stay intact on successful transformation. Filters historical messages as well as new results. It does not alter persisted history or on-disk project sources.
+- `before_agent_start`: only sanitizes an already-forced system prompt when system filtering is on. Pi's forced-prompt projection runs **after** context transforms; ordinary structured prompts are not frozen into overrides by this extension.
+- `before_provider_request`: returns `undefined` normally; does **not** scan the entire serialized payload, preserving deliberately unfiltered user text and protocol data. Once config/native/sanitizer initialization fails, returns the replacement payload `{}` (not `{payload:{}}`). Instrumented built-in requests then contain no original request data and usually fail provider validation. This is censorship, not a universal transport abort. Failure is sticky until reload. Safe fallback context retains direct role=user messages when their filter is off, but failed wire requests withhold the entire request.
+- `session_before_compact`: `{cancel:true}` while protection active/invalid. Manual and automatic compaction are disabled: Pi summary calls bypass the normal context/payload hooks. Start a fresh session when context fills.
+- `session_before_tree`: `{cancel:true}` only if `preparation.userWantsSummary`; ordinary tree navigation remains allowed. No custom summarizer/auth/routing implementation is substituted.
+- `cache_warming_decision`: `{action:"stop"}` while protection active/invalid to avoid replaying cached pre-enable contexts without context filtering. Normal provider prompt caching is not disabled; already-sent requests cannot be revoked.
+- Session start/tree/shutdown clear local file snapshots and native auto aliases; start/tree immediately reserve retained IDs before new input/tool allocation. Startup warning names disabled capabilities and `/bug`/sharing gaps. Warnings cannot cause cancellation hooks to fall through if UI fails.
+
+Pi runner catches errors and continues for input/context/tool-result/payload hooks. Merely throwing there would fail open. `src/index.ts` catches sanitizer errors and returns safe replacement contracts instead. If file-adapter/tool-definition import fails, request failure is latched and read/edit/write `tool_call` is blocked with `{block:true,reason:...}`; inactive mode never blocks tools.
+
+## Source classification
+
+| Source | Toggle / handling |
+|---|---|
+| Direct `input` / `role=user` text | `userMessages` only. With false, raw text remains verbatim. |
+| Tool results, direct bash execution output/command, custom messages, branch/compaction summaries | `toolResults`. Summaries/custom messages lose human provenance; the exemption is direct user text, not quoted or synthesized copies. |
+| Historical ordinary assistant text/thinking and textual tool-call argument values | `toolResults`, to scrub echoes of pre-enable tool content. This changes request copies, never arguments being executed; argument property identities are preserved. |
+| System content, named prompt-section values, tool descriptions | `systemPrompt`. Tool names/schema property identities/validation constraints are untouched. |
+| Signed assistant text, signed/redacted thinking, thought-signed calls | Passed unchanged, including opaque signatures; **unsupported/unprotected**. Corrupting replay protocol is not redaction. |
+| Protected user/tool/custom images or signature-bearing text blocks | Withheld as text-only unsupported content (input removes attachments); never fake OCR. With user source off, attachments are unfiltered and unsupported. |
+
+There is no global alias decoding in shell, MCP, network, custom-tool arguments or historical tool calls. Only the filesystem adapter restores observed file-scoped tokens.
+
+## Filesystem integration seam
+
+`createFileSession({cwd,redactor,protectedPaths:[configPath],literalMappings})` is loaded only for active tool-result protection. Always pass the complete validated `config.literals` dictionary, including `{}` when literal-free—not just matches observed in reads. The redactor has no alias inventory API; unseen configured custom aliases must already be known to the file adapter so they cannot be injected into new writes as ordinary text. Native accepts recognized aliases for idempotent history rescans; rejecting raw-file alias collisions is the file adapter's responsibility. One session per working directory. Native failures through the supplied redactor latch request censorship; ordinary stale/path/edit refusals do not poison the native engine.
+
+Overrides use Pi's original read/edit/write schemas, output schema and renderer conventions from `create*ToolDefinition`, retaining cancellation checks and prompt guidance with explicit redacted-text descriptions:
+
+- read `{path,offset?,limit?}` → `FileSession.read`, text content plus matching text `structuredContent` for codemode.
+- edit `{path,edits:[{oldText,newText}]}` → **one** `FileSession.editMany`. Parent-approved shared seam adds batch support; never loop single edits. File owner must validate all against one original sanitized snapshot and write once.
+- write `{path,content}` → `FileSession.write`.
+
+No raw exception/path is returned. Signals are checked before and after adapter work; the shared adapter has no signal parameter, so in-flight writes may complete before cancellation is observed. Re-read before retrying any operation that did not return a usable result. Atomicity/stale checks/path identity are owned by `src/file-tools.ts`, not proven by adapter mocks. The adapter's canonical in-process queue owns mutation ordering; external-process races remain outside that guarantee. Masked listings are filtered but this adapter does not parse arbitrary custom-tool output into trusted path registrations; literal path mappings/observed reads are the trusted resolution mechanisms.
+
+## Known unmediated paths / capability tradeoffs
+
+- **Do not use `/bug` model summarization or transcript sharing/export as protected operations.** Pi bug-report summaries have no verified pre-summary interception; raw stored history/system content may reach a model there. `/share` and exports can expose user text, tool arguments, prior sessions and opaque content. Startup warns; these commands are not monkeypatched or silently claimed safe.
+- Manual/automatic compaction and summarized tree navigation are cancelled, including user-only protection. This can prevent continuation once the context fills. Plain navigation is allowed. Other extensions may implement their own summaries: those are outside coverage.
+- Nested `ctx.executeTool` results go through `tool_result` (including structured output) in this Pi version. A nested tool's own model/network calls, tools invoked directly outside Pi dispatch, custom file tools, codemode's internal processing before result hooks, and subagents without this extension are not mediated. Only final tool results are filtered; partial `onUpdate`/tool-execution/provider streaming/UI events are not transformed.
+- Existing raw session history is not rewritten. New input/result hooks reduce exposure before ordinary persistence, but system text, arguments, renderer metadata, nested-call records, raw logs and streamed updates can remain. Config-file adapter protection is not same-user shell isolation.
+- Trusted provider implementations must honor `onPayload`; independent model runtimes, image/classifier operations, custom providers omitting instrumentation, browser screenshots, subprocess direct networking and later extensions can bypass these hooks.
+- IDs/names, tool parameter schemas (including constraint/enum values), deferred/provider metadata, opaque signed/binary protocol blocks and unsupported encoded content are not scanned. Do not place private values there and expect textual source filtering to protect them. No universal privacy/compliance claim.
+
+## Inspected installed sources
+
+Relative to `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/`:
+
+- `docs/extensions.md` (complete), `docs/packages.md`, `docs/security.md`, `docs/custom-provider.md`, `docs/sdk.md`, `docs/message-types.md`, `docs/configuration.md`, `docs/settings.md`, `docs/sessions.md`, `docs/session-format.md`, `docs/compaction.md`; `examples/extensions/tool-override.ts`.
+- `dist/core/extensions/types.d.ts` and `runner.js`: tool-result merge at ~900, context phases at ~1006, payload replacement at ~1066, input transform at ~1202. Exceptions there are swallowed/reported.
+- `dist/core/sdk.js:182–199,242–271`: request options/agent hook wiring and cache warming capture. `dist/core/agent-session.js:1342–1357`: post-context forced prompt projection.
+- `dist/core/agent-session.js:2143,3267–3276,3506–3513`, `dist/core/compaction/compaction.js:475–487`: summary stream calls bypass agent context/onPayload callbacks; this motivates cancellation.
+- `dist/core/extensions/runner.js:635–638` returns the stable session-manager identity; `dist/core/session-manager.d.ts` exposes read-only `getBranch()`; `dist/core/agent-session.js:3336–3346` changes the active branch before emitting `session_tree`.
+- `dist/core/tools/{read,edit,write}.d.ts`, `dist/core/messages.d.ts`; `node_modules/@earendil-works/pi-agent-core/dist/agent-loop.js:260–268`; `node_modules/@earendil-works/pi-ai/dist/types.d.ts`.
+
+## Reproducible component validation
+
+Run `node --experimental-strip-types --test tests/config*.test.ts tests/native*.test.ts tests/extension*.test.ts` from the package. Tests inject native/file/tool mocks and invoke actual registered hook functions with Pi event/return shapes. No detector accuracy, native ABI or filesystem safety claim is inferred from those mocks. Strict TypeScript validation requires declared host peers/dev tooling and the integrated file-tools implementation; development dependencies are installed only in a temporary environment. Parent integration must build native, join file-tools, run all component tests and obtain independent review before acceptance.

@@ -1,0 +1,10 @@
+node_modules/
+native/target/
+benchmarks/core/target/
+benchmarks/comparator/
+benchmarks/upstream/
+benchmarks/logs/
+*.log
+native/redaction.node
+*.node
+config.json

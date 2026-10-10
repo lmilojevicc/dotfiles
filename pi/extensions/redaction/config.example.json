@@ -1,0 +1,15 @@
+{
+  "literals": {},
+  "detectors": {
+    "email": false,
+    "phone": false,
+    "apiToken": false,
+    "privateKey": false,
+    "credentialUrl": false
+  },
+  "sources": {
+    "toolResults": false,
+    "userMessages": false,
+    "systemPrompt": false
+  }
+}
