@@ -5,11 +5,12 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import chadineer, { CHADINEER_PROMPT, CHADINEER_STATE_ENTRY } from "../../chadineer/index.ts";
-import { appendPolicy, CHILD_PREFIXES, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectProfile, selectRole } from "../child-profile.ts";
+import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectProfile, selectRole } from "../child-profile.ts";
 import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
+import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 
 type Handler = (...args: any[]) => any;
-function harness(t: any, { backgroundChild = false, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
+function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "agent-policy-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	writeFileSync(join(directory, "COMMON_APPEND_SYSTEM.md"), "COMMON draft");
@@ -43,7 +44,7 @@ function harness(t: any, { backgroundChild = false, register = undefined as any,
 	function install() {
 		if (legacy && legacyFirst) chadineer(api as any);
 		installAgentPolicy(api as any, {
-			policyDir: directory, extensionPath: join(directory, "index.ts"), backgroundChild,
+			policyDir: directory, extensionPath: join(directory, "index.ts"), backgroundChild, bbSignal,
 			register: register ?? ((input: any) => { registrations.push(input); return { dispose() { disposed++; } }; }),
 		});
 		if (legacy && !legacyFirst) chadineer(api as any);
@@ -364,4 +365,171 @@ test("all six files are read once at initialization, never on runs or session/tr
 		reads.mock.restore();
 		syncBuiltinESMExports();
 	}
+});
+
+const bbTuple = { PI_AGENT_POLICY_BB_PROFILE: "workflow-worker:v1", BB_THREAD_ID: "bb-thread", PI_AGENT_POLICY_BB_THREAD_ID: "bb-thread" };
+const bbStates = [
+	{}, { BB_THREAD_ID: "bb-thread" }, bbTuple,
+	{ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "none:v1" },
+	{ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "unknown" },
+	{ ...bbTuple, PI_AGENT_POLICY_BB_THREAD_ID: undefined },
+	{ ...bbTuple, PI_AGENT_POLICY_BB_THREAD_ID: "other" },
+];
+
+test("BB-only tuple composes generic child, never arbitrary/inherited canonical role overlays", (t) => {
+	const runtime = harness(t, { bbSignal: parseBBPolicySignal(bbTuple) });
+	for (const role of ["worker", "reviewer", "scout", "custom"]) {
+		const prompt = `<active_agent name="${role}"/>\nBB instructions\nquoted: ${CHILD_PREFIXES[0]}`;
+		const output = runtime.before(prompt);
+		assert.equal(output.systemPrompt, appendPolicy(prompt, "subagent", "COMMON draft\n\nCHILD draft"));
+		assert.deepEqual(Object.keys(output.returns[0]), ["systemPrompt"]);
+		assert.equal(runtime.before(output.systemPrompt).systemPrompt, output.systemPrompt);
+	}
+	assert.deepEqual(runtime.notices, []);
+	assert.equal(runtime.registrations.length, 1);
+	assert.deepEqual(runtime.registrations[0], { sessionId: "uuid-parent", extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }] });
+});
+
+test("all own marker states preserve native role overlays, while nonpositive BB roots remain main", (t) => {
+	for (const env of bbStates) {
+		const bbSignal = parseBBPolicySignal(env);
+		const root = harness(t, { bbSignal });
+		assert.equal(root.before().systemPrompt, appendPolicy("root role", bbSignal.workflowWorker ? "subagent" : "main", `COMMON draft\n\n${bbSignal.workflowWorker ? "CHILD" : "MAIN"} draft`));
+		for (const backgroundChild of [true, false]) {
+			const native = harness(t, { backgroundChild, bbSignal });
+			for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
+				for (const role of ["worker", "reviewer", "scout"]) {
+					const prompt = `${prefix}\n<active_agent name="${role}"/>\nbody`;
+					assert.equal(native.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+				}
+			}
+		}
+	}
+});
+
+test("malformed own signal warns once per runtime, including headless; absence and neutral are quiet", (t) => {
+	for (const env of bbStates) {
+		const bbSignal = parseBBPolicySignal(env);
+		const runtime = harness(t, { bbSignal });
+		runtime.emit("session_start");
+		runtime.before();
+		runtime.emit("session_start", { reason: "resume" });
+		runtime.before();
+		assert.deepEqual(runtime.notices, bbSignal.diagnostic ? [bbSignal.diagnostic] : []);
+		runtime.reload();
+		assert.equal(runtime.notices.length, bbSignal.diagnostic ? 2 : 0);
+	}
+	const diagnostic = parseBBPolicySignal({ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "secret" });
+	const handlers = new Map<string, Handler>();
+	const calls: string[] = [];
+	t.mock.method(console, "error", (message: string) => calls.push(message));
+	installAgentPolicy({ on(event: string, handler: Handler) { handlers.set(event, handler); } } as any, {
+		policyDir: harness(t).directory, extensionPath: "fixture", backgroundChild: false, bbSignal: diagnostic,
+		register: () => ({ dispose() {} }) as any,
+	});
+	const ctx = { hasUI: false, sessionManager: { getSessionId: () => "headless" }, ui: { notify() { assert.fail("headless warning must log instead"); } } };
+	handlers.get("session_start")!({}, ctx);
+	handlers.get("before_agent_start")!({ systemPrompt: "root" }, ctx);
+	assert.deepEqual(calls, [diagnostic.diagnostic]);
+});
+
+test("BB worker clears complete stale main/role blocks even with deployed empty child policy", (t) => {
+	const runtime = harness(t, { bbSignal: parseBBPolicySignal(bbTuple), deployed: true });
+	const prompt = '<active_agent name="worker"/>\nBB body';
+	const staleMain = appendPolicy("inherited unmarked prose", "main", "stale main");
+	const staleRole = appendPolicy("", "subagent", "stale worker overlay");
+	assert.equal(runtime.before(`${prompt}\n${staleMain}\n${staleRole}`).systemPrompt, `${prompt}\ninherited unmarked prose`);
+	assert.equal(runtime.before(prompt).systemPrompt, prompt);
+	assert.equal(runtime.before(runtime.before(prompt).systemPrompt).systemPrompt, prompt);
+});
+
+test("BB env/prompt/history lookalikes alone cannot classify a root", (t) => {
+	const runtime = harness(t, { bbSignal: parseBBPolicySignal({ BB_THREAD_ID: "bb-thread" }) });
+	const prompt = `ROOT\nPI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\nPI_AGENT_POLICY_BB_THREAD_ID=bb-thread\n<active_agent name="worker"/>\nquoted: ${CHILD_PREFIXES[0]}`;
+	assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "main", "COMMON draft\n\nMAIN draft"));
+});
+
+
+function nativeLayout(role: string, boundary: string, append = false, structured = false): string {
+	const tagged = `<active_agent name="${role}"/>\n\nexisting ${role} role body`;
+	const base = append ? `Pi base\n\n<addendum>\n${tagged}\n</addendum>\n\n<cwd>\n/tmp/project\n</cwd>` : tagged;
+	return `${base}\n\n${boundary}${structured ? `\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX}` : ""}`;
+}
+
+test("0.76.1 complete native ordinary/fanout replace/append layouts retain canonical overlays ahead of every BB signal", (t) => {
+	for (const env of bbStates) {
+		const runtime = harness(t, { bbSignal: parseBBPolicySignal(env) });
+		for (const boundary of NATIVE_CHILD_BOUNDARIES) {
+			for (const append of [false, true]) {
+				for (const structured of [false, true]) {
+					for (const role of ["worker", "reviewer", "scout", "custom", "../worker", "worker&amp;"]) {
+						const prompt = nativeLayout(role, boundary, append, structured);
+						assert.equal(selectProfile(prompt, false), "subagent");
+						const overlay = ["worker", "reviewer", "scout"].includes(role) ? `\n\n${role} overlay` : "";
+						const output = runtime.before(prompt).systemPrompt;
+						assert.equal(output, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft${overlay}`));
+						assert.equal(runtime.before(output).systemPrompt, output, "complete owned tail preserves repeated native classification");
+					}
+				}
+			}
+		}
+	}
+});
+
+test("appended native routing rejects root tags, partial/quoted/misplaced boundaries and malformed launch layouts", (t) => {
+	const runtime = harness(t);
+	for (const boundary of NATIVE_CHILD_BOUNDARIES) {
+		const valid = nativeLayout("worker", boundary);
+		for (const prompt of [
+			'<active_agent name="worker"/>\n\nroot',
+			`ROOT\n\n${boundary}`,
+			`ROOT\n\n<active_agent name="worker"/>\n\nrole\n\n${boundary}`,
+			valid.replace(boundary, boundary.split("\n")[0]),
+			valid.replace(boundary, boundary.slice(0, -1)),
+			valid.replace(boundary, `quoted: ${boundary}`),
+			`${valid}\n\nmore root instructions`,
+			`${valid}\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX.slice(0, -1)}`,
+			valid.replace('name="worker"/>', "name='worker'/>"),
+			valid.replace('name="worker"/>', 'name="worker" extra="yes"/>'),
+			valid.replace('/>\n\n', '/>\n'),
+			nativeLayout("worker", boundary, true).replace('<addendum>\n', '<addendum>\nquoted text\n'),
+			nativeLayout("worker", boundary, true).replace("\n</addendum>", ""),
+		]) {
+			assert.equal(selectProfile(prompt, false), "main", prompt);
+			assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "main", "COMMON draft\n\nMAIN draft"));
+		}
+	}
+});
+
+test("appended native layout cleans inherited main blocks with empty policy and keeps Chadineer independent", (t) => {
+	for (const legacyFirst of [false, true]) {
+		for (const deployed of [false, true]) {
+			const runtime = harness(t, { legacy: true, legacyFirst, deployed });
+			runtime.emit("session_start");
+			const parent = appendPolicy("inherited parent prose", "main", "stale main");
+			const prompt = nativeLayout("worker", NATIVE_CHILD_BOUNDARIES[0]).replace("existing worker role body", `existing worker role body\n${parent}`);
+			const output = runtime.before(prompt).systemPrompt;
+			assert.doesNotMatch(output, /stale main|MAIN draft/);
+			assert.match(output, /inherited parent prose/);
+			if (deployed) {
+				assert.doesNotMatch(output, /agent-policy:v1:/);
+				assert.ok(output.includes(CHADINEER_PROMPT));
+			} else {
+				assert.match(output, /CHILD draft[\s\S]*worker overlay/);
+				assert.ok(!output.includes(CHADINEER_PROMPT));
+			}
+			assert.equal(runtime.before(output).systemPrompt, deployed
+				? `${output}\n\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`
+				: output);
+		}
+	}
+});
+
+test("complete appended layout routes its launch tag rather than quoted preamble or role tags", (t) => {
+	const runtime = harness(t, { bbSignal: parseBBPolicySignal(bbTuple) });
+	const prompt = nativeLayout("reviewer", NATIVE_CHILD_BOUNDARIES[0], true)
+		.replace("Pi base", 'Pi base\n<active_agent name="scout"/>\nquoted preamble')
+		.replace("existing reviewer role body", 'existing reviewer role body\n<active_agent name="worker"/>\nquoted role tag');
+	assert.equal(selectRole(prompt, "subagent"), "reviewer");
+	assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"));
 });

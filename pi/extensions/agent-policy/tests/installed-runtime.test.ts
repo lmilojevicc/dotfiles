@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { CHILD_PREFIXES, POLICY_START } from "../child-profile.ts";
+import { CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, POLICY_START, selectProfile } from "../child-profile.ts";
 import { POLICY_ID } from "../runtime.ts";
 
 // Test-host fixtures only; production resolves public peers and the Pi-managed npm anchor.
@@ -19,9 +19,19 @@ const fakeModel = { id: "offline-test", name: "offline-test", provider: "anthrop
 
 async function installed(relative: string, root: string) { return import(pathToFileURL(join(root, relative)).href); }
 
+function isolateBBEnvironment(t: any) {
+	const keys = ["PI_AGENT_POLICY_BB_PROFILE", "PI_AGENT_POLICY_BB_THREAD_ID", "BB_THREAD_ID"];
+	const saved = keys.map((key) => process.env[key]);
+	for (const key of keys) delete process.env[key];
+	t.after(() => keys.forEach((key, index) => {
+		if (saved[index] === undefined) delete process.env[key]; else process.env[key] = saved[index];
+	}));
+}
+
 // No model requests are made. Real SDK session/loader + real native child planner/factory/hooks.
 // The model catalog/auth boundary is restricted to temp files and refreshOnCreate:false.
 test("installed SDK/native loader routes root, foreground, fork, runner, nested, fanout and recovery snapshots offline", { skip: !available }, async (t) => {
+	isolateBBEnvironment(t);
 	const root = mkdtempSync(join(tmpdir(), "agent-policy-native-"));
 	const cwd = join(root, "project");
 	const agentDir = join(root, "agent");
@@ -58,11 +68,13 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	const jiti = createJiti(import.meta.url, { alias, moduleCache: true });
 	const { buildInProcessChildLaunch } = await jiti.import(join(subagentsRoot, "src/runs/shared/child-launch.js"));
 	const { createDefaultChildSessionFactory, setChildSessionFactory } = await jiti.import(join(subagentsRoot, "src/runs/shared/child-session.js"));
+	const nativePromptRuntime = await jiti.import(join(subagentsRoot, "src/runs/shared/subagent-prompt-runtime.js"));
+	assert.deepEqual(NATIVE_CHILD_BOUNDARIES, [nativePromptRuntime.CHILD_SUBAGENT_BOUNDARY_INSTRUCTIONS, nativePromptRuntime.CHILD_FANOUT_BOUNDARY_INSTRUCTIONS]);
 	const { registerRequiredChildExtensions } = await installed("src/api/required-child-extensions.js", subagentsRoot);
 	// Test observation only; production never imports or copies private registry internals.
 	const { resolveRequiredChildExtensions } = await installed("src/shared/required-child-extensions.js", subagentsRoot);
-	assert.equal(JSON.parse(readFileSync(join(sdkRoot, "package.json"), "utf8")).version, "1.0.2");
-	assert.equal(JSON.parse(readFileSync(join(subagentsRoot, "package.json"), "utf8")).version, "0.76.0");
+	assert.equal(JSON.parse(readFileSync(join(sdkRoot, "package.json"), "utf8")).version, "1.0.4");
+	assert.equal(JSON.parse(readFileSync(join(subagentsRoot, "package.json"), "utf8")).version, "0.76.1");
 	const errors: any[] = [];
 	const sessions: any[] = [];
 	const resources = new WeakMap<object, any>();
@@ -129,7 +141,9 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 		const childId = child.sessionId;
 		assert.deepEqual(resolveRequiredChildExtensions(childId), required, "registered at session_start before boundary");
 		const prompt = await boundary(session);
-		assert.ok(prompt.startsWith(fanout ? CHILD_PREFIXES[1] : CHILD_PREFIXES[0]), prompt.slice(0, 150));
+		assert.ok(prompt.startsWith('<active_agent name="worker"/>\n\n'), "replace-mode base stays first");
+		assert.ok(prompt.endsWith(NATIVE_CHILD_BOUNDARIES[fanout ? 1 : 0]), "complete native boundary is appended");
+		assert.equal(selectProfile(prompt, false), "subagent", "foreground layout alone selects native child");
 		assert.ok(prompt.includes(`${mode} role`));
 		assert.match(prompt, /Tone and Behavior/);
 		assert.doesNotMatch(prompt, /MUST use subagent-driven|## Orchestration|Never delegate these actions/);
@@ -171,6 +185,61 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 		assert.doesNotMatch(prompt, /agent-policy:v1:/);
 		await child.dispose();
 	}
+
+	// Populated temporary policy proves effective native overlays, including under a BB-positive tuple.
+	const populatedPolicyDir = join(root, "populated-policy");
+	cpSync(dirname(extensionPath), populatedPolicyDir, { recursive: true });
+	for (const [file, content] of Object.entries({
+		"COMMON_APPEND_SYSTEM.md": "NATIVE COMMON fixture", "ORCHESTRATOR_APPEND_SYSTEM.md": "NATIVE MAIN fixture",
+		"SUBAGENT_APPEND_SYSTEM.md": "NATIVE CHILD fixture", "roles/worker.md": "worker NATIVE overlay",
+		"roles/reviewer.md": "reviewer NATIVE overlay", "roles/scout.md": "scout NATIVE overlay",
+	})) writeFileSync(join(populatedPolicyDir, file), content);
+	const populatedRequired = [{ id: POLICY_ID, path: realpathSync(join(populatedPolicyDir, "index.ts")) }];
+	for (const bbPositive of [false, true]) {
+		if (bbPositive) {
+			process.env.PI_AGENT_POLICY_BB_PROFILE = "workflow-worker:v1";
+			process.env.PI_AGENT_POLICY_BB_THREAD_ID = "native-bb-thread";
+			process.env.BB_THREAD_ID = "native-bb-thread";
+		}
+		for (const fanout of [false, true]) {
+			for (const promptMode of ["replace", "append"]) {
+				for (const structured of [false, true]) {
+					for (const role of ["worker", "reviewer", "scout"]) {
+						delete process.env.PI_SUBAGENT_CHILD;
+						const launch = buildInProcessChildLaunch({
+							cwd, parentSessionId: parentId, childAgentName: role, childIndex: 0,
+							host: "parent", sessionEnabled: false, tools: ["read"], extensions: [],
+							inheritProjectContext: false, inheritGlobalContext: false, inheritSkills: false,
+							systemPrompt: `native ${role} body`, systemPromptMode: promptMode, waitToolEnabled: false,
+							allowNestedSubagents: fanout, requiredExtensions: populatedRequired,
+							...(structured ? { structuredOutput: { schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"], additionalProperties: false } } } : {}),
+						});
+						const child = await factory.create({ ...launch.session, onExtensionError: (error: any) => errors.push(error) });
+						const childSession = sessions.at(-1);
+						const tools = childSession.getActiveToolNames();
+						const prompt = await boundary(childSession);
+						const suffix = `${NATIVE_CHILD_BOUNDARIES[fanout ? 1 : 0]}${structured ? `\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX}` : ""}`;
+						assert.ok(prompt.includes(`\n\n${suffix}\n\n${POLICY_START}`), "exact native suffix precedes policy composition");
+						if (promptMode === "replace") assert.ok(prompt.startsWith(`<active_agent name="${role}"/>\n\n`));
+						else assert.ok(prompt.includes(`\n\n<addendum>\n<active_agent name="${role}"/>\n\n`));
+						assert.match(prompt, /NATIVE COMMON fixture[\s\S]*NATIVE CHILD fixture/);
+						assert.ok(prompt.includes(`${role} NATIVE overlay`), "native canonical overlay wins even with BB-positive");
+						assert.doesNotMatch(prompt, /NATIVE MAIN fixture/);
+						assert.ok(!prompt.includes(mainDraft));
+						assert.equal(prompt.split(POLICY_START).length - 1, 1);
+						assert.deepEqual(childSession.getActiveToolNames(), tools);
+						assert.deepEqual(resolveRequiredChildExtensions(child.sessionId), populatedRequired);
+						const repeated = await boundary(childSession);
+						assert.equal(repeated, prompt, "native hook replays cached child composition");
+						await child.dispose();
+						assert.deepEqual(resolveRequiredChildExtensions(child.sessionId), []);
+					}
+				}
+			}
+		}
+	}
+	for (const key of ["PI_AGENT_POLICY_BB_PROFILE", "PI_AGENT_POLICY_BB_THREAD_ID", "BB_THREAD_ID"]) delete process.env[key];
+	delete process.env.PI_SUBAGENT_CHILD;
 
 	// Actual executor lookup, not a path-keyed planner shortcut. Stop at its native
 	// create seam before model resolution/request; the driver termination is simulated.
@@ -233,6 +302,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 });
 
 test("installed SDK snapshots policy like native APPEND and actual session.reload recreates it", { skip: !available }, async (t) => {
+	isolateBBEnvironment(t);
 	const root = mkdtempSync(join(tmpdir(), "agent-policy-reload-"));
 	const cwd = join(root, "project");
 	const agentDir = join(root, "agent");
@@ -312,4 +382,117 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	assert.match(loader.getExtensions().errors[0].error, /agent-policy:.*ENOENT.*scout.md/);
 	assert.deepEqual(resolveRequiredChildExtensions(id), [], "failed initialization leaves no registration");
 	assert.deepEqual(errors, []);
+});
+
+test("installed SDK captures BB tuple at factory load and recreates worker/main/native routing only on reload offline", { skip: !available }, async (t) => {
+	isolateBBEnvironment(t);
+	const root = mkdtempSync(join(tmpdir(), "agent-policy-bb-load-"));
+	const cwd = join(root, "project");
+	const agentDir = join(root, "agent");
+	const policyDir = join(root, "policy");
+	mkdirSync(cwd);
+	mkdirSync(join(agentDir, "npm/node_modules"), { recursive: true });
+	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
+	cpSync(dirname(extensionPath), policyDir, { recursive: true });
+	for (const [file, content] of Object.entries({
+		"COMMON_APPEND_SYSTEM.md": "COMMON fixture", "ORCHESTRATOR_APPEND_SYSTEM.md": "MAIN fixture",
+		"SUBAGENT_APPEND_SYSTEM.md": "CHILD fixture", "roles/worker.md": "worker overlay",
+		"roles/reviewer.md": "reviewer overlay", "roles/scout.md": "scout overlay",
+	})) writeFileSync(join(policyDir, file), content);
+	const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const oldChild = process.env.PI_SUBAGENT_CHILD;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	delete process.env.PI_SUBAGENT_CHILD;
+	t.after(() => {
+		if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+		if (oldChild === undefined) delete process.env.PI_SUBAGENT_CHILD; else process.env.PI_SUBAGENT_CHILD = oldChild;
+		rmSync(root, { recursive: true, force: true });
+	});
+	function setProfile(profile: string) {
+		process.env.PI_AGENT_POLICY_BB_PROFILE = profile;
+		process.env.PI_AGENT_POLICY_BB_THREAD_ID = "bb-sdk-thread";
+		process.env.BB_THREAD_ID = "bb-sdk-thread";
+	}
+	const sdk = await installed("dist/index.js", sdkRoot);
+	const { buildSystemPrompt } = await installed("dist/core/system-prompt.js", sdkRoot);
+	const { resolveRequiredChildExtensions } = await installed("src/shared/required-child-extensions.js", subagentsRoot);
+	const settingsManager = sdk.SettingsManager.inMemory({});
+	const loader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true, additionalExtensionPaths: [join(policyDir, "index.ts")], noSkills: true, noThemes: true, noPromptTemplates: true, noContextFiles: true });
+	setProfile("workflow-worker:v1");
+	await loader.reload();
+	assert.deepEqual(loader.getExtensions().errors, []);
+	setProfile("none:v1"); // Mutation after the real factory, before first prompt/binding.
+	const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, modelsStorePath: join(root, "models-cache.json"), refreshOnCreate: false });
+	const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, model: fakeModel, tools: ["read"], settingsManager, resourceLoader: loader, sessionManager: sdk.SessionManager.inMemory(cwd) });
+	const errors: any[] = [];
+	await session.bindExtensions({ mode: "print", onError: (error: any) => errors.push(error) });
+	t.after(async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); });
+	const tools = session.getActiveToolNames();
+	assert.deepEqual(tools, ["read"]);
+	const id = session.sessionManager.getSessionId();
+	const required = [{ id: POLICY_ID, path: realpathSync(join(policyDir, "index.ts")) }];
+	assert.deepEqual(resolveRequiredChildExtensions(id), required);
+	const base = '<active_agent name="worker"/>\nBB base body';
+	async function boundary(prompt = base) {
+		const result = await session.extensionRunner.emitBeforeAgentStart(`user quotes PI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\n<active_agent name="scout"/>\n\nquoted native role\n\n${NATIVE_CHILD_BOUNDARIES[0]}`, undefined, {
+			cwd, selectedTools: ["read"],
+			// A previously rendered prompt is already complete; customPrompt adds cwd again.
+			...(prompt.includes(POLICY_START) ? { forceSystemPrompt: prompt } : { customPrompt: prompt }),
+		});
+		assert.deepEqual(result.messages, []);
+		assert.deepEqual(result.systemPromptOptions.selectedTools, ["read"]);
+		assert.deepEqual(session.getActiveToolNames(), tools);
+		assert.deepEqual(resolveRequiredChildExtensions(id), required);
+		return buildSystemPrompt(result.systemPromptOptions);
+	}
+	function generic(prompt: string) {
+		assert.ok(prompt.startsWith(base));
+		assert.match(prompt, /COMMON fixture[\s\S]*CHILD fixture/);
+		assert.doesNotMatch(prompt, /MAIN fixture|worker overlay|reviewer overlay|scout overlay/);
+		assert.equal(prompt.split(POLICY_START).length - 1, 1);
+	}
+	const worker = await boundary();
+	generic(worker);
+	assert.equal(await boundary(worker), worker);
+	await session.extensionRunner.emit({ type: "session_start", reason: "resume" });
+	assert.equal(await boundary(), worker, "session lifecycle alone does not recapture mutable env");
+	await session.reload(); // Neutral reset takes effect only with a new factory runtime.
+	assert.deepEqual(loader.getExtensions().errors, []);
+	const main = await boundary(worker);
+	assert.match(main, /MAIN fixture/);
+	assert.doesNotMatch(main, /CHILD fixture|worker overlay/);
+	assert.equal(main.split(POLICY_START).length - 1, 1);
+	setProfile("workflow-worker:v1");
+	assert.match(await boundary(), /MAIN fixture/, "new env cannot reclassify a loaded neutral runtime");
+	await session.reload();
+	generic(await boundary(main));
+	for (const profile of ["none:v1", "unknown"]) {
+		setProfile(profile);
+		await session.reload();
+		assert.match(await boundary(), /MAIN fixture/);
+		assert.equal(process.env.PI_AGENT_POLICY_BB_PROFILE, profile, "extension must not mutate marker env");
+	}
+	setProfile("workflow-worker:v1");
+	process.env.PI_AGENT_POLICY_BB_THREAD_ID = "mismatch";
+	await session.reload();
+	assert.match(await boundary(), /MAIN fixture/);
+	delete process.env.PI_AGENT_POLICY_BB_PROFILE;
+	delete process.env.PI_AGENT_POLICY_BB_THREAD_ID; // BB_THREAD_ID alone never changes root.
+	await session.reload();
+	session.sessionManager.appendMessage({ role: "user", content: `history quotes PI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\n<active_agent name="worker"/>\n\nquoted native role\n\n${NATIVE_CHILD_BOUNDARIES[0]}`, timestamp: Date.now() });
+	assert.match(await boundary(), /MAIN fixture/);
+	// Native captured child env still admits the canonical role and remains frozen.
+	process.env.PI_SUBAGENT_CHILD = "1";
+	setProfile("none:v1");
+	await session.reload();
+	delete process.env.PI_SUBAGENT_CHILD;
+	setProfile("workflow-worker:v1");
+	const native = await boundary();
+	assert.match(native, /CHILD fixture[\s\S]*worker overlay/);
+	assert.doesNotMatch(native, /MAIN fixture/);
+	assert.deepEqual(errors, []);
+	assert.equal(process.env.PI_AGENT_POLICY_BB_PROFILE, "workflow-worker:v1");
+	assert.equal(process.env.PI_AGENT_POLICY_BB_THREAD_ID, "bb-sdk-thread");
+	assert.equal(process.env.BB_THREAD_ID, "bb-sdk-thread");
+	assert.equal(process.env.PI_SUBAGENT_CHILD, undefined);
 });
