@@ -44,7 +44,7 @@ async function fixture(t: TestContext, initial?: ExtensionConfig) {
   } as unknown as ExtensionAPI;
   const kb = new KeybindingsManager(TUI_KEYBINDINGS); setKeybindings(kb);
   const tui = { terminal: { rows: 24, columns: 80 }, requestRender() {} } as unknown as TUI;
-  const theme = { fg: (_token: string, text: string) => text } as unknown as Theme;
+  const theme = { bold: (text: string) => `\x1b[1m${text}\x1b[22m`, fg: (_token: string, text: string) => text } as unknown as Theme;
   const ctx = {
     mode: "tui", hasUI: true,
     sessionManager: { getBranch: forbidden, appendMessage: forbidden, appendCustomEntry: forbidden },
@@ -66,7 +66,7 @@ async function fixture(t: TestContext, initial?: ExtensionConfig) {
         // Exercise actual public SettingsList/Editor rendering and input, not a menu mock.
         for (const key of keys) {
           const frame = component.render(80).join("\n"); frames.push(frame);
-          if (!frame.startsWith("Local replacement:")) assert.ok(!frame.includes(ORIGINAL));
+          if (!frame.includes("Local replacement:")) assert.ok(!frame.includes(ORIGINAL));
           // Public host ordering: scoped listeners run before global handlers/components.
           const consumed = [...inputListeners].some(handler => handler(key)?.consume);
           if (consumed) consumedInputs++;
@@ -113,14 +113,14 @@ test("settings-integration: inactive actual command opens/cancels missing config
     const toolkit = await import(${JSON.stringify(toolkit)});
     const kb = new toolkit.KeybindingsManager(toolkit.TUI_KEYBINDINGS);
     const inputListeners = new Set();
-    const ctx={mode:'tui',hasUI:true,ui:{onTerminalInput(h){inputListeners.add(h);return()=>inputListeners.delete(h)},notify(){throw Error('unexpected notice')},getEditorText(){return ''},setEditorText(){throw Error('prompt write')},custom(factory){return new Promise(resolve=>{const c=factory({terminal:{rows:24,columns:80},requestRender(){}},{fg:(_,s)=>s},kb,resolve);c.render(80);if(![...inputListeners].some(h=>h('\\x1b')?.consume))c.handleInput('\\x1b');c.dispose?.()})}},waitForIdle(){throw Error('idle')},reload(){throw Error('reload')}};
+    const ctx={mode:'tui',hasUI:true,ui:{onTerminalInput(h){inputListeners.add(h);return()=>inputListeners.delete(h)},notify(){throw Error('unexpected notice')},getEditorText(){return ''},setEditorText(){throw Error('prompt write')},custom(factory){return new Promise(resolve=>{const c=factory({terminal:{rows:24,columns:80},requestRender(){}},{bold:s=>s,fg:(_,s)=>s},kb,resolve);c.render(80);if(![...inputListeners].some(h=>h('\\x1b')?.consume))c.handleInput('\\x1b');c.dispose?.()})}},waitForIdle(){throw Error('idle')},reload(){throw Error('reload')}};
     await commands.get('redaction').handler('',ctx); if(events.size || inputListeners.size) throw Error('leaked subscriptions');`;
   const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], { cwd: new URL("../", import.meta.url), env: { ...process.env, XDG_CONFIG_HOME: f.root }, encoding: "utf8" });
   assert.equal(child.status, 0, child.stderr);
   assert.deepEqual(await fs.readdir(f.root), ["source-only"]);
 });
 
-test("settings-integration: Sources > Tool results + Detectors > Emails saves 600 inside 700 then reloads exactly once", async t => {
+test("settings-integration: Redact > Emails + Sources > Tool results saves 600 inside 700 then reloads exactly once", async t => {
   const f = await fixture(t); f.scripts.push([ENTER, TAB, ENTER, SAVE]);
   await f.run();
   assert.deepEqual(f.calls, ["read", "idle", "native", "idle", "save", "reload"]);
@@ -128,7 +128,7 @@ test("settings-integration: Sources > Tool results + Detectors > Emails saves 60
   assert.equal((await fs.stat(dirname(f.path))).mode & 0o777, 0o700);
   assert.deepEqual((await f.store.read()).config, active());
   assert.deepEqual(await fs.readdir(dirname(f.path)), ["config.json"]);
-  assert.ok(f.frames.some(frame => frame.includes("Draft: pending"))); assert.equal(f.events.size, 0);
+  assert.ok(f.frames.some(frame => frame.includes("Unsaved"))); assert.equal(f.events.size, 0);
 });
 
 test("settings-integration: exact private form draft cancels without writing or normal-prompt/session/model calls", async t => {
@@ -153,7 +153,7 @@ test("settings-integration: exact multiline form saves through native validation
 test("settings-integration: actual reduction confirmation declined/accepted before disk change", async t => {
   for (const accept of [false, true]) {
     const f = await fixture(t, active()); const original = await fs.readFile(f.path, "utf8");
-    f.decisions.push(accept); f.scripts.push([ENTER, SAVE]); if (!accept) f.scripts.push([CANCEL]);
+    f.decisions.push(accept); f.scripts.push([TAB, ENTER, SAVE]); if (!accept) f.scripts.push([CANCEL]);
     await f.run();
     assert.equal(f.confirmations.filter(text => text.startsWith("Reduce protection?")).length, 1);
     assert.ok(!f.confirmations.join().includes(ORIGINAL));

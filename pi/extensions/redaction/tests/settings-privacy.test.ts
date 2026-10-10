@@ -12,7 +12,7 @@ import { offConfig } from "../src/config.ts";
 import { createSettingsUI } from "../src/settings-ui.ts";
 
 const secret = "synthetic-original-debug-guard";
-const theme = { fg: (_token: string, text: string) => text } as unknown as Theme;
+const theme = { bold: (text: string) => `\x1b[1m${text}\x1b[22m`, fg: (_token: string, text: string) => text } as unknown as Theme;
 const diagnosticKeys = ["\x1b[100;6u", "\x1b[68;6u", "\x1b[27;6;100~"];
 
 test("settings-privacy: actual TuiMainScreen listeners intercept diagnostics before global debug and clean up", async t => {
@@ -138,7 +138,7 @@ test("settings-privacy: known logging flags refuse before UI/rendering, includin
       assert.equal(notices.length, 2); assert.match(notices[0], /terminal logging disabled/);
     } else {
       const tui = { terminal: {rows:24,columns:100}, requestRender() {} };
-      const theme = { fg: (_token, text) => text };
+      const theme = { bold: text => text, fg: (_token, text) => text };
       const kb = new KeybindingsManager(TUI_KEYBINDINGS);
       let active;
       ctx.ui.custom = factory => new Promise(resolve => {

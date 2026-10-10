@@ -2,9 +2,10 @@ import type { ExtensionConfig } from "./contracts.ts";
 import type { MenuSection } from "./menu-contracts.ts";
 import { isActive, validateConfig } from "./config.ts";
 
-export const sections: readonly MenuSection[] = ["sources", "detectors", "replacements"];
+export const sections: readonly MenuSection[] = ["detectors", "sources", "replacements"];
+export const sectionLabels = { detectors: "Redact", sources: "Sources", replacements: "Replacements" } as const;
 export const sourceLabels = { toolResults: "Tool results", userMessages: "User messages", systemPrompt: "System prompt" } as const;
-export const detectorLabels = { email: "Emails", phone: "Phones", apiToken: "API tokens", privateKey: "Private keys", credentialUrl: "URL credentials" } as const;
+export const detectorLabels = { email: "Emails", phone: "Phone numbers", apiToken: "API keys", privateKey: "Private keys", credentialUrl: "Credential URLs" } as const;
 export function cloneDraft(config: ExtensionConfig): ExtensionConfig {
   return { sources: { ...config.sources }, detectors: { ...config.detectors }, literals: Object.fromEntries(Object.entries(config.literals)) };
 }
@@ -41,5 +42,7 @@ export function deleteLiteral(draft: ExtensionConfig, index: number): void {
   draft.literals = Object.fromEntries(Object.entries(draft.literals).filter((_, i) => i !== index));
 }
 export function draftState(config: ExtensionConfig): string {
-  return isActive(config) ? "filtering configured" : "off (needs a source and a rule)";
+  const sources = Object.values(config.sources).some(Boolean);
+  const rules = Object.values(config.detectors).some(Boolean) || Object.keys(config.literals).length > 0;
+  return rules && !sources ? "Choose a source in Sources" : sources && !rules ? "Choose what to redact" : "";
 }

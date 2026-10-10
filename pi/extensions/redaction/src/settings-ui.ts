@@ -1,10 +1,10 @@
 import type { ExtensionCommandContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, SettingsList, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Editor, Key, SettingsList, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Component, SettingItem, SettingsListTheme, TUI } from "@earendil-works/pi-tui";
 import type { ExtensionConfig } from "./contracts.ts";
 import { isActive } from "./config.ts";
 import type { MenuSection } from "./menu-contracts.ts";
-import { detectorLabels, draftState, needsEscaped, safeAlias, sameConfig, sections, sourceLabels } from "./settings-model.ts";
+import { detectorLabels, draftState, needsEscaped, safeAlias, sameConfig, sectionLabels, sections, sourceLabels } from "./settings-model.ts";
 
 export type MenuOutcome = { kind: "cancel" | "save" | "add" } | { kind: "edit" | "delete"; index: number };
 export interface SettingsUI {
@@ -15,13 +15,32 @@ export interface SettingsUI {
 const cancelled: MenuOutcome = { kind: "cancel" };
 function listTheme(theme: Theme): SettingsListTheme {
   return {
-    label: (text, selected) => theme.fg(selected ? "accent" : "text", text),
-    value: (text) => theme.fg("muted", text), description: text => theme.fg("muted", text),
+    label: (text, selected) => selected ? theme.bold(theme.fg("text", text)) : theme.fg("text", text),
+    value: (text, selected) => text === "On" ? theme.fg("success", selected ? theme.bold(text) : text) : theme.fg("dim", text),
+    description: text => theme.fg("muted", text),
     cursor: theme.fg("accent", "› "), hint: () => "",
   };
 }
 function fit(lines: string[], width: number): string[] {
   return width <= 0 ? [] : lines.map(line => truncateToWidth(line, width, ""));
+}
+function inset(lines: string[], width: number): string[] {
+  const padding = " ".repeat(Math.min(2, Math.max(0, width - 1)));
+  return fit(lines.map(line => padding + line), width);
+}
+function controls(hints: string[], width: number): string[] {
+  const lines: string[] = [];
+  for (const hint of hints) {
+    const last = lines.at(-1);
+    if (last && visibleWidth(`${last} · ${hint}`) <= width) lines[lines.length - 1] += ` · ${hint}`;
+    else lines.push(...wrapTextWithAnsi(hint, Math.max(1, width)));
+  }
+  return lines;
+}
+function tabs(theme: Theme, section: MenuSection, width: number): string {
+  const labels = sections.map(tab => tab === section ? theme.bold(sectionLabels[tab]) : theme.fg("dim", sectionLabels[tab]));
+  const full = labels.join(theme.fg("dim", "  /  "));
+  return visibleWidth(full) <= width ? full : theme.bold(sectionLabels[section]) + theme.fg("dim", ` (${sections.indexOf(section) + 1}/3)`);
 }
 function keyLabel(kb: KeybindingsManager, action: "up" | "down" | "confirm" | "cancel"): string {
   return safeAlias(kb.getKeys(`tui.select.${action}`)[0] ?? "unbound");
@@ -85,13 +104,13 @@ async function localCustom<T>(ctx: ExtensionCommandContext, signal: AbortSignal,
 }
 export function sectionItems(section: MenuSection, draft: ExtensionConfig): SettingItem[] {
   const items: SettingItem[] = section === "replacements" ? Object.entries(draft.literals).flatMap(([, alias], index) => [
-    { id: `edit:${index}`, label: `#${index + 1} [masked]`, currentValue: safeAlias(alias), values: [safeAlias(alias)], description: "Edit exact value and alias locally." },
-    { id: `delete:${index}`, label: `Delete #${index + 1}`, currentValue: "Delete…", values: ["Delete…"] },
+    { id: `edit:${index}`, label: `#${index + 1} [masked]`, currentValue: safeAlias(alias), values: [safeAlias(alias)] },
+    { id: `delete:${index}`, label: `Delete #${index + 1}`, currentValue: "", values: [""] },
   ]) : Object.entries(section === "sources" ? sourceLabels : detectorLabels).map(([key, label]) => ({
-    id: key, label, currentValue: (draft[section] as Record<string, boolean>)[key] ? "on" : "off", values: ["off", "on"],
+    id: key, label, currentValue: (draft[section] as Record<string, boolean>)[key] ? "On" : "Off", values: ["Off", "On"],
   }));
-  if (section === "replacements") items.push({ id: "add", label: "Add replacement", currentValue: "Add…", values: ["Add…"] });
-  items.push({ id: "save", label: "Save & reload", currentValue: "Save…", values: ["Save…"] });
+  if (section === "replacements") items.push({ id: "add", label: "Add replacement", currentValue: "", values: [""] });
+  items.push({ id: "save", label: "Save & reload", currentValue: "", values: [""] });
   return items;
 }
 export function menuComponent(tui: TUI, theme: Theme, kb: KeybindingsManager, done: (value: MenuOutcome) => void,
@@ -107,7 +126,7 @@ export function menuComponent(tui: TUI, theme: Theme, kb: KeybindingsManager, do
     }
     if (navigation.section !== "replacements") {
       const section = draft[navigation.section];
-      if (Object.hasOwn(section, id)) (section as Record<string, boolean>)[id] = value === "on";
+      if (Object.hasOwn(section, id)) (section as Record<string, boolean>)[id] = value === "On";
     }
     rebuild();
   };
@@ -121,19 +140,38 @@ export function menuComponent(tui: TUI, theme: Theme, kb: KeybindingsManager, do
   return {
     render(width) {
       if (width <= 0) return [];
+      const innerWidth = Math.max(1, width - 2);
       const rows = tui.terminal.rows;
-      const nextVisible = Math.max(1, Math.min(8, rows - 8));
+      const spacious = rows >= 20;
+      const space = spacious ? [""] : [];
+      const dirty = !sameConfig(saved, draft);
+      // Running is an at-open snapshot, never inferred from the enabled draft switches.
+      const status = wrapTextWithAnsi(`${dirty ? "Unsaved · " : ""}Running: ${safeAlias(running)} · Saved: ${isActive(saved) ? "configured" : "off"}`, innerWidth);
+      const warning = draftState(draft);
+      const spaceKey = ["up", "down", "cancel"].some(action => kb.matches(" ", `tui.select.${action}` as "tui.select.up")) ? "" : "/Space";
+      const footer = controls([
+        `Ctrl+S Save & reload`, `${keyLabel(kb, "cancel")} Cancel`,
+        `${keyLabel(kb, "up")}/${keyLabel(kb, "down")} Move`,
+        `${keyLabel(kb, "confirm")}${spaceKey} ${navigation.section === "replacements" || items[navigation.index].id === "save" ? "Select" : "Toggle"}`,
+        "Tab/Shift+Tab Sections",
+      ], innerWidth);
+      const fixedRows = 4 + space.length * 3 + status.length + (warning ? wrapTextWithAnsi(warning, innerWidth).length : 0) + footer.length;
+      const nextVisible = Math.max(1, Math.min(8, rows - fixedRows));
       if (nextVisible !== visible) { visible = nextVisible; rebuild(); }
-      const body = list.render(Math.max(5, width));
+      const body = list.render(Math.max(5, innerWidth));
       while (body.length && visibleWidth(body.at(-1)!) === 0) body.pop();
       return fit([
-        theme.fg("accent", width < 40 ? navigation.section : sections.map(section => section === navigation.section ? `[${section}]` : section).join("  ")),
-        theme.fg("muted", `Draft: ${sameConfig(saved, draft) ? "unchanged" : "pending"} · Saved: ${isActive(saved) ? "configured" : "off"}`),
-        theme.fg("muted", `Running (at open): ${running}`),
-        theme.fg("muted", `Draft filtering: ${draftState(draft)}`),
-        ...body,
-        theme.fg("muted", `${keyLabel(kb, "up")}/${keyLabel(kb, "down")} Move · ${keyLabel(kb, "confirm")}${["up", "down", "cancel"].some(action => kb.matches(" ", `tui.select.${action}` as "tui.select.up")) ? "" : "/Space"} Change · Tab/Shift-Tab Sections`),
-        theme.fg("muted", `${keyLabel(kb, "cancel")} Cancel · Ctrl+S Save & reload`),
+        theme.fg("accent", "─".repeat(width)),
+        ...inset([tabs(theme, navigation.section, innerWidth)], width),
+        theme.fg("borderMuted", "─".repeat(width)),
+        ...space,
+        ...inset(status.map(line => theme.fg("muted", line)), width),
+        ...inset(warning ? wrapTextWithAnsi(warning, innerWidth).map(line => theme.fg("warning", line)) : [], width),
+        ...space,
+        ...inset(body, width),
+        ...space,
+        ...inset(footer.map(line => theme.fg("dim", line)), width),
+        theme.fg("accent", "─".repeat(width)),
       ], width);
     },
     invalidate() { list.invalidate(); },
@@ -211,11 +249,16 @@ export function formComponent(tui: TUI, theme: Theme, kb: KeybindingsManager,
     get focused() { return editor.focused; }, set focused(value) { editor.focused = value; },
     render(width) {
       if (width <= 0) return [];
+      const innerWidth = Math.max(1, width - 2);
       return fit([
-        theme.fg("accent", `Local replacement: ${field === 0 ? "Original" : "Alias"} (${escaped[field] ? "escaped JSON string" : "plain text"})`),
-        ...editor.render(Math.max(8, width)),
-        theme.fg("warning", message),
-        theme.fg("muted", `Tab Other field · F2 Plain/escaped · Ctrl+S Apply to draft · ${keyLabel(kb, "cancel")} Back`),
+        theme.fg("accent", "─".repeat(width)),
+        ...inset(wrapTextWithAnsi(`Local replacement: ${field === 0 ? "Original" : "Alias"} (${escaped[field] ? "escaped JSON string" : "plain text"})`, innerWidth).map(line => theme.bold(line)), width),
+        theme.fg("borderMuted", "─".repeat(width)),
+        "",
+        ...inset(editor.render(Math.max(8, innerWidth)), width),
+        ...inset([theme.fg("warning", message)], width),
+        ...inset(controls(["Ctrl+S Apply to draft", `${keyLabel(kb, "cancel")} Back`, "Tab Other field", "F2 Plain/escaped"], innerWidth).map(line => theme.fg("dim", line)), width),
+        theme.fg("accent", "─".repeat(width)),
       ], width);
     },
     invalidate() { editor.invalidate(); },
@@ -235,7 +278,7 @@ export function formComponent(tui: TUI, theme: Theme, kb: KeybindingsManager,
   };
 }
 export function createSettingsUI(): SettingsUI {
-  const navigation = { section: "sources" as MenuSection, index: 0 };
+  const navigation = { section: "detectors" as MenuSection, index: 0 };
   return {
     menu: (ctx, draft, saved, running, signal) => localCustom(ctx, signal, cancelled,
       (tui, theme, kb, done) => menuComponent(tui, theme, kb, done, draft, saved, running, navigation)),

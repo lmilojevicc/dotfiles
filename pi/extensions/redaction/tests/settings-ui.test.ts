@@ -8,7 +8,9 @@ import { cloneDraft } from "../src/settings-model.ts";
 import { createSettingsUI, decodeExact, encodeExact, formComponent, menuComponent, sectionItems } from "../src/settings-ui.ts";
 import type { MenuOutcome } from "../src/settings-ui.ts";
 
-const theme = { fg: (_token: string, text: string) => `\x1b[36m${text}\x1b[0m` } as unknown as Theme;
+const colors = { accent: 36, text: 37, dim: 90, muted: 90, success: 32, warning: 33, border: 34, borderMuted: 30 };
+const theme = { bold: (text: string) => `\x1b[1m${text}\x1b[22m`, fg: (token: keyof typeof colors, text: string) => `\x1b[${colors[token]}m${text}\x1b[0m` } as unknown as Theme;
+const plain = (lines: string[]) => lines.join("\n").replace(/\x1b\[[0-9;]*m/g, "");
 function toolkit(bindings = {}) {
   const kb = new KeybindingsManager(TUI_KEYBINDINGS, bindings);
   setKeybindings(kb);
@@ -17,7 +19,7 @@ function toolkit(bindings = {}) {
   return { tui, kb: kb as HostKeys, renders: () => renders };
 }
 const paste = (text: string) => `\x1b[200~${text}\x1b[201~`;
-const widths = [0, 1, 2, 3, 4, 7, 10, 20, 40, 80, 120];
+const widths = [0, 1, 2, 3, 4, 7, 10, 20, 40, 60, 80, 120];
 const bounded = (lines: string[], width: number) => { for (const line of lines) assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`); };
 
 test("settings-ui: real SettingsList renders all sections at zero/narrow/Unicode widths and resize", () => {
@@ -41,21 +43,86 @@ test("settings-ui: real SettingsList renders all sections at zero/narrow/Unicode
   assert.deepEqual(items.map(i => i.id), ["edit:0", "delete:0", "add", "save"]);
   assert.ok(!JSON.stringify(items).includes("never-display-synthetic-original"));
 });
-test("settings-ui: compact status retains pending/unchanged at 40 columns and narrow headers identify the section", () => {
+test("settings-ui: createSettingsUI opens Redact and exposes five independent all-off switches", async () => {
+  const { tui, kb } = toolkit();
+  const draft = offConfig(); const saved = offConfig();
+  let component: any;
+  const ctx = { ui: { onTerminalInput: () => () => {}, custom(factory: any) {
+    return new Promise(resolve => { component = factory(tui, theme, kb, resolve); });
+  } } } as unknown as ExtensionCommandContext;
+  const pending = createSettingsUI().menu(ctx, draft, saved, "inactive", new AbortController().signal);
+  const frame = component.render(40);
+  assert.match(plain(frame), /Redact  \/  Sources  \/  Replacements/);
+  assert.ok(frame[1].includes(theme.bold("Redact")));
+  assert.ok(frame[1].includes(theme.fg("dim", "Sources")));
+  assert.equal(frame[0], theme.fg("accent", "─".repeat(40)));
+  assert.equal(frame[2], theme.fg("borderMuted", "─".repeat(40)));
+  for (const label of ["Emails", "Phone numbers", "API keys", "Private keys", "Credential URLs", "Save & reload"]) {
+    assert.ok(plain(frame).includes(label));
+  }
+  assert.match(plain(frame), /  › Emails +Off/);
+  assert.ok(!plain(frame).includes("Save…"));
+  const keys = ["email", "phone", "apiToken", "privateKey", "credentialUrl"] as const;
+  for (const key of keys) {
+    component.handleInput(" ");
+    assert.deepEqual(draft.detectors, { ...offConfig().detectors, [key]: true });
+    assert.deepEqual(draft.sources, offConfig().sources);
+    assert.ok(component.render(40).join().includes(theme.fg("success", theme.bold("On"))));
+    component.handleInput("\r");
+    assert.deepEqual(draft.detectors, offConfig().detectors);
+    component.handleInput("\x1b[B");
+  }
+  component.handleInput("\r"); assert.deepEqual(await pending, { kind: "save" });
+  component.dispose(); assert.deepEqual(saved, offConfig());
+});
+test("settings-ui: concise state is runtime-safe, dirty-aware and warns only on incomplete drafts", () => {
+  const { tui, kb } = toolkit();
+  const draft = offConfig(); const saved = offConfig();
+  const component = menuComponent(tui, theme, kb, () => {}, draft, saved, "inactive", { section: "detectors", index: 0 });
+  assert.match(plain(component.render(40)), /Running: inactive · Saved: off/);
+  assert.ok(!plain(component.render(40)).includes("Choose"));
+  draft.detectors.email = true;
+  assert.match(plain(component.render(40)), /Unsaved · Running: inactive/);
+  assert.match(plain(component.render(40)), /Choose a source in Sources/);
+  assert.ok(!plain(component.render(40)).includes("filtering configured"));
+  draft.sources.toolResults = true;
+  assert.ok(!plain(component.render(40)).includes("Choose"));
+  draft.detectors.email = false;
+  assert.match(plain(component.render(40)), /Choose what to redact/);
+  saved.detectors.email = true; saved.sources.toolResults = true;
+  assert.match(plain(component.render(80)), /Running: inactive · Saved: configured/);
+  const failed = menuComponent(tui, theme, kb, () => {}, draft, saved, "unavailable (protected transmission censored)", { section: "detectors", index: 0 });
+  assert.match(plain(failed.render(40)).replace(/\n +/g, " "), /Running: unavailable \(protected transmission censored\)/);
+  for (const section of ["detectors", "sources", "replacements"] as const) {
+    const ui = menuComponent(tui, theme, kb, () => {}, draft, saved, "active", { section, index: 0 });
+    for (const width of [1, 2, 10, 20, 40, 60, 80, 120]) {
+      const lines = ui.render(width); bounded(lines, width);
+      const label = { detectors: "Redact", sources: "Sources", replacements: "Replacements" }[section];
+      if (width >= 10 && width < 37) assert.ok(plain([lines[1]]).trim().startsWith(label.slice(0, width - 2)));
+      if (width >= 40) { assert.match(plain(lines), /Ctrl\+S Save & reload/); assert.match(plain(lines), /escape Cancel/); }
+    }
+  }
+});
+test("settings-ui: ordered tabs wrap both directions and replacement scrolling keeps the selected action", () => {
   const { tui, kb } = toolkit();
   const draft = offConfig();
-  for (const section of ["sources", "detectors", "replacements"] as const) {
-    const component = menuComponent(tui, theme, kb, () => {}, draft, offConfig(), "inactive", { section, index: 0 });
-    assert.match(component.render(40)[1], /Draft: unchanged.*Saved: off/);
-    draft.sources.toolResults = true;
-    assert.match(component.render(40)[1], /Draft: pending.*Saved: off/);
-    for (const width of [1, 4, 10, 20, 39]) {
-      const lines = component.render(width); bounded(lines, width);
-      assert.ok(lines[0].includes(section.slice(0, Math.min(width, section.length))));
-      if (width >= 16) assert.match(lines[1], /Draft: pending/);
+  draft.literals = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`synthetic-original-${i}`, `PRIVATE_${i}`]));
+  const navigation = { section: "detectors" as "detectors" | "sources" | "replacements", index: 0 };
+  const ui = menuComponent(tui, theme, kb, () => {}, draft, offConfig(), "inactive", navigation);
+  for (const section of ["sources", "replacements", "detectors"]) { ui.handleInput!("\t"); assert.equal(navigation.section, section); }
+  ui.handleInput!("\x1b[Z"); assert.equal(navigation.section, "replacements");
+  ui.handleInput!("\x1b[A"); assert.equal(navigation.index, 61);
+  for (const rows of [12, 20, 24, 60]) {
+    (tui.terminal as unknown as { rows: number }).rows = rows;
+    for (const width of [40, 60, 80, 120]) {
+      const lines = ui.render(width); bounded(lines, width);
+      assert.match(plain(lines), /› Save & reload/);
+      assert.ok(lines.length <= rows, `${lines.length} > ${rows}`);
+      assert.ok(!plain(lines).includes("synthetic-original"));
     }
-    draft.sources.toolResults = false;
   }
+  ui.handleInput!("\x1b[B"); assert.equal(navigation.index, 0);
+  assert.match(plain(ui.render(40)), /› #1 \[masked\]/);
 });
 test("settings-ui: native selection renders synchronized changes and navigation under rebinding", () => {
   const { tui, kb, renders } = toolkit({ "tui.select.up": ["k"], "tui.select.down": ["j", "space"], "tui.select.confirm": ["l"], "tui.select.cancel": ["q"] });
@@ -65,10 +132,10 @@ test("settings-ui: native selection renders synchronized changes and navigation 
   component.handleInput!("l"); assert.equal(draft.sources.toolResults, true);
   component.handleInput!(" "); assert.equal(draft.sources.userMessages, false, "space navigates when rebound");
   component.handleInput!("l"); assert.equal(draft.sources.userMessages, true);
-  component.handleInput!("k"); component.handleInput!("\t");
+  component.handleInput!("k"); component.handleInput!("\x1b[Z");
   component.handleInput!("l"); assert.equal(draft.detectors.email, true);
-  component.handleInput!("\x1b[Z");
-  assert.match(component.render(120).join(), /\[sources\]/);
+  component.handleInput!("\t");
+  assert.match(component.render(120)[1], /\x1b\[1mSources\x1b\[22m/);
   assert.match(component.render(120).join(), /j.*Move/);
   assert.ok(!component.render(120).join().includes("/Space Change"));
   component.handleInput!("q"); assert.deepEqual(outcome, { kind: "cancel" }); assert.ok(renders() > 0);
@@ -160,7 +227,7 @@ test("settings-ui: plain-to-escaped switch and JSON string-only validation/cance
     const form = formComponent(tui, theme, kb, () => { done = true; }, ["simple", "PRIVATE"]);
     form.handleInput!("\x1bOQ"); form.handleInput!("\x01"); form.handleInput!("\x0b"); form.handleInput!(paste(invalid)); form.handleInput!("\x13");
     assert.equal(done, false);
-    const last = form.render(120).slice(-2).join(); assert.match(last, /valid JSON string/); assert.ok(!last.includes("synthetic-value"));
+    const last = form.render(120).slice(-3).join(); assert.match(last, /valid JSON string/); assert.ok(!last.includes("synthetic-value"));
     form.handleInput!("\x1b"); assert.equal(done, true);
   }
   for (const value of [1, {}, [], null]) assert.throws(() => decodeExact(JSON.stringify(value), true));
