@@ -45,7 +45,7 @@ test("integration: inactive package imports and installs without native binary o
   await fs.mkdir(copy);
   for (const name of ["index.ts", "src", "package.json"]) await fs.cp(join(packageRoot, name), join(copy, name), { recursive: true });
   await assert.rejects(fs.access(join(copy, "native/redaction.node")));
-  const script = `const {default: install} = await import(${JSON.stringify(pathToFileURL(join(copy, "index.ts")).href)}); let commands = 0; await install({registerCommand(){commands++},on(){throw Error('inactive hook')},registerTool(){throw Error('inactive tool')}}); if(commands !== 1) throw Error('missing status'); console.log('inactive source-only import passed');`;
+  const script = `const {default: install} = await import(${JSON.stringify(pathToFileURL(join(copy, "index.ts")).href)}); let commands = 0; await install({registerCommand(){commands++},on(){throw Error('inactive hook')},registerTool(){throw Error('inactive tool')}}); if(commands !== 2) throw Error('missing commands'); console.log('inactive source-only import passed');`;
   for (const present of [false, true]) {
     const configHome = join(f.cwd, present ? "all-off-config" : "absent-config");
     if (present) {

@@ -45,7 +45,9 @@ Layers kept separate:
 
 Download/tooling/build/module import/constructor/hook registration/first correctness sequence are separate diagnostics, not hot throughput. First sequence includes checks/instrumentation, not fresh first-call latency. Whole core child-process duration includes all scans and is not setup/scan latency.
 
-## Final corrected-source run
+## Historical corrected-source run
+
+The retained three-trial artifact predates the cold `/redaction` menu registration. Its recorded hook hash identifies that measured source, **not the current whole `src/index.ts`**. Menu modules load only on human invocation; Rust/scanner, bridge, sanitizer, history, file tools and existing hot callback bodies remain unchanged. No timings were rerun or relabelled for the menu addition, and this artifact is not new-head startup/menu performance evidence.
 
 Generated **2026-10-10T16:16:10.488Z**, Darwin arm6425.3.0, Apple M1 Pro10 logical CPUs, Node26.10.0, Rust/cargo1.98.1. **390 aggregate rows /1170 trial rows** all pass correctness. Three complete trials retained, no favorable-trial selection.
 

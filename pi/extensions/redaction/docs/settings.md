@@ -1,0 +1,18 @@
+# Local redaction menu
+
+Run `/redaction` in Pi's **local TUI**. For email filtering: **Sources > Tool results**, then **Detectors > Emails**, then **Save & reload**. These switches are independent; nothing enables itself. RPC, print and JSON modes refuse before reading menu configuration. The menu remains available with all filtering off; there is no master enable switch or preset.
+
+- Tab / Shift-Tab: Sources, Detectors, Replacements.
+- Pi's configured selection keys: move, change, cancel. Space also changes a row unless bound to navigation/cancel.
+- **Save & reload** (row or Ctrl+S): validate, wait for idle, privately save, reload Pi. At least one source plus one detector/replacement is needed for filtering.
+- Escape/cancel: discard confirmation only when changed. Merely opening, editing or canceling does not write anything.
+
+Running, saved and pending draft state are separate. Replacements show masked originals, ordinal IDs and sanitized aliases. Add/edit opens a local two-field form; Tab switches original/alias, Ctrl+S applies only to the draft, cancel returns without changes. Common single-line values are plain text, preserving leading/trailing spaces and literal quotes/backslashes. F2 switches to an **escaped JSON string** for exact multiline/tab/CR/control text, for example `"first\r\nsecond\t"`. Existing complex values open escaped automatically. Plain paste requiring normalization is refused; switch to escaped mode and encode it. Escaped mode accepts strings only, never JSON objects. Delete removes only the selected draft rule.
+
+Private originals appear only inside explicitly opened local edit forms, never in the main list, ordinary prompt, command arguments, session entries or notifications. Forms do not use the main prompt editor. While a private menu/form is open, a scoped public terminal-input listener blocks Pi's Shift+Ctrl+D diagnostic shortcut. Private UI refuses to open without that guard API, or with known `PI_TUI_DEBUG=1` / `PI_TUI_WRITE_LOG` logging enabled; checks repeat at form/render boundaries without changing global flags. Restart Pi without terminal logging before editing. External terminal recorders, screen sharing and untrusted extensions remain outside these guarantees.
+
+A protection reduction requires one confirmation. Rule-bearing drafts require native validation even with sources off: build the bridge with `node scripts/build-native.mjs` from this package (Cargo required). Invalid/missing native backends cannot save rules. All-off/no-rule drafts do not require the addon.
+
+Unsafe/invalid storage is not silently reset. Conflicts require reopening the menu; repair permissions/ownership or invalid configuration manually when requested. A save can commit before directory sync or owned temporary cleanup encounters an issue. The menu warns before reloading: the policy is saved, not rolled back or automatically retried; crash durability or cleanup may be incomplete. Reload failure leaves the saved policy on disk but reports restart needed, **not** successful activation. Lifecycle cancellation prevents stale dialogs from starting a save/reload; a persistence operation already begun cannot be canceled through the store interface.
+
+The menu uses public Pi SettingsList/Editor APIs and current theme/keybindings. Menu, toolkit and persistence modules load only on command invocation; inactive filtering hooks are unchanged. No configuration tool is exposed to the model.

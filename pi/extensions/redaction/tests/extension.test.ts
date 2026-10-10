@@ -43,11 +43,12 @@ async function setup(flags = { toolResults: true, userMessages: false, systemPro
 const usage = { input: 1, output: 2, totalTokens: 3, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const toolEvent = () => ({ type: "tool_result", toolName: "custom", toolCallId: "id", input: {}, content: [{ type: "text", text: "synthetic-secret" }], details: { "synthetic-secret": { nested: ["synthetic-secret"], omitted: undefined } }, structuredContent: { value: "synthetic-secret" }, usage, isError: true });
 
-test("inactive configuration registers only safe status; no native, file imports, overrides or filters", async () => {
+test("inactive configuration registers safe status and lazy settings; no native, file imports, overrides or filters", async () => {
   const h = host();
   await installRedaction(h.pi, { loadConfig: async () => ({ state: "inactive", path: "/synthetic/config", config: offConfig() }), createRedactor() { throw new Error("must not load"); }, createFileSession() { throw new Error("must not load"); }, loadTools: async () => { throw new Error("must not load"); } });
   assert.equal(h.hooks.size, 0);
   assert.equal(h.tools.size, 0);
+  assert.deepEqual([...h.commands.keys()], ["redaction-status", "redaction"]);
   const notices: string[] = [];
   await h.commands.get("redaction-status").handler("", { ui: { notify: (text: string) => notices.push(text) } });
   assert.match(notices[0], /inactive/);

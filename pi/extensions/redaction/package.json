@@ -9,6 +9,7 @@
   "files": ["index.ts", "tsconfig.json", "src", "native/Cargo.toml", "native/Cargo.lock", "native/build.rs", "native/LICENSE", "native/README.md", "native/src", "native/tests", "tests", "scripts", "config.example.json", "README.md", "LICENSE", "docs", "fixtures", "benchmarks/run.sh", "benchmarks/run.mjs", "benchmarks/workloads.mjs", "benchmarks/core/Cargo.toml", "benchmarks/core/Cargo.lock", "benchmarks/core/src/main.rs", "benchmarks/results/latest.json", "THIRD_PARTY_NOTICES.md"],
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:settings": "node --experimental-strip-types --test tests/settings-*.test.ts",
     "test:native": "node --test native/tests/native.test.cjs",
     "test:rust": "cargo test --locked --manifest-path native/Cargo.toml",
     "test:integration": "node --experimental-strip-types --test tests/integration*.test.ts",
@@ -21,6 +22,7 @@
   "engines": { "node": ">=22.18.0" },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
     "typebox": "*"

@@ -4,7 +4,7 @@ Status: paired native V1 and TypeScript bridge integrated, including the bounded
 
 ## Routes and compatibility
 
-`NativeRedactor(configJson)`, `redact(text): string` (legacy JSON with original UTF-8 byte offsets), and `reset(): void` remain required. The constructor always receives the complete `{literals,detectors}` and validates configuration, even with all rules off. Inactive extension configuration still installs only status: no engine/file loading. Explicit invalid policy still censors requests.
+`NativeRedactor(configJson)`, `redact(text): string` (legacy JSON with original UTF-8 byte offsets), and `reset(): void` remain required. The constructor always receives the complete `{literals,detectors}` and validates configuration, even with all rules off. Inactive extension configuration registers status and the lazy human `/redaction` menu: no engine/file loading or filtering hooks. Menu dependencies remain cold until invocation. Explicit invalid policy still censors requests.
 
 The approved addon exposes both synchronous methods:
 

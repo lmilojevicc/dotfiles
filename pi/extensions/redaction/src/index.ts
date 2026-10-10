@@ -51,6 +51,16 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
     description: "Show redaction flags and counts (no private values)",
     handler: async (_args, ctx) => { ctx.ui.notify(safeStatus(state, failed), failed ? "warning" : "info"); },
   });
+  pi.registerCommand("redaction", {
+    description: "Configure private redaction locally (draft until Save & reload)",
+    handler: async (args, ctx) => {
+      const { openSettings } = await import("./settings-command.ts");
+      await openSettings(pi, args, ctx, {
+        summary: state.state === "invalid" || failed ? "unavailable (protected transmission censored)" : state.state,
+        config: state.state === "invalid" ? undefined : config,
+      });
+    },
+  });
   if (state.state === "inactive") return;
 
   pi.on("input", (event, ctx) => {
