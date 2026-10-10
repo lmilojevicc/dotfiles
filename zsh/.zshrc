@@ -277,6 +277,54 @@ function auto_venv() {
 
 add-zsh-hook chpwd auto_venv
 
+# Expand shortened/redirecting URLs to their final destination
+# usage: unshorten <url> [url...]
+function unshorten() {
+    if (( $# == 0 )); then
+        print -u2 "usage: unshorten <url> [url...]"
+        return 2
+    fi
+
+    local c_url="" c_arrow="" c_dim="" c_reset=""
+    if [[ -t 1 ]]; then
+        c_url=$'\033[36m'
+        c_arrow=$'\033[32m'
+        c_dim=$'\033[2m'
+        c_reset=$'\033[0m'
+    fi
+
+    local pretty=0
+    (( $# > 1 )) && pretty=1
+
+    local url final i=0 rc=0
+    for url in "$@"; do
+        (( i++ ))
+        [[ "$url" == *://* ]] || url="https://$url"
+
+        if ! final=$(curl -sL -o /dev/null --max-time 30 -w '%{url_effective}' "$url" 2>/dev/null) || [[ -z "$final" ]]; then
+            print -u2 "unshorten: failed to resolve $url"
+            (( pretty && i < $# )) && print
+            rc=1
+            continue
+        fi
+
+        if (( pretty )); then
+            printf '%s%d.%s %s%s%s\n   %s→%s %s\n' \
+                "$c_dim" "$i" "$c_reset" "$c_url" "$url" "$c_reset" \
+                "$c_arrow" "$c_reset" "$final"
+            [[ "${final%/}" == "${url%/}" ]] &&
+                print -u2 "${c_dim}   no redirect followed – target may need JS/meta-refresh handling${c_reset}"
+            (( i < $# )) && print
+        else
+            print -r -- "$final"
+            [[ "${final%/}" == "${url%/}" ]] &&
+                print -u2 "${c_dim}unshorten: no redirect followed – target may need JS/meta-refresh handling${c_reset}"
+        fi
+    done
+
+    return $rc
+}
+
 # Shell Integrations
 if command -v fzf &>/dev/null; then
     eval "$(fzf --zsh)"
