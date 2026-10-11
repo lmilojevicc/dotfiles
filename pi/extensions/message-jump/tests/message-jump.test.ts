@@ -4,13 +4,13 @@ import { stripVTControlCharacters } from "node:util";
 import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { Container, Text, ScrollView, VStack, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import extension from "../index.ts";
-import { installBridge, SUPPORTED_PI_VERSIONS } from "../bridge.ts";
+import { installBridge } from "../bridge.ts";
 import { collectMessages, filterMessages } from "../messages.ts";
 import { MessagePicker } from "../picker.ts";
 
 const entry = (id: string, content: any = "same") => ({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
 const theme = { fg: (_: string, s: string) => s, bold: (s: string) => s } as any;
-function host(mode = "fullscreen", version = VERSION) {
+function host(mode = "fullscreen", version = VERSION, componentCount = 7) {
 	const instance = new InteractiveMode() as any;
 	instance.version = version;
 	instance.chatContainer = new Container();
@@ -24,7 +24,7 @@ function host(mode = "fullscreen", version = VERSION) {
 			const scroll = instance.transcriptScrollView;
 			scroll.updateLayout(instance.documentContainer.render(scroll.getContentWidth(this.terminal.columns)).length, 4, () => {});
 		}, requestRender() { this.renders++; } };
-	instance.mountInteractiveTui(instance.renderer, [instance.documentContainer, ...Array.from({ length: 6 }, () => new Container())]);
+	instance.mountInteractiveTui(instance.renderer, [instance.documentContainer, ...Array.from({ length: componentCount - 1 }, () => new Container())]);
 	return instance;
 }
 const item = (e: any) => collectMessages([e])[0];
@@ -71,12 +71,13 @@ test("bridge: near-end clamping succeeds, compaction/removal and image-only fail
 		assert.equal(bridge.jump(item(a)), undefined); assert.equal(h.transcriptScrollView.scrollTop, 0);
 		assert.equal(h.transcriptScrollView.isFollowingEnd, false);
 		assert.match(bridge.unavailable(item(image))!, /Not rendered/);
+		const target = h.chatContainer.children[1]; h.chatContainer.children.push(target);
+		assert.match(bridge.jump(item(a))!, /Not rendered/, "duplicate component ownership is not a destination");
 		h.chatContainer.clear(); assert.match(bridge.jump(item(a))!, /Not rendered/);
 	} finally { bridge.release(true); }
 });
 
-test("bridge: regular mode, altered-width wrapper, missing layout capability, late loading and version rejection", () => {
-	assert.match(installBridge(Symbol(), "2.0").error()!, /Unsupported Pi/);
+test("bridge: regular mode, altered-width wrapper, missing layout capability and late loading", () => {
 	const bridge = installBridge(Symbol());
 	try {
 		assert.match(bridge.error()!, /Restart Pi/);
@@ -92,31 +93,155 @@ test("bridge: regular mode, altered-width wrapper, missing layout capability, la
 	} finally { bridge.release(true); }
 });
 
-test("bridge: only evidenced versions install and capture; unknown releases leave prototypes untouched", () => {
-	assert.deepEqual(SUPPORTED_PI_VERSIONS, ["1.0.4", "1.1.0"]);
-	for (const version of ["1.0.3", "1.0.5", "1.1.1", "1.2.0", "2.0.0", "1.1.0-dev", "unknown"]) {
-		const mount = InteractiveMode.prototype.mountInteractiveTui;
-		const add = InteractiveMode.prototype.addMessageToChat;
-		const bridge = installBridge(Symbol(), version);
-		assert.match(bridge.error()!, /Unsupported Pi/);
-		assert.equal(InteractiveMode.prototype.mountInteractiveTui, mount);
-		assert.equal(InteractiveMode.prototype.addMessageToChat, add);
-		bridge.release(true);
+test("bridge: capability-equivalent patch/minor/major/prerelease fixtures jump without version or dock-count gates", () => {
+	// These are compatible-shape fixtures, not validation of actual future releases.
+	for (const version of ["1.0.4", "1.1.0", "1.1.1", "1.2.0", "2.0.0", "2.0.0-dev", "unknown"]) {
+		for (const count of [5, 7, 9]) {
+			const bridge = installBridge(Symbol(), version);
+			try {
+				const h = host("fullscreen", version, count); const e = entry(version);
+				h.addMessageToChat(e.message); h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
+				assert.equal(bridge.jump(item(e)), undefined);
+				assert.equal(h.transcriptScrollView.scrollTop, 3);
+				assert.equal(h.transcriptScrollView.isFollowingEnd, false);
+				h.version = "99.0.0"; assert.equal(bridge.error(), undefined);
+			} finally { bridge.release(true); }
+		}
 	}
-	for (const version of SUPPORTED_PI_VERSIONS) {
-		const bridge = installBridge(Symbol(), version);
+});
+
+test("bridge: absent/malformed required methods reject before either prototype is patched", () => {
+	const prototype = InteractiveMode.prototype as any;
+	const mount = prototype.mountInteractiveTui; const add = prototype.addMessageToChat;
+	for (const method of ["mountInteractiveTui", "addMessageToChat"]) for (const value of [undefined, null, 42, {}]) {
 		try {
-			const h = host("fullscreen", version); const e = entry(version);
-			h.addMessageToChat(e.message); h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
-			assert.equal(bridge.jump(item(e)), undefined);
-			assert.equal(h.transcriptScrollView.isFollowingEnd, false);
-			h.version = "1.1.1";
-			assert.match(bridge.error()!, /Unsupported transcript layout/);
+			prototype[method] = value;
+			const beforeMount = prototype.mountInteractiveTui; const beforeAdd = prototype.addMessageToChat;
+			const bridge = installBridge(Symbol(), "2.0.0");
+			assert.match(bridge.error()!, /callable mountInteractiveTui and addMessageToChat required/);
+			assert.equal(prototype.mountInteractiveTui, beforeMount); assert.equal(prototype.addMessageToChat, beforeAdd);
+			bridge.release(true);
+		} finally { prototype.mountInteractiveTui = mount; prototype.addMessageToChat = add; }
+	}
+});
+
+test("bridge: default/rest arity preserves this, every argument, result and exceptions exactly once", () => {
+	const prototype = InteractiveMode.prototype as any;
+	const mount = prototype.mountInteractiveTui; const add = prototype.addMessageToChat;
+	const mountCalls: any[] = []; const addCalls: any[] = []; const result = {}; const failure = new Error("original failure");
+	prototype.mountInteractiveTui = function (tui: any, components = [], ...extra: any[]) {
+		mountCalls.push({ receiver: this, args: [...arguments] }); if (tui === failure) throw failure;
+		mount.call(this, tui, components); return result;
+	};
+	prototype.addMessageToChat = function (...args: any[]) {
+		addCalls.push({ receiver: this, args }); if (args[0] === failure) throw failure;
+		add.apply(this, args); return result;
+	};
+	const bridge = installBridge(Symbol(), "2.0.0");
+	try {
+		const h = host(); const components = [h.documentContainer, new Container()]; const extra = {};
+		assert.equal(h.mountInteractiveTui(h.renderer, components, undefined, extra), result);
+		assert.equal(mountCalls.length, 2); assert.equal(mountCalls[1].receiver, h);
+		assert.deepEqual(mountCalls[1].args, [h.renderer, components, undefined, extra]);
+		assert.throws(() => h.mountInteractiveTui(failure, components, extra), error => error === failure);
+		assert.equal(mountCalls.length, 3);
+		const e = entry("forwarded"); const options = {};
+		assert.equal(h.addMessageToChat(e.message, options, extra, undefined), result);
+		assert.equal(addCalls.length, 1); assert.equal(addCalls[0].receiver, h);
+		assert.deepEqual(addCalls[0].args, [e.message, options, extra, undefined]);
+		assert.equal(bridge.unavailable(item(e)), undefined);
+		assert.throws(() => h.addMessageToChat(failure, undefined, extra), error => error === failure);
+		assert.equal(addCalls.length, 2);
+	} finally { bridge.release(true); prototype.mountInteractiveTui = mount; prototype.addMessageToChat = add; }
+});
+
+test("bridge: incompatible observed mount rejects even a future-version fixture", () => {
+	for (const change of ["renderer", "order", "duplicate", "non-array", "component"]) {
+		const bridge = installBridge(Symbol(), "2.0.0");
+		try {
+			const h = host("fullscreen", "2.0.0");
+			const components: any = change === "non-array" ? {} : [h.documentContainer, new Container()];
+			if (change === "order") components.reverse();
+			if (change === "duplicate") components.push(h.documentContainer);
+			if (change === "component") components.push({});
+			h.mountInteractiveTui(change === "renderer" ? {} : h.renderer, components);
+			assert.match(bridge.error()!, /Unsupported Pi mount shape.*renderer and document-first/);
 		} finally { bridge.release(true); }
 	}
-	const bridge = installBridge(Symbol());
-	try { host("fullscreen", "1.2.0"); assert.match(bridge.error()!, /Unsupported Pi mount shape/); }
-	finally { bridge.release(true); }
+});
+
+test("bridge: missing or altered container/width/scroll/renderer/root capabilities fail closed", () => {
+	const changes: [string, (h: any) => void, RegExp][] = [
+		["document", h => h.documentContainer = undefined, /document\/chat Containers/],
+		["chat", h => h.chatContainer = undefined, /document\/chat Containers/],
+		["chat renderer", h => h.chatContainer.render = () => [], /document\/chat Containers/],
+		["chat children", h => h.chatContainer.children = {}, /document\/chat Containers/],
+		["duplicate chat", h => h.documentContainer.children.push(h.chatContainer), /document\/chat Containers/],
+		["scroll children", h => h.transcriptScrollView.children = {}, /single-document ScrollView/],
+		["extra scroll child", h => h.transcriptScrollView.children.push(new Container()), /single-document ScrollView/],
+		["width", h => h.transcriptScrollView.getContentWidth = undefined, /getContentWidth\/scrollTo/],
+		["invalid width", h => h.transcriptScrollView.getContentWidth = () => NaN, /getContentWidth\/scrollTo/],
+		["scroll", h => h.transcriptScrollView.scrollTo = () => {}, /getContentWidth\/scrollTo/],
+		["renderNow", h => h.renderer.renderNow = null, /renderNow\/requestRender/],
+		["requestRender", h => h.renderer.requestRender = undefined, /renderNow\/requestRender/],
+		["root mismatch", h => h.renderer.layoutRoot = new Container(), /terminal-wide stretch VStack/],
+		["root entries", h => h.fullscreenLayoutRoot.entries = {}, /terminal-wide stretch VStack/],
+		["sparse root entries", h => h.fullscreenLayoutRoot.entries = new Array(2), /terminal-wide stretch VStack/],
+		["duplicate root scroll", h => {
+			h.fullscreenLayoutRoot.children[1] = h.transcriptScrollView;
+			h.fullscreenLayoutRoot.entries[1].component = h.transcriptScrollView;
+		}, /terminal-wide stretch VStack/],
+		["malformed root entry", h => h.fullscreenLayoutRoot.entries[0] = null, /terminal-wide stretch VStack/],
+		["root gap", h => h.fullscreenLayoutRoot.gap = 1, /terminal-wide stretch VStack/],
+		["root visibility", h => h.fullscreenLayoutRoot.entries[0].visible = () => false, /terminal-wide stretch VStack/],
+	];
+	for (const [name, change, expected] of changes) {
+		const bridge = installBridge(Symbol(), "2.0.0");
+		try {
+			const h = host("fullscreen", "2.0.0"); const e = entry(name); h.addMessageToChat(e.message);
+			const before = h.transcriptScrollView.scrollTop; change(h);
+			assert.match(bridge.jump(item(e))!, expected, name);
+			assert.equal(h.transcriptScrollView.scrollTop, before, name);
+		} finally { bridge.release(true); }
+	}
+});
+
+test("bridge: invalid numeric terminal and scroll metrics never scroll", () => {
+	for (const field of ["columns", "viewportHeight", "contentHeight", "scrollTop"]) {
+		for (const value of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, "10", undefined]) {
+			const bridge = installBridge(Symbol());
+			try {
+				const h = host(); const e = entry("metric"); h.addMessageToChat(e.message);
+				// Keep the mutation from being refreshed away by renderNow, without changing its callable contract.
+				h.renderer.renderNow = () => {};
+				if (field === "columns") h.renderer.terminal.columns = value;
+				else Object.defineProperty(h.transcriptScrollView, field, { value });
+				const before = h.transcriptScrollView.currentScrollTop;
+				assert.match(bridge.jump(item(e))!, /terminal columns|scroll metrics/);
+				assert.equal(h.transcriptScrollView.currentScrollTop, before);
+			} finally { bridge.release(true); }
+		}
+	}
+});
+
+test("bridge: zero viewport, out-of-range scroll, invalid row measurement and measurement-time removal fail safely", () => {
+	for (const change of ["zero viewport", "out-of-range scroll", "invalid row", "removed", "changed metrics"]) {
+		const bridge = installBridge(Symbol());
+		try {
+			const h = host(); const e = entry("measure"); h.addMessageToChat(e.message);
+			h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
+			h.renderer.renderNow(); h.transcriptScrollView.scrollToStart(); h.renderer.renderNow = () => {};
+			if (change === "zero viewport") h.transcriptScrollView.currentViewportHeight = 0;
+			if (change === "out-of-range scroll") h.transcriptScrollView.currentScrollTop = h.transcriptScrollView.contentHeight;
+			const header = h.documentContainer.children[0]; const render = header.render.bind(header);
+			if (change === "invalid row") header.render = () => ({ length: NaN });
+			if (change === "removed") header.render = (width: number) => { h.chatContainer.clear(); return render(width); };
+			if (change === "changed metrics") header.render = (width: number) => { h.transcriptScrollView.contentHeight = NaN; return render(width); };
+			const before = h.transcriptScrollView.currentScrollTop;
+			assert.match(bridge.jump(item(e))!, /no visible rows|scroll metrics|row measurement|Not rendered/);
+			assert.equal(h.transcriptScrollView.currentScrollTop, before);
+		} finally { bridge.release(true); }
+	}
 });
 
 test("bridge: ownership, inert reload handoff, old cleanup, quit restoration, conflicts and multiple instances", () => {

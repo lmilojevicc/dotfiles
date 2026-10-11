@@ -4,13 +4,12 @@ import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { InteractiveMode, VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { InteractiveMode, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { collectMessages } from "../messages.ts";
 const report = (event: string, details = {}) => appendFileSync(process.env.MESSAGE_JUMP_REPORT!, `${JSON.stringify({ event, ...details })}\n`);
 const globals = globalThis as any;
 
 export default function (pi: ExtensionAPI) {
-	assert.ok(["1.0.4", "1.1.0"].includes(VERSION));
 	const record = globals[Symbol.for("dotfiles.message-jump.bridge.v1")];
 	assert.equal(record.prototype, InteractiveMode.prototype);
 	pi.on("session_start", (event) => { report(event.reason === "reload" ? "reloaded" : event.reason === "new" ? "switched" : "ready"); });
@@ -29,17 +28,17 @@ export default function (pi: ExtensionAPI) {
 				if (stage === "guards") {
 					const scroll = mode.transcriptScrollView.scrollTop;
 					const originalAlign = mode.fullscreenLayoutRoot.align;
-					const originalVersion = mode.version;
+					const originalWidth = mode.transcriptScrollView.getContentWidth;
 					try {
-						for (const changed of ["layout", "version"]) {
+						for (const changed of ["layout", "width"]) {
 							mode.fullscreenLayoutRoot.align = changed === "layout" ? "center" : originalAlign;
-							mode.version = changed === "version" ? "1.1.1" : originalVersion;
+							mode.transcriptScrollView.getContentWidth = changed === "width" ? undefined : originalWidth;
 							let warning = "";
 							await jump("", { ...ctx, ui: { ...ctx.ui, notify: (s: string) => { warning = s; } } });
 							assert.match(warning, /Unsupported transcript layout/);
 							assert.equal(mode.transcriptScrollView.scrollTop, scroll);
 						}
-					} finally { mode.fullscreenLayoutRoot.align = originalAlign; mode.version = originalVersion; }
+					} finally { mode.fullscreenLayoutRoot.align = originalAlign; mode.transcriptScrollView.getContentWidth = originalWidth; }
 					report(stage); return;
 				}
 				if (stage === "empty") {

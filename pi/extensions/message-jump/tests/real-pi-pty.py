@@ -117,7 +117,7 @@ def run(start_mode):
             wait(lambda _: process.poll() is not None)
             assert process.returncode == 0
             print(f"PASS installed CLI {start_mode}: " + ("truthful unsupported-mode feedback" if start_mode == "regular" else
-                  "altered-layout/unknown-host guards, native /fork source snapshots at 100x50 and 65x32, inline mounting, Ctrl+Y copy without closing/jumping, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
+                  "incompatible-layout/missing-width-capability guards, native /fork source snapshots at 100x50 and 65x32, inline mounting, Ctrl+Y copy without closing/jumping, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
         except Exception:
             print(output.decode(errors="replace")[-12000:], file=sys.stderr)
             if report.exists():

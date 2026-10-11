@@ -2,20 +2,17 @@ import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { Container, ScrollView, Spacer, VStack } from "@earendil-works/pi-tui";
 import type { JumpMessage } from "./messages.ts";
 
-// These releases share the observed mount, message identity and fullscreen width contract.
-export const SUPPORTED_PI_VERSIONS = ["1.0.4", "1.1.0"] as const;
-const supportedVersion = (version: string): boolean => SUPPORTED_PI_VERSIONS.some((supported) => supported === version);
 const KEY = Symbol.for("dotfiles.message-jump.bridge.v1");
 const globals = globalThis as unknown as Record<PropertyKey, unknown>;
-const containerRender = Container.prototype.render;
-const contentWidth = ScrollView.prototype.getContentWidth;
-const scrollTo = ScrollView.prototype.scrollTo;
+const containerRender = Container?.prototype?.render;
+const contentWidth = ScrollView?.prototype?.getContentWidth;
+const scrollTo = ScrollView?.prototype?.scrollTo;
 type Component = { render(width: number): string[] };
 type Group = Component & { children: Component[] };
 type Renderer = { mode: string; terminal: { columns: number }; layoutRoot: unknown; renderNow(): void; requestRender(): void };
 type Host = {
-	version: string; renderer: Renderer; documentContainer: Group; chatContainer: Group; fullscreenLayoutRoot: unknown;
-	transcriptScrollView: Component & { children: Component[]; viewportHeight: number; getContentWidth(width: number): number; scrollTo(row: number, options: { disableFollow: true }): void };
+	renderer: Renderer; documentContainer: Group; chatContainer: Group; fullscreenLayoutRoot: unknown;
+	transcriptScrollView: Component & { children: Component[]; viewportHeight: number; contentHeight: number; scrollTop: number; getContentWidth(width: number): number; scrollTo(row: number, options: { disableFollow: true }): void };
 };
 type Method = (this: Host, ...args: any[]) => any;
 type Prototype = { mountInteractiveTui: Method; addMessageToChat: Method };
@@ -35,22 +32,28 @@ function restore(record: RecordState): void {
 }
 function layoutError(host: Host): string | undefined {
 	const renderer = host.renderer;
-	if (renderer?.mode !== "fullscreen") return "Use /settings → TUI mode → fullscreen, then run /jump. Regular mode scrollback belongs to the terminal.";
+	if (!renderer) return "Unsupported transcript layout: renderer required. Update the extension for this host and restart Pi.";
+	if (renderer.mode !== "fullscreen") return "Use /settings → TUI mode → fullscreen, then run /jump. Regular mode scrollback belongs to the terminal.";
 	const document = host.documentContainer;
 	const chat = host.chatContainer;
 	const scroll = host.transcriptScrollView;
-	// The supported root stretches its transcript across terminal columns. Reject narrower wrappers.
+	const unsupported = (capability: string) => `Unsupported transcript layout: ${capability}. Disable transcript/layout wrappers or update the extension for this host, then restart Pi; /jump will not guess a destination.`;
+	if (!document || !chat || document.render !== containerRender || chat.render !== containerRender ||
+		!Array.isArray(document.children) || document.children.filter((c) => c === chat).length !== 1 || !Array.isArray(chat.children) ||
+		document.children.some((c) => typeof c?.render !== "function") || chat.children.some((c) => typeof c?.render !== "function")) {
+		return unsupported("standard document/chat Containers required");
+	}
+	if (!scroll || !Array.isArray(scroll.children) || scroll.children.length !== 1 || scroll.children[0] !== document ||
+		scroll.getContentWidth !== contentWidth || scroll.scrollTo !== scrollTo) return unsupported("single-document ScrollView with native getContentWidth/scrollTo required");
+	if (typeof renderer.renderNow !== "function" || typeof renderer.requestRender !== "function") return unsupported("renderer renderNow/requestRender required");
+	if (!Number.isSafeInteger(renderer.terminal?.columns) || renderer.terminal.columns < 1) return unsupported("positive integer terminal columns required");
+	// This two-child root stretches the transcript across terminal columns. Reject narrower wrappers.
 	const root = host.fullscreenLayoutRoot as { children?: Component[]; align?: string; gap?: number; entries?: { component: unknown; visible?: unknown }[] } | undefined;
-	if (!supportedVersion(host.version) || !document || !chat || !scroll ||
-		document.render !== containerRender || chat.render !== containerRender ||
-		!Array.isArray(document.children) || document.children.filter((c) => c === chat).length !== 1 ||
-		!Array.isArray(chat.children) || scroll.children?.length !== 1 || scroll.children[0] !== document ||
-		scroll.getContentWidth !== contentWidth || scroll.scrollTo !== scrollTo ||
-		typeof renderer.renderNow !== "function" || typeof renderer.requestRender !== "function" ||
-		renderer.layoutRoot !== root || !(host.fullscreenLayoutRoot instanceof VStack) || !root || root.align !== "stretch" || root.gap !== 0 ||
-		root.children?.length !== 2 || root.children[0] !== scroll || root.entries?.length !== 2 ||
-		root.entries[0].component !== scroll || root.entries.some((entry) => entry.visible !== undefined) || !Number.isSafeInteger(renderer.terminal?.columns) || renderer.terminal.columns < 1) {
-		return "Unsupported transcript layout. Disable transcript/layout wrappers and restart a supported Pi build; /jump will not guess a destination.";
+	if (renderer.layoutRoot !== root || !(host.fullscreenLayoutRoot instanceof VStack) || !root || root.align !== "stretch" || root.gap !== 0 ||
+		!Array.isArray(root.children) || root.children.length !== 2 || root.children[0] !== scroll || root.children[1] === scroll || typeof root.children[1]?.render !== "function" ||
+		!Array.isArray(root.entries) || root.entries.length !== 2 || !root.entries[0] || !root.entries[1] ||
+		root.entries.some((entry, i) => !entry || entry.component !== root.children![i] || entry.visible !== undefined)) {
+		return unsupported("terminal-wide stretch VStack with transcript then dock required");
 	}
 	return undefined;
 }
@@ -58,8 +61,15 @@ function layoutError(host: Host): string | undefined {
 /** The only private seam: observe mount and user rendering, preserving host calls exactly once. */
 export function installBridge(owner: symbol, version = VERSION): Bridge {
 	const failed = (error: string): Bridge => ({ error: () => error, unavailable: () => error, jump: () => error, release() {} });
-	if (!supportedVersion(version)) return failed(`Unsupported Pi ${version}. /jump requires Pi ${SUPPORTED_PI_VERSIONS.join(" or ")} fullscreen; update this extension's bridge before using other versions.`);
-	const prototype = InteractiveMode.prototype as unknown as Prototype;
+	// Version is diagnostic only: compatible upgrades are admitted by capabilities and observed layout.
+	const prototype = InteractiveMode?.prototype as unknown as Prototype | undefined;
+	if (!prototype || typeof prototype.mountInteractiveTui !== "function" || typeof prototype.addMessageToChat !== "function") {
+		return failed(`Unsupported Pi interactive capabilities (${version}): callable mountInteractiveTui and addMessageToChat required. Update the extension for this host and restart Pi.`);
+	}
+	if (typeof Container !== "function" || typeof ScrollView !== "function" || typeof Spacer !== "function" || typeof VStack !== "function" ||
+		typeof containerRender !== "function" || typeof contentWidth !== "function" || typeof scrollTo !== "function") {
+		return failed(`Unsupported Pi TUI capabilities (${version}): native Container.render, ScrollView.getContentWidth/scrollTo, Spacer and VStack required. Repair Pi/TUI or update the extension, then restart Pi.`);
+	}
 	let record = globals[KEY] as RecordState | undefined;
 	if (record) {
 		if (record.prototype !== prototype || !intact(record)) return failed("Conflicting /jump bridge wrapper. Restart Pi without the conflicting extension.");
@@ -67,29 +77,28 @@ export function installBridge(owner: symbol, version = VERSION): Bridge {
 		record.owner = owner;
 		record.released = false;
 	} else {
-		if (typeof prototype.mountInteractiveTui !== "function" || prototype.mountInteractiveTui.length !== 2 ||
-			typeof prototype.addMessageToChat !== "function" || prototype.addMessageToChat.length !== 2) {
-			return failed("Supported Pi interactive internals do not match /jump's guarded bridge. Restart with a supported Pi build.");
-		}
 		const state: RecordState = {
 			prototype, originalMount: prototype.mountInteractiveTui, originalAdd: prototype.addMessageToChat,
 			mount: undefined!, add: undefined!, owner, released: false, targets: new WeakMap(),
 		};
-		state.mount = function (tui, components) {
-			const result = state.originalMount.call(this, tui, components);
+		state.mount = function (...args) {
+			const result = state.originalMount.apply(this, args);
+			const [tui, components] = args;
 			if (state.host && state.host !== this) state.error = "Multiple interactive instances are unsupported. Restart Pi with one interactive session.";
-			else if (!supportedVersion(this.version) || tui !== this.renderer || !Array.isArray(components) || components.length !== 7 || components[0] !== this.documentContainer || components.some((c) => typeof c?.render !== "function")) state.error = "Unsupported Pi mount shape. Restart a supported Pi build with the standard interactive layout.";
+			// Mount iterates components; dock component count is not part of transcript measurement.
+			else if (tui !== this.renderer || !Array.isArray(components) || components[0] !== this.documentContainer || components.filter((c) => c === this.documentContainer).length !== 1 || components.some((c) => typeof c?.render !== "function")) state.error = "Unsupported Pi mount shape: renderer and document-first component array required. Use the standard interactive layout or update the extension, then restart Pi.";
 			else state.host = this;
 			return result;
 		};
-		state.add = function (message, options) {
+		state.add = function (...args) {
+			const [message] = args;
 			const chat = this.chatContainer;
 			const before = this === state.host && message?.role === "user" && Array.isArray(chat?.children) ? new Set(chat.children) : undefined;
-			const result = state.originalAdd.call(this, message, options);
+			const result = state.originalAdd.apply(this, args);
 			if (before && chat === this.chatContainer && Array.isArray(chat.children)) {
 				const added = chat.children.filter((child) => !before.has(child) && !(child instanceof Spacer));
 				// Skills can render two components. The first is the beginning of that prompt.
-				if (added.length && typeof added[0].render === "function") state.targets.set(message, added[0]);
+				if (added.length && typeof added[0]?.render === "function") state.targets.set(message, added[0]);
 			}
 			return result;
 		};
@@ -124,9 +133,17 @@ export function installBridge(owner: symbol, version = VERSION): Bridge {
 				host.renderer.renderNow();
 				const afterRender = unavailable(item);
 				if (afterRender) return afterRender;
-				if (host.transcriptScrollView.viewportHeight < 1) return "Transcript viewport has no visible rows. Enlarge the terminal and retry /jump.";
+				const metricsError = (): string | undefined => {
+					const { viewportHeight, contentHeight, scrollTop } = host.transcriptScrollView;
+					if (![viewportHeight, contentHeight, scrollTop].every((n) => Number.isSafeInteger(n) && n >= 0) || scrollTop > Math.max(0, contentHeight - viewportHeight)) {
+						return "Invalid transcript scroll metrics. Use the standard layout or update the extension for this host, then restart Pi.";
+					}
+					return viewportHeight < 1 ? "Transcript viewport has no visible rows. Enlarge the terminal and retry /jump." : undefined;
+				};
+				const metrics = metricsError();
+				if (metrics) return metrics;
 				const width = host.transcriptScrollView.getContentWidth(host.renderer.terminal.columns);
-				if (!Number.isSafeInteger(width) || width < 1) return "Unsupported transcript width. Enlarge the terminal and retry /jump.";
+				if (!Number.isSafeInteger(width) || width < 1 || width > host.renderer.terminal.columns) return "Unsupported transcript width. Use the standard layout, enlarge the terminal or update the extension for this host, then retry /jump.";
 				const target = state.targets.get(item.message)!;
 				let row = 0;
 				for (const child of host.documentContainer.children) {
@@ -139,6 +156,9 @@ export function installBridge(owner: symbol, version = VERSION): Bridge {
 				}
 				const afterMeasurement = unavailable(item);
 				if (afterMeasurement) return afterMeasurement;
+				if (!Number.isSafeInteger(row) || row < 0) return "Invalid transcript row measurement. Use the standard layout and retry /jump.";
+				const afterMetrics = metricsError();
+				if (afterMetrics) return afterMetrics;
 				host.transcriptScrollView.scrollTo(row, { disableFollow: true });
 				host.renderer.requestRender();
 				return undefined;
