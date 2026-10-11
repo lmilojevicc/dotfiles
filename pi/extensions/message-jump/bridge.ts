@@ -2,7 +2,9 @@ import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { Container, ScrollView, Spacer, VStack } from "@earendil-works/pi-tui";
 import type { JumpMessage } from "./messages.ts";
 
-export const SUPPORTED_PI_VERSION = "1.0.4";
+// These releases share the observed mount, message identity and fullscreen width contract.
+export const SUPPORTED_PI_VERSIONS = ["1.0.4", "1.1.0"] as const;
+const supportedVersion = (version: string): boolean => SUPPORTED_PI_VERSIONS.some((supported) => supported === version);
 const KEY = Symbol.for("dotfiles.message-jump.bridge.v1");
 const globals = globalThis as unknown as Record<PropertyKey, unknown>;
 const containerRender = Container.prototype.render;
@@ -39,7 +41,7 @@ function layoutError(host: Host): string | undefined {
 	const scroll = host.transcriptScrollView;
 	// The supported root stretches its transcript across terminal columns. Reject narrower wrappers.
 	const root = host.fullscreenLayoutRoot as { children?: Component[]; align?: string; gap?: number; entries?: { component: unknown; visible?: unknown }[] } | undefined;
-	if (host.version !== SUPPORTED_PI_VERSION || !document || !chat || !scroll ||
+	if (!supportedVersion(host.version) || !document || !chat || !scroll ||
 		document.render !== containerRender || chat.render !== containerRender ||
 		!Array.isArray(document.children) || document.children.filter((c) => c === chat).length !== 1 ||
 		!Array.isArray(chat.children) || scroll.children?.length !== 1 || scroll.children[0] !== document ||
@@ -48,7 +50,7 @@ function layoutError(host: Host): string | undefined {
 		renderer.layoutRoot !== root || !(host.fullscreenLayoutRoot instanceof VStack) || !root || root.align !== "stretch" || root.gap !== 0 ||
 		root.children?.length !== 2 || root.children[0] !== scroll || root.entries?.length !== 2 ||
 		root.entries[0].component !== scroll || root.entries.some((entry) => entry.visible !== undefined) || !Number.isSafeInteger(renderer.terminal?.columns) || renderer.terminal.columns < 1) {
-		return "Unsupported transcript layout. Disable transcript/layout wrappers and restart Pi 1.0.4; /jump will not guess a destination.";
+		return "Unsupported transcript layout. Disable transcript/layout wrappers and restart a supported Pi build; /jump will not guess a destination.";
 	}
 	return undefined;
 }
@@ -56,7 +58,7 @@ function layoutError(host: Host): string | undefined {
 /** The only private seam: observe mount and user rendering, preserving host calls exactly once. */
 export function installBridge(owner: symbol, version = VERSION): Bridge {
 	const failed = (error: string): Bridge => ({ error: () => error, unavailable: () => error, jump: () => error, release() {} });
-	if (version !== SUPPORTED_PI_VERSION) return failed(`Unsupported Pi ${version}. /jump requires Pi ${SUPPORTED_PI_VERSION} fullscreen; update this extension's bridge before using other versions.`);
+	if (!supportedVersion(version)) return failed(`Unsupported Pi ${version}. /jump requires Pi ${SUPPORTED_PI_VERSIONS.join(" or ")} fullscreen; update this extension's bridge before using other versions.`);
 	const prototype = InteractiveMode.prototype as unknown as Prototype;
 	let record = globals[KEY] as RecordState | undefined;
 	if (record) {
@@ -67,7 +69,7 @@ export function installBridge(owner: symbol, version = VERSION): Bridge {
 	} else {
 		if (typeof prototype.mountInteractiveTui !== "function" || prototype.mountInteractiveTui.length !== 2 ||
 			typeof prototype.addMessageToChat !== "function" || prototype.addMessageToChat.length !== 2) {
-			return failed("Pi 1.0.4 interactive internals do not match /jump's guarded bridge. Restart with a supported Pi build.");
+			return failed("Supported Pi interactive internals do not match /jump's guarded bridge. Restart with a supported Pi build.");
 		}
 		const state: RecordState = {
 			prototype, originalMount: prototype.mountInteractiveTui, originalAdd: prototype.addMessageToChat,
@@ -76,7 +78,7 @@ export function installBridge(owner: symbol, version = VERSION): Bridge {
 		state.mount = function (tui, components) {
 			const result = state.originalMount.call(this, tui, components);
 			if (state.host && state.host !== this) state.error = "Multiple interactive instances are unsupported. Restart Pi with one interactive session.";
-			else if (this.version !== SUPPORTED_PI_VERSION || tui !== this.renderer || !Array.isArray(components) || components.length !== 7 || components[0] !== this.documentContainer || components.some((c) => typeof c?.render !== "function")) state.error = "Unsupported Pi mount shape. Restart Pi 1.0.4 with the standard interactive layout.";
+			else if (!supportedVersion(this.version) || tui !== this.renderer || !Array.isArray(components) || components.length !== 7 || components[0] !== this.documentContainer || components.some((c) => typeof c?.render !== "function")) state.error = "Unsupported Pi mount shape. Restart a supported Pi build with the standard interactive layout.";
 			else state.host = this;
 			return result;
 		};

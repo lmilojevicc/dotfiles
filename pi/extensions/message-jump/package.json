@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --import ./tests/register-loader.mjs --test tests/message-jump.test.ts",
+    "test": "node --experimental-strip-types --import ./tests/register-loader.mjs --test tests/message-jump.test.ts tests/installed-host.test.mjs",
     "test:real-pi": "node ./tests/real-pi-smoke.mjs"
   },
   "pi": { "extensions": ["./index.ts"] },

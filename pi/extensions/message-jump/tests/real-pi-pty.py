@@ -14,7 +14,7 @@ import termios
 import time
 from pathlib import Path
 
-cli, extension, probe = sys.argv[1:]
+cli, package_root, extension, probe = sys.argv[1:]
 for tool in ("fd", "rg"):
     assert shutil.which(tool), f"{tool} must be on PATH to avoid managed tool downloads"
 
@@ -38,7 +38,7 @@ def run(start_mode):
         report = root / "report.jsonl"
         env = {"PATH": os.environ["PATH"], "HOME": str(root / "home"), "TERM": "xterm-256color", "LANG": "en_US.UTF-8",
                "PI_CODING_AGENT_DIR": str(root / "agent"), "PI_OFFLINE": "1", "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0",
-               "MESSAGE_JUMP_REPORT": str(report), "MESSAGE_JUMP_PI_ROOT": str(Path(cli).parents[2])}
+               "MESSAGE_JUMP_REPORT": str(report), "MESSAGE_JUMP_PI_ROOT": package_root}
         master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 100, 0, 0))
         process = subprocess.Popen([cli, "--offline", "--session", str(session), "--session-dir", str(root / "sessions"),
@@ -77,6 +77,8 @@ def run(start_mode):
                 send("/jump-smoke unsupported\r")
                 event("unsupported")
             else:
+                send("/jump-smoke guards\r")
+                event("guards")
                 for stage, key in (("layout", "\x1b"), ("cancel", "\x1b"), ("copy", "\x1b"), ("newer", "\r"), ("older", "\x1b[A\r"), ("live", "\r")):
                     send(f"/jump-smoke {stage}\r")
                     wait(lambda events: any(e["event"] == "opened" and e["stage"] == stage for e in events))
@@ -115,7 +117,7 @@ def run(start_mode):
             wait(lambda _: process.poll() is not None)
             assert process.returncode == 0
             print(f"PASS installed CLI {start_mode}: " + ("truthful unsupported-mode feedback" if start_mode == "regular" else
-                  "native /fork source snapshots at 100x50 and 65x32, inline mounting, Ctrl+Y copy without closing/jumping, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
+                  "altered-layout/unknown-host guards, native /fork source snapshots at 100x50 and 65x32, inline mounting, Ctrl+Y copy without closing/jumping, chronological Up/Down, restored/live identity, duplicate stable IDs, real scrollTop, unchanged session/model/leaf/context/draft/focus, Escape, resize, reload, compaction, /new session replacement"))
         except Exception:
             print(output.decode(errors="replace")[-12000:], file=sys.stderr)
             if report.exists():

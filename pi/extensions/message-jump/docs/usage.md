@@ -10,13 +10,13 @@ Selection scrolls the existing fullscreen transcript, disables automatic end-fol
 
 ## Load and supported modes
 
-Supported host: **Pi 1.0.4, interactive fullscreen, standard transcript layout, one InteractiveMode instance per process**. From this checkout:
+Supported hosts: **Pi 1.0.4 and 1.1.0, interactive fullscreen, standard transcript layout, one InteractiveMode instance per process**. From this checkout:
 
 ```sh
 pi --tui-mode fullscreen -e ./pi/extensions/message-jump/index.ts
 ```
 
-Or let Pi discover this directory when deployed to its extensions directory. Load it only once. Restart Pi after first adding the extension: an initial `/reload` cannot observe the already-mounted transcript safely. Once loaded at startup, subsequent `/reload` retains the observed component map and transfers ownership safely.
+Or let Pi discover this directory when deployed to its extensions directory. Load it only once. Restart Pi after first adding the extension: an initial `/reload` cannot observe the already-mounted transcript safely. **After upgrading this extension in a Pi 1.1.0 process that previously reported “Unsupported Pi”, restart once**: that rejected runtime never installed the observer, and reload alone cannot recover its historical component map. Once loaded at startup, subsequent `/reload` retains the observed component map and transfers ownership safely.
 
 Regular mode delegates scrollback to the terminal; `/jump` explains how to choose fullscreen in `/settings`. RPC, print, and JSON modes cannot display the picker and report that interactive fullscreen is required (stderr in modes without UI). Other Pi versions fail closed with upgrade/bridge-update guidance, rather than pretending to scroll.
 
@@ -24,18 +24,20 @@ The picker honors `tui.select.up/down/pageUp/pageDown/confirm/cancel` from the i
 
 ## Unavailable destinations and session changes
 
-Messages absent from the current rendered transcript stay searchable and have an `[unavailable]` marker. Selecting one explains that it cannot be jumped to. In Pi 1.0.4, this includes compacted-away history and image-only/empty prompts (the host renders no user component for them). No transcript reconstruction or context rewriting is attempted.
+Messages absent from the current rendered transcript stay searchable and have an `[unavailable]` marker. Selecting one explains that it cannot be jumped to. On both supported releases, this includes compacted-away history and image-only/empty prompts (the host renders no user component for them). No transcript reconstruction or context rewriting is attempted.
 
 While the picker is open its list is a snapshot. On confirmation the entry ID is resolved again on the current branch, and its message identity and current component presence are checked. New live output is measured at confirmation, as is resized layout. Session switch/shutdown cancels the picker; stale selections and compaction removals fail safely. Reopen `/jump` to refresh the list.
 
 ## Private bridge contract
 
-There is **no public ExtensionUIContext transcript-scroll API** in Pi 1.0.4. All private access is isolated in `bridge.ts`:
+There is **no public ExtensionUIContext transcript-scroll API** in Pi 1.0.4 or 1.1.0. Native fullscreen prompt navigation/search is not a public stable-session-entry targeting API. All private access is isolated in `bridge.ts`:
 
-- Version-pinned, shape-checked wrappers observe `InteractiveMode.mountInteractiveTui` and `addMessageToChat`, forwarding each original exactly once. They do not replace the editor, footer, rendering tree, or session controls.
+- Explicitly version-allowlisted, shape-checked wrappers observe `InteractiveMode.mountInteractiveTui` and `addMessageToChat`, forwarding each original exactly once. They do not replace the editor, footer, rendering tree, or session controls.
 - A weak map associates original user message objects with newly rendered non-Spacer components. Restored entry conversion and live `message_start` → `message_end` persistence preserve those objects on the tested host. Skills can create two components: the first marks the beginning of the prompt. No text/ordinal matching fallback exists.
 - The adapter requires the standard document/chat Container renderers, transcript child, current terminal-wide stretch VStack root, and ScrollView width/scroll methods. It calls the host renderer's `renderNow()` before measuring to refresh viewport metrics, then sums real rendered line counts of document/chat predecessors at `getContentWidth(terminal.columns)`. Movement uses public `ScrollView.scrollTo(row, {disableFollow:true})` and `requestRender()`.
 - Global symbol ownership prevents duplicate installation, checks wrapper identity, and preserves read-only capture across reload/session replacement. Shutdown closes the inline picker; quit restores only wrappers still owned and drops references. No timers, terminal listeners, or persistent entries are created by this extension.
+
+Pi 1.1.0 keeps the same observed mount, transcript width, ScrollView, message-object identity, inline custom UI and ownership contract. Its additional `outputPad` constructor arguments and selection reset during transcript rebuild do not require a separate adapter: offsets are measured from the actual rendered components, and presence is rechecked after rebuild. Only these two releases are allowlisted; unknown versions are rejected before installing wrappers.
 
 Transcript/layout wrappers that alter document or chat width/rendering are rejected with actionable feedback. **Reader-mode compatibility is not claimed**: the neighboring reader-mode extension guards a different Pi version. A future reader/layout wrapper needs a new validated width contract, not an optimistic text search or guessed row offset. Same-version private API changes and arbitrary third-party layout-node mutations can still invalidate this integration; use the standard host layout and rerun the integration smoke after host changes.
 
@@ -43,10 +45,12 @@ Transcript/layout wrappers that alter document or chat width/rendering are rejec
 
 ```sh
 cd pi/extensions/message-jump
-PATH=/opt/homebrew/bin:$PATH npm test
-PATH=/opt/homebrew/bin:$PATH npm run test:real-pi
+npm test
+npm run test:real-pi
 ```
 
-Requires Node with `--experimental-strip-types` and `node:module.registerHooks` (tested on Node 26.10.0), installed Pi/TUI on PATH (or `PI_PACKAGE_ROOT` / `PI_BIN`), plus Python 3 and existing `fd`/`rg` for the offline PTY smoke. No npm dependencies or global installations are needed. Focused tests mock the coding-agent host seam while using the actual installed TUI for keys, Unicode widths, containers, and ScrollView.
+Requires Node with `--experimental-strip-types` and `node:module.registerHooks` (tested on Node 26.11.1), installed Pi/TUI via the managed launcher on PATH (or `PI_PACKAGE_ROOT` / `PI_BIN`), plus Python 3 and existing `fd`/`rg` for the offline PTY smoke. No npm dependencies or global installations are needed. Discovery supports an explicit `PI_PACKAGE_ROOT`, `PI_MANAGED_INSTALL_ROOT` with a valid `current-version` and matching `releases/<version>` package, launcher-relative `../install`, and direct package executables. Invalid names, versions, paths or incomplete installs fail with repair/override guidance. The smoke checks that the executable reports the discovered package version; normal discovery runs the real PATH launcher, while an explicit package override runs that package’s declared CLI.
 
-The real integration launches installed **bundled Pi 1.0.4** in temporary isolated HOME/agent/cwd/session directories, offline and without API keys, project resources or other extensions. It verifies restored history, duplicate entry destinations, live message identity through the actual AgentSession event/persistence path, actual viewport scrollTop and follow state, unchanged session/model/branch/context/draft/focus, inline mounting in the editor container, chronological navigation, Escape, resize, reload ownership, compacted-history rejection, /new session replacement with fresh live messages, and truthful regular-mode feedback. At 100×50 and 65×32 it also compares ANSI-styled picker output against the installed native `/fork` selector source rendered offscreen (never mounted), substituting jump-specific header copy and the copy-help hint, removing the added search line, and adjusting the visible row count for terminal height. This verifies native spacing, full-width borders, chronological prompt/metadata/blank rows, selected caret/bold styling and bottom position indicator. The test-only probe injects user lifecycle events without calling a model and uses the host's real compaction entry/context rebuild. It does not test network model streaming or model-generated compaction; session-switch races while a picker is open and altered-width wrappers are covered by focused tests. No installed Pi or live configuration is modified.
+Focused tests mock the coding-agent host seam while using the actual installed TUI for keys, Unicode widths, containers, and ScrollView.
+
+The real integration launches the actual **managed Pi 1.1.0 launcher** (Pi 1.0.4 remains supported from the prior validation; this update was rerun on 1.1.0) in temporary isolated HOME/agent/cwd/session directories, offline and without API keys, project resources or other extensions. It verifies restored history, duplicate entry destinations, live message identity through the actual AgentSession event/persistence path, actual viewport scrollTop and follow state, unchanged session/model/branch/context/draft/focus, inline mounting in the editor container, chronological navigation, Escape, resize, reload ownership, compacted-history rejection, /new session replacement with fresh live messages, and truthful regular-mode feedback and actual-host unknown-version/altered-layout rejection. At 100×50 and 65×32 it also compares ANSI-styled picker output against the installed native `/fork` selector source rendered offscreen (never mounted), substituting jump-specific header copy and the copy-help hint, removing the added search line, and adjusting the visible row count for terminal height. This verifies native spacing, full-width borders, chronological prompt/metadata/blank rows, selected caret/bold styling and bottom position indicator. The test-only probe injects user lifecycle events without calling a model and uses the host's real compaction entry/context rebuild. It does not test network model streaming or model-generated compaction; session-switch races while a picker is open and altered-width wrappers are covered by focused tests. The copy probe uses an injected sink, never the system clipboard. No installed Pi or live configuration is modified.

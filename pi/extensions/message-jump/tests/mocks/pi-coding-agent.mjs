@@ -2,7 +2,7 @@ import { installedHost } from "../installed-host.mjs";
 import { pathToFileURL } from "node:url";
 export const { DynamicBorder } = await import(pathToFileURL(`${installedHost()}/dist/modes/interactive/components/dynamic-border.js`).href);
 import { Spacer, Text } from "@earendil-works/pi-tui";
-export const VERSION = "1.0.4";
+export const VERSION = "1.1.0";
 // Focused tests inject picker.onCopy; never change the real system clipboard.
 export async function copyToClipboard() { throw new Error("Unexpected system clipboard access in test"); }
 export class InteractiveMode {

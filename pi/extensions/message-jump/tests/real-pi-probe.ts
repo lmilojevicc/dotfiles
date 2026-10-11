@@ -10,7 +10,7 @@ const report = (event: string, details = {}) => appendFileSync(process.env.MESSA
 const globals = globalThis as any;
 
 export default function (pi: ExtensionAPI) {
-	assert.equal(VERSION, "1.0.4");
+	assert.ok(["1.0.4", "1.1.0"].includes(VERSION));
 	const record = globals[Symbol.for("dotfiles.message-jump.bridge.v1")];
 	assert.equal(record.prototype, InteractiveMode.prototype);
 	pi.on("session_start", (event) => { report(event.reason === "reload" ? "reloaded" : event.reason === "new" ? "switched" : "ready"); });
@@ -19,12 +19,28 @@ export default function (pi: ExtensionAPI) {
 		handler: async (stage, ctx) => {
 			try {
 				const mode = record.host;
-				assert.ok(mode instanceof InteractiveMode, "CLI and extension share the live InteractiveMode class");
+				assert.equal(mode instanceof InteractiveMode, true, "CLI and extension share the live InteractiveMode class");
 				const jump = mode.session.extensionRunner.getCommand("jump").handler;
 				if (stage === "unsupported") {
 					let warning = "";
 					await jump("", { ...ctx, ui: { ...ctx.ui, notify: (s: string) => { warning = s; } } });
 					assert.match(warning, /fullscreen/); report(stage); return;
+				}
+				if (stage === "guards") {
+					const scroll = mode.transcriptScrollView.scrollTop;
+					const originalAlign = mode.fullscreenLayoutRoot.align;
+					const originalVersion = mode.version;
+					try {
+						for (const changed of ["layout", "version"]) {
+							mode.fullscreenLayoutRoot.align = changed === "layout" ? "center" : originalAlign;
+							mode.version = changed === "version" ? "1.1.1" : originalVersion;
+							let warning = "";
+							await jump("", { ...ctx, ui: { ...ctx.ui, notify: (s: string) => { warning = s; } } });
+							assert.match(warning, /Unsupported transcript layout/);
+							assert.equal(mode.transcriptScrollView.scrollTop, scroll);
+						}
+					} finally { mode.fullscreenLayoutRoot.align = originalAlign; mode.version = originalVersion; }
+					report(stage); return;
 				}
 				if (stage === "empty") {
 					let warning = "";

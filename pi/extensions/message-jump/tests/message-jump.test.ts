@@ -1,18 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
 import { Container, Text, ScrollView, VStack, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import extension from "../index.ts";
-import { installBridge } from "../bridge.ts";
+import { installBridge, SUPPORTED_PI_VERSIONS } from "../bridge.ts";
 import { collectMessages, filterMessages } from "../messages.ts";
 import { MessagePicker } from "../picker.ts";
 
 const entry = (id: string, content: any = "same") => ({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
 const theme = { fg: (_: string, s: string) => s, bold: (s: string) => s } as any;
-function host(mode = "fullscreen") {
+function host(mode = "fullscreen", version = VERSION) {
 	const instance = new InteractiveMode() as any;
-	instance.version = "1.0.4";
+	instance.version = version;
 	instance.chatContainer = new Container();
 	instance.documentContainer = new Container();
 	instance.documentContainer.addChild(new Text("header\nsecond", 0, 0));
@@ -90,6 +90,33 @@ test("bridge: regular mode, altered-width wrapper, missing layout capability, la
 		h.fullscreenLayoutRoot.align = "stretch"; h.transcriptScrollView.getContentWidth = undefined;
 		assert.match(bridge.error()!, /Unsupported transcript layout/);
 	} finally { bridge.release(true); }
+});
+
+test("bridge: only evidenced versions install and capture; unknown releases leave prototypes untouched", () => {
+	assert.deepEqual(SUPPORTED_PI_VERSIONS, ["1.0.4", "1.1.0"]);
+	for (const version of ["1.0.3", "1.0.5", "1.1.1", "1.2.0", "2.0.0", "1.1.0-dev", "unknown"]) {
+		const mount = InteractiveMode.prototype.mountInteractiveTui;
+		const add = InteractiveMode.prototype.addMessageToChat;
+		const bridge = installBridge(Symbol(), version);
+		assert.match(bridge.error()!, /Unsupported Pi/);
+		assert.equal(InteractiveMode.prototype.mountInteractiveTui, mount);
+		assert.equal(InteractiveMode.prototype.addMessageToChat, add);
+		bridge.release(true);
+	}
+	for (const version of SUPPORTED_PI_VERSIONS) {
+		const bridge = installBridge(Symbol(), version);
+		try {
+			const h = host("fullscreen", version); const e = entry(version);
+			h.addMessageToChat(e.message); h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
+			assert.equal(bridge.jump(item(e)), undefined);
+			assert.equal(h.transcriptScrollView.isFollowingEnd, false);
+			h.version = "1.1.1";
+			assert.match(bridge.error()!, /Unsupported transcript layout/);
+		} finally { bridge.release(true); }
+	}
+	const bridge = installBridge(Symbol());
+	try { host("fullscreen", "1.2.0"); assert.match(bridge.error()!, /Unsupported Pi mount shape/); }
+	finally { bridge.release(true); }
 });
 
 test("bridge: ownership, inert reload handoff, old cleanup, quit restoration, conflicts and multiple instances", () => {
