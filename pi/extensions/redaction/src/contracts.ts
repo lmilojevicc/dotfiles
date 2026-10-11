@@ -31,7 +31,18 @@ export interface FileReadInput { path: string; offset?: number; limit?: number }
 export interface FileEditInput { path: string; oldText: string; newText: string }
 export interface FileEditManyInput { path: string; edits: Array<{ oldText: string; newText: string }> }
 export interface FileWriteInput { path: string; content: string }
-export interface FileResult { text: string; path: string }
+/** Presentation data from authorized redacted observations only; never raw file data. */
+export interface RedactionDisplay {
+  version: 1;
+  operation: "read" | "edit" | "write";
+  path: string;
+  before?: string;
+  after?: string;
+  firstLine?: number;
+  fileExistedBeforeWrite?: boolean;
+  unavailable?: "budget" | "unsupported";
+}
+export interface FileResult { text: string; path: string; redactionDisplay?: RedactionDisplay }
 export interface FileSession {
   read(input: FileReadInput): Promise<FileResult>;
   edit(input: FileEditInput): Promise<FileResult>;

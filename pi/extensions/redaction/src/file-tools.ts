@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
-import type { FileEditManyInput, FileResult, FileSession, FileSessionOptions, RedactionResult } from "./contracts.ts";
+import type { FileEditManyInput, FileResult, FileSession, FileSessionOptions, RedactionDisplay, RedactionResult } from "./contracts.ts";
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_RENDERED_BYTES = 16 * 1024 * 1024;
@@ -14,6 +14,37 @@ const MAX_PATH_BYTES = 1024 * 1024;
 const MAX_ALIASES = 4096;
 const MAX_ALIAS_BYTES = 8 * 1024 * 1024;
 const MAX_SPANS = 32768;
+const MAX_DISPLAY_BYTES = 256 * 1024;
+const MAX_DISPLAY_LINES = 4096;
+
+// Presentation is best-effort, bounded before mutation, and never scans or reads files.
+function displayMetadata(base: RedactionDisplay, before?: string, after?: string,
+  beforeRange: [number, number] = [0, before?.length ?? 0],
+  afterRange: [number, number] = [0, after?.length ?? 0]): RedactionDisplay | undefined {
+  try {
+    const bounded = (data: RedactionDisplay) => Buffer.byteLength(JSON.stringify(data), "utf8") <= MAX_DISPLAY_BYTES ? data : undefined;
+    if (before === undefined || after === undefined) return bounded(base);
+    const budget = () => bounded({ ...base, unavailable: "budget" });
+    // UTF-8/JSON cannot be smaller than this UTF-16 length bound. Check before copying slices.
+    if (beforeRange[1] - beforeRange[0] + afterRange[1] - afterRange[0] > MAX_DISPLAY_BYTES) return budget();
+    const a = before.slice(...beforeRange);
+    const b = after.slice(...afterRange);
+    let lines = 0;
+    for (const text of [a, b]) {
+      if (text.length) lines++;
+      for (let i = 0; i < text.length; i++) {
+        if (text[i] === "\n") lines++;
+        if (lines > MAX_DISPLAY_LINES) return budget();
+      }
+    }
+    return bounded({ ...base, before: a, after: b }) ?? budget();
+  } catch { return undefined; }
+}
+function firstLine(text: string, end: number): number {
+  let line = 1;
+  for (let i = 0; i < end; i++) if (text[i] === "\n") line++;
+  return line;
+}
 // Account UTF-16 strings plus conservative per-entry metadata, not process RSS.
 const entryBytes = (key: string, value: string): number => 2 * (key.length + value.length) + 128;
 const opaqueToken = /\[[A-Z][A-Z0-9_]*_\d+\]/g;
@@ -471,7 +502,7 @@ export function createFileSession(options: FileSessionOptions): FileSession {
         const snapshot = touchSnapshot(location.file);
         if (!snapshot) fail("read the file before editing");
         if (!Array.isArray(input.edits) || !input.edits.length) fail("at least one edit is required");
-        await rememberRelative(location.file, expected);
+        const displayPath = await rememberRelative(location.file, expected);
         checkGeneration(expected);
         const edits = input.edits.map(edit => {
           if (!edit || typeof edit.oldText !== "string" || !edit.oldText || typeof edit.newText !== "string") fail("invalid edit text");
@@ -513,8 +544,10 @@ export function createFileSession(options: FileSessionOptions): FileSession {
         const oldVisible = snapshot.visible[0];
         const delta = candidate.text.length - snapshot.text.length;
         const visible: [number, number] = [oldVisible[0], oldVisible[1] + delta];
+        const redactionDisplay = displayMetadata({ version: 1, operation: "edit", path: displayPath,
+          firstLine: firstLine(snapshot.text, oldVisible[0]) }, snapshot.text, candidate.text, oldVisible, visible);
         const { rendered, resultPath } = await commit(checked, raw, snapshot, expected, candidate, visible);
-        return { text: rendered.text.slice(...visible), path: resultPath };
+        return { text: rendered.text.slice(...visible), path: resultPath, redactionDisplay };
       });
     });
   }
@@ -536,7 +569,8 @@ export function createFileSession(options: FileSessionOptions): FileSession {
           const reservation = reserveSnapshot(location.file, snapshotBytes(location.file, original.raw, rendered, checked.parents));
           publishSnapshot(location.file, { ...original, ...rendered, visible: [visible], parents: checked.parents }, reservation);
           reservations.delete(location.file);
-          return { text: rendered.text.slice(...visible), path: resultPath };
+          return { text: rendered.text.slice(...visible), path: resultPath,
+            redactionDisplay: displayMetadata({ version: 1, operation: "read", path: resultPath, firstLine: input.offset ?? 1 }) };
         });
       });
     },
@@ -572,12 +606,15 @@ export function createFileSession(options: FileSessionOptions): FileSession {
           if (exists && !snapshot) fail("read the existing file before overwriting");
           if (!exists && snapshot) fail("file changed since read; read again");
           if (snapshot && !snapshot.visible.some(([a, b]) => a === 0 && b === snapshot.text.length)) fail("whole-file write requires a full read");
-          await rememberRelative(location.file, expected);
+          const displayPath = await rememberRelative(location.file, expected);
           checkGeneration(expected);
           const raw = restore(input.content, snapshot?.spans ?? []);
           if (snapshot) await current(checked, snapshot);
-          const { rendered, resultPath } = await commit(checked, raw, snapshot, expected);
-          return { text: rendered.text, path: resultPath };
+          const candidate = render(raw);
+          const redactionDisplay = displayMetadata({ version: 1, operation: "write", path: displayPath,
+            firstLine: 1, fileExistedBeforeWrite: exists }, snapshot?.text ?? "", candidate.text);
+          const { rendered, resultPath } = await commit(checked, raw, snapshot, expected, candidate);
+          return { text: rendered.text, path: resultPath, redactionDisplay };
         });
       });
     },

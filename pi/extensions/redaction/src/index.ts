@@ -1,10 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ConfigState } from "./config.ts";
-import type { FileSession, FileSessionOptions, Redactor } from "./contracts.ts";
+import type { FileResult, FileSession, FileSessionOptions, Redactor } from "./contracts.ts";
 import { loadConfig, offConfig, safeStatus } from "./config.ts";
 import { createNativeRedactor } from "./native.ts";
 import { reserveBranchAliases, reserveGeneratedAliases } from "./alias-history.ts";
-import { CENSORED, censoredMessages, censoredToolResult, sanitizeMessages, sanitizeToolResult } from "./sanitize.ts";
+import { CENSORED, censoredMessages, censoredToolResult, sanitizeJson, sanitizeMessages, sanitizeToolResult } from "./sanitize.ts";
 
 type Host = typeof import("@earendil-works/pi-coding-agent");
 export interface Dependencies {
@@ -20,6 +20,8 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
   let failed = state.state === "invalid";
   let redactor: Redactor | undefined;
   const files = new Map<string, FileSession>();
+  // Provenance only: WeakSet never retains results or exempts their strings from scanning.
+  const ownedDisplayDetails = new WeakSet<object>();
   const scan: Redactor["redact"] = value => {
     if (failed) throw new Error("Redaction unavailable");
     try {
@@ -79,8 +81,21 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
   });
   pi.on("tool_result", (event, ctx) => {
     if (!sources.toolResults) return;
-    try { reserveHistory(ctx); return sanitizeToolResult(event, text); }
-    catch { failed = true; return censoredToolResult(event); }
+    try {
+      reserveHistory(ctx);
+      if (typeof event.details === "object" && event.details !== null && ownedDisplayDetails.has(event.details)) {
+        // Mandatory output remains strict. Only this adapter's optional presentation is isolated.
+        const result = sanitizeToolResult({ ...event, details: undefined }, text);
+        try { result.details = sanitizeJson(event.details, text); }
+        catch {
+          // Scanner/protection failures latch in text(); never disguise them as display failures.
+          if (failed) throw new Error("Redaction unavailable");
+          result.details = null;
+        }
+        return result;
+      }
+      return sanitizeToolResult(event, text);
+    } catch { failed = true; return censoredToolResult(event); }
   });
   pi.on("cache_warming_decision", () => ({ action: "stop" }));
   pi.on("session_before_compact", (_event, ctx) => {
@@ -132,6 +147,7 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
 
   if (!sources.toolResults) return;
   let createFiles = deps.createFileSession;
+  let Text: typeof import("@earendil-works/pi-tui").Text;
   let read: ReturnType<Host["createReadToolDefinition"]>;
   let edit: ReturnType<Host["createEditToolDefinition"]>;
   let write: ReturnType<Host["createWriteToolDefinition"]>;
@@ -141,6 +157,7 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
     read = tools.createReadToolDefinition(process.cwd());
     edit = tools.createEditToolDefinition(process.cwd());
     write = tools.createWriteToolDefinition(process.cwd());
+    ({ Text } = await import("@earendil-works/pi-tui"));
   } catch {
     // Initialization failure must not leave raw built-in file operations available to this request.
     failed = true;
@@ -161,33 +178,42 @@ export async function installRedaction(pi: ExtensionAPI, deps: Dependencies = {}
   };
   const safeFailure = () => ({ content: [{ type: "text" as const, text: "[Protected file operation did not return a usable result; re-read before retrying and use complete observed aliases. No private error details exposed.]" }], details: undefined, isError: true });
   function check(signal: AbortSignal | undefined) { if (signal?.aborted) throw new Error("Protected file operation cancelled"); }
-  pi.registerTool({ ...read, label: "read (redacted text)", description: "Read text files through scoped redaction. Images/binary files are unsupported. Read before editing; partial views cannot authorize unseen edits.",
+  // Display transport cannot turn a committed mutation into an execution failure.
+  function displayDetails(result: FileResult) {
+    try {
+      if (!result.redactionDisplay) return undefined;
+      const details = { redactionDisplay: result.redactionDisplay };
+      ownedDisplayDetails.add(details);
+      return details;
+    } catch { return undefined; }
+  }
+  pi.registerTool<typeof read.parameters, ReturnType<typeof displayDetails>>({ ...read, renderShell: "default", renderCall: (_args, theme) => new Text(theme.fg("toolTitle", theme.bold("read (redacted text)")), 0, 0), renderResult: undefined, label: "read (redacted text)", description: "Read text files through scoped redaction. Images/binary files are unsupported. Read before editing; partial views cannot authorize unseen edits.",
     async execute(_id, params, signal, _update, ctx) {
       try {
         check(signal);
         const result = await session(ctx).read(params);
         check(signal);
-        return { content: [{ type: "text", text: result.text }], structuredContent: result.text, details: undefined };
+        return { content: [{ type: "text", text: result.text }], structuredContent: result.text, details: displayDetails(result) };
       } catch { return safeFailure(); }
     },
   });
-  pi.registerTool({ ...edit, label: "edit (redacted text)", description: "Apply disjoint exact edits against one observed redacted snapshot, all-or-nothing. Preserve only complete aliases from the edited ranges; stale or ambiguous edits are refused.",
+  pi.registerTool<typeof edit.parameters, ReturnType<typeof displayDetails>>({ ...edit, renderShell: "default", renderCall: (_args, theme) => new Text(theme.fg("toolTitle", theme.bold("edit (redacted text)")), 0, 0), renderResult: undefined, label: "edit (redacted text)", description: "Apply disjoint exact edits against one observed redacted snapshot, all-or-nothing. Preserve only complete aliases from the edited ranges; stale or ambiguous edits are refused.",
     async execute(_id, params, signal, _update, ctx) {
       try {
         check(signal);
         const result = await session(ctx).editMany(params);
         check(signal);
-        return { content: [{ type: "text", text: result.text }], details: undefined };
+        return { content: [{ type: "text", text: result.text }], details: displayDetails(result) };
       } catch { return safeFailure(); }
     },
   });
-  pi.registerTool({ ...write, label: "write (redacted text)", description: "Create text files or rewrite an observed unchanged file. Opaque aliases are allowed only from that file's own snapshot; re-read first. Workspace and private-config paths are guarded.",
+  pi.registerTool<typeof write.parameters, ReturnType<typeof displayDetails>>({ ...write, renderShell: "default", renderCall: (_args, theme) => new Text(theme.fg("toolTitle", theme.bold("write (redacted text)")), 0, 0), renderResult: undefined, label: "write (redacted text)", description: "Create text files or rewrite an observed unchanged file. Opaque aliases are allowed only from that file's own snapshot; re-read first. Workspace and private-config paths are guarded.",
     async execute(_id, params, signal, _update, ctx) {
       try {
         check(signal);
         const result = await session(ctx).write(params);
         check(signal);
-        return { content: [{ type: "text", text: result.text }], details: undefined };
+        return { content: [{ type: "text", text: result.text }], details: displayDetails(result) };
       } catch { return safeFailure(); }
     },
   });
