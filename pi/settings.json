@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.87.1",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-6-luna",
+  "lastChangelogVersion": "1.1.0",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "xhigh",
   "theme": "catppuccin-mocha",
   "packages": [
@@ -13,13 +13,23 @@
       "extensions": []
     },
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:@narumitw/pi-goal",
+    {
+      "source": "npm:@narumitw/pi-goal",
+      "extensions": [
+        "-dist/index.ts"
+      ]
+    },
     "git:github.com/MasuRii/pi-tool-display",
     "npm:@ff-labs/pi-fff",
     "npm:pi-btw",
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
-    "npm:pi-commandcode-provider"
+    {
+      "source": "npm:pi-commandcode-provider",
+      "extensions": [
+        "-index.ts"
+      ]
+    }
   ],
   "skills": [
     ".claude/skills",
@@ -39,6 +49,8 @@
   "extensions": [
     "extensions/pi-subagents-host-gate/loader.ts",
     "-extensions/command-code/index.ts",
-    "-extensions/chadineer/index.ts"
+    "-extensions/chadineer/index.ts",
+    "-extensions/redaction/index.ts",
+    "-builtin:mcp"
   ]
 }
