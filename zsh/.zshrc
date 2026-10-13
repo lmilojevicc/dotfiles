@@ -8,22 +8,16 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
-export BUN_INSTALL="$HOME/.bun"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
-export DENO_INSTALL="$HOME/.deno"
 export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 # PATH
 export PATH="$HOME/go/bin:$PATH"
-export PATH="$DENO_INSTALL/bin:$PATH"
-export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
-export PATH="$HOME/.opencode/bin:$PATH"
-export PATH=$HOME/.mimocode/bin:$PATH
 
 # FZF Default Options
 export FZF_CTRL_T_OPTS=" \
@@ -70,14 +64,36 @@ if command -v vivid &>/dev/null; then
     export LS_COLORS="$(vivid generate catppuccin-mocha)"
 fi
 
-export FX_LINE_NUMBERS=true
-export FX_THEME=3
-
 # Homebrew Setup
 if [[ -f "/opt/homebrew/bin/brew" ]]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
     fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
 fi
+
+# Restart Rift after upgrades replace its Homebrew executable.
+brew() {
+    if [[ "$1" != "upgrade" ]]; then
+        command brew "$@"
+        return $?
+    fi
+
+    local rift_bin="${HOMEBREW_PREFIX:-/opt/homebrew}/bin/rift"
+    local before="" after="" result
+    [[ -x "$rift_bin" ]] && before=$(command readlink "$rift_bin" 2>/dev/null)
+
+    command brew "$@"
+    result=$?
+
+    if [[ -n "$before" && -x "$rift_bin" ]]; then
+        after=$(command readlink "$rift_bin" 2>/dev/null)
+        if [[ -n "$after" && "$before" != "$after" ]]; then
+            print "Rift upgraded; restarting..."
+            "$rift_bin" service restart || print -u2 "Warning: Rift restart failed."
+        fi
+    fi
+
+    return "$result"
+}
 
 # Custom completions
 fpath=("$HOME/.zsh/completions" $fpath)
@@ -134,7 +150,6 @@ zinit snippet OMZP::npm
 zinit snippet OMZP::bun
 zinit snippet OMZP::uv
 zinit snippet OMZP::pip
-zinit snippet OMZP::gcloud
 zinit snippet OMZP::aws
 zinit snippet OMZP::kubectl
 
@@ -192,7 +207,6 @@ alias ddgr='ddgr -x -n 5'
 alias oc='opencode --yolo'
 alias cc='claude --dangerously-skip-permissions'
 alias agy='agy --dangerously-skip-permissions'
-alias cursor='cursor-agent'
 
 alias cask-clean='brew list --cask | fzf | xargs brew uninstall --zap'
 alias cli-clean='brew leaves --installed-on-request | fzf | xargs brew uninstall --zap'
@@ -349,11 +363,5 @@ if command -v mise &>/dev/null; then
 fi
 
 # External Tool Integrations
-
-# ghcup environment
-[ -f "$HOME/.ghcup/env" ] && . "$HOME/.ghcup/env"
-
-# bun completions
-[ -s "$HOME/.bun/_bun" ] && source "$HOME/.bun/_bun"
 
 if command -v wt >/dev/null 2>&1; then eval "$(command wt config shell init zsh)"; fi

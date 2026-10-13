@@ -1,0 +1,75 @@
+# Global runtimes and CLI tools; project mise.toml files may override them.
+# Homebrew retains Python/Deno only where formula dependencies require them.
+# Rust toolchains stay with rustup; Pi self-manages under ~/.pi/agent.
+# No lockfile: each machine resolves "latest" independently.
+
+[settings]
+  # Unmanaged go install builds must survive Go version changes.
+  go.set_gobin = false
+
+[env]
+  # Override even an inherited mise-version GOBIN; go: tools remain isolated.
+  GOBIN = "{{env.HOME}}/go/bin"
+
+[tools]
+  # Runtimes (Python 3.13 also supplies the pypi backend's interpreter).
+  node = "26"
+  go = "1.26"
+  python = "3.13"
+  uv = "latest"
+  bun = "latest"
+
+  # Node CLI tools, isolated from the runtime's global npm prefix.
+  "npm:@firecrawl/anydoc" = "latest"
+  "npm:command-code" = "latest"
+  "npm:tokscale" = "latest"
+  "npm:agent-browser" = "latest"
+  "npm:@devcontainers/cli" = "latest"
+  "npm:skills" = "latest"
+
+  # omniroute stays on brew: @pierre/theme changed publisher and lost provenance
+  # after 1.0.3. Respect aube's no-downgrade trust policy; no bypass configured.
+  # https://aube.jdx.dev/security#trust-policy
+
+  # Python CLI tools, each in an isolated uv venv.
+  "pypi:font-line" = "latest"
+  "pypi:huggingface-hub" = "latest"
+  "pypi:icloud-hme" = "latest"
+  "pypi:rendercv" = "latest"
+  "pypi:spotdl" = "latest"
+  "pypi:cloakbrowser" = "latest"
+  "pypi:crawl4ai" = "latest"
+  "pypi:graphifyy" = "latest"
+  "pypi:marker-pdf" = "latest"
+  "pypi:parakeet-mlx" = "latest"
+  # Keep the working source install/pin (originally a proxy-tools packaging workaround).
+  "pypi:oraios/serena" = { version = "1.7.0", package_name = "serena-agent" }
+  "pypi:trafilatura" = "latest"
+
+  # Go CLI tools. Own dotty/seshagy builds stay unmanaged in ~/go/bin:
+  # go install github.com/lmilojevicc/dotty/cmd/dotty@latest
+  # go install github.com/lmilojevicc/seshagy/cmd/seshagy@latest
+  "aqua:dominikh/go-tools/staticcheck" = "latest"
+  "go:golang.org/x/tools/gopls" = "latest"
+  "go:github.com/cweill/gotests/gotests" = "latest"
+  "go:golang.org/x/pkgsite/cmd/pkgsite" = "latest"
+  "go:github.com/bootdotdev/bootdev" = "latest"
+  "go:github.com/lotusirous/gostdsym/stdsym" = "latest"
+
+  # Rust CLI tools use rustup's cargo; mdroll uses GitHub releases, not crates.io.
+  "cargo:dts-lsp" = "latest"
+  "cargo:iroh-ssh" = "latest"
+  "cargo:lutgen-cli" = "latest"
+  "cargo:lutgen-studio" = "latest"
+  "ubi:tokuhirom/mdroll" = "latest"
+
+  # Pinned tools.
+  "aqua:golangci/golangci-lint" = "v2.12.2"
+  "aqua:google/yamlfmt" = "0.21.0"
+  "aqua:goreleaser/goreleaser" = "v2.15.0"
+  "go:golang.org/x/vuln/cmd/govulncheck" = "1.3.0"
+
+  # Standalone zig avoids brew's LLVM dependency chain.
+  zig = "latest"
+  # Node 26 no longer bundles corepack; pnpm self-provisions project versions.
+  "aqua:pnpm/pnpm" = "latest"

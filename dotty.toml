@@ -27,6 +27,9 @@ version = 1
 [packages.lazygit]
   links = [{ source = ".", target = "~/.config/lazygit" }]
 
+[packages.mise]
+  links = [{ source = "config.toml", target = "~/.config/mise/config.toml" }]
+
 [packages.nvim]
   links = [{ source = ".", target = "~/.config/nvim" }]
 
@@ -46,7 +49,6 @@ version = 1
     { source = "keybindings.json", target = "~/.pi/agent/keybindings.json" },
     { source = "model-picker.json", target = "~/.pi/agent/model-picker.json" },
     { source = "model-blacklist.json", target = "~/.pi/agent/model-blacklist.json" },
-    { source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
   ]
@@ -84,7 +86,10 @@ version = 1
   links = [{ source = ".", target = "~/.config/yazi" }]
 
 [packages.zsh]
-  links = [{ source = ".zshrc", target = "~/.zshrc" }]
+  links = [
+    { source = ".zshrc", target = "~/.zshrc" },
+    { source = ".zprofile", target = "~/.zprofile" },
+  ]
 
 [collections.terminal]
   packages = ["ghostty", "wezterm"]

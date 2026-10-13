@@ -1,13 +1,14 @@
+# mise owns runtimes/CLI tools; rustup owns Rust toolchains; Pi self-manages.
+# Homebrew (including dependency Python/Deno) is still upgraded manually.
+# Skip node/bun/bun_packages/pipx/uv/go: mise owns those tools, while own Go
+# builds stay in ~/go/bin. Do not self-update mise-managed runtimes.
+
 [misc]
+  # only filters Topgrade's fixed step order; it does not set the order.
   only = [
-    "tldr",
     "rustup",
     "cargo",
-    "go",
-    "node",
-    "deno",
-    "bun",
-    "bun_packages",
+    "tldr",
     "yazi",
     "github_cli_extensions",
     "custom_commands",
@@ -16,10 +17,15 @@
   cleanup = true
   no_retry = true
 
+[cargo]
+  # Only cargo-update/cargo-cache remain cargo-installed, with no git sources.
+  git = false
+
 [commands]
+  # Built-in mise is cwd-sensitive. Upgrade global requests without bumping them
+  # or pruning interpreters that external projects may still use.
+  "mise global upgrade" = "mise plugins update && mise upgrade --global --yes --no-prune"
   "Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
   "Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
-  # Built-in pipx step fails on broken envs after Python upgrades; reinstall-all repairs + upgrades.
-  "pipx tools" = "pipx reinstall-all"
-  # Built-in uv step fails on broken leftover tools (e.g. posting); clean then upgrade all.
-  "uv tools" = "bash -lc 'uv self update; uv tool upgrade --all || { uv tool uninstall posting 2>/dev/null || true; rm -rf \"${HOME}/.local/share/uv/tools/posting\" 2>/dev/null || true; uv tool upgrade --all; }'"
+  # Cache cleanup only; never uv self update on the mise-owned binary.
+  "uv cache prune" = "uv cache prune"

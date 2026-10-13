@@ -26,7 +26,8 @@ My personal configuration for a consistent, fast development environment across 
 | **[lazydocker](https://github.com/jesseduffield/lazydocker)** — Docker terminal UI | Catppuccin theme with Nerd Font icons |
 | **[lazygit](https://github.com/jesseduffield/lazygit)** — git terminal UI | `diff-so-fancy` diff rendering, Catppuccin theme, Nerd Font icons |
 | **[yazi](https://yazi-rs.github.io/)** — terminal file manager | Custom previewers for Markdown, CSV, JSON, Parquet, and SQLite databases |
-| **[topgrade](https://github.com/topgrade-rs/topgrade)** — one-command system upgrade | Curated upgrade list (Rust, Go, Node, Bun, …) plus zinit and pipx/uv custom steps |
+| **[mise](https://mise.jdx.dev/)** — runtime and CLI manager | Global runtimes and isolated npm/Python/Go/Rust tools; project configs can override versions |
+| **[topgrade](https://github.com/topgrade-rs/topgrade)** — one-command system upgrade | Global mise upgrades, Rust, and selected CLI steps, plus zinit updates and uv cache cleanup |
 | **[posting](https://posting.sh/)** — API client for the terminal | Catppuccin theme and send-on-`f7` keybinding |
 | **[AeroSpace](https://github.com/nikitabobko/AeroSpace)** — macOS tiling window manager | Gaps, `alt`-based focus/move/resize keybinds, and automatic per-app workspace routing |
 | **[Pi](https://pi.dev/)** — terminal coding agent | Settings for models, themes, and plugin packages |
@@ -41,8 +42,11 @@ My personal configuration for a consistent, fast development environment across 
 git clone https://github.com/lmilojevicc/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 
-# Install all configs
+# Install all configs (requires Dotty and mise)
 dotty link --all
+
+# Install the declared runtimes and CLI tools
+mise install
 
 # Or install specific modules
 dotty link scripts zsh git
