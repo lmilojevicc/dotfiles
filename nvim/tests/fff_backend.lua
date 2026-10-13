@@ -141,34 +141,54 @@ local function run(name, query, control)
   return items
 end
 
-file_search = function(_, search_opts)
-  equal(100, search_opts.max_results, "file page size")
+local file_total = 128077
+file_search = function(query, search_opts)
+  equal(0, search_opts.max_results, "unlimited file results")
+  equal(0, search_opts.page, "single initial file page")
   equal(10000, search_opts.wait_for_index_ms, "bounded file initial/cwd scan wait")
   equal("/fixture", search_opts.cwd, "file index cwd")
-  local items = {}
-  for i = search_opts.page * 100 + 1, math.min((search_opts.page + 1) * 100, 235) do
-    items[#items + 1] = { relative_path = (236 - i) .. ".lua", name = "unused" }
+  if query == "fresh" then
+    return { items = { { relative_path = "fresh.lua" } }, total_matched = 1 }
   end
-  return { items = items, total_matched = 235, location = { line = 8, col = 4 } }
+  local items = {}
+  for i = 1, file_total do
+    items[i] = { relative_path = (file_total + 1 - i) .. ".lua", name = "unused" }
+  end
+  return { items = items, total_matched = file_total, location = { line = 8, col = 4 } }
 end
 local files = run("fff_files", "lua:8:4")
-equal(235, #files, "all file pages emitted")
+equal(file_total, #files, "complete file result vector emitted")
 for i, item in ipairs(files) do
-  equal((236 - i) .. ".lua", item.file, "exact backend file order")
-  equal(item.file, item.text, "file searchable text")
-  equal({ 8, 3 }, item.pos, "file location coordinates")
-  equal("/fixture", item.cwd, "relative path base")
+  assert(item.file == (file_total + 1 - i) .. ".lua", "exact backend file order")
+  assert(item.text == item.file, "file searchable text")
+  assert(item.pos[1] == 8 and item.pos[2] == 3, "file location coordinates")
+  assert(item.cwd == "/fixture", "relative path base")
 end
-equal({ 0, 1, 2 }, vim.tbl_map(function(call) return call.opts.page end, api_calls), "0-based file pages")
+equal(1, #api_calls, "large file query invokes backend once")
+equal("lua:8:4", api_calls[1].query, "file query passed to backend")
 equal(1, bootstrap_count, "one-time scan bootstrap")
 equal(0, #run("fff_files", "", { aborted = true }), "already cancelled")
+equal(0, #api_calls, "already cancelled query skips API")
 equal(0, #run("fff_files", "", { before = 1 }), "cancel before scheduled callback")
 equal(0, #api_calls, "no stale API call")
 equal(0, #run("fff_files", "", { after = 1 }), "cancel after scheduling")
-equal(101, #run("fff_files", "", { emissions = 101 }), "cancel between file emissions/pages")
-equal(2, #api_calls, "no subsequent file pages after cancellation")
+equal(1, #api_calls, "cancel after scheduling invokes backend once")
+equal(101, #run("fff_files", "", { emissions = 101 }), "cancel during file emission")
+equal(1, #api_calls, "no further file calls after cancellation")
+local fresh = run("fff_files", "fresh")
+equal(1, #fresh, "fresh query does not reuse previous results")
+equal("fresh.lua", fresh[1].file, "fresh backend result")
+equal(1, #api_calls, "fresh query invokes backend once")
+equal("fresh", api_calls[1].query, "fresh query passed to backend")
+for _, total_matched in ipairs({ 0, 10 }) do
+  file_search = function()
+    return { items = { { relative_path = "only.lua" } }, total_matched = total_matched }
+  end
+  equal(1, #run("fff_files", "inconsistent"), "file emission ignores inconsistent metadata")
+  equal(1, #api_calls, "inconsistent metadata does not retry file query")
+end
 file_search = function() return { items = {}, total_matched = 10 } end
-equal(0, #run("fff_files", "none"), "empty file page terminates")
+equal(0, #run("fff_files", "none"), "empty file result terminates")
 equal(1, #api_calls, "no endless empty file paging")
 
 local function match(i)
@@ -282,11 +302,14 @@ if vim.env.SNACKS_RTP then
   vim.opt.rtp:append(vim.env.SNACKS_RTP)
   _G.Snacks = require("snacks")
   Snacks.setup({ picker = { sources = sources } })
-  local total = 10005
+  local total, backend_calls = 10005, 0
   package.loaded.fff.file_search = function(_, search_opts)
+    backend_calls = backend_calls + 1
+    equal(0, search_opts.max_results, "real Snacks unlimited file results")
+    equal(0, search_opts.page, "real Snacks single initial file page")
     local items = {}
-    for i = search_opts.page * 100 + 1, math.min((search_opts.page + 1) * 100, total) do
-      items[#items + 1] = { relative_path = i .. ".lua" }
+    for i = 1, total do
+      items[i] = { relative_path = i .. ".lua" }
     end
     return { items = items, total_matched = total }
   end
@@ -297,6 +320,7 @@ if vim.env.SNACKS_RTP then
     return not real_picker.finder:running() and not real_picker.matcher:running()
   end, 10), "real Snacks finder timed out")
   equal(total, #real_picker:items(), "real Snacks finder streams more than 10000 items")
+  equal(1, backend_calls, "real Snacks file query invokes backend once")
   real_picker:close()
   print("fff real Snacks finder regression: OK (10005 items)")
 end

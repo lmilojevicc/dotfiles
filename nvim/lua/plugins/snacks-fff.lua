@@ -21,7 +21,7 @@ local function finder(grep)
       query = whole_word(query)
     end
     return function(cb)
-      local offset, count = 0, 0
+      local offset = 0
       while not ctx.async:aborted() do
         local result = ctx.async:schedule(function()
           if ctx.async:aborted() then
@@ -48,8 +48,9 @@ local function finder(grep)
           end
           return fff.file_search(query, {
             cwd = cwd,
-            max_results = 100,
-            page = offset,
+            -- Zero requests all ranked files without rescoring the index per page.
+            max_results = 0,
+            page = 0,
             wait_for_index_ms = 10000,
           })
         end)
@@ -77,7 +78,6 @@ local function finder(grep)
             item.pos = { result.location.line, math.max(0, (result.location.col or 1) - 1) }
           end
           cb(item)
-          count = count + 1
         end
         if grep then
           local next_offset = result.next_file_offset
@@ -86,10 +86,7 @@ local function finder(grep)
           end
           offset = next_offset
         else
-          if #result.items == 0 or count >= result.total_matched then
-            return
-          end
-          offset = offset + 1
+          return
         end
       end
     end
