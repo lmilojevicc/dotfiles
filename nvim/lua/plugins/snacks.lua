@@ -182,8 +182,8 @@ return {
       preset = {
         -- stylua: ignore
         keys = {
-          { icon = " ", key = "f", desc = "Find File", action = function() Snacks.picker.files({ hidden = true }) end, },
-          { icon = "󱎸 ", key = "g", desc = "RipGrep", action = ":lua Snacks.dashboard.pick('live_grep')" },
+          { icon = " ", key = "f", desc = "Find File", action = function() Snacks.picker.fff_files() end, },
+          { icon = "󱎸 ", key = "g", desc = "RipGrep", action = function() Snacks.picker.fff_grep() end, },
           { icon = "󰦛 ", key = "r", desc = "Restore Last Session", action = function() require("persistence").load() end, },
           { icon = " ", key = "R", desc = "Pick Session", action = function() require("persistence").select() end, },
           { icon = " ", key = "n", desc = "New File", action = ":ene | startinsert" },
@@ -317,10 +317,10 @@ return {
     { "gS", function() Snacks.picker.lsp_workspace_symbols() end, desc = " Show workspace symbols", },
 
     -- Search
-    { "<leader>ff", function() Snacks.picker.files({ hidden = true }) end, desc = " Find files", },
-    { "<leader>fg", function() Snacks.picker.grep() end, desc = " Grep in workspace", },
+    { "<leader>ff", function() Snacks.picker.fff_files() end, desc = " Find files", },
+    { "<leader>fg", function() Snacks.picker.fff_grep() end, desc = " Grep in workspace", },
     { "<leader>fG", function() Snacks.picker.grep_buffers() end, desc = " Grep buffers" },
-    { mode = { "n", "v" }, "<leader>fw", function() Snacks.picker.grep_word() end, desc = " Grep Word Under Cursor" },
+    { mode = { "n", "v" }, "<leader>fw", function() Snacks.picker.fff_grep_word() end, desc = " Grep Word Under Cursor" },
     { "<leader>fb", function() Snacks.picker.buffers() end, desc = " List open buffers" },
 
     -- Git Pickers
