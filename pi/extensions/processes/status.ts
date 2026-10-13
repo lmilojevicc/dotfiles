@@ -5,6 +5,9 @@ import type { Snapshot } from './types.ts';
 
 export const SNAPSHOT_REQUEST = 'processes:snapshot:request:v1';
 export const SNAPSHOT_EVENT = 'processes:snapshot:v1';
+const VARIABLE_CAPABILITY = 'zentui:variable-capability';
+const VARIABLE_EVENT = 'zentui:variable';
+const STATUS_VARIABLE = 'pi-processes:status';
 
 // Adapter boundary: even snapshots and errors from an alternate runtime are data,
 // never terminal instructions. Incomplete control strings consume the remainder.
@@ -69,7 +72,14 @@ export function isolate(fn: () => unknown): void {
 }
 
 export function attachStatus(pi: ExtensionAPI, ctx: ExtensionContext, getSnapshot: () => Snapshot, enabled: boolean) {
-  let closed = false;
+  let closed = false, published = false;
+  const clearVariable = () => {
+    if (!published) return;
+    isolate(() => {
+      pi.events.emit(VARIABLE_EVENT, { key: STATUS_VARIABLE, text: undefined });
+      published = false;
+    });
+  };
   const off = pi.events.on(SNAPSHOT_REQUEST, (data: unknown) => {
     if (closed || !data || typeof data !== 'object') return;
     const request = data as { version?: unknown; reply?: unknown };
@@ -79,12 +89,31 @@ export function attachStatus(pi: ExtensionAPI, ctx: ExtensionContext, getSnapsho
   return {
     publish(snapshot: Snapshot) {
       if (closed) return;
-      isolate(() => { if (ctx.hasUI) ctx.ui.setStatus('processes', enabled ? statusText(snapshot, ctx.ui.theme) : undefined); });
-      isolate(() => pi.events.emit(SNAPSHOT_EVENT, safeData(snapshot)));
+      let text: string | undefined, active = false, custom = false;
+      isolate(() => { if (ctx.hasUI && (enabled || ctx.mode === 'tui')) text = statusText(snapshot, ctx.ui.theme); });
+      isolate(() => {
+        if (!ctx.hasUI || ctx.mode !== 'tui' || closed) return;
+        const capability: { supported: boolean; active: boolean; key: string; version?: number } = { supported: false, active: false, key: STATUS_VARIABLE };
+        pi.events.emit(VARIABLE_CAPABILITY, capability);
+        active = capability.supported === true && capability.active === true && capability.version === 1;
+      });
+      if (closed) return;
+      if (active) isolate(() => {
+        // Track before dispatch so even a throwing receiver can be cleared later.
+        published = true;
+        pi.events.emit(VARIABLE_EVENT, { key: STATUS_VARIABLE, text });
+        published = !closed && text !== undefined;
+        custom = true;
+      });
+      else clearVariable();
+      if (closed) return;
+      isolate(() => { if (ctx.hasUI) ctx.ui.setStatus('processes', enabled && !custom ? text : undefined); });
+      if (!closed) isolate(() => pi.events.emit(SNAPSHOT_EVENT, safeData(snapshot)));
     },
     dispose() {
       if (closed) return;
-      closed = true; off();
+      closed = true; isolate(off);
+      clearVariable();
       isolate(() => { if (ctx.hasUI) ctx.ui.setStatus('processes', undefined); });
     },
   };

@@ -47,13 +47,33 @@ Watches assemble **per-stream complete lines**, matching on newline or final EOF
 
 The default footer shows green **N active** and red **N failed** (unacknowledged failures), hiding zero segments. Acknowledgment changes attention, not outcome; counts describe retained records, not permanent failure history.
 
-To replace only the default status renderer, set `<agent-dir>/processes.json` and reload:
+Optional **Zentui** integration publishes the same compact counts as `pi-processes:status` through custom-value protocol v1. For Minimalist bottom-right, merge this into Zentui's configuration:
+
+```json
+{
+  "components": {
+    "editor": {
+      "styles": {
+        "minimalist": {
+          "variables": { "processes": "pi-processes:status" },
+          "formats": { "bottomRight": "$cwd$join_sep($processes)" },
+          "extensionColorMode": "original"
+        }
+      }
+    }
+  }
+}
+```
+
+With an active consumer, only this plugin's default footer status is suppressed. Absent, inactive or unsupported Zentui keeps the normal fallback. Demand is retried on each snapshot refresh, not polled; custom values may yield at narrow widths. Zero counts, lost demand and disposal clear the published value. Original colors preserve green active/red failed.
+
+To hide only the default footer status, set `<agent-dir>/processes.json` and reload:
 
 ```json
 {"defaultStatus":false}
 ```
 
-Tools, notifications and versioned read-only snapshots remain enabled. Subscribe **before** requesting the initial snapshot:
+Tools, notifications, custom-value publication and versioned read-only snapshots remain enabled. Subscribe **before** requesting the initial snapshot:
 
 ```ts
 const renderV1 = (snapshot) => {
