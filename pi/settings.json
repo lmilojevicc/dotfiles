@@ -24,12 +24,14 @@
     "npm:pi-btw",
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
+    "npm:pi-interactive-shell",
     {
       "source": "npm:pi-commandcode-provider",
       "extensions": [
         "-index.ts"
       ]
-    }
+    },
+    "npm:pi-claude-bridge"
   ],
   "skills": [
     ".claude/skills",
