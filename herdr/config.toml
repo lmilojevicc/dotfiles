@@ -1,5 +1,8 @@
 onboarding = false
 
+[terminal]
+  default_shell = "zsh"
+
 [experimental]
   kitty_graphics = true
 
