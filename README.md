@@ -26,7 +26,7 @@ My personal configuration for a consistent, fast development environment across 
 | **[lazydocker](https://github.com/jesseduffield/lazydocker)** — Docker terminal UI | Catppuccin theme with Nerd Font icons |
 | **[lazygit](https://github.com/jesseduffield/lazygit)** — git terminal UI | `diff-so-fancy` diff rendering, Catppuccin theme, Nerd Font icons |
 | **[yazi](https://yazi-rs.github.io/)** — terminal file manager | Custom previewers for Markdown, CSV, JSON, Parquet, and SQLite databases |
-| **[mise](https://mise.jdx.dev/)** — runtime and CLI manager | Global runtimes and isolated npm/Python/Go/Rust tools; project configs can override versions |
+| **[mise](https://mise.jdx.dev/)** — runtime and CLI manager | Global runtimes, CMake, and isolated npm/Python/Go/Rust tools; project configs can override versions |
 | **[topgrade](https://github.com/topgrade-rs/topgrade)** — one-command system upgrade | Global mise upgrades, Rust, and selected CLI steps, plus zinit updates and uv cache cleanup |
 | **[posting](https://posting.sh/)** — API client for the terminal | Catppuccin theme and send-on-`f7` keybinding |
 | **[AeroSpace](https://github.com/nikitabobko/AeroSpace)** — macOS tiling window manager | Gaps, `alt`-based focus/move/resize keybinds, and automatic per-app workspace routing |

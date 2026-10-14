@@ -24,6 +24,11 @@ assert mise["env"]["GOBIN"] == "{{env.HOME}}/go/bin"
 assert "go:golang.org/x/tools/gopls" in mise["tools"]
 for tool in ("npm:agent-browser", "npm:@devcontainers/cli", "npm:skills"):
     assert mise["tools"][tool] == "latest"
+cmake = mise["tools"]["aqua:Kitware/CMake"]
+assert cmake["version"] == "latest"
+# Kitware ships CMake.app; the postinstall must keep the install CLI-only.
+assert "cmake-gui" in cmake["postinstall"]
+assert "Qt*.framework" in cmake["postinstall"]
 assert mise["tools"]["pypi:oraios/serena"] == {
     "version": "1.7.0", "package_name": "serena-agent"
 }
