@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { patternProblem } from "./patterns.ts";
 
 /** Provider-scoped and cross-provider model-id patterns. */
 export interface BlacklistConfig {
-	/** Provider id to the patterns hidden on that provider. */
+	/** Provider id to the patterns hidden on that provider. A `!`-prefixed pattern hides what it does not match. */
 	providers: Record<string, string[]>;
 	/** Patterns hidden on every provider. */
 	global: string[];
@@ -38,6 +39,15 @@ function readPatterns(value: unknown, where: string, report: (detail: string) =>
 			report(`"${where}" contains an empty pattern; skipped`);
 			continue;
 		}
+		// A lone negation would compile to a gate matching nothing, silently
+		// hiding every model instead of the intended none, and a miswritten
+		// `3.8-flash+` threshold would silently match nothing. Both are rejected
+		// here so the session starts with a warning instead of a wrong surface.
+		const problem = patternProblem(pattern);
+		if (problem) {
+			report(`"${where}" contains ${problem}; skipped`);
+			continue;
+		}
 		patterns.push(pattern);
 	}
 	return patterns;
@@ -48,6 +58,9 @@ function readPatterns(value: unknown, where: string, report: (detail: string) =>
  * repaired here; a missing file means nothing is hidden. Malformed JSON or a
  * non-object root discards the file and warns once. Keys starting with "_" are
  * inert, so the checked-in file can carry examples next to the live rules.
+ * A leading `!` negates a pattern: it hides every model the glob does not
+ * match. The glob itself is never escaped, so `!` always negates. A trailing
+ * `+` makes the pattern a version threshold, e.g. `gemini-3.8+`.
  */
 export function readBlacklistConfig(
 	warn: (message: string) => void,

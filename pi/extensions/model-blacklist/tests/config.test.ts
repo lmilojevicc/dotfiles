@@ -80,6 +80,32 @@ test("invalid entries are skipped individually", () => {
 	});
 });
 
+test("negated patterns parse and a bare negation is rejected", () => {
+	const contents = JSON.stringify({ providers: { openai: [" !gpt-6* ", "!"] }, global: ["!  "] });
+	withFile(contents, (path, notices) => {
+		assert.deepEqual(readBlacklistConfig((message) => notices.push(message), path), {
+			providers: { openai: ["!gpt-6*"] },
+			global: [],
+		});
+		assert.equal(notices.length, 2);
+		assert.match(notices[0]!, /"global" contains a negation without a pattern; skipped/);
+		assert.match(notices[1]!, /"providers.openai" contains a negation without a pattern; skipped/);
+	});
+});
+
+test("threshold patterns parse and miswritten ones are skipped", () => {
+	const contents = JSON.stringify({ providers: { antigravity: [" !gemini-3.8+ ", "gemini-3.8-flash+", "3.8+"] }, global: ["claude-opus-5+"] });
+	withFile(contents, (path, notices) => {
+		assert.deepEqual(readBlacklistConfig((message) => notices.push(message), path), {
+			providers: { antigravity: ["!gemini-3.8+"] },
+			global: ["claude-opus-5+"],
+		});
+		assert.equal(notices.length, 2);
+		assert.match(notices[0]!, /"providers.antigravity" contains a trailing \+ without a numeric version/);
+		assert.match(notices[1]!, /"providers.antigravity" contains a version threshold without a model-id prefix/);
+	});
+});
+
 test("providers container of the wrong shape keeps global patterns", () => {
 	withFile(JSON.stringify({ providers: ["nope"], global: ["*-preview"] }), (path, notices) => {
 		assert.deepEqual(readBlacklistConfig((message) => notices.push(message), path), {

@@ -92,6 +92,33 @@ test("the command applies rules, reports patterns, and restores removed rules", 
 	assert.deepEqual(current.get("beta")!.getModels().map((model) => model.id), []);
 });
 
+test("a negated rule hides everything it does not match end to end", async () => {
+	writeConfig({ providers: { alpha: ["!gpt-6*"] } });
+	const alpha = fakeProvider("alpha", ["gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol"]);
+	const beta = fakeProvider("beta", ["gpt-5.5"]);
+	const { current, notices, start, command } = createHarness([alpha, beta]);
+
+	start();
+	assert.deepEqual(current.get("alpha")!.getModels().map((model) => model.id), ["gpt-6-astra", "gpt-6.1-sol"]);
+	assert.deepEqual(current.get("beta")!.getModels().map((model) => model.id), ["gpt-5.5"]);
+
+	await command();
+	assert.match(notices.at(-1)!.message, /alpha: !gpt-6\*/);
+});
+
+test("a threshold rule gates the provider end to end", () => {
+	writeConfig({ providers: { antigravity: ["!gemini-3.8+", "!claude-opus-5+"] } });
+	const antigravity = fakeProvider("antigravity", ["gemini-3.7-flash", "gemini-3.8-flash", "gemini-3.10-pro", "claude-opus-4-6", "claude-opus-5-5"]);
+	const { current, start } = createHarness([antigravity]);
+
+	start();
+	assert.deepEqual(current.get("antigravity")!.getModels().map((model) => model.id), [
+		"gemini-3.8-flash",
+		"gemini-3.10-pro",
+		"claude-opus-5-5",
+	]);
+});
+
 test("the command reports unknown providers and an empty configuration", async () => {
 	writeConfig({ providers: { ghost: ["x"] } });
 	const { notices, command } = createHarness([]);

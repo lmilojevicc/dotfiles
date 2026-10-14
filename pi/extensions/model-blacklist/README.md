@@ -12,6 +12,8 @@ Edit **`~/.pi/agent/model-blacklist.json`** (repository: `pi/model-blacklist.jso
 ```json
 {
 	"providers": {
+		"openai": ["!gpt-6*"],
+		"antigravity": ["!gemini-3.8+", "!claude-opus-5+", "!claude-sonnet-5+"],
 		"opencode-go": ["glm-5.3-flash", "grok-4.6"],
 		"openrouter": ["x-ai/*", "*-free"],
 		"cliproxyapi": ["gpt-6.1-sol"]
@@ -20,9 +22,14 @@ Edit **`~/.pi/agent/model-blacklist.json`** (repository: `pi/model-blacklist.jso
 }
 ```
 
-- `providers` maps a provider ID to the model-ID patterns hidden on that provider.
+- `providers` maps a provider ID to the model-ID patterns hidden on that provider. A lone `"*"` hides every model the provider exposes, e.g. `"openai-codex": ["*"]` keeps that provider's auth and quota surfaces while removing all of its models from selection.
 - `global` lists patterns hidden on every provider that currently exposes a model.
 - Patterns are case-insensitive full-string globs: `*` matches any run (including empty), `?` matches one character. A pattern without wildcards is an exact ID match. Regex characters are literal.
+- A `!`-prefixed pattern negates, like `grep -v`: it hides every model on that provider the glob does **not** match, while an unprefixed pattern hides only what it matches. `"openai": ["!gpt-6*"]` therefore shows the GPT-6 family and hides the provider's `gpt-4*`, `gpt-5*`, `o*`, and every later family.
+- A trailing `+` makes the pattern a version threshold: it matches its version and every newer one, so `gemini-3.8+` keeps `gemini-3.8-flash`, `gemini-3.10-pro` and `gemini-4-flash` while hiding `gemini-3.7-flash`. Versions compare per numeric segment, dotted or dashed, so `claude-opus-5+` keeps `claude-opus-5-5-high` but hides `claude-opus-4-6`. Wildcards are literal inside a threshold prefix. `"antigravity": ["!gemini-3.8+", "!claude-opus-5+", "!claude-sonnet-5+"]` therefore shows only Gemini 3.8-or-newer and Claude Opus/Sonnet 5.0-or-newer from that provider.
+- Plain patterns win over negations, so `["!gpt-6*", "gpt-6-sol"]` hides `gpt-6-sol` even though it matches the negation. A negation inside a provider list gates only that provider: a provider with no `!` pattern is unaffected. A negation in `global` gates every provider that exposes a model, so use one deliberately.
+- `!` always negates and is never escaped; a negation with no glob (`"!"`) is invalid and warns.
+- A trailing `+` is always a threshold, so a miswritten one (`"gemini-3.8-flash+"`, `"3.8+"`) is invalid and warns instead of silently matching nothing.
 - Keys starting with `_` are inert, so examples can live next to the live rules.
 - Missing file or `{}` hides nothing. Malformed JSON or a non-object root warns and hides nothing. Invalid individual entries warn and are skipped.
 - A provider listed in the config but not currently registered is reported by `/model-blacklist`, not at startup.
