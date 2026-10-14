@@ -4,7 +4,7 @@ export const CHILD_PREFIXES = [
 	"You are a child subagent with explicit fanout responsibility for this assigned task.",
 ] as const;
 
-// Complete generated 0.76.1 SYSTEM suffixes, not loose matches for quoted prefix lines.
+// Complete generated native SYSTEM suffixes, not loose matches for quoted prefix lines.
 export const NATIVE_CHILD_BOUNDARIES = [
 	[
 		CHILD_PREFIXES[0],
@@ -46,7 +46,7 @@ function appendedNativeLaunchTag(systemPrompt: string): string | undefined {
 	const boundary = NATIVE_CHILD_BOUNDARIES.find((text) => prompt.endsWith(`\n\n${text}`));
 	if (!boundary) return undefined;
 	const base = prompt.slice(0, -boundary.length - 2).trimStart();
-	// Native launch metadata is first in replace mode, or first in the SDK addendum in append mode.
+	// Retain the older complete-boundary contract, including blank/whitespace role bodies.
 	const tag = /^(<active_agent name="[^"<>\r\n]*"\/>)\n\n/;
 	const replaceTag = base.match(tag)?.[1];
 	if (replaceTag) return replaceTag;
@@ -56,24 +56,53 @@ function appendedNativeLaunchTag(systemPrompt: string): string | undefined {
 	return content.includes("\n</addendum>") ? content.match(tag)?.[1] : undefined;
 }
 
+/** 0.77.0 filters first, runs ordinary extensions next, and adds the boundary last.
+ * Exact generated launch headers route before that boundary. A deliberately constructed
+ * root SYSTEM lookalike is indistinguishable here: this is not authentication.
+ */
+function generatedLaunchTag(systemPrompt: string): string | undefined {
+	const base = systemPrompt.trimStart();
+	const tag = /^(<active_agent name="[^"<>\x00-\x1f]+"\/>)\n\n(?=\S)/;
+	const replaceTag = base.match(tag)?.[1];
+	if (replaceTag && tagName(replaceTag) !== undefined) return replaceTag;
+	const addendum = base.indexOf("\n\n<addendum>\n");
+	if (addendum === -1) return undefined;
+	const content = base.slice(addendum + "\n\n<addendum>\n".length);
+	const close = /\n<\/addendum>(?=\n\n|$)/.exec(content)?.index;
+	if (close === undefined) return undefined;
+	const appendTag = content.slice(0, close).match(tag)?.[1];
+	return appendTag && tagName(appendTag) !== undefined ? appendTag : undefined;
+}
+
+function tagName(tag: string): string | undefined {
+	const encoded = tag.match(/^<active_agent name="([^"<>\x00-\x1f]+)"\/>$/)?.[1];
+	if (!encoded) return undefined;
+	// Reverse only the native launcher's four XML escapes, never aliases or fuzzy names.
+	if (/&(?!amp;|quot;|lt;|gt;)/.test(encoded)) return undefined;
+	return encoded.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
 export type PolicyProfile = "main" | "subagent";
 
 export function selectProfile(systemPrompt: string, backgroundChild: boolean, bbWorkflowWorker = false): PolicyProfile {
 	return backgroundChild || bbWorkflowWorker || CHILD_PREFIXES.some((prefix) => systemPrompt.trimStart().startsWith(prefix))
-		|| appendedNativeLaunchTag(systemPrompt) !== undefined
+		|| appendedNativeLaunchTag(systemPrompt) !== undefined || generatedLaunchTag(systemPrompt) !== undefined
 		? "subagent"
 		: "main";
 }
 
 export type PolicyRole = "worker" | "reviewer" | "scout";
 
-/** Prefer the complete appended layout's launch tag; preserve first-tag routing for older children.
- * This is routing metadata, not authentication; unknown/malformed names stay generic.
- */
-export function selectRole(systemPrompt: string, profile: PolicyProfile): PolicyRole | undefined {
+/** Name routing is independent of the three legacy overlays. Call with native profile only. */
+export function selectAgentName(systemPrompt: string, profile: PolicyProfile): string | undefined {
 	if (profile !== "subagent") return undefined;
-	const tag = appendedNativeLaunchTag(systemPrompt) ?? systemPrompt.match(/^<active_agent\b[^\r\n]*$/m)?.[0];
-	const name = tag?.match(/^<active_agent name="([^"]*)"\/>$/)?.[1];
+	const tag = appendedNativeLaunchTag(systemPrompt) ?? generatedLaunchTag(systemPrompt)
+		?? systemPrompt.match(/^<active_agent\b[^\r\n]*$/m)?.[0];
+	return tag ? tagName(tag) : undefined;
+}
+
+export function selectRole(systemPrompt: string, profile: PolicyProfile): PolicyRole | undefined {
+	const name = selectAgentName(systemPrompt, profile);
 	switch (name) {
 		case "worker": case "reviewer": case "scout": return name;
 		default: return undefined;

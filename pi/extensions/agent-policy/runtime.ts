@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { registerRequiredChildExtensions, RequiredChildExtensionRegistration } from "pi-subagents/required-child-extensions";
-import { appendPolicy, selectProfile, selectRole } from "./child-profile.ts";
+import { appendPolicy, selectAgentName, selectProfile, selectRole } from "./child-profile.ts";
+import { readInjectionSnapshot } from "./injections.ts";
 import type { BBPolicySignal } from "./bb-profile.ts";
 
 export const POLICY_ID = "dotfiles.agent-policy";
@@ -31,6 +32,7 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 		reviewer: readPolicy("roles/reviewer.md"),
 		scout: readPolicy("roles/scout.md"),
 	};
+	const injections = readInjectionSnapshot(options.policyDir);
 	const bbWorkflowWorker = options.bbSignal?.workflowWorker ?? false;
 	const bbDiagnostic = options.bbSignal?.diagnostic;
 	let diagnosticReported = false;
@@ -84,9 +86,11 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 			const profile = selectProfile(event.systemPrompt, options.backgroundChild, bbWorkflowWorker);
 			// BB has no role contract: only native classification admits canonical overlays.
 			const role = selectRole(event.systemPrompt, nativeProfile);
+			const agentName = selectAgentName(event.systemPrompt, nativeProfile);
 			// Pi starts each hook chain from its base prompt; reapply the cached text each run.
 			const texts = [common, profile === "main" ? main : child];
 			if (role) texts.push(roles[role]);
+			texts.push(...(profile === "main" ? injections.main : agentName === undefined ? [] : injections.agents.get(agentName) ?? []));
 			const policy = texts.filter((text) => text.trim()).join("\n\n");
 			return { systemPrompt: appendPolicy(event.systemPrompt, profile, policy) };
 		} catch (error) {

@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import chadineer, { CHADINEER_PROMPT, CHADINEER_STATE_ENTRY } from "../../chadineer/index.ts";
-import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectProfile, selectRole } from "../child-profile.ts";
+import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectAgentName, selectProfile, selectRole } from "../child-profile.ts";
 import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 
@@ -341,9 +341,9 @@ test("all six files are read once at initialization, never on runs or session/tr
 	syncBuiltinESMExports();
 	try {
 		const runtime = harness(t);
-		assert.equal(reads.mock.callCount(), 6);
+		assert.equal(reads.mock.callCount(), 7);
 		// Edits before even the first prompt must not leak into any profile/role.
-		for (const call of reads.mock.calls) writeFileSync(call.arguments[0], "edited before first prompt");
+		for (const call of reads.mock.calls.filter((call: any) => !String(call.arguments[0]).endsWith("injections.json"))) writeFileSync(call.arguments[0], "edited before first prompt");
 		for (const reason of ["startup", "resume", "fork", "reload"]) runtime.emit("session_start", { reason });
 		runtime.emit("session_tree");
 		assert.match(runtime.before().systemPrompt, /MAIN draft/);
@@ -353,13 +353,13 @@ test("all six files are read once at initialization, never on runs or session/tr
 			assert.equal(output, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
 			assert.equal(runtime.before(output).systemPrompt, output);
 		}
-		assert.equal(reads.mock.callCount(), 6);
+		assert.equal(reads.mock.callCount(), 7);
 		runtime.reload();
-		assert.equal(reads.mock.callCount(), 12);
+		assert.equal(reads.mock.callCount(), 14);
 		assert.match(runtime.before().systemPrompt, /edited before first prompt/);
 		rmSync(runtime.directory, { recursive: true });
 		assert.match(runtime.before().systemPrompt, /edited before first prompt/);
-		assert.equal(reads.mock.callCount(), 12);
+		assert.equal(reads.mock.callCount(), 14);
 		assert.throws(() => runtime.reload(), /agent-policy:.*ENOENT/);
 	} finally {
 		reads.mock.restore();
@@ -476,19 +476,13 @@ test("0.76.1 complete native ordinary/fanout replace/append layouts retain canon
 	}
 });
 
-test("appended native routing rejects root tags, partial/quoted/misplaced boundaries and malformed launch layouts", (t) => {
+test("native routing rejects misplaced/root-only tags and malformed launch layouts", (t) => {
 	const runtime = harness(t);
 	for (const boundary of NATIVE_CHILD_BOUNDARIES) {
 		const valid = nativeLayout("worker", boundary);
 		for (const prompt of [
-			'<active_agent name="worker"/>\n\nroot',
 			`ROOT\n\n${boundary}`,
 			`ROOT\n\n<active_agent name="worker"/>\n\nrole\n\n${boundary}`,
-			valid.replace(boundary, boundary.split("\n")[0]),
-			valid.replace(boundary, boundary.slice(0, -1)),
-			valid.replace(boundary, `quoted: ${boundary}`),
-			`${valid}\n\nmore root instructions`,
-			`${valid}\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX.slice(0, -1)}`,
 			valid.replace('name="worker"/>', "name='worker'/>"),
 			valid.replace('name="worker"/>', 'name="worker" extra="yes"/>'),
 			valid.replace('/>\n\n', '/>\n'),
@@ -532,4 +526,116 @@ test("complete appended layout routes its launch tag rather than quoted preamble
 		.replace("existing reviewer role body", 'existing reviewer role body\n<active_agent name="worker"/>\nquoted role tag');
 	assert.equal(selectRole(prompt, "subagent"), "reviewer");
 	assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"));
+});
+
+test("0.77.0 pre-boundary launch headers route strict replace/append layouts; exact root lookalikes are deliberately ambiguous", (t) => {
+	const runtime = harness(t);
+	for (const append of [false, true]) {
+		const complete = nativeLayout("reviewer", NATIVE_CHILD_BOUNDARIES[0], append);
+		const prompt = complete.slice(0, -NATIVE_CHILD_BOUNDARIES[0].length - 2);
+		assert.equal(selectProfile(prompt, false), "subagent", "boundary is not yet installed at the ordinary hook");
+		assert.match(runtime.before(prompt).systemPrompt, /CHILD draft[\s\S]*reviewer overlay/);
+		assert.doesNotMatch(runtime.before(prompt).systemPrompt, /MAIN draft/);
+		if (append) {
+			assert.equal(selectProfile(prompt.replace("\n</addendum>", "\n</addendum> malformed"), false), "main");
+			assert.equal(selectProfile('Pi base\n\n```xml\n\n<addendum>\n<active_agent name="reviewer"/>\n\nquoted body\n</addendum>\n```', false), "main");
+		}
+		// A root intentionally using this exact SYSTEM layout also routes as child.
+		assert.equal(selectProfile(prompt, false), "subagent", "routing is not authentication");
+		for (const suffix of ["quoted boundary", NATIVE_CHILD_BOUNDARIES[0].slice(0, -1), "more root instructions"]) {
+			assert.equal(selectProfile(`${prompt}\n\n${suffix}`, false), "subagent", "valid launch header does not wait for/validate a later boundary");
+		}
+	}
+	for (const prompt of ['<active_agent name="worker"/>', '<active_agent name="worker"/>\nroot', 'quoted: <active_agent name="worker"/>\n\nroot', '> <active_agent name="worker"/>\n\nroot', '<active_agent name=""/>\n\nroot', '<active_agent name="worker" extra="yes"/>\n\nroot', "<active_agent name='worker'/>\n\nroot", 'ROOT\n<active_agent name="worker"/>\n\nroot', 'Pi base\n\n<addendum>\nquoted\n<active_agent name="worker"/>\n\nroot\n</addendum>']) {
+		assert.equal(selectProfile(prompt, false), "main", prompt);
+	}
+});
+
+function configureSkills(directory: string) {
+	writeFileSync(join(directory, "first.md"), "---\nname: first\n---\nFIRST full body\n[reference](refs/check.md)\n");
+	writeFileSync(join(directory, "second.md"), "SECOND full body\n");
+	writeFileSync(join(directory, "injections.json"), JSON.stringify({ main: ["first.md", "second.md"], agents: JSON.parse('{"worker":["second.md"],"reviewer":["first.md"],"security-reviewer":["first.md","second.md"],"__proto__":["first.md"],"constructor":["second.md"],"special&name":["second.md"]}') }));
+}
+
+test("runtime appends ordered full skills after policy layers, routes exact independent names, and replaces stale role blocks", (t) => {
+	const runtime = harness(t, { configure: configureSkills });
+	const root = runtime.before().systemPrompt;
+	assert.match(root, /COMMON draft[\s\S]*MAIN draft[\s\S]*FIRST full body[\s\S]*SECOND full body/);
+	assert.ok(root.includes(`Resolve this skill's relative file references against ${runtime.directory}.`));
+	assert.doesNotMatch(root, /name: first/);
+	for (const [name, first, second, overlay] of [["worker", false, true, true], ["reviewer", true, false, true], ["security-reviewer", true, true, false], ["unknown", false, false, false], ["developer", false, false, false], ["__proto__", true, false, false], ["constructor", false, true, false], ["toString", false, false, false], ["special&amp;name", false, true, false]] as const) {
+		const prompt = `<active_agent name="${name}"/>\n\noriginal ${name} role\n${root}`;
+		const output = runtime.before(prompt).systemPrompt;
+		assert.equal(output.includes("FIRST full body"), first, name);
+		assert.equal(output.includes("SECOND full body"), second, name);
+		assert.equal(output.includes(`${name} overlay`), overlay, name);
+		assert.doesNotMatch(output, /MAIN draft/);
+		assert.match(output, /COMMON draft[\s\S]*CHILD draft/);
+		assert.equal(output.split(POLICY_START).length - 1, 1);
+		assert.match(output, new RegExp(`original ${name} role`));
+		assert.equal(runtime.before(output).systemPrompt, output);
+	}
+	const worker = runtime.before('<active_agent name="worker"/>\n\noriginal role').systemPrompt;
+	const reviewer = runtime.before(worker.replace('name="worker"', 'name="reviewer"')).systemPrompt;
+	assert.doesNotMatch(reviewer, /worker overlay|SECOND full body/);
+	assert.match(reviewer, /reviewer overlay[\s\S]*FIRST full body/);
+});
+
+test("skills and config, including unused mappings, are eagerly frozen before first prompt until runtime reload", (t) => {
+	const runtime = harness(t, { configure: configureSkills });
+	writeFileSync(join(runtime.directory, "first.md"), "CHANGED FIRST");
+	writeFileSync(join(runtime.directory, "second.md"), "CHANGED SECOND");
+	writeFileSync(join(runtime.directory, "injections.json"), JSON.stringify({ main: ["second.md"], agents: { "security-reviewer": ["first.md"] } }));
+	runtime.emit("session_start", { reason: "reload" });
+	runtime.emit("session_tree");
+	assert.match(runtime.before().systemPrompt, /FIRST full body[\s\S]*SECOND full body/);
+	const prompt = '<active_agent name="security-reviewer"/>\n\nrole';
+	assert.match(runtime.before(prompt).systemPrompt, /FIRST full body[\s\S]*SECOND full body/);
+	runtime.reload();
+	assert.match(runtime.before().systemPrompt, /CHANGED SECOND/);
+	assert.doesNotMatch(runtime.before().systemPrompt, /FIRST full body|CHANGED FIRST/);
+	assert.match(runtime.before(prompt).systemPrompt, /CHANGED FIRST/);
+	assert.doesNotMatch(runtime.before(prompt).systemPrompt, /CHANGED SECOND/);
+	rmSync(runtime.directory, { recursive: true });
+	assert.match(runtime.before(prompt).systemPrompt, /CHANGED FIRST/, "hooks perform no filesystem reads");
+});
+
+test("BB-only workers get no main or named skills; native pre-boundary launch takes precedence", (t) => {
+	const runtime = harness(t, { configure: configureSkills, bbSignal: parseBBPolicySignal(bbTuple) });
+	const generic = runtime.before('<active_agent name="worker"/>\nBB body').systemPrompt;
+	assert.doesNotMatch(generic, /full body|worker overlay|MAIN draft/);
+	const native = runtime.before('<active_agent name="worker"/>\n\nnative body').systemPrompt;
+	assert.match(native, /worker overlay[\s\S]*SECOND full body/);
+	assert.doesNotMatch(native, /FIRST full body|MAIN draft/);
+});
+
+for (const legacyFirst of [true, false]) {
+	test(`skill-only child composition preserves Chadineer strip/skip in ${legacyFirst ? "legacy-first" : "policy-first"} order`, (t) => {
+		const runtime = harness(t, { deployed: true, legacy: true, legacyFirst, configure: configureSkills });
+		runtime.emit("session_start");
+		const prompt = '<active_agent name="worker"/>\n\noriginal worker body';
+		const child = runtime.before(prompt).systemPrompt;
+		assert.ok(child.includes(CHILD_POLICY_MARKER));
+		assert.match(child, /SECOND full body/);
+		assert.doesNotMatch(child, /chadineer:v1:|Chadineer development guidelines|FIRST full body/);
+		assert.ok(child.startsWith(prompt));
+		assert.equal(runtime.before(child).systemPrompt, child);
+	});
+}
+
+
+test("canonical names decode only upstream XML escapes; older complete boundaries retain blank-body routing", () => {
+	for (const [encoded, name] of [["special&amp;name", "special&name"], ["quoted&quot;name", 'quoted"name'], ["less&lt;greater&gt;", "less<greater>"], ["literal&amp;quot;", "literal&quot;"]] as const) {
+		const prompt = `<active_agent name="${encoded}"/>\n\nbody`;
+		assert.equal(selectProfile(prompt, false), "subagent");
+		assert.equal(selectAgentName(prompt, "subagent"), name);
+		assert.equal(selectRole(prompt, "subagent"), undefined);
+	}
+	for (const encoded of ["bad&name", "bad&unknown;", "bad&#34;"]) {
+		assert.equal(selectProfile(`<active_agent name="${encoded}"/>\n\nbody`, false), "main");
+	}
+	for (const role of ["", "worker"]) {
+		const prompt = `<active_agent name="${role}"/>\n\n\n\n${NATIVE_CHILD_BOUNDARIES[0]}`;
+		assert.equal(selectProfile(prompt, false), "subagent", "old complete-boundary layout still works without a nonblank role body");
+	}
 });
