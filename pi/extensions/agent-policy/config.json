@@ -1,0 +1,9 @@
+{
+  "common": [],
+  "child": [],
+  "main": ["./prompts/main.md"],
+  "agents": {
+    "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
+    "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"]
+  }
+}

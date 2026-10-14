@@ -91,22 +91,12 @@ export function selectProfile(systemPrompt: string, backgroundChild: boolean, bb
 		: "main";
 }
 
-export type PolicyRole = "worker" | "reviewer" | "scout";
-
-/** Name routing is independent of the three legacy overlays. Call with native profile only. */
+/** Exact configured-name routing; no role fallback. Call with native profile only. */
 export function selectAgentName(systemPrompt: string, profile: PolicyProfile): string | undefined {
 	if (profile !== "subagent") return undefined;
 	const tag = appendedNativeLaunchTag(systemPrompt) ?? generatedLaunchTag(systemPrompt)
 		?? systemPrompt.match(/^<active_agent\b[^\r\n]*$/m)?.[0];
 	return tag ? tagName(tag) : undefined;
-}
-
-export function selectRole(systemPrompt: string, profile: PolicyProfile): PolicyRole | undefined {
-	const name = selectAgentName(systemPrompt, profile);
-	switch (name) {
-		case "worker": case "reviewer": case "scout": return name;
-		default: return undefined;
-	}
 }
 
 export const POLICY_START = "<!-- agent-policy:v1:start -->";

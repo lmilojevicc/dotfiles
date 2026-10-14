@@ -13,13 +13,13 @@ const sdkRoot = process.env.PI_POLICY_TEST_SDK ?? join(process.env.HOME!, ".pi/a
 const subagentsRoot = process.env.PI_POLICY_TEST_SUBAGENTS ?? join(process.env.HOME!, ".pi/agent/npm/node_modules/pi-subagents");
 const available = existsSync(join(sdkRoot, "dist/index.js")) && existsSync(join(subagentsRoot, "src/api/required-child-extensions.js"));
 const sourceExtensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
-const mainDraft = readFileSync(new URL("../ORCHESTRATOR_APPEND_SYSTEM.md", import.meta.url), "utf8");
+const mainDraft = readFileSync(new URL("../prompts/main.md", import.meta.url), "utf8");
 const fakeModel = { id: "offline-test", name: "offline-test", provider: "anthropic", api: "anthropic-messages", baseUrl: "https://invalid.example", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 };
 
 
-function copyPolicyWithoutInjections(directory: string) {
+function copyBaselinePolicy(directory: string) {
 	cpSync(dirname(sourceExtensionPath), directory, { recursive: true });
-	rmSync(join(directory, "injections.json"), { force: true });
+	writeFileSync(join(directory, "config.json"), JSON.stringify({ main: ["./prompts/main.md"] }));
 	return realpathSync(join(directory, "index.ts"));
 }
 
@@ -39,7 +39,7 @@ function isolateBBEnvironment(t: any) {
 test("installed SDK/native loader routes root, foreground, fork, runner, nested, fanout and recovery snapshots offline", { skip: !available }, async (t) => {
 	isolateBBEnvironment(t);
 	const root = mkdtempSync(join(tmpdir(), "agent-policy-native-"));
-	const extensionPath = copyPolicyWithoutInjections(join(root, "baseline-policy"));
+	const extensionPath = copyBaselinePolicy(join(root, "baseline-policy"));
 	const cwd = join(root, "project");
 	const agentDir = join(root, "agent");
 	mkdirSync(cwd, { recursive: true });
@@ -85,6 +85,8 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	assert.equal(JSON.parse(readFileSync(join(sdkRoot, "package.json"), "utf8")).version, "1.1.0");
 	assert.equal(JSON.parse(readFileSync(join(subagentsRoot, "package.json"), "utf8")).version, "0.77.0");
 	const errors: any[] = [];
+	const warnings: string[] = [];
+	t.mock.method(console, "error", (message: string) => warnings.push(message));
 	const sessions: any[] = [];
 	const resources = new WeakMap<object, any>();
 	const createModelRuntime = () => sdk.ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, modelsStorePath: join(root, "models-cache.json"), refreshOnCreate: false });
@@ -201,19 +203,19 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 		await child.dispose();
 	}
 
-	// Populated temporary policy proves effective native overlays, including under a BB-positive tuple.
+	// Populated temporary config proves effective named sources, including under a BB-positive tuple.
 	const populatedPolicyDir = join(root, "populated-policy");
-	copyPolicyWithoutInjections(populatedPolicyDir);
+	copyBaselinePolicy(populatedPolicyDir);
 	for (const [file, content] of Object.entries({
-		"COMMON_APPEND_SYSTEM.md": "NATIVE COMMON fixture", "ORCHESTRATOR_APPEND_SYSTEM.md": "NATIVE MAIN fixture",
-		"SUBAGENT_APPEND_SYSTEM.md": "NATIVE CHILD fixture", "roles/worker.md": "worker NATIVE overlay",
-		"roles/reviewer.md": "reviewer NATIVE overlay", "roles/scout.md": "scout NATIVE overlay",
+		"common.md": "NATIVE COMMON fixture", "main.md": "NATIVE MAIN fixture",
+		"child.md": "NATIVE CHILD fixture", "worker.md": "worker NATIVE overlay",
+		"reviewer.md": "reviewer NATIVE overlay", "scout.md": "scout NATIVE overlay",
 	})) writeFileSync(join(populatedPolicyDir, file), content);
 	const workerBody = resolveAgentName("worker", agents).agent.systemPrompt;
 	const reviewerBody = resolveAgentName("reviewer", agents).agent.systemPrompt;
 	writeFileSync(join(populatedPolicyDir, "development.md"), "---\nname: development\n---\nDEVELOPMENT full body\n");
 	writeFileSync(join(populatedPolicyDir, "security.md"), "SECURITY full body fixture\n");
-	writeFileSync(join(populatedPolicyDir, "injections.json"), JSON.stringify({ main: [], agents: { worker: ["development.md"], reviewer: ["development.md"], "security-reviewer": ["security.md", "development.md"] } }));
+	writeFileSync(join(populatedPolicyDir, "config.json"), JSON.stringify({ common: ["common.md"], child: ["child.md"], main: ["main.md"], agents: { worker: ["worker.md", "development.md"], reviewer: ["reviewer.md", "development.md"], scout: ["scout.md"], "security-reviewer": ["security.md", "development.md"], unused: ["missing-configured-skill.md"] } }));
 	const populatedRequired = [{ id: POLICY_ID, path: realpathSync(join(populatedPolicyDir, "index.ts")) }];
 	for (const bbPositive of [false, true]) {
 		if (bbPositive) {
@@ -237,6 +239,9 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 							});
 							const child = await factory.create({ ...launch.session, onExtensionError: (error: any) => errors.push(error) });
 							const childSession = sessions.at(-1);
+							assert.deepEqual(resources.get(childSession).getExtensions().errors, [], "missing unused configured source must not reject required extension loading");
+							const warningCount = warnings.length;
+							assert.match(warnings.at(-1)!, /config.json.*agents\["unused"\]\[0\].*missing-configured-skill.md.*ENOENT/);
 							const tools = childSession.getActiveToolNames();
 							const prompt = await boundary(childSession);
 							const suffix = `${NATIVE_CHILD_BOUNDARIES[fanout ? 1 : 0]}${structured ? `\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX}` : ""}`;
@@ -246,7 +251,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 							else assert.ok(prompt.includes(`\n\n<addendum>\n<active_agent name="${role}"/>\n\n`));
 							assert.match(prompt, /NATIVE COMMON fixture[\s\S]*NATIVE CHILD fixture/);
 							const canonical = ["worker", "reviewer", "scout"].includes(role);
-							assert.equal(prompt.includes(`${role} NATIVE overlay`), canonical, "only exact legacy overlays");
+							assert.equal(prompt.includes(`${role} NATIVE overlay`), canonical, "only exact configured sources");
 							if (!canonical) assert.doesNotMatch(prompt, /worker NATIVE overlay|reviewer NATIVE overlay|scout NATIVE overlay/);
 							if (role === "worker" || role === "reviewer") assert.ok(prompt.includes(role === "worker" ? workerBody : reviewerBody), "complete builtin persona preserved");
 							assert.equal(prompt.includes("DEVELOPMENT full body"), ["worker", "reviewer", "security-reviewer"].includes(role));
@@ -266,6 +271,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 							assert.deepEqual(resolveRequiredChildExtensions(child.sessionId), populatedRequired);
 							const repeated = await boundary(childSession);
 							assert.equal(repeated, prompt, "native hook replays cached child composition");
+							assert.equal(warnings.length, warningCount, "startup diagnostics must not repeat on prompts");
 							await child.dispose();
 							assert.deepEqual(resolveRequiredChildExtensions(child.sessionId), []);
 						}
@@ -288,14 +294,47 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	const firstSnapshotChild = await factory.create({ ...snapshotLaunch.session, onExtensionError: (error: any) => errors.push(error) });
 	const firstSnapshotSession = sessions.at(-1);
 	writeFileSync(join(populatedPolicyDir, "security.md"), "NEW CHILD security body");
+	const childConfigPath = join(populatedPolicyDir, "config.json");
+	const nextChildConfig = JSON.parse(readFileSync(childConfigPath, "utf8"));
+	writeFileSync(join(populatedPolicyDir, "new-child.md"), "NEW CHILD config mapping body");
+	nextChildConfig.agents["security-reviewer"].push("new-child.md");
+	writeFileSync(childConfigPath, JSON.stringify(nextChildConfig));
 	const firstSnapshotPrompt = await boundary(firstSnapshotSession);
 	assert.match(firstSnapshotPrompt, /SECURITY full body fixture/);
-	assert.doesNotMatch(firstSnapshotPrompt, /NEW CHILD security body/);
+	assert.doesNotMatch(firstSnapshotPrompt, /NEW CHILD security body|NEW CHILD config mapping body/);
 	await firstSnapshotChild.dispose();
 	const secondSnapshotChild = await factory.create({ ...snapshotLaunch.session, onExtensionError: (error: any) => errors.push(error) });
-	assert.match(await boundary(sessions.at(-1)), /NEW CHILD security body/);
+	assert.match(await boundary(sessions.at(-1)), /NEW CHILD security body[\s\S]*NEW CHILD config mapping body/);
 	await secondSnapshotChild.dispose();
 	assert.ok((await boundary(parent, "ROOT snapshot owner")).includes(mainDraft), "child file snapshots do not alter parent runtime");
+	// Reproduce the deployed cause in the actual required planner/factory, not just the loader.
+	unlinkSync(join(populatedPolicyDir, "development.md"));
+	const missingLaunch = buildInProcessChildLaunch({
+		cwd, parentSessionId: parentId, childAgentName: "worker", childIndex: 0,
+		host: "parent", sessionEnabled: false, tools: ["read"], extensions: [],
+		inheritProjectContext: false, inheritGlobalContext: false, inheritSkills: false,
+		systemPrompt: workerBody, systemPromptMode: "replace", waitToolEnabled: false,
+		requiredExtensions: populatedRequired,
+	});
+	const warningStart = warnings.length;
+	const missingChild = await factory.create({ ...missingLaunch.session, onExtensionError: (error: any) => errors.push(error) });
+	const missingSession = sessions.at(-1);
+	assert.deepEqual(resources.get(missingSession).getExtensions().errors, []);
+	assert.deepEqual(missingSession.getActiveToolNames(), ["read"]);
+	assert.deepEqual(resolveRequiredChildExtensions(missingChild.sessionId), populatedRequired);
+	const missingPrompt = await boundary(missingSession);
+	assert.ok(missingPrompt.includes(workerBody), "complete native worker persona remains intact");
+	assert.match(missingPrompt, /NATIVE COMMON fixture[\s\S]*NATIVE CHILD fixture[\s\S]*worker NATIVE overlay/);
+	assert.doesNotMatch(missingPrompt, /DEVELOPMENT full body|NATIVE MAIN fixture/);
+	assert.ok(missingPrompt.endsWith(NATIVE_CHILD_BOUNDARIES[0]));
+	assert.match(warnings.slice(warningStart).join("\n"), /agents\["worker"\]\[1\].*development.md.*ENOENT/);
+	assert.match(warnings.slice(warningStart).join("\n"), /agents\["unused"\]\[0\].*ENOENT/);
+	const warned = warnings.length;
+	await missingSession.extensionRunner.emit({ type: "session_start", reason: "resume" });
+	assert.equal(await boundary(missingSession), missingPrompt);
+	assert.equal(warnings.length, warned);
+	await missingChild.dispose();
+
 
 	// Actual executor lookup, not a path-keyed planner shortcut. Stop at its native
 	// create seam before model resolution/request; the driver termination is simulated.
@@ -366,12 +405,12 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	mkdirSync(cwd);
 	mkdirSync(join(agentDir, "npm/node_modules"), { recursive: true });
 	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
-	copyPolicyWithoutInjections(policyDir);
+	copyBaselinePolicy(policyDir);
 	const appendPath = join(agentDir, "APPEND_SYSTEM.md");
 	writeFileSync(appendPath, "native initial");
 	const skillPath = join(policyDir, "snapshot-skill.md");
 	writeFileSync(skillPath, "---\nname: snapshot\n---\nINITIAL skill body\n");
-	writeFileSync(join(policyDir, "injections.json"), JSON.stringify({ main: ["snapshot-skill.md"], agents: { worker: ["snapshot-skill.md"], "security-reviewer": ["snapshot-skill.md"] } }));
+	writeFileSync(join(policyDir, "config.json"), JSON.stringify({ main: ["./prompts/main.md", "snapshot-skill.md"], agents: { worker: ["snapshot-skill.md"], "security-reviewer": ["snapshot-skill.md"] } }));
 	const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const oldChild = process.env.PI_SUBAGENT_CHILD;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -391,13 +430,15 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	// Change every profile before the first prompt, including initially empty roles.
 	writeFileSync(appendPath, "native edited");
 	writeFileSync(skillPath, "REFRESHED skill body\n");
-	writeFileSync(join(policyDir, "injections.json"), JSON.stringify({ main: [], agents: { reviewer: ["snapshot-skill.md"], "security-reviewer": ["snapshot-skill.md"] } }));
-	for (const file of ["COMMON_APPEND_SYSTEM.md", "ORCHESTRATOR_APPEND_SYSTEM.md", "SUBAGENT_APPEND_SYSTEM.md", "roles/worker.md", "roles/reviewer.md", "roles/scout.md"]) {
+	writeFileSync(join(policyDir, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md", "snapshot-skill.md"], scout: ["scout.md"], "security-reviewer": ["snapshot-skill.md"] } }));
+	for (const file of ["common.md", "main.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) {
 		writeFileSync(join(policyDir, file), `edited ${file}`);
 	}
 	const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, modelsStorePath: join(root, "models-cache.json"), refreshOnCreate: false });
 	const { session } = await sdk.createAgentSession({ cwd, agentDir, modelRuntime, model: fakeModel, settingsManager, resourceLoader: loader, sessionManager: sdk.SessionManager.inMemory(cwd) });
 	const errors: any[] = [];
+	const warnings: string[] = [];
+	t.mock.method(console, "error", (message: string) => warnings.push(message));
 	await session.bindExtensions({ mode: "print", onError: (error: any) => errors.push(error) });
 	t.after(async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); });
 	const id = session.sessionManager.getSessionId();
@@ -430,15 +471,15 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	assert.deepEqual(resolveRequiredChildExtensions(id), required, "old registration disposed before the new runtime starts");
 	const updated = await boundary("ROOT role");
 	assert.match(updated, /native edited/);
-	assert.match(updated, /edited COMMON_APPEND_SYSTEM.md/);
-	assert.match(updated, /edited ORCHESTRATOR_APPEND_SYSTEM.md/);
+	assert.match(updated, /edited common.md/);
+	assert.match(updated, /edited main.md/);
 	assert.equal(updated.split(POLICY_START).length - 1, 1);
 	assert.ok(!updated.includes(mainDraft));
 	assert.doesNotMatch(updated, /INITIAL skill body|REFRESHED skill body/);
 	for (const role of ["worker", "reviewer", "scout"]) {
 		const prompt = await boundary(`${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>\nrole body`);
-		assert.ok(prompt.includes(`edited roles/${role}.md`));
-		assert.match(prompt, /edited SUBAGENT_APPEND_SYSTEM.md/);
+		assert.ok(prompt.includes(`edited ${role}.md`));
+		assert.match(prompt, /edited child.md/);
 		assert.equal(prompt.split(POLICY_START).length - 1, 1);
 		assert.equal(prompt.includes("REFRESHED skill body"), role === "reviewer");
 		assert.doesNotMatch(prompt, /INITIAL skill body/);
@@ -448,18 +489,22 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	unlinkSync(skillPath);
 	assert.equal(await boundary('<active_agent name="security-reviewer"/>\n\noriginal security persona'), refreshedSecurity, "skills are never reread by hooks");
 	await session.reload();
-	assert.equal(loader.getExtensions().errors.length, 1);
-	assert.match(loader.getExtensions().errors[0].error, /agent-policy:.*injections.json.*agents.*snapshot-skill.md.*ENOENT/);
-	assert.deepEqual(resolveRequiredChildExtensions(id), []);
+	assert.deepEqual(loader.getExtensions().errors, []);
+	assert.deepEqual(resolveRequiredChildExtensions(id), required);
+	assert.match(warnings.at(-1)!, /config.json.*agents.*snapshot-skill.md.*ENOENT/);
+	assert.doesNotMatch(await boundary('<active_agent name="security-reviewer"/>\n\noriginal security persona'), /REFRESHED skill body/);
 	writeFileSync(skillPath, "RESTORED skill body");
 	await session.reload();
 	assert.deepEqual(loader.getExtensions().errors, []);
-	unlinkSync(join(policyDir, "roles/scout.md"));
+	unlinkSync(join(policyDir, "scout.md"));
 	assert.equal(await boundary("ROOT role"), updated, "removal does not trigger a per-run read");
 	await session.reload();
-	assert.equal(loader.getExtensions().errors.length, 1);
-	assert.match(loader.getExtensions().errors[0].error, /agent-policy:.*ENOENT.*scout.md/);
-	assert.deepEqual(resolveRequiredChildExtensions(id), [], "failed initialization leaves no registration");
+	assert.deepEqual(loader.getExtensions().errors, []);
+	assert.match(warnings.at(-1)!, /agents\["scout"\]\[0\].*scout.md.*ENOENT/);
+	assert.deepEqual(resolveRequiredChildExtensions(id), required, "file warnings do not disrupt registration");
+	const scout = await boundary('<active_agent name="scout"/>\n\nnative scout persona');
+	assert.match(scout, /edited common.md[\s\S]*edited child.md/);
+	assert.doesNotMatch(scout, /edited scout.md/);
 	assert.deepEqual(errors, []);
 });
 
@@ -472,12 +517,13 @@ test("installed SDK captures BB tuple at factory load and recreates worker/main/
 	mkdirSync(cwd);
 	mkdirSync(join(agentDir, "npm/node_modules"), { recursive: true });
 	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
-	copyPolicyWithoutInjections(policyDir);
+	copyBaselinePolicy(policyDir);
 	for (const [file, content] of Object.entries({
-		"COMMON_APPEND_SYSTEM.md": "COMMON fixture", "ORCHESTRATOR_APPEND_SYSTEM.md": "MAIN fixture",
-		"SUBAGENT_APPEND_SYSTEM.md": "CHILD fixture", "roles/worker.md": "worker overlay",
-		"roles/reviewer.md": "reviewer overlay", "roles/scout.md": "scout overlay",
+		"common.md": "COMMON fixture", "main.md": "MAIN fixture",
+		"child.md": "CHILD fixture", "worker.md": "worker overlay",
+		"reviewer.md": "reviewer overlay", "scout.md": "scout overlay",
 	})) writeFileSync(join(policyDir, file), content);
+	writeFileSync(join(policyDir, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } }));
 	const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const oldChild = process.env.PI_SUBAGENT_CHILD;
 	process.env.PI_CODING_AGENT_DIR = agentDir;

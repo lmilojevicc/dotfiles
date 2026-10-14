@@ -10,17 +10,26 @@ The boundary stays last, after the single policy block, in ordinary/fanout, repl
 
 `peer.ts` resolves the public `pi-subagents/required-child-extensions` export through normal peer resolution, then the existing `getAgentDir()/npm/package.json` anchor. Pi supplies its SDK alias; independently installed packages are not automatically Node peers. There are no production machine-specific paths, installation scans, automatic installs, or private registry imports. A present incompatible export is an error, not permission to select another implementation. Provisioning remains main-owned.
 
-## Policy layers and configured skills
+## Policy and skill configuration
 
-`ORCHESTRATOR_APPEND_SYSTEM.md` remains the existing main draft, unchanged. `COMMON_APPEND_SYSTEM.md`, `SUBAGENT_APPEND_SYSTEM.md`, and `roles/{worker,reviewer,scout}.md` remain empty editable placeholders. Filling them re-enables those layers. Builtin role bodies, tools, global/project APPEND files, and other instruction sources are unchanged.
+**Extension-local `config.json` is the only supplemental source manifest.** One loader treats ordinary Markdown policy files and `SKILL.md` identically. Optional keys:
 
-Optional **extension-local `injections.json`** contains exactly `main` and `agents`. Both fields are required when the file is present; no version field, unknown fields, coercion, or skip-missing option is supported. `main` and each agent value must be ordered arrays of nonblank file-path strings; `agents` must be an object. Empty arrays are valid. Agent keys are exact upstream-canonical names, independent of the three legacy overlays; lookup uses a Map (including own keys such as `__proto__` and `constructor`). An unconfigured/unknown name gets no named skill or fallback role. Names never derive filesystem paths.
+| Key | Applies to | Value |
+| --- | --- | --- |
+| `common` (alias `all`) | Every session | Ordered file-path array |
+| `child` | Every subagent, including generic BB-only workers | Ordered file-path array |
+| `main` (alias `orchestrator`) | Main/root sessions | Ordered file-path array |
+| `agents` | Exact native child names | Object of name → ordered file-path array |
+
+`common` and `main` are canonical. If their corresponding alias is also present, warn explicitly and use the canonical value, even if that value is invalid; the ignored alias does not become a fallback. Alias-only and canonical-only configs produce identical snapshots. `{}` and omitted fields are valid empty layers. Unknown top-level fields warn and are ignored. No version field, named bundles, trees, globs, discovery, watchers, or second config mechanism is supported.
 
 Initial checked-in configuration:
 
 ```json
 {
-  "main": [],
+  "common": [],
+  "child": [],
+  "main": ["./prompts/main.md"],
   "agents": {
     "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
     "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"]
@@ -28,44 +37,66 @@ Initial checked-in configuration:
 }
 ```
 
-This references the existing skill; it does not author a new security skill or agent profile. For example, a user who already has a configured native `security-reviewer` agent could explicitly map their own inputs like this (**illustrative paths only**, not bundled files):
+`prompts/main.md` is the existing orchestrator draft, moved byte-for-byte (SHA1 `5de0f6a003d01f7d362f90119662070103423d9f`). The Chadineer path references the user's existing source; it is not a new skill or profile. Native role personas, tool allowlists, prompt modes, global/project APPEND files, and unrelated instruction sources are unchanged.
+
+For example, aliases and arbitrary exact names can use ordinary policy and skill files together (**illustrative paths only**, not bundled sources):
 
 ```json
 {
-  "main": [],
+  "all": ["./policies/shared.md"],
+  "child": ["./policies/child.md"],
+  "orchestrator": ["./prompts/main.md"],
   "agents": {
-    "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
-    "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"],
-    "security-reviewer": ["./skills/my-security-review/SKILL.md", "/absolute/path/to/your/checklist.md"]
+    "security-reviewer": ["./skills/my-security-review/SKILL.md", "/absolute/path/to/checklist.md"]
   }
 }
 ```
 
-Relative paths resolve against the config directory, not the session cwd. `~/` expands to the runtime user's home directory; absolute paths are supported. Skill paths are **inputs, not extensions** and do not enter the required-extension registry. No discovery, watchers, recursive reference injection, registry, or prompt-budget framework is added. A missing config means legacy composition is unchanged. A present malformed/unreadable config or any missing/unreadable referenced file is an explicit initialization error, even for unused mappings.
+This adds instructions to an already configured native `security-reviewer`; it does not define that agent, replace its persona, or change its tools. Agent keys are exact upstream-canonical names, stored in a Map (including own keys like `__proto__` and `constructor`). No worker fallback, fuzzy aliases, BB name inference, or role-file auto-loading occurs. Names never derive source paths.
 
-Extension initialization eagerly reads all six known policy files, the config, and every referenced skill. Like native `APPEND_SYSTEM.md`, edits (even before the first prompt) require `/reload`, which recreates the runtime and its snapshot. Hooks and session-start/tree events do not reread files. **Each child runtime takes its own snapshot when instantiated**; parent launch transport carries the required extension entry point, not parent skill content. New children can see newer files while an already loaded parent/child keeps its snapshot.
+Relative paths resolve against the config directory, not session cwd. `~/` expands to the runtime user's home; absolute paths are supported. Entries must be nonblank strings without NUL characters. Sources are **inputs, not extensions**: they do not enter the required-extension registry. Each unique normalized absolute path is read once, even across mappings or on failure. Symlink identity is not collapsed. Effective alias collisions skip the ignored alias inputs.
 
-Each `before_agent_start` selects cached SYSTEM text and returns `{ systemPrompt }` only, never user/custom/tool-result messages. Pi starts each run's hook chain from its base prompt options, so the cached policy must be reapplied every run:
+### Snapshots, order and full bodies
 
-- Main: common + orchestrator policy + configured `main` skills.
-- Native child: common + generic child policy + optional exact worker/reviewer/scout overlay + configured skills for the native name.
-- Unknown/custom child: common + generic child policy + only explicitly configured exact-name skills; never a fallback worker overlay.
-- BB-only worker: common + generic child policy, no named skills or legacy role overlay.
+Initialization eagerly reads config and all effective configured files, including unused agent mappings. Hooks and session-start/tree events never reread them. Edits or deletions even before the first prompt are invisible until **`/reload` recreates the runtime**. Each child independently snapshots inputs at its own creation; the required registry transports only the extension entry point, not parent source content. A new child can see newer files while already loaded sessions keep their snapshots.
 
-Full skill bodies appear in config array order **after** existing policy layers, in the existing **single owned policy SYSTEM block**. Only initial YAML frontmatter with exact `---` opening/closing lines is stripped, optionally preceded by a UTF-8 BOM; LF and CRLF are supported. No YAML semantic parsing is performed. Missing or malformed delimiter lines (including delimiter-line trailing whitespace) are errors; later Markdown `---` lines stay intact. Frontmatter-only/whitespace-only bodies are omitted. Other instruction-body text and links remain verbatim; files are neither summarized nor converted into a skill catalog hint.
+Each `before_agent_start` returns `{ systemPrompt }` only, preserving the original prompt and never injecting user/custom/tool-result messages. Pi starts each run's hook chain from base prompt options, so cached composition is reapplied every run:
 
-Each nonblank body is prefixed with its resolved source path and reference directory, for example:
+- Main: **common → main**.
+- Named native child: **common → child → agents[exact name]**.
+- Unnamed/unconfigured native child: **common → child**, no worker fallback.
+- BB-only worker: **common → child**, never native-name inputs inferred from an inherited tag.
+
+Sources follow layer order, then config array order. **Deduplication is first occurrence by normalized absolute path within the assembled lists.** For example common `[b, a, b]`, child `[c, a]`, and worker `[a, d, c]` output `b, a, c, d`; main `[d, a]` instead outputs `b, a, d`. Duplicate contents at distinct paths are distinct sources.
+
+Only initial YAML frontmatter with exact `---` opening/closing lines is stripped, optionally preceded by a UTF-8 BOM. LF and CRLF are supported. No YAML semantic parsing is performed. Unterminated or malformed delimiter lines (including trailing delimiter whitespace) warn and skip that source; later Markdown `---` stays intact. Frontmatter-only and whitespace-only bodies validly omit without warnings. Instruction-body text and links stay verbatim; files are not summarized or converted into catalog hints.
+
+Each nonblank body has a source/reference-directory header:
 
 ```text
-## Injected skill: /absolute/path/to/SKILL.md
-Resolve this skill's relative file references against /absolute/path/to.
+## Policy source: /absolute/path/to/SKILL.md
+Resolve this source's relative file references against /absolute/path/to.
 
 <full instruction body>
 ```
 
-This is model guidance for relative references, not link rewriting, automatic file reads, invocation gating, or guaranteed file access. Frontmatter invocation flags do not gate an explicitly configured full-body injection.
+This is model guidance for relative references, not rewriting, recursive reads, guaranteed file access, or invocation gating. Explicit full-body skill assignment deliberately ignores frontmatter invocation flags, including `user-invoked`.
 
-Nonblank policy Markdown stays verbatim; empty layers are skipped. Nonempty composition uses one `agent-policy:v1:start/end` block. Replacement removes complete owned policy blocks, including inherited main/old-role/old-skill blocks, even when the new composition is empty. Empty composition adds no policy block or child marker. Unmarked prose, complete native worker/reviewer personas, and unrelated instructions remain intact. Missing/unreadable policy files and unterminated owned blocks remain errors; another profile/role is never substituted. All six policy files, including unused overlays, must be readable at initialization. Empty files are valid.
+Nonempty composition uses one owned `agent-policy:v1:start/end` SYSTEM block. Replacement removes complete stale owned blocks, even when new composition is empty. Empty composition adds no block or child marker. Unmarked prose and full native personas remain intact. Unterminated owned blocks remain prompt-composition errors, not file-input warnings.
+
+### Warning-only file inputs and migration
+
+File/config input delivery is **fail-open, not security enforcement**. Missing/unreadable whole config, malformed JSON or a non-object config warn and produce empty supplemental composition; there is no hardcoded main fallback. Unknown keys, invalid field types, invalid mapping/path entries, missing/unreadable sources and malformed initial frontmatter warn with config/mapping/source context and skip only affected inputs. Valid siblings continue loading. Blank bodies are valid quiet omissions.
+
+The snapshot exposes diagnostics. At `session_start`, or the first `before_agent_start` if no start event occurred, report each diagnostic once per runtime with `ctx.ui.notify(message, "warning")` when UI exists, otherwise stderr. Session switches/resume/tree events neither reload inputs nor repeat warnings. `/reload` creates a fresh snapshot and reports its current diagnostics. BB fallback warnings remain independently included in the same once-per-runtime reporting. Fix input paths and reload rather than treating successful child startup as proof every instruction was delivered.
+
+Migration from the previous layout:
+
+1. Replace `injections.json` with `config.json`, carrying old `agents` mappings and any old `main` sources into their desired lists.
+2. Include `./prompts/main.md` in `main` if the orchestrator guidance is wanted. The shipped config does so explicitly, not via fallback.
+3. If you populated the old common, child or role files locally, move/reference those Markdown files explicitly through `common`, `child`, and `agents.<name>`.
+
+The shipped `injections.json` was removed. `ORCHESTRATOR_APPEND_SYSTEM.md` moved to `prompts/main.md`; five empty `COMMON_APPEND_SYSTEM.md`, `SUBAGENT_APPEND_SYSTEM.md`, and `roles/{worker,reviewer,scout}.md` placeholders were deleted. There is no automatic compatibility loading of these legacy paths, no magic roles directory, and no second loader/config. Config-only additions are sufficient for new sources.
 
 ## Classification, canonical role routing, and ordering
 
@@ -74,7 +105,7 @@ Nonblank policy Markdown stays verbatim; empty layers are skipped. Nonempty comp
 1. Capture `PI_SUBAGENT_CHILD === '1'` during extension initialization, not repeatedly from mutable shared-process env. This runner signal is supplementary, not the foreground route.
 2. Recognize strict generated launch metadata **before the final boundary**: an exact `<active_agent name="..."/>` at the start of the replace-mode base (ignoring leading whitespace), followed by exactly a blank-line separator and a nonblank body; or the same header at the start of the SDK `\n\n<addendum>\n` content with its closing `\n</addendum>`. No loose anywhere-tag scan is used for this new route. Quoted/misplaced tags, single-newline root tags, extra attributes, wrong quoting, empty names, and malformed XML escapes cannot select it. The launcher's four XML escapes are decoded to recover the exact name, with no fuzzy aliases or casing changes.
 3. Retain older leading ordinary-child/explicit-fanout prefixes and complete appended ordinary/fanout boundaries (with optional exact structured-output suffix and launch metadata). Complete trailing policy/Chadineer-owned blocks are ignored for old-boundary classification only; normal cleanup/error behavior remains. Older prefix/env children retain first-standalone-tag name routing, only **after native classification**. No user/history scanning occurs.
-4. Select the native name independently from the optional worker/reviewer/scout legacy overlay. Generated-layout metadata wins over quoted preamble/role tags. BB-only classification never admits a name or overlay.
+4. Select the exact native name independently of source configuration. Generated-layout metadata wins over quoted preamble/role tags. BB-only classification never admits a native name.
 
 The installed `child-launch.js` uses resolved `childAgentName` for the escaped tag. Upstream resolves builtin aliases (developer/coder/implementer/develop → worker, advisor → oracle); this extension does not add alias tables, model classification, or a taxonomy. A native launch without generated metadata needs one of the retained env/prefix/old-boundary signals; waiting for a later boundary is not possible in a foreground ordinary hook.
 
@@ -90,7 +121,7 @@ The producer companion is `~/Projects/bb-plugins/plugins/pi-agent-policy`. It ow
 
 The own tuple is validated and captured once in the extension factory, before asynchronous peer loading. Environment changes after factory initialization have no effect until a new runtime is created by the BB provider's rebuild/reload boundary (or Pi `/reload`). Session events alone do not recapture it; this extension never mutates env or sets `PI_SUBAGENT_CHILD`.
 
-Native child env/prefix/launch-layout routing takes precedence, including native canonical role overlays, regardless of the BB signal. A BB-only worker gets common + generic child policy, **never** worker/reviewer/scout overlays inferred from arbitrary or inherited `<active_agent>` tags. There is no BB role contract, heuristic prompt matching, user/history scan, tool/permission change, or BB registry identity. UUID registration remains the native Pi session UUID. With empty common/generic child policy, recognized BB-only workers receive no policy block and stale owned main/role/skill blocks are still removed, regardless of configured native-name skills.
+Native child env/prefix/launch-layout routing takes precedence, including exact native-name source selection, regardless of the BB signal. A BB-only worker gets common + generic child policy, **never** worker/reviewer/scout named sources inferred from arbitrary or inherited `<active_agent>` tags. There is no BB role contract, heuristic prompt matching, user/history scan, tool/permission change, or BB registry identity. UUID registration remains the native Pi session UUID. With empty common/child composition, recognized BB-only workers receive no policy block and stale owned main/role/skill blocks are still removed, regardless of configured native-name skills.
 
 These are untrusted policy routing signals, not authorization. Tests exercise the consumer and SDK initialization boundary offline, not BB's experimental hooks or a live workflow. No live deployment or BB end-to-end integration is claimed.
 
@@ -106,9 +137,9 @@ Required paths survive native foreground's disabled ambient discovery and explic
 
 ## Chadineer compatibility and errors
 
-Chadineer stays optional, opt-in, off by default, with existing commands/state/root behavior unchanged. With empty effective child composition, agent-policy neither strips Chadineer blocks nor emits a skip marker, so Chadineer operates independently. With nonempty child composition (including skill-only children), the existing interoperability remains: agent-policy strips only Chadineer-owned blocks if Chadineer runs first; Chadineer skips on `agent-policy:v1:subagent` if policy runs first. Unmarked legacy/role instructions are retained. Reload both runtimes when updating hooks; this does not retroactively clean history.
+Chadineer stays optional, opt-in, off by default, with existing commands/state/root behavior unchanged. With empty effective child composition, agent-policy neither strips Chadineer blocks nor emits a new skip marker, so Chadineer operates independently. If a legacy-first Chadineer hook observes an inherited stale child marker, it can skip that run before agent-policy removes the stale block; the existing order-sensitive behavior is unchanged. With nonempty child composition (including skill-only children), the existing interoperability remains: agent-policy strips only Chadineer-owned blocks if Chadineer runs first; Chadineer skips on `agent-policy:v1:subagent` if policy runs first. Unmarked legacy/role instructions are retained. Reload both runtimes when updating hooks; this does not retroactively clean history.
 
-Policy/config/skill-file and frontmatter failures occur at extension initialization, before a session context/UI exists, and throw an explicit `agent-policy` error with config/mapping/source context and the underlying cause into Pi's extension-load diagnostics. They no longer wait for a selected profile's first run. Registration and prompt-composition failures still notify the UI, log headlessly, and throw to Pi's extension error channel. Required startup/load failures can reject native child creation under the installed package contract. Pi catches before-run hook errors and may continue without injection: this is **not fail-closed enforcement**. Check errors before claiming propagation.
+File/config/frontmatter failures are captured as snapshot warnings, not extension-load exceptions, so missing source files do not reject required native child creation. Required-extension API resolution, registry conflicts, capability admission and owned-block composition retain their existing error handling; runtime registration/composition errors still notify the UI, log headlessly and throw to Pi's extension error channel. Pi can catch before-run hook errors and continue without injection. Neither successful registration nor these instructions imply fail-closed enforcement.
 
 ## Validation and coverage limits
 
@@ -117,22 +148,20 @@ node --test pi/extensions/agent-policy/tests/*.test.ts
 node --test pi/extensions/chadineer/tests/*.test.ts
 ```
 
-Unit tests cover the BB marker/identity matrix, bounded/redacted malformed signals, native precedence, generic-only BB role behavior, neutral/root routing, once-per-runtime UI/headless warnings, and stale empty-child cleanup, as well as profile/role/fallback routing, metadata lookalikes, transitions, role-text retention, eager policy/config/all-skill snapshots, no per-run reads, pre-first-prompt edits, missing/unreadable-file load errors, blank-file omission, exact orchestrator SYSTEM text, stale-block cleanup, both Chadineer hook orders with empty/populated policies, UUID/path independence, switches/reload/shutdown, conflicts, and peer resolution/errors.
+Unit tests cover config aliases and canonical collisions, optional fields, invalid JSON/types/keys/path entries, missing/unreadable config and sources (including unused mappings), valid sibling preservation, frontmatter, deployed-config smoke reads, byte-exact moved main body, one read per unique source, layer order and first-occurrence deduplication. Runtime coverage retains profile/name/fallback routing, generated metadata lookalikes and older boundary/env routes, transitions, full-role text retention, eager snapshots before first prompt/deletion, no per-hook reads, missing-source empty-child behavior, stale cleanup, both Chadineer orders, UUID/path independence, lifecycle disposal and registry conflicts, plus peer errors. BB coverage includes tuple/identity validation, native precedence, generic-only composition, neutral routing and once-per-runtime UI/headless diagnostics. File warnings report before the first prompt (or on the first hook when session_start is absent), do not repeat across session events, and refresh on runtime recreation.
 
 Installed tests use real SDK resource loaders, sessions/managers, extension runner, public registry, native launch planner, child factory, prompt-runtime/fanout hooks, builtin discovery/alias resolution, and the **actual foreground executor** UUID lookup. Private installed registry reads are observation only in tests. Host aliases bridge installed peers without installing/mutating packages. Auth/catalog paths are temporary, refresh is disabled, and a non-requested model fixture is supplied. No model/network requests, paid work, detached jobs, or publication occur.
 
 A BB-specific real SDK loader/session test sets the tuple before factory loading, mutates it before the first prompt, verifies frozen worker/main/native classification, and recreates runtimes with actual `session.reload()` for neutral reset and worker↔main transitions. It checks SYSTEM-only output, unchanged tools and UUID registry, no role inference, stale-block replacement/idempotence, malformed fallback, and ignored user/history lookalikes. No provider or model request occurs.
 
-A separate real SDK loader/session test edits temporary policy, config, skills, and native APPEND files after initialization but before the first prompt, verifies cached main and newly selected names, invokes actual `session.reload()`, and checks refreshed mappings/bodies, UUID disposal/re-registration, and load diagnostics for removed skill and overlay files. No interactive command or model request is needed.
+A separate real SDK loader/session test edits temporary policy, config, skills, and native APPEND files after initialization but before the first prompt, verifies cached main and newly selected names, invokes actual `session.reload()`, and checks refreshed mappings/bodies, UUID disposal/re-registration, and warning-only continuation after removed skill and named-source files. Required registrations survive; valid sibling bodies remain. No interactive command or model request is needed.
 
-The native integration test verifies actual 0.77.0 hook ordering and complete boundary constants, plus absence of orchestrator policy in children with absent config. A temporary populated-policy/config matrix exercises **160 real native child creations**: foreground and in-process runner hosting × ordinary/fanout × replace/append × structured/unstructured × worker/reviewer/scout/security-reviewer/unknown × BB absent/positive. The full installed worker/reviewer persona bodies remain intact; only the correct ordered skills and exact overlays appear; tools and UUID registrations stay unchanged, with the native boundary last. A separate two-child check proves independent child snapshots (editing a referenced file after first creation but before its first prompt is invisible there and visible to the next child). Unit negatives cover root-only/misplaced/quoted/malformed tags and incomplete append layout, while exact generated root SYSTEM lookalikes intentionally select child and are tested/documented rather than called authentication.
+The native integration test verifies actual 0.77.0 hook ordering and complete boundary constants, plus absence of orchestrator policy in children with main-only config. A temporary populated-policy/config matrix exercises **160 real native child creations**: foreground and in-process runner hosting × ordinary/fanout × replace/append × structured/unstructured × worker/reviewer/scout/security-reviewer/unknown × BB absent/positive. The full installed worker/reviewer persona bodies remain intact; only the correct ordered sources and exact-name mappings appear; tools and UUID registrations stay unchanged, with the native boundary last. Every matrix child also warns at actual required startup for a missing unused mapping without failing extension load. A separate required planner/factory regression removes the worker’s selected skill source and verifies warning-only startup, valid common/child/named siblings, full worker persona, unchanged read tools, UUID registration and native final boundary. A separate two-child check proves independent child config and source snapshots (editing a referenced file and adding a config mapping after first creation but before its first prompt is invisible there and visible to the next child). Unit negatives cover root-only/misplaced/quoted/malformed tags and incomplete append layout, while exact generated root SYSTEM lookalikes intentionally select child and are tested/documented rather than called authentication.
 
-Skill-loader/runtime tests cover relative/absolute/home paths, ordered full bodies and reference headers, LF/CRLF/BOM frontmatter, malformed delimiters, blank bodies, strict config fields/arrays, prototype keys, missing config versus malformed config/missing configured files, unused eager mappings, pre-first-prompt snapshots and no per-hook reads, exact arbitrary names, BB generic-only/native precedence, stale skill/role transitions, and both Chadineer orders including skill-only children.
-
-The executor test deliberately stops at an injected create seam, records its explicit required snapshot/canonical tag with `extensions: []`, and returns a synthetic error before model resolution. It covers file-backed and in-memory parents. A synthetic stored transcript exercises the installed resolver's real JSONL fork; its captured launch is then opened through the real SDK child factory and checked at the prompt boundary. Separate native-factory checks cover no policy markers in empty-config children, retained builtin bodies, unknown/unsafe names, builtin aliases, replace and builtin delegate append modes, and independent APPEND discovery. Those role fixtures use `read` only instead of all builtin tool/provider prerequisites; production definitions are untouched. The captured fork swaps the executor fixture's provider boundary for the parent's real empty provider registry before SDK creation. Planner/factory checks simulate background runner hosting in-process (with both ambient loading and explicit empty extensions), nested inherited config, explicit fanout, inherited parent prompt transitions, and serialized recovery requirements. They do **not** execute the full detached/background executor, nested tasks, restarted jobs, or model requests.
+The executor test deliberately stops at an injected create seam, records its explicit required snapshot/canonical tag with `extensions: []`, and returns a synthetic error before model resolution. It covers file-backed and in-memory parents. A synthetic stored transcript exercises the installed resolver's real JSONL fork; its captured launch is then opened through the real SDK child factory and checked at the prompt boundary. Separate native-factory checks cover no policy markers in main-only-config children, retained builtin bodies, unknown/unsafe names, builtin aliases, replace and builtin delegate append modes, and independent APPEND discovery. Those role fixtures use `read` only instead of all builtin tool/provider prerequisites; production definitions are untouched. The captured fork swaps the executor fixture's provider boundary for the parent's real empty provider registry before SDK creation. Planner/factory checks simulate background runner hosting in-process (with both ambient loading and explicit empty extensions), nested inherited config, explicit fanout, inherited parent prompt transitions, and serialized recovery requirements. They do **not** execute the full detached/background executor, nested tasks, restarted jobs, or model requests.
 
 Test paths default to the inspected current local installations; override with `PI_POLICY_TEST_SDK` and `PI_POLICY_TEST_SUBAGENTS`. Absent fixtures skip installed coverage; present fixtures pin the tested pair. Check skipped counts. Interactive `/reload` command dispatch, full resume/replacement flows, detached OS processes, remote/external hosts, other versions, enforced role permissions, and model compliance remain untested. No blanket propagation/security guarantee follows from these checks.
 
-In this isolated worktree, the adjacent Chadineer command runs **10 tests: 9 pass, 1 fails** because its existing static-prompt test reads absent `pi/APPEND_SYSTEM.md` (the main draft is now extension-local). That adjacent fixture is outside this change’s write scope and is not suppressed. Agent-policy tests pass **58/58, zero skips** on the tested pair; installed coverage is included in those counts.
+In this isolated worktree, the adjacent Chadineer command runs **10 tests: 9 pass, 1 fails** because its existing static-prompt test reads `pi/APPEND_SYSTEM.md`, which is already absent at this branch's base checkout; that fixture predates and is outside this change's write scope and is not suppressed. Agent-policy tests pass **64/64, zero skips** on the tested pair; installed coverage is included in those counts.
 
 See [workflow and source rationale](workflow.md) for the orchestrator guidance.

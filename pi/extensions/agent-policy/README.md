@@ -1,11 +1,15 @@
 # Agent policy
 
-Pi extension appending policy and configured full skill bodies as SYSTEM text. Main keeps `ORCHESTRATOR_APPEND_SYSTEM.md`; common, child, and worker/reviewer/scout policy files remain empty editable placeholders. Native agent personas and tools are retained.
+Pi extension appending explicitly configured Markdown policy and full skill bodies as SYSTEM text. **One extension-local `config.json`, one loader**: `common` (alias `all`) applies everywhere, `child` to all subagents, `main` (alias `orchestrator`) to root sessions, and `agents.<exact-native-name>` to that native child. All fields are optional. Native personas, prompt modes, tools and capability ceilings are retained, not replaced.
 
-Optional local `injections.json` maps ordered skill-file paths to main or exact native agent names. The initial config adds the existing Chadineer skill to worker/reviewer only; main is empty. Config, all six policy files, and every referenced skill are snapshotted at extension startup; edit them, then `/reload`. Missing config preserves legacy composition; invalid config or unreadable inputs produce visible initialization errors.
+The initial config has empty common/child lists, `main: ["./prompts/main.md"]` (the unchanged orchestrator draft), and the existing `~/Projects/skills/skills/chadineer/SKILL.md` for worker/reviewer. Ordinary `.md` and `SKILL.md` sources use the same ordered full-body loader. Add sources through config, not magic role files. Explicit skill assignment ignores frontmatter invocation gating; the source skill is not edited.
+
+Config and every unique configured source are snapshotted at extension startup. Edit them, then `/reload`; each new child takes its own snapshot. Missing/invalid config or sources **warn and skip only affected inputs**, preserving valid siblings. Missing whole config gives empty supplemental composition, not a hardcoded main fallback. Warnings reach UI or headless stderr once per runtime at session start (or before the first run if no start event occurred). This is **fail-open instruction delivery, not security enforcement**. Required-extension API conflicts and capability denials remain errors.
+
+Migration: `injections.json` was removed, not retained as a second mechanism. The main draft moved byte-for-byte from `ORCHESTRATOR_APPEND_SYSTEM.md` to `prompts/main.md`; five empty common/child/role placeholders were deleted. Neither legacy files nor legacy config auto-load. See [configuration and migration](docs/design.md#policy-and-skill-configuration).
 
 Try with `pi -e ./pi/extensions/agent-policy/index.ts`. Requires Pi and a compatible `pi-subagents` public required-child-extension API (tested offline: Pi 1.1.0 / pi-subagents 0.77.0). No auto-install or settings changes. Independent instruction sources, including global/project `APPEND_SYSTEM.md`, remain intact.
 
 Consumes the BB companion's versioned, thread-matched policy tuple for generic child routing only; no name inference, tool changes, or permissions. Native launch-layout tags are routing metadata, not authentication, with an explicitly accepted exact root-lookalike ambiguity.
 
-See [configuration, composition, tests and limitations](docs/design.md) and [workflow](docs/workflow.md). Behavioral guidance, not security enforcement.
+See [composition, warnings, tests and limitations](docs/design.md) and [workflow](docs/workflow.md).

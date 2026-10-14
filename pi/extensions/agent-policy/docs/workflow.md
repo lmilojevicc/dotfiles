@@ -1,6 +1,6 @@
 # Workflow and source rationale
 
-This describes the user-authored `ORCHESTRATOR_APPEND_SYSTEM.md`, applied only to main/orchestrator sessions in the current deployment. Common, child, and role policy files are empty; native child instructions remain independent. Filling those placeholders re-enables the corresponding additions; optional configured skill bodies are appended independently (see [composition](design.md#policy-layers-and-configured-skills)).
+This describes the user-authored `prompts/main.md`, moved unchanged from `ORCHESTRATOR_APPEND_SYSTEM.md` and explicitly listed in `config.json` for main/orchestrator sessions. Common/child source lists start empty; worker/reviewer receive the existing configured Chadineer skill without replacing native child instructions. Add ordinary policy or skill sources through the same config manifest, not role-file magic (see [composition](design.md#policy-and-skill-configuration)). Missing inputs warn and skip rather than preventing startup: fail-open instruction delivery is not security enforcement.
 
 ## Direct versus delegated work
 

@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import chadineer, { CHADINEER_PROMPT, CHADINEER_STATE_ENTRY } from "../../chadineer/index.ts";
-import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectAgentName, selectProfile, selectRole } from "../child-profile.ts";
+import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectAgentName, selectProfile } from "../child-profile.ts";
 import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 
@@ -13,18 +13,21 @@ type Handler = (...args: any[]) => any;
 function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "agent-policy-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
-	writeFileSync(join(directory, "COMMON_APPEND_SYSTEM.md"), "COMMON draft");
-	mkdirSync(join(directory, "roles"));
-	for (const role of ["worker", "reviewer", "scout"]) writeFileSync(join(directory, "roles", `${role}.md`), `${role} overlay`);
-	writeFileSync(join(directory, "ORCHESTRATOR_APPEND_SYSTEM.md"), "MAIN draft");
-	writeFileSync(join(directory, "SUBAGENT_APPEND_SYSTEM.md"), "CHILD draft");
+	writeFileSync(join(directory, "common.md"), "COMMON draft");
+
+	for (const role of ["worker", "reviewer", "scout"]) writeFileSync(join(directory, `${role}.md`), `${role} overlay`);
+	writeFileSync(join(directory, "main.md"), "MAIN draft");
+	writeFileSync(join(directory, "child.md"), "CHILD draft");
+	const initialConfig = { common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } };
 	if (deployed) {
-		for (const file of ["ORCHESTRATOR_APPEND_SYSTEM.md", "COMMON_APPEND_SYSTEM.md", "SUBAGENT_APPEND_SYSTEM.md", "roles/worker.md", "roles/reviewer.md", "roles/scout.md"]) {
-			writeFileSync(join(directory, file), readFileSync(new URL(`../${file}`, import.meta.url)));
-		}
+		for (const file of ["common.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) writeFileSync(join(directory, file), "");
+		writeFileSync(join(directory, "main.md"), readFileSync(new URL("../prompts/main.md", import.meta.url)));
+		initialConfig.agents = { worker: [], reviewer: [], scout: [] };
 	}
+	writeFileSync(join(directory, "config.json"), JSON.stringify(initialConfig));
 	const handlers = new Map<string, Handler[]>();
 	const notices: string[] = [];
+	const noticeTypes: string[] = [];
 	const registrations: any[] = [];
 	let disposed = 0;
 	let sessionFile: string | undefined = "/sessions/parent.jsonl";
@@ -35,7 +38,7 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	};
 	const ctx = {
 		hasUI: true,
-		ui: { notify(message: string) { notices.push(message); }, setStatus() {} },
+		ui: { notify(message: string, type: string) { assert.ok(type === "warning" || type === "error"); notices.push(message); noticeTypes.push(type); }, setStatus() {} },
 		sessionManager: {
 			getSessionFile: () => sessionFile, getSessionId: () => sessionId,
 			getBranch: () => [{ type: "custom", customType: CHADINEER_STATE_ENTRY, data: { enabled: true } }],
@@ -53,7 +56,12 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	install();
 	function emit(event: string, input: any = {}) { for (const fn of handlers.get(event) ?? []) fn(input, ctx); }
 	return {
-		directory, registrations, notices, get disposed() { return disposed; }, emit,
+		directory, registrations, notices, noticeTypes,
+		expected(prompt: string, profile: "main" | "subagent", bodies: string) {
+			const files: Record<string, string> = { "COMMON draft": "common.md", "MAIN draft": "main.md", "CHILD draft": "child.md", "worker overlay": "worker.md", "reviewer overlay": "reviewer.md", "scout overlay": "scout.md" };
+			const text = bodies.split("\n\n").map((body) => `## Policy source: ${join(directory, files[body])}\nResolve this source's relative file references against ${directory}.\n\n${body}`).join("\n\n");
+			return appendPolicy(prompt, profile, text);
+		}, get disposed() { return disposed; }, emit,
 		reload() {
 			emit("session_shutdown", { reason: "reload" });
 			handlers.clear();
@@ -89,8 +97,8 @@ test("root reapplies its initialization snapshot to each base prompt until runti
 	assert.match(first.systemPrompt, /COMMON draft/);
 	assert.doesNotMatch(first.systemPrompt, /CHILD draft/);
 	assert.ok(first.systemPrompt.indexOf("COMMON draft") < first.systemPrompt.indexOf("MAIN draft"));
-	writeFileSync(join(runtime.directory, "ORCHESTRATOR_APPEND_SYSTEM.md"), "MAIN edited");
-	writeFileSync(join(runtime.directory, "COMMON_APPEND_SYSTEM.md"), "COMMON edited");
+	writeFileSync(join(runtime.directory, "main.md"), "MAIN edited");
+	writeFileSync(join(runtime.directory, "common.md"), "COMMON edited");
 	assert.equal(runtime.before().systemPrompt, first.systemPrompt);
 	assert.equal(runtime.before(first.systemPrompt).systemPrompt, first.systemPrompt);
 	assert.equal(runtime.registrations.length, 1);
@@ -118,7 +126,7 @@ for (const [name, prompt, backgroundChild] of [
 		assert.match(result, /CHILD draft/);
 		assert.ok(result.includes(CHILD_POLICY_MARKER));
 		assert.doesNotMatch(result, /MAIN draft/);
-		writeFileSync(join(runtime.directory, "SUBAGENT_APPEND_SYSTEM.md"), "CHILD edited");
+		writeFileSync(join(runtime.directory, "child.md"), "CHILD edited");
 		assert.equal(runtime.before(result).systemPrompt, result);
 		runtime.reload();
 		assert.match(runtime.before(result).systemPrompt, /CHILD edited/);
@@ -159,9 +167,9 @@ test("multiple owned policy/legacy blocks are removed, never other sections", ()
 
 test("whitespace-only main file is omitted from the initialization snapshot", (t) => {
 	const runtime = harness(t, { configure(directory) {
-		writeFileSync(join(directory, "ORCHESTRATOR_APPEND_SYSTEM.md"), "  \n");
+		writeFileSync(join(directory, "main.md"), "  \n");
 	} });
-	assert.equal(runtime.before().systemPrompt, appendPolicy("root role", "main", "COMMON draft"));
+	assert.equal(runtime.before().systemPrompt, runtime.expected("root role", "main", "COMMON draft"));
 });
 
 test("UUID identity for file-backed and in-memory sessions, session events, and shutdown dispose only owned registration", (t) => {
@@ -199,64 +207,49 @@ test("registry conflicts surface, never overwrite or dispose another owner", (t)
 	assert.equal(runtime.disposed, 0);
 	assert.equal(calls, 2);
 	assert.equal(runtime.notices.length, 2);
+	assert.deepEqual(runtime.noticeTypes, ["error", "error"]);
 });
 
-test("deployed orchestrator-only policy preserves exact SYSTEM text and empty child configuration", (t) => {
+test("main body and manifest-only additions preserve text; empty children and missing skill-only children keep Chadineer independent", (t) => {
 	const runtime = harness(t, { deployed: true });
-	const main = readFileSync(new URL("../ORCHESTRATOR_APPEND_SYSTEM.md", import.meta.url), "utf8");
+	const main = readFileSync(new URL("../prompts/main.md", import.meta.url), "utf8");
 	assert.ok(main.trim());
 	assert.equal(existsSync(new URL("../MAIN_APPEND_SYSTEM.md", import.meta.url)), false);
 	const root = runtime.before().systemPrompt;
-	assert.equal(root, `root role\n\n${POLICY_START}\n<!-- agent-policy:v1:main -->\n${main}\n${POLICY_END}`);
-	for (const file of ["COMMON_APPEND_SYSTEM.md", "SUBAGENT_APPEND_SYSTEM.md", "roles/worker.md", "roles/reviewer.md", "roles/scout.md"]) {
-		assert.equal(readFileSync(join(runtime.directory, file), "utf8"), "", file);
-	}
-	for (const backgroundChild of [false, true]) {
-		const child = harness(t, { deployed: true, backgroundChild });
-		for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
-			for (const role of ["worker", "reviewer", "scout", "custom"]) {
-				const prompt = `${prefix}\n<active_agent name="${role}"/>\nexisting role body  \n`;
-				assert.equal(child.before(prompt).systemPrompt, prompt);
-				const fork = child.before(`${prompt}\n${root}`).systemPrompt;
-				assert.equal(fork, `${prompt}\nroot role`);
-				assert.equal(child.before(fork).systemPrompt, fork);
-			}
-		}
-	}
-	for (const legacyFirst of [true, false]) {
-		const child = harness(t, { deployed: true, legacy: true, legacyFirst });
-		child.emit("session_start");
-		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nrole`;
-		assert.equal(child.before(prompt).systemPrompt, `${prompt}\n\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`);
-		const inherited = `${prompt}\n${root}\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`;
-		assert.equal(appendPolicy(inherited, "subagent", " \n"), `${prompt}\nroot role\n\n\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`);
-	}
+	assert.equal(root, appendPolicy("root role", "main", `## Policy source: ${join(runtime.directory, "main.md")}\nResolve this source's relative file references against ${runtime.directory}.\n\n${main}`));
 	const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nrole`;
-	writeFileSync(join(runtime.directory, "roles/worker.md"), "future worker overlay\n");
 	assert.equal(runtime.before(prompt).systemPrompt, prompt);
+	writeFileSync(join(runtime.directory, "worker.md"), "not automatically loaded");
 	runtime.reload();
-	const active = runtime.before(prompt).systemPrompt;
-	assert.ok(active.includes("future worker overlay\n"));
+	assert.equal(runtime.before(prompt).systemPrompt, prompt);
+	writeFileSync(join(runtime.directory, "config.json"), JSON.stringify({ agents: { worker: ["worker.md"] } }));
+	runtime.reload();
+	const active = runtime.before(`${prompt}\n${root}`).systemPrompt;
+	assert.match(active, /not automatically loaded/);
+	assert.doesNotMatch(active, /## Orchestration/);
 	assert.ok(active.includes(CHILD_POLICY_MARKER));
-	for (const blank of ["", " \t\n"]) {
-		writeFileSync(join(runtime.directory, "roles/worker.md"), blank);
-		writeFileSync(join(runtime.directory, "COMMON_APPEND_SYSTEM.md"), blank);
-		writeFileSync(join(runtime.directory, "SUBAGENT_APPEND_SYSTEM.md"), blank);
-		runtime.reload();
-		assert.equal(runtime.before(active).systemPrompt, prompt);
-		assert.equal(runtime.before(prompt).systemPrompt, prompt);
-		writeFileSync(join(runtime.directory, "ORCHESTRATOR_APPEND_SYSTEM.md"), blank);
-		runtime.reload();
-		assert.equal(runtime.before(root).systemPrompt, "root role");
+	for (const legacyFirst of [true, false]) {
+		const child = harness(t, { deployed: true, legacy: true, legacyFirst, configure(directory) {
+			writeFileSync(join(directory, "config.json"), JSON.stringify({ agents: { worker: ["missing.md"] } }));
+		} });
+		child.emit("session_start");
+		assert.equal(child.notices.length, 1);
+		const expected = `${prompt}\n\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`;
+		assert.equal(child.before(prompt).systemPrompt, expected);
+		const inherited = appendPolicy(prompt, "subagent", "stale skill");
+		assert.equal(child.before(inherited).systemPrompt, legacyFirst ? prompt : expected, "legacy hook can observe and skip an inherited child marker before cleanup");
 	}
+	writeFileSync(join(runtime.directory, "worker.md"), " \n");
+	runtime.reload();
+	assert.equal(runtime.before(active).systemPrompt, `${prompt}\nroot role`);
 	assert.throws(() => appendPolicy(POLICY_START, "subagent", ""), /unterminated/);
 });
 
 for (const role of ["worker", "reviewer", "scout"] as const) {
-	test(`${role} composes common + generic child + exact overlay without changing builtin role text`, (t) => {
+	test(`${role} composes common + generic child + exact configured source without changing builtin role text`, (t) => {
 		const runtime = harness(t);
 		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>\nexisting ${role} duties`;
-		assert.equal(selectRole(prompt, "subagent"), role);
+		assert.equal(selectAgentName(prompt, "subagent"), role);
 		const output = runtime.before(prompt).systemPrompt;
 		assert.ok(output.startsWith(prompt));
 		assert.match(output, /COMMON draft/);
@@ -265,7 +258,7 @@ for (const role of ["worker", "reviewer", "scout"] as const) {
 		assert.ok(output.indexOf("COMMON draft") < output.indexOf("CHILD draft"));
 		assert.ok(output.indexOf("CHILD draft") < output.indexOf(`${role} overlay`));
 		assert.equal(runtime.before(output).systemPrompt, output);
-		writeFileSync(join(runtime.directory, "roles", `${role}.md`), `${role} edited`);
+		writeFileSync(join(runtime.directory, `${role}.md`), `${role} edited`);
 		assert.equal(runtime.before(output).systemPrompt, output);
 		runtime.reload();
 		assert.ok(runtime.before(output).systemPrompt.includes(`${role} edited`));
@@ -275,16 +268,16 @@ for (const role of ["worker", "reviewer", "scout"] as const) {
 test("root metadata cannot classify children; unknown/unsafe names and absent tags stay generic", (t) => {
 	const runtime = harness(t);
 	assert.match(runtime.before('<active_agent name="worker"/>').systemPrompt, /MAIN draft/);
-	assert.equal(selectRole('<active_agent name="worker"/>', "main"), undefined);
+	assert.equal(selectAgentName('<active_agent name="worker"/>', "main"), undefined);
 	for (const name of ["custom", "researcher", "oracle", "delegate", "developer", "Worker", "pkg.worker", "../worker", "__proto__", "constructor", "worker&amp;", ""]) {
 		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${name}"/>\n<active_agent name="worker"/>\nquoted role`;
-		assert.equal(selectRole(prompt, "subagent"), undefined, name);
+		assert.equal(selectAgentName(prompt, "subagent"), name.replace(/&amp;/g, "&") || undefined, name);
 		const output = runtime.before(prompt).systemPrompt;
 		assert.match(output, /CHILD draft/);
 		assert.doesNotMatch(output, /worker overlay|reviewer overlay|scout overlay/);
 	}
 	for (const tag of ["", '<active_agent name="worker"/ malformed>', 'quoted: <active_agent name="worker"/>']) {
-		assert.equal(selectRole(`${CHILD_PREFIXES[0]}\n${tag}`, "subagent"), undefined);
+		assert.equal(selectAgentName(`${CHILD_PREFIXES[0]}\n${tag}`, "subagent"), undefined);
 	}
 });
 
@@ -304,53 +297,52 @@ test("role and main/child transitions replace one owned block and preserve unmar
 	assert.equal(main.split(POLICY_START).length - 1, 1);
 });
 
-for (const filename of ["COMMON_APPEND_SYSTEM.md", "ORCHESTRATOR_APPEND_SYSTEM.md", "SUBAGENT_APPEND_SYSTEM.md", "roles/worker.md", "roles/reviewer.md", "roles/scout.md"]) {
-	test(`missing ${filename} fails initialization even before profile selection; blanks omit only that layer`, (t) => {
-		assert.throws(() => harness(t, { configure(directory) {
-			unlinkSync(join(directory, filename));
-		} }), (error: any) => {
-			assert.match(error.message, /agent-policy:.*ENOENT/);
-			assert.ok(error.message.includes(filename));
-			assert.equal(error.cause.code, "ENOENT");
-			return true;
-		});
-		const runtime = harness(t, { configure(directory) {
-			writeFileSync(join(directory, filename), " \n");
-		} });
-		const role = filename.startsWith("roles/") ? filename.slice(6, -3) : "worker";
+for (const filename of ["common.md", "main.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) {
+	test(`missing configured ${filename} warns before prompt, preserves siblings, and blanks omit quietly`, (t) => {
+		const runtime = harness(t, { configure(directory) { unlinkSync(join(directory, filename)); } });
+		runtime.emit("session_start");
+		assert.equal(runtime.notices.length, 1);
+		assert.ok(runtime.notices[0].includes(filename));
+		assert.match(runtime.notices[0], /ENOENT/);
+		const role = filename.endsWith("er.md") || filename === "scout.md" ? filename.slice(0, -3) : "worker";
 		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>`;
-		const remaining = [filename === "COMMON_APPEND_SYSTEM.md" ? "" : "COMMON draft", filename === "SUBAGENT_APPEND_SYSTEM.md" ? "" : "CHILD draft", filename.startsWith("roles/") ? "" : `${role} overlay`].filter(Boolean).join("\n\n");
-		assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", remaining));
-		const main = [filename === "COMMON_APPEND_SYSTEM.md" ? "" : "COMMON draft", filename === "ORCHESTRATOR_APPEND_SYSTEM.md" ? "" : "MAIN draft"].filter(Boolean).join("\n\n");
-		assert.equal(runtime.before().systemPrompt, appendPolicy("root role", "main", main));
-		assert.deepEqual(runtime.notices, []);
+		const output = runtime.before(prompt).systemPrompt;
+		assert.ok(output.startsWith(prompt));
+		if (filename !== "common.md") assert.match(output, /COMMON draft/);
+		if (filename !== "child.md") assert.match(output, /CHILD draft/);
+		runtime.emit("session_start", { reason: "resume" });
+		runtime.before();
+		assert.equal(runtime.notices.length, 1);
+		const blank = harness(t, { configure(directory) { writeFileSync(join(directory, filename), " \n"); } });
+		blank.before(prompt);
+		assert.deepEqual(blank.notices, []);
 	});
 }
 
-test("unreadable policy fails initialization explicitly", (t) => {
-	assert.throws(() => harness(t, { configure(directory) {
-		const path = join(directory, "roles/scout.md");
-		unlinkSync(path);
-		mkdirSync(path);
-	} }), /agent-policy:.*EISDIR/);
+test("unreadable source warns rather than aborting runtime creation", (t) => {
+	const runtime = harness(t, { configure(directory) {
+		unlinkSync(join(directory, "scout.md")); mkdirSync(join(directory, "scout.md"));
+	} });
+	runtime.before();
+	assert.match(runtime.notices[0], /agents\["scout"\]\[0\].*EISDIR/);
+	assert.match(runtime.before().systemPrompt, /MAIN draft/);
 });
 
-test("all six files are read once at initialization, never on runs or session/tree events", (t) => {
+test("config and all unique sources are read once at initialization, never on runs or session/tree events", (t) => {
 	const originalRead = fs.readFileSync;
 	const reads = t.mock.method(fs, "readFileSync", (...args: any[]) => Reflect.apply(originalRead, fs, args));
 	syncBuiltinESMExports();
 	try {
 		const runtime = harness(t);
 		assert.equal(reads.mock.callCount(), 7);
-		// Edits before even the first prompt must not leak into any profile/role.
-		for (const call of reads.mock.calls.filter((call: any) => !String(call.arguments[0]).endsWith("injections.json"))) writeFileSync(call.arguments[0], "edited before first prompt");
+		for (const call of reads.mock.calls.filter((call: any) => !String(call.arguments[0]).endsWith("config.json"))) writeFileSync(call.arguments[0], "edited before first prompt");
 		for (const reason of ["startup", "resume", "fork", "reload"]) runtime.emit("session_start", { reason });
 		runtime.emit("session_tree");
 		assert.match(runtime.before().systemPrompt, /MAIN draft/);
 		for (const role of ["worker", "reviewer", "scout"]) {
 			const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>`;
 			const output = runtime.before(prompt).systemPrompt;
-			assert.equal(output, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+			assert.equal(output, runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
 			assert.equal(runtime.before(output).systemPrompt, output);
 		}
 		assert.equal(reads.mock.callCount(), 7);
@@ -360,11 +352,10 @@ test("all six files are read once at initialization, never on runs or session/tr
 		rmSync(runtime.directory, { recursive: true });
 		assert.match(runtime.before().systemPrompt, /edited before first prompt/);
 		assert.equal(reads.mock.callCount(), 14);
-		assert.throws(() => runtime.reload(), /agent-policy:.*ENOENT/);
-	} finally {
-		reads.mock.restore();
-		syncBuiltinESMExports();
-	}
+		runtime.reload();
+		assert.equal(runtime.before().systemPrompt, "root role");
+		assert.match(runtime.notices[0], /config.json.*ENOENT/);
+	} finally { reads.mock.restore(); syncBuiltinESMExports(); }
 });
 
 const bbTuple = { PI_AGENT_POLICY_BB_PROFILE: "workflow-worker:v1", BB_THREAD_ID: "bb-thread", PI_AGENT_POLICY_BB_THREAD_ID: "bb-thread" };
@@ -376,12 +367,12 @@ const bbStates = [
 	{ ...bbTuple, PI_AGENT_POLICY_BB_THREAD_ID: "other" },
 ];
 
-test("BB-only tuple composes generic child, never arbitrary/inherited canonical role overlays", (t) => {
+test("BB-only tuple composes generic child, never arbitrary/inherited named sources", (t) => {
 	const runtime = harness(t, { bbSignal: parseBBPolicySignal(bbTuple) });
 	for (const role of ["worker", "reviewer", "scout", "custom"]) {
 		const prompt = `<active_agent name="${role}"/>\nBB instructions\nquoted: ${CHILD_PREFIXES[0]}`;
 		const output = runtime.before(prompt);
-		assert.equal(output.systemPrompt, appendPolicy(prompt, "subagent", "COMMON draft\n\nCHILD draft"));
+		assert.equal(output.systemPrompt, runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft"));
 		assert.deepEqual(Object.keys(output.returns[0]), ["systemPrompt"]);
 		assert.equal(runtime.before(output.systemPrompt).systemPrompt, output.systemPrompt);
 	}
@@ -390,17 +381,17 @@ test("BB-only tuple composes generic child, never arbitrary/inherited canonical 
 	assert.deepEqual(runtime.registrations[0], { sessionId: "uuid-parent", extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }] });
 });
 
-test("all own marker states preserve native role overlays, while nonpositive BB roots remain main", (t) => {
+test("all own marker states preserve native named sources, while nonpositive BB roots remain main", (t) => {
 	for (const env of bbStates) {
 		const bbSignal = parseBBPolicySignal(env);
 		const root = harness(t, { bbSignal });
-		assert.equal(root.before().systemPrompt, appendPolicy("root role", bbSignal.workflowWorker ? "subagent" : "main", `COMMON draft\n\n${bbSignal.workflowWorker ? "CHILD" : "MAIN"} draft`));
+		assert.equal(root.before().systemPrompt, root.expected("root role", bbSignal.workflowWorker ? "subagent" : "main", `COMMON draft\n\n${bbSignal.workflowWorker ? "CHILD" : "MAIN"} draft`));
 		for (const backgroundChild of [true, false]) {
 			const native = harness(t, { backgroundChild, bbSignal });
 			for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
 				for (const role of ["worker", "reviewer", "scout"]) {
 					const prompt = `${prefix}\n<active_agent name="${role}"/>\nbody`;
-					assert.equal(native.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+					assert.equal(native.before(prompt).systemPrompt, native.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
 				}
 			}
 		}
@@ -446,7 +437,7 @@ test("BB worker clears complete stale main/role blocks even with deployed empty 
 test("BB env/prompt/history lookalikes alone cannot classify a root", (t) => {
 	const runtime = harness(t, { bbSignal: parseBBPolicySignal({ BB_THREAD_ID: "bb-thread" }) });
 	const prompt = `ROOT\nPI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\nPI_AGENT_POLICY_BB_THREAD_ID=bb-thread\n<active_agent name="worker"/>\nquoted: ${CHILD_PREFIXES[0]}`;
-	assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "main", "COMMON draft\n\nMAIN draft"));
+	assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"));
 });
 
 
@@ -456,7 +447,7 @@ function nativeLayout(role: string, boundary: string, append = false, structured
 	return `${base}\n\n${boundary}${structured ? `\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX}` : ""}`;
 }
 
-test("0.76.1 complete native ordinary/fanout replace/append layouts retain canonical overlays ahead of every BB signal", (t) => {
+test("0.76.1 complete native ordinary/fanout replace/append layouts retain named sources ahead of every BB signal", (t) => {
 	for (const env of bbStates) {
 		const runtime = harness(t, { bbSignal: parseBBPolicySignal(env) });
 		for (const boundary of NATIVE_CHILD_BOUNDARIES) {
@@ -467,7 +458,7 @@ test("0.76.1 complete native ordinary/fanout replace/append layouts retain canon
 						assert.equal(selectProfile(prompt, false), "subagent");
 						const overlay = ["worker", "reviewer", "scout"].includes(role) ? `\n\n${role} overlay` : "";
 						const output = runtime.before(prompt).systemPrompt;
-						assert.equal(output, appendPolicy(prompt, "subagent", `COMMON draft\n\nCHILD draft${overlay}`));
+						assert.equal(output, runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft${overlay}`));
 						assert.equal(runtime.before(output).systemPrompt, output, "complete owned tail preserves repeated native classification");
 					}
 				}
@@ -490,7 +481,7 @@ test("native routing rejects misplaced/root-only tags and malformed launch layou
 			nativeLayout("worker", boundary, true).replace("\n</addendum>", ""),
 		]) {
 			assert.equal(selectProfile(prompt, false), "main", prompt);
-			assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "main", "COMMON draft\n\nMAIN draft"));
+			assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"));
 		}
 	}
 });
@@ -524,8 +515,8 @@ test("complete appended layout routes its launch tag rather than quoted preamble
 	const prompt = nativeLayout("reviewer", NATIVE_CHILD_BOUNDARIES[0], true)
 		.replace("Pi base", 'Pi base\n<active_agent name="scout"/>\nquoted preamble')
 		.replace("existing reviewer role body", 'existing reviewer role body\n<active_agent name="worker"/>\nquoted role tag');
-	assert.equal(selectRole(prompt, "subagent"), "reviewer");
-	assert.equal(runtime.before(prompt).systemPrompt, appendPolicy(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"));
+	assert.equal(selectAgentName(prompt, "subagent"), "reviewer");
+	assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"));
 });
 
 test("0.77.0 pre-boundary launch headers route strict replace/append layouts; exact root lookalikes are deliberately ambiguous", (t) => {
@@ -554,14 +545,14 @@ test("0.77.0 pre-boundary launch headers route strict replace/append layouts; ex
 function configureSkills(directory: string) {
 	writeFileSync(join(directory, "first.md"), "---\nname: first\n---\nFIRST full body\n[reference](refs/check.md)\n");
 	writeFileSync(join(directory, "second.md"), "SECOND full body\n");
-	writeFileSync(join(directory, "injections.json"), JSON.stringify({ main: ["first.md", "second.md"], agents: JSON.parse('{"worker":["second.md"],"reviewer":["first.md"],"security-reviewer":["first.md","second.md"],"__proto__":["first.md"],"constructor":["second.md"],"special&name":["second.md"]}') }));
+	writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], child: ["child.md"], main: ["main.md", "first.md", "second.md"], agents: JSON.parse('{"worker":["worker.md","second.md"],"reviewer":["reviewer.md","first.md"],"security-reviewer":["first.md","second.md"],"__proto__":["first.md"],"constructor":["second.md"],"special&name":["second.md"]}') }));
 }
 
 test("runtime appends ordered full skills after policy layers, routes exact independent names, and replaces stale role blocks", (t) => {
 	const runtime = harness(t, { configure: configureSkills });
 	const root = runtime.before().systemPrompt;
 	assert.match(root, /COMMON draft[\s\S]*MAIN draft[\s\S]*FIRST full body[\s\S]*SECOND full body/);
-	assert.ok(root.includes(`Resolve this skill's relative file references against ${runtime.directory}.`));
+	assert.ok(root.includes(`Resolve this source's relative file references against ${runtime.directory}.`));
 	assert.doesNotMatch(root, /name: first/);
 	for (const [name, first, second, overlay] of [["worker", false, true, true], ["reviewer", true, false, true], ["security-reviewer", true, true, false], ["unknown", false, false, false], ["developer", false, false, false], ["__proto__", true, false, false], ["constructor", false, true, false], ["toString", false, false, false], ["special&amp;name", false, true, false]] as const) {
 		const prompt = `<active_agent name="${name}"/>\n\noriginal ${name} role\n${root}`;
@@ -585,7 +576,7 @@ test("skills and config, including unused mappings, are eagerly frozen before fi
 	const runtime = harness(t, { configure: configureSkills });
 	writeFileSync(join(runtime.directory, "first.md"), "CHANGED FIRST");
 	writeFileSync(join(runtime.directory, "second.md"), "CHANGED SECOND");
-	writeFileSync(join(runtime.directory, "injections.json"), JSON.stringify({ main: ["second.md"], agents: { "security-reviewer": ["first.md"] } }));
+	writeFileSync(join(runtime.directory, "config.json"), JSON.stringify({ main: ["second.md"], agents: { "security-reviewer": ["first.md"] } }));
 	runtime.emit("session_start", { reason: "reload" });
 	runtime.emit("session_tree");
 	assert.match(runtime.before().systemPrompt, /FIRST full body[\s\S]*SECOND full body/);
@@ -629,7 +620,7 @@ test("canonical names decode only upstream XML escapes; older complete boundarie
 		const prompt = `<active_agent name="${encoded}"/>\n\nbody`;
 		assert.equal(selectProfile(prompt, false), "subagent");
 		assert.equal(selectAgentName(prompt, "subagent"), name);
-		assert.equal(selectRole(prompt, "subagent"), undefined);
+		assert.equal(selectAgentName(prompt, "subagent"), name);
 	}
 	for (const encoded of ["bad&name", "bad&unknown;", "bad&#34;"]) {
 		assert.equal(selectProfile(`<active_agent name="${encoded}"/>\n\nbody`, false), "main");
@@ -638,4 +629,61 @@ test("canonical names decode only upstream XML escapes; older complete boundarie
 		const prompt = `<active_agent name="${role}"/>\n\n\n\n${NATIVE_CHILD_BOUNDARIES[0]}`;
 		assert.equal(selectProfile(prompt, false), "subagent", "old complete-boundary layout still works without a nonblank role body");
 	}
+});
+
+test("manifest layers compose common then main or child then exact name, deduplicating first occurrences", (t) => {
+	const runtime = harness(t, { configure(directory) {
+		for (const name of ["a", "b", "c", "d"]) writeFileSync(join(directory, `${name}.md`), `${name.toUpperCase()} layer body`);
+		writeFileSync(join(directory, "config.json"), JSON.stringify({ all: ["b.md", "a.md", "./b.md"], orchestrator: ["d.md", "a.md"], child: ["c.md", "a.md"], agents: { "security-reviewer": ["a.md", "d.md", "c.md"] } }));
+	} });
+	const bodies = (prompt: string) => [...prompt.matchAll(/([A-D]) layer body/g)].map((match) => match[1]);
+	assert.deepEqual(bodies(runtime.before().systemPrompt), ["B", "A", "D"]);
+	assert.deepEqual(bodies(runtime.before('<active_agent name="security-reviewer"/>\n\nNative persona').systemPrompt), ["B", "A", "C", "D"]);
+	for (const prompt of [`${CHILD_PREFIXES[0]}\nunnamed persona`, '<active_agent name="unknown"/>\n\nNative persona']) {
+		assert.deepEqual(bodies(runtime.before(prompt).systemPrompt), ["B", "A", "C"]);
+	}
+	assert.deepEqual(runtime.notices, []);
+	const generic = harness(t, { bbSignal: parseBBPolicySignal(bbTuple), configure(directory) {
+		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], child: ["child.md"], agents: { worker: ["worker.md"] } }));
+	} });
+	assert.match(generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt, /COMMON draft[\s\S]*CHILD draft/);
+	assert.doesNotMatch(generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt, /worker overlay/);
+});
+
+test("file diagnostics reach UI once before first prompt and refresh only with a new runtime", (t) => {
+	const runtime = harness(t, { configure(directory) {
+		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], agents: { unused: ["missing.md"] }, typo: [] }));
+	} });
+	runtime.emit("session_start");
+	assert.equal(runtime.notices.length, 2, "warnings precede the first prompt");
+	assert.deepEqual(runtime.noticeTypes, ["warning", "warning"]);
+	assert.match(runtime.notices.join("\n"), /unknown top-level key/);
+	assert.match(runtime.notices.join("\n"), /agents\["unused"\]\[0\].*ENOENT/);
+	writeFileSync(join(runtime.directory, "missing.md"), "now present");
+	for (const reason of ["resume", "fork", "reload"]) runtime.emit("session_start", { reason });
+	runtime.emit("session_tree");
+	assert.match(runtime.before().systemPrompt, /COMMON draft/);
+	assert.equal(runtime.notices.length, 2);
+	runtime.reload();
+	assert.equal(runtime.notices.length, 3, "only still-invalid input warns in new snapshot");
+});
+
+test("config diagnostics report on first before hook without session_start, headlessly once alongside BB diagnostics", (t) => {
+	const directory = harness(t).directory;
+	writeFileSync(join(directory, "config.json"), "{bad JSON");
+	const diagnostic = parseBBPolicySignal({ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "unknown" });
+	const handlers = new Map<string, Handler>();
+	const warnings: string[] = [];
+	t.mock.method(console, "error", (message: string) => warnings.push(message));
+	installAgentPolicy({ on(event: string, handler: Handler) { handlers.set(event, handler); } } as any, {
+		policyDir: directory, extensionPath: "fixture", backgroundChild: false, bbSignal: diagnostic,
+		register: () => ({ dispose() {} }) as any,
+	});
+	const ctx = { hasUI: false, sessionManager: { getSessionId: () => "headless-config" }, ui: { notify() { assert.fail("headless warning must log instead"); } } };
+	assert.equal(handlers.get("before_agent_start")!({ systemPrompt: "root" }, ctx).systemPrompt, "root");
+	assert.equal(warnings.length, 2);
+	assert.match(warnings[0], /config.json.*JSON/);
+	assert.equal(warnings[1], diagnostic.diagnostic);
+	for (const event of ["session_start", "before_agent_start", "session_start"]) handlers.get(event)!({ systemPrompt: "root" }, ctx);
+	assert.equal(warnings.length, 2);
 });
