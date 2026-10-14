@@ -1,5 +1,8 @@
 {
 	"providers": {
+		"openai": ["!gpt-6*"],
+		"openai-codex": ["*"],
+		"antigravity": ["!gemini-3.8+", "!claude-opus-5+", "!claude-sonnet-5+"],
 		"commandcode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"],
 		"opencode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"],
 		"opencode-go": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"]
