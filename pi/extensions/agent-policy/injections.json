@@ -2,10 +2,10 @@
   "main": [],
   "agents": {
     "worker": [
-      "~/.agents/skills/chadineer/SKILL.md"
+      "~/Projects/skills/skills/chadineer/SKILL.md"
     ],
     "reviewer": [
-      "~/.agents/skills/chadineer/SKILL.md"
+      "~/Projects/skills/skills/chadineer/SKILL.md"
     ]
   }
 }
