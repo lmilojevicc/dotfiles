@@ -112,10 +112,10 @@ async function buildHeaders(ctx: ExtensionContext): Promise<Headers> {
 	const resolved = await ctx.modelRegistry.getProviderAuth("openai-codex");
 	const token = resolved?.auth.apiKey;
 	if (!token || !isCanonicalBaseUrl(resolved?.auth.baseUrl, true)) {
-		throw new Error("Canonical OpenAI Codex subscription auth is required.");
+		throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	}
 	const accountId = extractAccountId(token);
-	if (!accountId) throw new Error("Canonical OpenAI Codex subscription auth is required.");
+	if (!accountId) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	return new Headers({
 		accept: "application/json",
 		authorization: `Bearer ${token}`,
@@ -145,7 +145,7 @@ async function fetchDetailedResetCredits(headers: Headers, signal?: AbortSignal)
 
 async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, includeDetailedResetCredits = true): Promise<AccountUsageSnapshot> {
 	const key = accountKey(headers);
-	if (!key) throw new Error("Canonical OpenAI Codex subscription auth is required.");
+	if (!key) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	const snapshot = parseUsagePayload(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/usage`, { method: "GET", headers, signal }));
 	if (includeDetailedResetCredits && (!snapshot.resetCredits || snapshot.resetCredits.availableCount > 0)) {
 		try {
@@ -198,7 +198,7 @@ async function resolveResetAccount(ctx: ExtensionContext, signal?: AbortSignal):
 	const boundedSignal = requestSignal(signal);
 	const headers = await withAbort(buildHeaders(ctx), boundedSignal);
 	const key = accountKey(headers);
-	if (!key) throw new Error("Canonical OpenAI Codex subscription auth is required.");
+	if (!key) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	return { key, headers };
 }
 
@@ -210,7 +210,7 @@ async function consumeResetCredit(
 ): Promise<ResetResult> {
 	if (!creditId?.trim()) throw new Error("No usable reset credit ID is available. Refresh reset credits before retrying.");
 	const accountId = headers.get("chatgpt-account-id")?.trim();
-	if (!accountId) throw new Error("Canonical OpenAI Codex subscription auth is required.");
+	if (!accountId) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	headers.set("content-type", "application/json");
 	resetCreditsCache = undefined;
 	const result = parseResetResult(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits/consume`, {

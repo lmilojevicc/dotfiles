@@ -156,6 +156,16 @@ test("injects priority only for eligible requests without an explicit tier", () 
 	assert.equal(injectFastServiceTier("not an object", canonicalModel, true), undefined);
 });
 
+test("openai chat remains ineligible for canonical Codex features and Fast injection", () => {
+	const payload = { input: "hello" };
+	for (const baseUrl of ["https://api.openai.com/v1", canonicalModel.baseUrl, undefined]) {
+		const model = { provider: "openai", api: "openai-responses", baseUrl };
+		assert.equal(isCanonicalCodexModel(model), false);
+		assert.equal(injectFastServiceTier(payload, model, true), undefined);
+	}
+	assert.deepEqual(payload, { input: "hello" });
+});
+
 test("automatic reset preferences are strict, default-off, account scoped and preserve unknown nested values", () => {
 	const dir = mkdtempSync(join(tmpdir(), "codex-auto-prefs-"));
 	const path = getConfigPath(dir);

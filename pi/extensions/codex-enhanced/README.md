@@ -2,7 +2,15 @@
 
 Pi extension for current-account Codex subscription quota, banked resets, Fast processing, and optional OpenAI Responses server compaction.
 
-Use `/codex-enhanced` to open the Quota, Resets, Fast, and Compaction tabs. Manual account operations and the cached weekly footer remain available regardless of selected model, using current canonical `openai-codex` subscription authentication (`https://chatgpt.com/backend-api`).
+Use `/codex-enhanced` to open the Quota, Resets, Fast, and Compaction tabs.
+
+## Login and provider compatibility
+
+You can use `/login openai` for chat and keep a separate `/login openai-codex` subscription login for quota, the weekly footer, and manual resets. These account operations work regardless of the selected chat model and use the account from the retained `openai-codex` login (`https://chatgpt.com/backend-api`), not the `openai` chat account.
+
+`/login openai` alone is not sufficient for these backend features. Its new OAuth metadata does not supply the legacy account ID this backend integration requires; this does not make the chat login invalid. If backend auth is missing or unusable, run `/login openai-codex` again.
+
+Fast mode, automatic resets, and server compaction still require an eligible canonical `openai-codex` / `openai-codex-responses` model. Selecting an `openai` chat model does not enable those features, even with both logins retained.
 
 ## Automatic banked resets
 

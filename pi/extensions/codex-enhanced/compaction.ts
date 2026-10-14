@@ -100,7 +100,7 @@ async function resolveCanonicalCodexAuth(ctx: ExtensionContext): Promise<Canonic
 	const baseUrl = resolved?.auth.baseUrl ?? CODEX_BASE_URL;
 	const accountId = token ? extractAccountId(token) : undefined;
 	if (!token || !accountId || !isCanonicalBaseUrl(baseUrl, true)) {
-		throw new Error("Canonical OpenAI Codex subscription auth is required for server-side compaction.");
+		throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
 	}
 	return { token, accountId, baseUrl: baseUrl.replace(/\/+$/, "") };
 }

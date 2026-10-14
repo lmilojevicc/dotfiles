@@ -339,6 +339,52 @@ test("automatic scheduler checks settled turns and every idle minute, coalesces 
 	assert.equal(f.state.posts.length, 1, "restart sees durable weekly guard");
 });
 
+for (const legacyAvailable of [false, true]) {
+	test(`openai chat never auto-resets with legacy login ${legacyAvailable ? "retained" : "absent"}, while manual eligibility is unchanged`, async (t) => {
+		const f = fixture(t);
+		f.ctx.model = { ...canonical, provider: "openai", api: "openai-responses", baseUrl: "https://api.openai.com/v1" };
+		const providers: string[] = [];
+		let directTokenCalls = 0;
+		f.ctx.modelRegistry = {
+			getProviderAuth: async (provider: string) => {
+				providers.push(provider);
+				if (provider === "openai") return { auth: { apiKey: `header.${Buffer.from(JSON.stringify({
+					"https://api.openai.com/auth": { encrypted_auth_metadata: "synthetic-opaque-metadata" },
+				})).toString("base64url")}.signature` } };
+				if (provider === "openai-codex" && legacyAvailable) return { auth: { apiKey: token(f.state.account), baseUrl: canonical.baseUrl } };
+				return undefined;
+			},
+			getApiKey: async () => { directTokenCalls++; return "synthetic-direct-token"; },
+		};
+		writeFileSync(f.path, JSON.stringify({ fast: true }));
+		writeAutoResetPreference(f.path, f.key, true);
+		const l = lifecycle(t, f.ctx);
+		await l.handlers.get("session_start")({}, f.ctx);
+		await drain();
+		assert.equal(f.state.usageReads, legacyAvailable ? 1 : 0, "only the footer may read quota");
+		const payload = { input: "hello" };
+		assert.equal(l.handlers.get("before_provider_request")({ payload }, f.ctx), undefined);
+		assert.deepEqual(payload, { input: "hello" });
+		for (const tick of l.timers.values()) tick();
+		l.handlers.get("agent_settled")({}, f.ctx);
+		await __testing.runCoordinatedReset(f.ctx, "auto", new AbortController().signal, () => true);
+		await drain();
+		assert.equal(f.state.usageReads, legacyAvailable ? 1 : 0);
+		assert.equal(f.state.detailReads, 0);
+		assert.equal(f.state.posts.length, 0);
+		assert.equal(readResetJournal(f.dir, f.key), undefined);
+
+		await __testing.runCoordinatedReset(f.ctx, "manual", new AbortController().signal, () => true,
+			undefined, undefined, undefined, undefined, { kind: "spend" });
+		assert.equal(f.state.posts.length, legacyAvailable ? 1 : 0);
+		if (legacyAvailable) assert.equal(f.state.posts[0].account_id, f.state.account);
+		else assert.equal(f.state.usageReads, 0);
+		assert.ok(providers.length > 0);
+		assert.ok(providers.every((provider) => provider === "openai-codex"));
+		assert.equal(directTokenCalls, 0);
+	});
+}
+
 for (const mode of ["rpc", "json", "print"]) {
 	test(`automatic scheduler never starts resources or spends in ${mode}`, async (t) => {
 		const f = fixture(t);

@@ -41,9 +41,9 @@ function context(entries: unknown[], complete = async () => ({
 		getSystemPrompt: () => "system prompt",
 		sessionManager: { getBranch: () => entries },
 		modelRegistry: {
-			getProviderAuth: async () => ({
+			getProviderAuth: async (provider: string) => provider === "openai-codex" ? {
 				auth: { apiKey: token("account-a"), baseUrl: "https://chatgpt.com/backend-api" },
-			}),
+			} : undefined,
 			complete,
 		},
 	} as never;
@@ -305,6 +305,61 @@ test("remote failure returns undefined without issuing a redundant portable-summ
 		globalThis.fetch = originalFetch;
 	}
 });
+
+for (const legacyAvailable of [false, true]) {
+	test(`openai chat skips server compaction with legacy login ${legacyAvailable ? "retained" : "absent"}`, async (t) => {
+		let authCalls = 0;
+		let requests = 0;
+		let summaryRequests = 0;
+		const ctx = {
+			model: { ...model, provider: "openai", api: "openai-responses", baseUrl: "https://api.openai.com/v1" },
+			modelRegistry: {
+				getProviderAuth: async (provider: string) => {
+					authCalls++;
+					if (provider === "openai") return { auth: { apiKey: `header.${Buffer.from(JSON.stringify({
+						"https://api.openai.com/auth": { encrypted_auth_metadata: "synthetic-opaque-metadata" },
+					})).toString("base64url")}.signature` } };
+					if (provider === "openai-codex" && legacyAvailable) return { auth: { apiKey: token("account-a") } };
+					return undefined;
+				},
+				complete: async () => { summaryRequests++; return { content: [] }; },
+			},
+		};
+		t.mock.method(globalThis, "fetch", async () => { requests++; return new Response("{}"); });
+		assert.equal(await compactOnServer(event([]), ctx as never), undefined);
+		assert.equal(authCalls, 0);
+		assert.equal(requests, 0);
+		assert.equal(summaryRequests, 0);
+	});
+}
+
+for (const legacyToken of [undefined, "synthetic-invalid", `header.${Buffer.from(JSON.stringify({
+	"https://api.openai.com/auth": { encrypted_auth_metadata: "synthetic-opaque-metadata" },
+})).toString("base64url")}.signature`]) {
+	test(`server compaction preserves local fallback for ${legacyToken === undefined ? "missing" : legacyToken.includes(".") ? "opaque-only" : "malformed"} legacy auth`, async (t) => {
+		const providers: string[] = [];
+		let requests = 0;
+		let directTokenCalls = 0;
+		let summaryRequests = 0;
+		const ctx = {
+			model,
+			modelRegistry: {
+				getProviderAuth: async (provider: string) => {
+					providers.push(provider);
+					return provider === "openai-codex" && legacyToken ? { auth: { apiKey: legacyToken } } : undefined;
+				},
+				getApiKey: async () => { directTokenCalls++; return "synthetic-direct-token"; },
+				complete: async () => { summaryRequests++; return { content: [] }; },
+			},
+		};
+		t.mock.method(globalThis, "fetch", async () => { requests++; return new Response("{}"); });
+		assert.equal(await compactOnServer(event([]), ctx as never), undefined);
+		assert.deepEqual(providers, ["openai-codex"]);
+		assert.equal(directTokenCalls, 0);
+		assert.equal(requests, 0);
+		assert.equal(summaryRequests, 0);
+	});
+}
 
 test("aborted remote compaction is not converted into local fallback", async () => {
 	const originalFetch = globalThis.fetch;
