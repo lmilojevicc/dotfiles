@@ -7,6 +7,7 @@ export type ConfigSnapshot = {
 	common: PolicySource[];
 	child: PolicySource[];
 	main: PolicySource[];
+	mainBb: PolicySource[];
 	agents: Map<string, PolicySource[]>;
 	warnings: string[];
 };
@@ -31,7 +32,7 @@ function markdownBody(text: string): string {
 /** Eager, fail-open file inputs, including mappings unused by the current session. */
 export function readConfigSnapshot(policyDir: string): ConfigSnapshot {
 	const configPath = join(policyDir, "config.json");
-	const snapshot: ConfigSnapshot = { common: [], child: [], main: [], agents: new Map(), warnings: [] };
+	const snapshot: ConfigSnapshot = { common: [], child: [], main: [], mainBb: [], agents: new Map(), warnings: [] };
 	function warn(context: string, message: string): void {
 		snapshot.warnings.push(`agent-policy: ${configPath}: ${context}: ${message}; skipping affected input.`);
 	}
@@ -43,12 +44,12 @@ export function readConfigSnapshot(policyDir: string): ConfigSnapshot {
 		return snapshot;
 	}
 	if (!isObject(config)) {
-		warn("config", "expected an object with optional common/all, child, main/orchestrator and agents fields");
+		warn("config", "expected an object with optional common/all, child, main/orchestrator, mainBb and agents fields");
 		return snapshot;
 	}
 	const mapping = config;
 	for (const key of Object.keys(mapping)) {
-		if (!["common", "all", "child", "main", "orchestrator", "agents"].includes(key)) warn(key, "unknown top-level key");
+		if (!["common", "all", "child", "main", "mainBb", "orchestrator", "agents"].includes(key)) warn(key, "unknown top-level key");
 	}
 	// Cache failures and blank bodies too: every normalized path is read only once.
 	const sources = new Map<string, PolicySource | string>();
@@ -95,6 +96,8 @@ export function readConfigSnapshot(policyDir: string): ConfigSnapshot {
 	}
 	snapshot.common = layer("common", "all");
 	snapshot.main = layer("main", "orchestrator");
+	// BB-origin main sessions replace, not extend, the main layer; there is no alias and no fallback.
+	if (Object.hasOwn(mapping, "mainBb")) snapshot.mainBb = load(mapping.mainBb, "mainBb");
 	if (Object.hasOwn(mapping, "child")) snapshot.child = load(mapping.child, "child");
 	if (Object.hasOwn(mapping, "agents")) {
 		if (!isObject(mapping.agents)) warn("agents", "expected an object mapping exact native agent names to path arrays");

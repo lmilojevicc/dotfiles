@@ -4,7 +4,7 @@
 
 For an explicit trial, use `pi -e ./pi/extensions/agent-policy/index.ts`. Normal discovery can load this extension from the extension directory. No settings, builtin agent definitions, prompt modes, tool allowlists, or dependency versions are changed; no framework is installed.
 
-Tested locally: **Pi 1.1.0 / pi-subagents 0.77.0 / Node 26.11.1**. The native factory/SDK, executor UUID capture, BB capture/reload, and policy/skill/APPEND snapshot checks run offline without requests. In 0.77.0 the actual child hook order is **native filtering → ordinary extensions (including agent-policy) → final native boundary**. The old complete-boundary classifier therefore injected orchestrator policy into initial foreground children: the boundary did not exist when agent-policy ran. This failure was reproduced against the installed pair before the routing repair. The extension now routes from strict generated launch headers before the boundary, retaining older complete-boundary, leading-prefix, and captured-env routes.
+Tested locally: **Pi 1.1.0 / pi-subagents 0.77.0**. The BB main-layer change was re-verified on **Node 22.23.2**; earlier checks used Node 26.11.1. The native factory/SDK, executor UUID capture, BB capture/reload, and policy/skill/APPEND snapshot checks run offline without requests. In 0.77.0 the actual child hook order is **native filtering → ordinary extensions (including agent-policy) → final native boundary**. The old complete-boundary classifier therefore injected orchestrator policy into initial foreground children: the boundary did not exist when agent-policy ran. This failure was reproduced against the installed pair before the routing repair. The extension now routes from strict generated launch headers before the boundary, retaining older complete-boundary, leading-prefix, and captured-env routes.
 
 The boundary stays last, after the single policy block, in ordinary/fanout, replace/append, structured/unstructured launches. Native filtering and role prompt bodies are not replaced. No dependency settings or installed packages were changed. The manifest's peer ranges are not a tested-version matrix. Revalidate after upgrades, especially native launch layout, boundary text, hook order, canonical tags, UUID lookup, and required-extension admission. Previous Pi 1.0.4 / pi-subagents 0.76.1 checks do not establish compatibility with other pairs.
 
@@ -18,10 +18,19 @@ The boundary stays last, after the single policy block, in ordinary/fanout, repl
 | --- | --- | --- |
 | `common` (alias `all`) | Every session | Ordered file-path array |
 | `child` | Every subagent, including generic BB-only workers | Ordered file-path array |
-| `main` (alias `orchestrator`) | Main/root sessions | Ordered file-path array |
+| `main` (alias `orchestrator`) | Main/root sessions on ordinary hosts | Ordered file-path array |
+| `mainBb` | Main/root sessions in a BB-origin host (nonblank `BB_THREAD_ID`) | Ordered file-path array |
 | `agents` | Exact native child names | Object of name → ordered file-path array |
 
-`common` and `main` are canonical. If their corresponding alias is also present, warn explicitly and use the canonical value, even if that value is invalid; the ignored alias does not become a fallback. Alias-only and canonical-only configs produce identical snapshots. `{}` and omitted fields are valid empty layers. Unknown top-level fields warn and are ignored. No version field, named bundles, trees, globs, discovery, watchers, or second config mechanism is supported.
+`common`, `main` and `mainBb` are canonical. `main`/`mainBb` are alternatives, not
+layers: a BB root composes `common → mainBb`, an ordinary root composes
+`common → main`, and an absent/empty `mainBb` never falls back to `main`.
+`mainBb` has no alias. If a canonical key and its alias are both present, warn
+explicitly and use the canonical value, even if that value is invalid; the ignored
+alias does not become a fallback. Alias-only and canonical-only configs produce
+identical snapshots. `{}` and omitted fields are valid empty layers. Unknown
+top-level fields warn and are ignored. No version field, named bundles, trees,
+globs, discovery, watchers, or second config mechanism is supported.
 
 Initial checked-in configuration:
 
@@ -30,6 +39,7 @@ Initial checked-in configuration:
   "common": [],
   "child": [],
   "main": ["./prompts/main.md"],
+  "mainBb": ["./prompts/main-bb.md"],
   "agents": {
     "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
     "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"]
@@ -37,7 +47,7 @@ Initial checked-in configuration:
 }
 ```
 
-`prompts/main.md` is the existing orchestrator draft, moved byte-for-byte (SHA1 `5de0f6a003d01f7d362f90119662070103423d9f`). The Chadineer path references the user's existing source; it is not a new skill or profile. Native role personas, tool allowlists, prompt modes, global/project APPEND files, and unrelated instruction sources are unchanged.
+`prompts/main.md` is the existing orchestrator draft, moved byte-for-byte (SHA1 `5de0f6a003d01f7d362f90119662070103423d9f`). `prompts/main-bb.md` is its BB-origin counterpart: same tone, verification, Git and release discipline, with the delegation topology rewritten for BB's own surfaces (`bb_fork_workflow_run` / `bb fork-workflows`, `interactive_shell`, `process`, `bb thread`) instead of Pi's gated native subagent tools. The Chadineer path references the user's existing source; it is not a new skill or profile. Native role personas, tool allowlists, prompt modes, global/project APPEND files, and unrelated instruction sources are unchanged.
 
 For example, aliases and arbitrary exact names can use ordinary policy and skill files together (**illustrative paths only**, not bundled sources):
 
@@ -62,7 +72,7 @@ Initialization eagerly reads config and all effective configured files, includin
 
 Each `before_agent_start` returns `{ systemPrompt }` only, preserving the original prompt and never injecting user/custom/tool-result messages. Pi starts each run's hook chain from base prompt options, so cached composition is reapplied every run:
 
-- Main: **common → main**.
+- Main: **common → main** on ordinary hosts, **common → mainBb** in a BB-origin host, with marker `agent-policy:v1:main` or `agent-policy:v1:main-bb` respectively.
 - Named native child: **common → child → agents[exact name]**.
 - Unnamed/unconfigured native child: **common → child**, no worker fallback.
 - BB-only worker: **common → child**, never native-name inputs inferred from an inherited tag.
@@ -113,11 +123,27 @@ The installed `child-launch.js` uses resolved `childAgentName` for the escaped t
 
 ## BB companion policy marker (not yet deployed live)
 
-The producer companion is `~/Projects/bb-plugins/plugins/pi-agent-policy`. It owns BB's experimental provider-hook integration; this extension only consumes the environment tuple for provider `pi`:
+Two independent BB signals are consumed. Host origin uses the plain `BB_THREAD_ID`
+that BB sets for every BB-origin session (root, workflow worker, side chat); the
+versioned companion tuple below owns worker/child routing. The companion is the
+producer `~/Projects/bb-plugins/plugins/pi-agent-policy`; this extension only reads
+environment, for provider `pi`:
 
+- **Host origin (`BB_THREAD_ID`)**: any nonblank value, including unfamiliar
+  formats, makes the session BB-origin and routes roots to the `mainBb` layer
+  instead of `main`. This mirrors the `pi-subagents-host-gate` host rule; it works
+  with or without the companion, and also applies to nested/bashed `pi` launches
+  that inherit the variable. Whitespace-only values are absent. Ordinary (non-BB)
+  hosts keep `main`.
 - `PI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1` selects generic subagent composition only when `BB_THREAD_ID` and `PI_AGENT_POLICY_BB_THREAD_ID` are both nonempty trimmed strings, at most 256 characters, with no control characters, and match exactly.
 - `PI_AGENT_POLICY_BB_PROFILE=none:v1` is an explicit neutral reset for ordinary sessions/commands. The companion contributes the versioned profile and matching identity for every command, so a worker signal must not leak into a later ordinary command.
 - Absent signals are normal. Unknown/malformed profiles or missing/malformed/mismatched tuple identities degrade to existing native/main routing with one redacted warning per runtime (UI when available, stderr headlessly). A valid neutral tuple is quiet. `BB_THREAD_ID` alone never selects a worker.
+
+BB-origin roots compose **common → mainBb** and carry the
+`agent-policy:v1:main-bb` marker. `mainBb` is a separate optional layer with no
+alias: an absent or empty `mainBb` yields no root policy rather than falling back
+to `main` (the same explicit, no-magic-fallback rule as `child`). BB workers keep
+common → child and never receive `mainBb` or named native sources.
 
 The own tuple is validated and captured once in the extension factory, before asynchronous peer loading. Environment changes after factory initialization have no effect until a new runtime is created by the BB provider's rebuild/reload boundary (or Pi `/reload`). Session events alone do not recapture it; this extension never mutates env or sets `PI_SUBAGENT_CHILD`.
 
@@ -148,11 +174,11 @@ node --test pi/extensions/agent-policy/tests/*.test.ts
 node --test pi/extensions/chadineer/tests/*.test.ts
 ```
 
-Unit tests cover config aliases and canonical collisions, optional fields, invalid JSON/types/keys/path entries, missing/unreadable config and sources (including unused mappings), valid sibling preservation, frontmatter, deployed-config smoke reads, byte-exact moved main body, one read per unique source, layer order and first-occurrence deduplication. Runtime coverage retains profile/name/fallback routing, generated metadata lookalikes and older boundary/env routes, transitions, full-role text retention, eager snapshots before first prompt/deletion, no per-hook reads, missing-source empty-child behavior, stale cleanup, both Chadineer orders, UUID/path independence, lifecycle disposal and registry conflicts, plus peer errors. BB coverage includes tuple/identity validation, native precedence, generic-only composition, neutral routing and once-per-runtime UI/headless diagnostics. File warnings report before the first prompt (or on the first hook when session_start is absent), do not repeat across session events, and refresh on runtime recreation.
+Unit tests cover config aliases and canonical collisions, optional fields, invalid JSON/types/keys/path entries, missing/unreadable config and sources (including unused mappings), valid sibling preservation, frontmatter, deployed-config smoke reads, byte-exact moved main body, one read per unique source, layer order and first-occurrence deduplication. Runtime coverage retains profile/name/fallback routing, generated metadata lookalikes and older boundary/env routes, transitions, full-role text retention, eager snapshots before first prompt/deletion, no per-hook reads, missing-source empty-child behavior, stale cleanup, both Chadineer orders, UUID/path independence, lifecycle disposal and registry conflicts, plus peer errors. BB coverage includes tuple/identity validation, host-origin detection from any nonblank `BB_THREAD_ID` (including whitespace-only absence and companion-only tuples), native precedence, generic-only composition, `mainBb` selection versus the ordinary `main` layer, no-fallback on an empty `mainBb`, the distinct `agent-policy:v1:main-bb` marker with stale ordinary-main replacement/idempotence, neutral routing and once-per-runtime UI/headless diagnostics. File warnings report before the first prompt (or on the first hook when session_start is absent), do not repeat across session events, and refresh on runtime recreation.
 
 Installed tests use real SDK resource loaders, sessions/managers, extension runner, public registry, native launch planner, child factory, prompt-runtime/fanout hooks, builtin discovery/alias resolution, and the **actual foreground executor** UUID lookup. Private installed registry reads are observation only in tests. Host aliases bridge installed peers without installing/mutating packages. Auth/catalog paths are temporary, refresh is disabled, and a non-requested model fixture is supplied. No model/network requests, paid work, detached jobs, or publication occur.
 
-A BB-specific real SDK loader/session test sets the tuple before factory loading, mutates it before the first prompt, verifies frozen worker/main/native classification, and recreates runtimes with actual `session.reload()` for neutral reset and worker↔main transitions. It checks SYSTEM-only output, unchanged tools and UUID registry, no role inference, stale-block replacement/idempotence, malformed fallback, and ignored user/history lookalikes. No provider or model request occurs.
+A BB-specific real SDK loader/session test sets the tuple before factory loading, mutates it before the first prompt, verifies frozen worker/main/native classification, and recreates runtimes with actual `session.reload()` for neutral reset and worker↔BB-main↔ordinary-main transitions, including `BB_THREAD_ID` alone selecting `mainBb` and its removal restoring `main`. It checks SYSTEM-only output, unchanged tools and UUID registry, no role inference, exact main/main-bb markers, no cross-layer leakage, stale-block replacement/idempotence, malformed fallback, and ignored user/history lookalikes. No provider or model request occurs.
 
 A separate real SDK loader/session test edits temporary policy, config, skills, and native APPEND files after initialization but before the first prompt, verifies cached main and newly selected names, invokes actual `session.reload()`, and checks refreshed mappings/bodies, UUID disposal/re-registration, and warning-only continuation after removed skill and named-source files. Required registrations survive; valid sibling bodies remain. No interactive command or model request is needed.
 
@@ -162,6 +188,6 @@ The executor test deliberately stops at an injected create seam, records its exp
 
 Test paths default to the inspected current local installations; override with `PI_POLICY_TEST_SDK` and `PI_POLICY_TEST_SUBAGENTS`. Absent fixtures skip installed coverage; present fixtures pin the tested pair. Check skipped counts. Interactive `/reload` command dispatch, full resume/replacement flows, detached OS processes, remote/external hosts, other versions, enforced role permissions, and model compliance remain untested. No blanket propagation/security guarantee follows from these checks.
 
-In this isolated worktree, the adjacent Chadineer command runs **10 tests: 9 pass, 1 fails** because its existing static-prompt test reads `pi/APPEND_SYSTEM.md`, which is already absent at this branch's base checkout; that fixture predates and is outside this change's write scope and is not suppressed. Agent-policy tests pass **64/64, zero skips** on the tested pair; installed coverage is included in those counts.
+In this isolated worktree, the adjacent Chadineer command runs **10 tests: 9 pass, 1 fails** because its existing static-prompt test reads `pi/APPEND_SYSTEM.md`, which is already absent at this branch's base checkout; that fixture predates and is outside this change's write scope and is not suppressed. Agent-policy tests pass **69/69, zero skips** on the tested pair with `PI_POLICY_TEST_SDK` pointed at the installed Pi 1.1.0 tree; installed coverage is included in those counts.
 
 See [workflow and source rationale](workflow.md) for the orchestrator guidance.

@@ -10,18 +10,20 @@ import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 
 type Handler = (...args: any[]) => any;
-function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
+function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, bbOrigin = false, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "agent-policy-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	writeFileSync(join(directory, "common.md"), "COMMON draft");
 
 	for (const role of ["worker", "reviewer", "scout"]) writeFileSync(join(directory, `${role}.md`), `${role} overlay`);
 	writeFileSync(join(directory, "main.md"), "MAIN draft");
+	writeFileSync(join(directory, "main-bb.md"), "MAIN BB draft");
 	writeFileSync(join(directory, "child.md"), "CHILD draft");
-	const initialConfig = { common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } };
+	const initialConfig = { common: ["common.md"], main: ["main.md"], mainBb: ["main-bb.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } };
 	if (deployed) {
 		for (const file of ["common.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) writeFileSync(join(directory, file), "");
 		writeFileSync(join(directory, "main.md"), readFileSync(new URL("../prompts/main.md", import.meta.url)));
+		writeFileSync(join(directory, "main-bb.md"), readFileSync(new URL("../prompts/main-bb.md", import.meta.url)));
 		initialConfig.agents = { worker: [], reviewer: [], scout: [] };
 	}
 	writeFileSync(join(directory, "config.json"), JSON.stringify(initialConfig));
@@ -47,7 +49,7 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	function install() {
 		if (legacy && legacyFirst) chadineer(api as any);
 		installAgentPolicy(api as any, {
-			policyDir: directory, extensionPath: join(directory, "index.ts"), backgroundChild, bbSignal,
+			policyDir: directory, extensionPath: join(directory, "index.ts"), backgroundChild, bbSignal, bbOrigin,
 			register: register ?? ((input: any) => { registrations.push(input); return { dispose() { disposed++; } }; }),
 		});
 		if (legacy && !legacyFirst) chadineer(api as any);
@@ -57,8 +59,8 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	function emit(event: string, input: any = {}) { for (const fn of handlers.get(event) ?? []) fn(input, ctx); }
 	return {
 		directory, registrations, notices, noticeTypes,
-		expected(prompt: string, profile: "main" | "subagent", bodies: string) {
-			const files: Record<string, string> = { "COMMON draft": "common.md", "MAIN draft": "main.md", "CHILD draft": "child.md", "worker overlay": "worker.md", "reviewer overlay": "reviewer.md", "scout overlay": "scout.md" };
+		expected(prompt: string, profile: "main" | "main-bb" | "subagent", bodies: string) {
+			const files: Record<string, string> = { "COMMON draft": "common.md", "MAIN draft": "main.md", "MAIN BB draft": "main-bb.md", "CHILD draft": "child.md", "worker overlay": "worker.md", "reviewer overlay": "reviewer.md", "scout overlay": "scout.md" };
 			const text = bodies.split("\n\n").map((body) => `## Policy source: ${join(directory, files[body])}\nResolve this source's relative file references against ${directory}.\n\n${body}`).join("\n\n");
 			return appendPolicy(prompt, profile, text);
 		}, get disposed() { return disposed; }, emit,
@@ -334,7 +336,7 @@ test("config and all unique sources are read once at initialization, never on ru
 	syncBuiltinESMExports();
 	try {
 		const runtime = harness(t);
-		assert.equal(reads.mock.callCount(), 7);
+		assert.equal(reads.mock.callCount(), 8);
 		for (const call of reads.mock.calls.filter((call: any) => !String(call.arguments[0]).endsWith("config.json"))) writeFileSync(call.arguments[0], "edited before first prompt");
 		for (const reason of ["startup", "resume", "fork", "reload"]) runtime.emit("session_start", { reason });
 		runtime.emit("session_tree");
@@ -345,13 +347,13 @@ test("config and all unique sources are read once at initialization, never on ru
 			assert.equal(output, runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
 			assert.equal(runtime.before(output).systemPrompt, output);
 		}
-		assert.equal(reads.mock.callCount(), 7);
+		assert.equal(reads.mock.callCount(), 8);
 		runtime.reload();
-		assert.equal(reads.mock.callCount(), 14);
+		assert.equal(reads.mock.callCount(), 16);
 		assert.match(runtime.before().systemPrompt, /edited before first prompt/);
 		rmSync(runtime.directory, { recursive: true });
 		assert.match(runtime.before().systemPrompt, /edited before first prompt/);
-		assert.equal(reads.mock.callCount(), 14);
+		assert.equal(reads.mock.callCount(), 16);
 		runtime.reload();
 		assert.equal(runtime.before().systemPrompt, "root role");
 		assert.match(runtime.notices[0], /config.json.*ENOENT/);
@@ -381,17 +383,21 @@ test("BB-only tuple composes generic child, never arbitrary/inherited named sour
 	assert.deepEqual(runtime.registrations[0], { sessionId: "uuid-parent", extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }] });
 });
 
-test("all own marker states preserve native named sources, while nonpositive BB roots remain main", (t) => {
+test("all own marker states preserve native named sources, while roots follow the BB-origin main layer", (t) => {
 	for (const env of bbStates) {
 		const bbSignal = parseBBPolicySignal(env);
-		const root = harness(t, { bbSignal });
-		assert.equal(root.before().systemPrompt, root.expected("root role", bbSignal.workflowWorker ? "subagent" : "main", `COMMON draft\n\n${bbSignal.workflowWorker ? "CHILD" : "MAIN"} draft`));
-		for (const backgroundChild of [true, false]) {
-			const native = harness(t, { backgroundChild, bbSignal });
-			for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
-				for (const role of ["worker", "reviewer", "scout"]) {
-					const prompt = `${prefix}\n<active_agent name="${role}"/>\nbody`;
-					assert.equal(native.before(prompt).systemPrompt, native.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+		for (const bbOrigin of [false, true]) {
+			const root = harness(t, { bbSignal, bbOrigin });
+			const layer = bbSignal.workflowWorker ? "subagent" : bbOrigin ? "main-bb" : "main";
+			const body = bbSignal.workflowWorker ? "CHILD draft" : bbOrigin ? "MAIN BB draft" : "MAIN draft";
+			assert.equal(root.before().systemPrompt, root.expected("root role", layer, `COMMON draft\n\n${body}`));
+			for (const backgroundChild of [true, false]) {
+				const native = harness(t, { backgroundChild, bbSignal, bbOrigin });
+				for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
+					for (const role of ["worker", "reviewer", "scout"]) {
+						const prompt = `${prefix}\n<active_agent name="${role}"/>\nbody`;
+						assert.equal(native.before(prompt).systemPrompt, native.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+					}
 				}
 			}
 		}
@@ -440,6 +446,38 @@ test("BB env/prompt/history lookalikes alone cannot classify a root", (t) => {
 	assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"));
 });
 
+test("BB-origin roots replace the main layer, mark it distinctly and reject stale blocks", (t) => {
+	const runtime = harness(t, { bbOrigin: true });
+	const bbBodies = "COMMON draft\n\nMAIN BB draft";
+	const first = runtime.before();
+	assert.equal(first.systemPrompt, runtime.expected("root role", "main-bb", bbBodies));
+	assert.match(first.systemPrompt, /<!-- agent-policy:v1:main-bb -->/);
+	assert.doesNotMatch(first.systemPrompt, /<!-- agent-policy:v1:main -->/);
+	assert.doesNotMatch(first.systemPrompt, /MAIN draft/);
+	// An inherited ordinary main block is removed, not appended to, and repeats stay idempotent.
+	const stale = appendPolicy("root role", "main", "stale ordinary main");
+	assert.equal(runtime.before(stale).systemPrompt, runtime.expected("root role", "main-bb", bbBodies));
+	assert.equal(runtime.before(runtime.before(stale).systemPrompt).systemPrompt, runtime.expected("root role", "main-bb", bbBodies));
+	// A BB worker keeps child composition and never receives the BB main layer.
+	const worker = `${CHILD_PREFIXES[0]}\nworker role`;
+	assert.equal(runtime.before(worker).systemPrompt, runtime.expected(worker, "subagent", "COMMON draft\n\nCHILD draft"));
+});
+
+test("empty mainBb stays empty for BB roots: no fallback to the ordinary main layer", (t) => {
+	const runtime = harness(t, { bbOrigin: true, configure(directory) {
+		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: {} }));
+	} });
+	const output = runtime.before().systemPrompt;
+	assert.match(output, /COMMON draft/);
+	assert.match(output, /<!-- agent-policy:v1:main-bb -->/);
+	assert.doesNotMatch(output, /MAIN draft|<!-- agent-policy:v1:main -->/);
+	// Ordinary hosts are unaffected by the additional layer.
+	const plain = harness(t);
+	assert.equal(plain.before().systemPrompt, plain.expected("root role", "main", "COMMON draft\n\nMAIN draft"));
+	const deployed = harness(t, { deployed: true, bbOrigin: true });
+	assert.match(deployed.before().systemPrompt, /Delegation surfaces in BB/);
+	assert.doesNotMatch(deployed.before().systemPrompt, /pi-subagents/);
+});
 
 function nativeLayout(role: string, boundary: string, append = false, structured = false): string {
 	const tagged = `<active_agent name="${role}"/>\n\nexisting ${role} role body`;

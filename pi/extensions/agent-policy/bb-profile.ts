@@ -1,5 +1,10 @@
 export type BBPolicySignal = Readonly<{ workflowWorker: boolean; diagnostic?: string }>;
 
+/** Host-origin routing for BB main sessions: any nonblank BB ID, including unfamiliar formats. */
+export function isBBOriginSession(env: BBPolicyEnvironment): boolean {
+	return typeof env.BB_THREAD_ID === "string" && env.BB_THREAD_ID.trim().length > 0;
+}
+
 type BBPolicyEnvironment = {
 	PI_AGENT_POLICY_BB_PROFILE?: string;
 	PI_AGENT_POLICY_BB_THREAD_ID?: string;

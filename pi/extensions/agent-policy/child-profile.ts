@@ -82,7 +82,7 @@ function tagName(tag: string): string | undefined {
 	return encoded.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-export type PolicyProfile = "main" | "subagent";
+export type PolicyProfile = "main" | "main-bb" | "subagent";
 
 export function selectProfile(systemPrompt: string, backgroundChild: boolean, bbWorkflowWorker = false): PolicyProfile {
 	return backgroundChild || bbWorkflowWorker || CHILD_PREFIXES.some((prefix) => systemPrompt.trimStart().startsWith(prefix))
@@ -102,6 +102,8 @@ export function selectAgentName(systemPrompt: string, profile: PolicyProfile): s
 export const POLICY_START = "<!-- agent-policy:v1:start -->";
 export const POLICY_END = "<!-- agent-policy:v1:end -->";
 export const CHILD_POLICY_MARKER = "<!-- agent-policy:v1:subagent -->";
+export const MAIN_POLICY_MARKER = "<!-- agent-policy:v1:main -->";
+export const MAIN_BB_POLICY_MARKER = "<!-- agent-policy:v1:main-bb -->";
 // Shared wire markers with the optional legacy Chadineer hook, not a module dependency.
 export const LEGACY_START = "<!-- chadineer:v1:start -->";
 export const LEGACY_END = "<!-- chadineer:v1:end -->";
@@ -123,6 +125,8 @@ export function appendPolicy(systemPrompt: string, profile: PolicyProfile, polic
 	let retained = removeBlocks(systemPrompt, POLICY_START, POLICY_END);
 	if (!policy.trim()) return retained;
 	if (profile === "subagent") retained = removeBlocks(retained, LEGACY_START, LEGACY_END);
-	const marker = profile === "subagent" ? CHILD_POLICY_MARKER : "<!-- agent-policy:v1:main -->";
+	const marker = profile === "subagent"
+		? CHILD_POLICY_MARKER
+		: profile === "main-bb" ? MAIN_BB_POLICY_MARKER : MAIN_POLICY_MARKER;
 	return `${retained}\n\n${POLICY_START}\n${marker}\n${policy}\n${POLICY_END}`;
 }

@@ -11,12 +11,14 @@ export type PolicyRuntimeOptions = {
 	register: typeof registerRequiredChildExtensions;
 	backgroundChild: boolean;
 	bbSignal?: BBPolicySignal;
+	bbOrigin?: boolean;
 };
 
 export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptions): void {
 	// Like native APPEND_SYSTEM.md, snapshot at runtime creation, not first use.
 	const config = readConfigSnapshot(options.policyDir);
 	const bbWorkflowWorker = options.bbSignal?.workflowWorker ?? false;
+	const bbOrigin = options.bbOrigin ?? false;
 	const bbDiagnostic = options.bbSignal?.diagnostic;
 	let diagnosticReported = false;
 	let identity: string | undefined;
@@ -66,16 +68,17 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 	pi.on("session_shutdown", () => dispose());
 	pi.on("before_agent_start", (event, ctx) => {
 		ensureRegistration(ctx);
-		try {
+			try {
 			const nativeProfile = selectProfile(event.systemPrompt, options.backgroundChild);
 			const profile = selectProfile(event.systemPrompt, options.backgroundChild, bbWorkflowWorker);
 			// BB has no name contract: only native classification admits named sources.
 			const agentName = selectAgentName(event.systemPrompt, nativeProfile);
 			// Pi starts each hook chain from its base prompt; reapply the cached text each run.
+			// A BB-origin root replaces the main layer; child routing is unaffected either way.
 			const policy = profile === "main"
-				? composeSources(config.common, config.main)
+				? composeSources(config.common, bbOrigin ? config.mainBb : config.main)
 				: composeSources(config.common, config.child, agentName === undefined ? [] : config.agents.get(agentName) ?? []);
-			return { systemPrompt: appendPolicy(event.systemPrompt, profile, policy) };
+			return { systemPrompt: appendPolicy(event.systemPrompt, profile === "main" && bbOrigin ? "main-bb" : profile, policy) };
 		} catch (error) {
 			report(error, ctx);
 		}

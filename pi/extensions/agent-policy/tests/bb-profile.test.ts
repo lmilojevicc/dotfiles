@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseBBPolicySignal } from "../bb-profile.ts";
+import { parseBBPolicySignal, isBBOriginSession } from "../bb-profile.ts";
 import { CHILD_PREFIXES, selectProfile } from "../child-profile.ts";
 
 const tuple = { PI_AGENT_POLICY_BB_PROFILE: "workflow-worker:v1", BB_THREAD_ID: "thread-123", PI_AGENT_POLICY_BB_THREAD_ID: "thread-123" };
@@ -38,6 +38,17 @@ test("BB parser rejects unknown profiles and malformed or mismatched identities 
 		assert.match(result.diagnostic!, /mismatched/);
 		assert.ok(!result.diagnostic!.includes("other-secret"));
 	}
+});
+
+test("BB host-origin detection is any nonblank BB_THREAD_ID and ignores the worker tuple", () => {
+	const env = Object.freeze({ ...tuple });
+	assert.equal(isBBOriginSession(env), true);
+	assert.deepEqual(env, tuple);
+	for (const value of [undefined, "", " ", "\t\n"]) assert.equal(isBBOriginSession({ BB_THREAD_ID: value }), false, JSON.stringify(value));
+	// Unfamiliar but nonblank IDs still count: host routing, not validation or a security boundary.
+	for (const value of ["thr_abc123", " bb ".trim(), "x".repeat(512), "thr_\u00e9"]) assert.equal(isBBOriginSession({ BB_THREAD_ID: value }), true, JSON.stringify(value));
+	assert.equal(isBBOriginSession({ PI_AGENT_POLICY_BB_PROFILE: "none:v1" }), false, "the companion tuple alone is not BB origin");
+	assert.equal(isBBOriginSession({ PI_AGENT_POLICY_BB_THREAD_ID: "thread-123" }), false, "the companion thread copy alone is not BB origin");
 });
 
 test("optional BB profile input preserves native callers and cannot demote native classification", () => {

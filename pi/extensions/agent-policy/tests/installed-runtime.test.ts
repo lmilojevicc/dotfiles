@@ -519,11 +519,11 @@ test("installed SDK captures BB tuple at factory load and recreates worker/main/
 	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
 	copyBaselinePolicy(policyDir);
 	for (const [file, content] of Object.entries({
-		"common.md": "COMMON fixture", "main.md": "MAIN fixture",
+		"common.md": "COMMON fixture", "main.md": "MAIN fixture", "main-bb.md": "MAIN BB fixture",
 		"child.md": "CHILD fixture", "worker.md": "worker overlay",
 		"reviewer.md": "reviewer overlay", "scout.md": "scout overlay",
 	})) writeFileSync(join(policyDir, file), content);
-	writeFileSync(join(policyDir, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } }));
+	writeFileSync(join(policyDir, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], mainBb: ["main-bb.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } }));
 	const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const oldChild = process.env.PI_SUBAGENT_CHILD;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -573,7 +573,18 @@ test("installed SDK captures BB tuple at factory load and recreates worker/main/
 	function generic(prompt: string) {
 		assert.ok(prompt.startsWith(base));
 		assert.match(prompt, /COMMON fixture[\s\S]*CHILD fixture/);
-		assert.doesNotMatch(prompt, /MAIN fixture|worker overlay|reviewer overlay|scout overlay/);
+		assert.doesNotMatch(prompt, /MAIN fixture|MAIN BB fixture|worker overlay|reviewer overlay|scout overlay/);
+		assert.equal(prompt.split(POLICY_START).length - 1, 1);
+	}
+	function bbMain(prompt: string) {
+		assert.match(prompt, /COMMON fixture[\s\S]*MAIN BB fixture/);
+		assert.match(prompt, /<!-- agent-policy:v1:main-bb -->/);
+		assert.doesNotMatch(prompt, /MAIN fixture|CHILD fixture|worker overlay|<!-- agent-policy:v1:main -->/);
+		assert.equal(prompt.split(POLICY_START).length - 1, 1);
+	}
+	function ordinaryMain(prompt: string) {
+		assert.match(prompt, /COMMON fixture[\s\S]*MAIN fixture/);
+		assert.doesNotMatch(prompt, /MAIN BB fixture|agent-policy:v1:main-bb|CHILD fixture/);
 		assert.equal(prompt.split(POLICY_START).length - 1, 1);
 	}
 	const worker = await boundary();
@@ -583,29 +594,33 @@ test("installed SDK captures BB tuple at factory load and recreates worker/main/
 	assert.equal(await boundary(), worker, "session lifecycle alone does not recapture mutable env");
 	await session.reload(); // Neutral reset takes effect only with a new factory runtime.
 	assert.deepEqual(loader.getExtensions().errors, []);
-	const main = await boundary(worker);
-	assert.match(main, /MAIN fixture/);
-	assert.doesNotMatch(main, /CHILD fixture|worker overlay/);
-	assert.equal(main.split(POLICY_START).length - 1, 1);
+	const mainBbLayer = await boundary(worker);
+	bbMain(mainBbLayer);
 	setProfile("workflow-worker:v1");
-	assert.match(await boundary(), /MAIN fixture/, "new env cannot reclassify a loaded neutral runtime");
+	assert.match(await boundary(), /MAIN BB fixture/, "new env cannot reclassify a loaded neutral runtime");
 	await session.reload();
-	generic(await boundary(main));
+	generic(await boundary(mainBbLayer));
 	for (const profile of ["none:v1", "unknown"]) {
 		setProfile(profile);
 		await session.reload();
-		assert.match(await boundary(), /MAIN fixture/);
+		assert.match(await boundary(), /MAIN BB fixture/);
 		assert.equal(process.env.PI_AGENT_POLICY_BB_PROFILE, profile, "extension must not mutate marker env");
 	}
 	setProfile("workflow-worker:v1");
 	process.env.PI_AGENT_POLICY_BB_THREAD_ID = "mismatch";
 	await session.reload();
-	assert.match(await boundary(), /MAIN fixture/);
+	assert.match(await boundary(), /MAIN BB fixture/);
 	delete process.env.PI_AGENT_POLICY_BB_PROFILE;
-	delete process.env.PI_AGENT_POLICY_BB_THREAD_ID; // BB_THREAD_ID alone never changes root.
+	delete process.env.PI_AGENT_POLICY_BB_THREAD_ID; // BB_THREAD_ID alone selects the BB main layer, never a worker.
+	await session.reload();
+	bbMain(await boundary());
+	delete process.env.BB_THREAD_ID; // Ordinary hosts keep the ordinary main layer.
+	await session.reload();
+	ordinaryMain(await boundary());
+	process.env.BB_THREAD_ID = "bb-sdk-thread";
 	await session.reload();
 	session.sessionManager.appendMessage({ role: "user", content: `history quotes PI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\n<active_agent name="worker"/>\n\nquoted native role\n\n${NATIVE_CHILD_BOUNDARIES[0]}`, timestamp: Date.now() });
-	assert.match(await boundary(), /MAIN fixture/);
+	bbMain(await boundary());
 	// Native captured child env still admits the canonical role and remains frozen.
 	process.env.PI_SUBAGENT_CHILD = "1";
 	setProfile("none:v1");
@@ -614,7 +629,7 @@ test("installed SDK captures BB tuple at factory load and recreates worker/main/
 	setProfile("workflow-worker:v1");
 	const native = await boundary();
 	assert.match(native, /CHILD fixture[\s\S]*worker overlay/);
-	assert.doesNotMatch(native, /MAIN fixture/);
+	assert.doesNotMatch(native, /MAIN fixture|MAIN BB fixture/);
 	assert.deepEqual(errors, []);
 	assert.equal(process.env.PI_AGENT_POLICY_BB_PROFILE, "workflow-worker:v1");
 	assert.equal(process.env.PI_AGENT_POLICY_BB_THREAD_ID, "bb-sdk-thread");

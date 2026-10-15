@@ -2,6 +2,7 @@
   "common": [],
   "child": [],
   "main": ["./prompts/main.md"],
+  "mainBb": ["./prompts/main-bb.md"],
   "agents": {
     "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
     "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"]

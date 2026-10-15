@@ -1,10 +1,19 @@
 # Workflow and source rationale
 
-This describes the user-authored `prompts/main.md`, moved unchanged from `ORCHESTRATOR_APPEND_SYSTEM.md` and explicitly listed in `config.json` for main/orchestrator sessions. Common/child source lists start empty; worker/reviewer receive the existing configured Chadineer skill without replacing native child instructions. Add ordinary policy or skill sources through the same config manifest, not role-file magic (see [composition](design.md#policy-and-skill-configuration)). Missing inputs warn and skip rather than preventing startup: fail-open instruction delivery is not security enforcement.
+This describes the user-authored `prompts/main.md`, moved unchanged from `ORCHESTRATOR_APPEND_SYSTEM.md` and explicitly listed in `config.json` for main/orchestrator sessions on ordinary hosts. Its BB-origin counterpart `prompts/main-bb.md` keeps the same tone, evidence, Git and release discipline but delegates through BB's own surfaces, because Pi's native subagent tools are gated off inside BB. Common/child source lists start empty; worker/reviewer receive the existing configured Chadineer skill without replacing native child instructions. Add ordinary policy or skill sources through the same config manifest, not role-file magic (see [composition](design.md#policy-and-skill-configuration)). Missing inputs warn and skip rather than preventing startup: fail-open instruction delivery is not security enforcement.
 
-## Direct versus delegated work
+## Ordinary versus BB host routing
 
-Main communicates with the user and owns observable acceptance, authorization, product/architecture decisions, task ordering, budgets, workspace/provisioning, integration, Git, and releases. Substantive discovery, implementation, checks, and review go to bounded children. One cohesive worker can inspect, implement, and verify a coupled seam; no compulsory scout/planner chain. Use one writer per workspace, separate worktrees for concurrent writers, and independent read-only fanout only when useful.
+`BB_THREAD_ID` is a host-origin signal, not a companion-dependent one: BB sets it for every BB-origin session, and any nonblank value selects `mainBb` for roots. The sibling `pi-subagents-host-gate` extension uses the same rule to suppress Pi's native subagent runtime, so the two extensions stay consistent about what "inside BB" means. Consequences worth stating plainly:
+
+- BB roots get BB-appropriate delegation guidance instead of instructions for tools they cannot use (`subagent`/`task`, native child personas, capability ceilings).
+- Nested or manually launched `pi` processes that inherit `BB_THREAD_ID` also receive the BB main layer; this is accepted host routing, not authentication.
+- A BB root whose config omits `mainBb` receives no root policy at all. That is deliberate: the layer is explicit, like `child`, and a silent fallback to `main` would hide a misconfigured deployment.
+- Worker/child routing is untouched: the versioned companion tuple still selects generic child composition, and native launch layouts still win over any BB signal.
+
+## Direct versus delegated work in BB
+
+Main communicates with the user and owns observable acceptance, authorization, product/architecture decisions, task ordering, budgets, workspace/provisioning, integration, Git, and releases. In BB, bounded work goes to workflow workers or a dispatched worker shell, never to Pi's gated native subagent tools. A workflow itself requires an explicit user request for orchestration; a single dispatch is the ceiling for an ordinary task that merely warrants delegation. One cohesive worker can inspect, implement, and verify a coupled seam; no compulsory scout/planner chain. Use one writer per workspace, separate worktrees for concurrent writers, and independent read-only fanout only when useful.
 
 The approved hybrid exception is deliberately conservative: main may do a genuinely tiny mechanically obvious change only when scope/behavior are already known, there is no material uncertainty, and verification is trivial. It is not a claim of certainty. Any doubt, investigation, multi-step task, or substantive review means delegate; eventual line count is not eligibility. Git/provisioning/release ownership is a separate main duty, not this substantive-work exception. User and higher-priority scope/permission restrictions still win.
 

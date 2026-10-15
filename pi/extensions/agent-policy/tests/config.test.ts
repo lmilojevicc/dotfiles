@@ -43,7 +43,7 @@ test("config snapshot resolves relative, absolute and home paths; reads each nor
 test("optional fields and aliases produce equivalent snapshots; canonical collisions warn and win", (t) => {
 	const f = fixture(t);
 	f.config({});
-	assert.deepEqual(readConfigSnapshot(f.directory), { common: [], child: [], main: [], agents: new Map(), warnings: [] });
+	assert.deepEqual(readConfigSnapshot(f.directory), { common: [], child: [], main: [], mainBb: [], agents: new Map(), warnings: [] });
 	f.config({ common: [f.skill], main: [f.skill], child: [], agents: {} });
 	const canonical = readConfigSnapshot(f.directory);
 	f.config({ all: [f.skill], orchestrator: [f.skill] });
@@ -105,6 +105,28 @@ test("invalid config types, unknown fields and bad path/mapping entries warn wit
 	assert.match(s.warnings.join("\n"), /agents\["unused"\]\[0\]/);
 });
 
+test("mainBb is an independent optional layer with no alias and no fallback to main", (t) => {
+	const f = fixture(t);
+	writeFileSync(join(f.directory, "bb.md"), "bb main");
+	f.config({ main: [f.skill] });
+	assert.deepEqual(readConfigSnapshot(f.directory).mainBb, [], "absent mainBb stays empty, never a main copy");
+	f.config({ main: [f.skill], mainBb: ["bb.md"] });
+	const s = readConfigSnapshot(f.directory);
+	assert.match(composeSources(s.mainBb), /bb main/);
+	assert.equal(composeSources(s.common, s.mainBb).includes("SKILL.md"), false, "main does not leak into the BB layer");
+	assert.deepEqual(s.warnings, []);
+	f.config({ mainBB: ["bb.md"] });
+	const typo = readConfigSnapshot(f.directory);
+	assert.deepEqual(typo.mainBb, [], "case variants are unknown keys, not aliases");
+	assert.match(typo.warnings.join("\n"), /mainBB.*unknown top-level key/);
+	f.config({ mainBb: "bb.md" });
+	assert.match(readConfigSnapshot(f.directory).warnings[0], /mainBb.*expected an ordered array/);
+	f.config({ mainBb: ["missing.md", "bb.md"] });
+	const partial = readConfigSnapshot(f.directory);
+	assert.equal(partial.mainBb.length, 1, "valid siblings survive a missing entry");
+	assert.match(partial.warnings[0], /mainBb\[0\].*missing\.md.*ENOENT/);
+});
+
 test("missing/unreadable sources including unused mappings warn eagerly and retain working siblings", (t) => {
 	const f = fixture(t);
 	f.config({ main: [f.skill, f.root], agents: { unused: ["missing.md", f.skill] } });
@@ -154,9 +176,13 @@ test("path-resolution failure warns and skips instead of aborting the snapshot",
 
 test("deployed config smoke loads all approved sources and preserves exact moved main body", () => {
 	const directory = fileURLToPath(new URL("../", import.meta.url));
-	assert.deepEqual(JSON.parse(readFileSync(join(directory, "config.json"), "utf8")), { common: [], child: [], main: ["./prompts/main.md"], agents: { worker: ["~/Projects/skills/skills/chadineer/SKILL.md"], reviewer: ["~/Projects/skills/skills/chadineer/SKILL.md"] } });
+	assert.deepEqual(JSON.parse(readFileSync(join(directory, "config.json"), "utf8")), { common: [], child: [], main: ["./prompts/main.md"], mainBb: ["./prompts/main-bb.md"], agents: { worker: ["~/Projects/skills/skills/chadineer/SKILL.md"], reviewer: ["~/Projects/skills/skills/chadineer/SKILL.md"] } });
 	const s = readConfigSnapshot(directory);
 	assert.equal(s.main.length, 1, "shipped main prompt must load");
+	assert.equal(s.mainBb.length, 1, "shipped BB main prompt must load");
+	assert.match(composeSources(s.mainBb), /Delegation surfaces in BB/);
+	assert.equal(composeSources(s.mainBb).includes("pi-subagents"), false, "BB main must not reference native subagents");
+	assert.match(composeSources(s.mainBb), /bb fork-workflows/);
 	assert.equal(createHash("sha1").update(readFileSync(join(directory, "prompts/main.md"))).digest("hex"), "5de0f6a003d01f7d362f90119662070103423d9f");
 	// The Chadineer path is a user source: assert real load only where it is installed.
 	if (existsSync(resolve(os.homedir(), "Projects/skills/skills/chadineer/SKILL.md"))) {
