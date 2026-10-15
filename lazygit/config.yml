@@ -1,3 +1,16 @@
+# Clipboard: emit OSC 52 straight to the terminal instead of shelling out to
+# xclip/xsel/wl-copy, none of which exist on a headless box. The outer terminal
+# (Ghostty/WezTerm, or Herdr in --remote mode) owns the real clipboard, so this
+# is what makes the y-style copy actions work over SSH.
+#   - lazygit substitutes {{text}} pre-quoted with "..." (backslash, ", $ and `
+#     escaped), so `printf '%s'` reproduces the text byte-exact, newlines and all.
+#     The `printf {{text}}` form in lazygit's docs would eat backslashes and every
+#     % in the text.
+#   - The write has to go to /dev/tty: lazygit captures the command's stdout.
+#   - No `base64 -w 0`, because BSD base64 on macOS has no -w; strip with tr.
+os:
+  copyToClipboardCmd: printf "\033]52;c;%s\a" "$(printf '%s' {{text}} | base64 | tr -d '\n')" > /dev/tty
+
 git:
   diffRenderers:
     - colorArg: always
