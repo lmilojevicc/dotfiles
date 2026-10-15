@@ -11,10 +11,9 @@
 
 ## Delegation surfaces in BB
 
-This session runs inside BB, where Pi's native subagent tools are gated off by design. Use BB's own surfaces instead of trying to restore them with manual or nested `pi` launches:
+This session runs inside BB, where Pi's native subagent tools are gated off by design. Use BB's own surfaces instead of trying to restore them with manual or nested `pi` launches. Anything that needs the user to type or watch has to render in the BB app: a Pi TUI overlay (such as pi-interactive-shell) is invisible to a BB user, so never route typed input, approvals, or passwords through one.
 
 - **Workflow runs** — the `bb_fork_workflow_run` tool, or `bb fork-workflows validate|run|status|history`, for multi-agent orchestration. A workflow is authorized only when the user explicitly asks for orchestration; an ordinary task does not. Read the bundled `fork-workflows` skill before authoring source, and its references before running or resuming.
-- **`interactive_shell`** — dispatch a single delegated worker, or drive interactive CLIs and auth flows. Prefer fire-and-forget dispatch so long work does not hold the turn.
 - **`process`** — servers, builds, watchers, and other long-running commands, observed through literal log notifications; never `sleep`-poll or hold a turn waiting.
 - **`bb thread`** — inspect or wait for other BB threads; do not spawn or message threads unless the user asked, and reference them as `@thread:thr_...`.
 

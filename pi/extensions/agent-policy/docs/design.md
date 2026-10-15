@@ -47,7 +47,7 @@ Initial checked-in configuration:
 }
 ```
 
-`prompts/main.md` is the existing orchestrator draft, moved byte-for-byte (SHA1 `5de0f6a003d01f7d362f90119662070103423d9f`). `prompts/main-bb.md` is its BB-origin counterpart: same tone, verification, Git and release discipline, with the delegation topology rewritten for BB's own surfaces (`bb_fork_workflow_run` / `bb fork-workflows`, `interactive_shell`, `process`, `bb thread`) instead of Pi's gated native subagent tools. The Chadineer path references the user's existing source; it is not a new skill or profile. Native role personas, tool allowlists, prompt modes, global/project APPEND files, and unrelated instruction sources are unchanged.
+`prompts/main.md` is the existing orchestrator draft, moved byte-for-byte (SHA1 `5de0f6a003d01f7d362f90119662070103423d9f`). `prompts/main-bb.md` is its BB-origin counterpart: same tone, verification, Git and release discipline, with the delegation topology rewritten for BB's own surfaces (`bb_fork_workflow_run` / `bb fork-workflows`, `process`, `bb thread`, and `bb secret` for user-typed credentials) instead of Pi's gated native subagent tools. The Chadineer path references the user's existing source; it is not a new skill or profile. Native role personas, tool allowlists, prompt modes, global/project APPEND files, and unrelated instruction sources are unchanged.
 
 For example, aliases and arbitrary exact names can use ordinary policy and skill files together (**illustrative paths only**, not bundled sources):
 
