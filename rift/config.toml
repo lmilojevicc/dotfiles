@@ -44,23 +44,45 @@
   default_workspace = 0
   auto_assign_windows = true
   preserve_focus_per_workspace = true
+  # Re-evaluate app rules when a title changes so settings windows that set their
+  # title after creation still pick up the settings-menu float rule below.
+  reapply_app_rules_on_title_change = true
   workspace_names = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
   app_rules = [
     { app_id = "com.github.wez.wezterm", workspace = 0 },
     { app_id = "com.mitchellh.ghostty", workspace = 0 },
-    { app_id = "net.imput.helium", workspace = 1 },
-    { app_id = "app.zen-browser.zen", workspace = 1 },
-    { app_id = "com.brave.Browser", workspace = 1 },
-    { app_id = "md.obsidian", workspace = 2 },
+    { app_id = "dev.bb.desktop", workspace = 0 },
+    # Browser settings live in normal window tabs, so keep browser windows tiled.
+    # These precede the generic settings rule at the end: equal-specificity ties
+    # are resolved by the earlier rule in the file.
+    { app_id = "net.imput.helium", workspace = 1, floating = false },
+    { app_id = "app.zen-browser.zen", workspace = 1, floating = false },
+    { app_id = "com.brave.Browser", workspace = 1, floating = false },
+    { app_id = "md.obsidian", workspace = 3 },
+    # Mail clients share workspace index 2 (label "3").
+    { app_id = "com.mailspring.mailspring", workspace = 2 },
+    { app_id = "sh.arne.pelton", workspace = 2 },
+    { app_id = "io.github.c9dev.PenguinMail", workspace = 2 },
+    { app_id = "com.apple.mail", workspace = 2 },
+    { app_id = "com.microsoft.Outlook", workspace = 2 },
+    { app_id = "ch.protonmail.desktop", workspace = 2 },
+    { app_id = "org.mozilla.thunderbird", workspace = 2 },
     { app_id = "com.spotify.client", workspace = 8 },
     { app_id = "com.hnc.Discord", workspace = 8 },
     { app_id = "com.github.th-ch.youtube-music", workspace = 8 },
     { app_id = "org.localsend.localsendApp", workspace = 9 },
     { app_id = "com.apple.finder", title_substring = "Deleting", floating = true },
     { app_id = "pl.maketheweb.cleanshotx", floating = true },
-    { app_id = "com.apple.systempreference", floating = true },
+    { app_id = "com.apple.systempreferences", floating = true },
     { app_id = "com.objective-see.lulu.app", floating = true },
     { app_id = "com.superace.updf.mac", floating = false },
+    # Settings/preferences windows float like popups instead of being tiled.
+    # Rift compiles title_regex with case-insensitive matching.
+    # Rift's own Settings window (newer builds share this bundle id) and the
+    # whole Vicinae app (launcher + its independent settings window) float.
+    { app_id = "git.acsandmann.rift", floating = true },
+    { app_id = "com.vicinaehq.Vicinae", floating = true },
+    { title_regex = "(settings|preferences)$", floating = true },
   ]
 
 [keys]
