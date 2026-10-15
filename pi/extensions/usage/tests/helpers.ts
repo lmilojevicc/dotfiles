@@ -56,6 +56,8 @@ export function adapterContext(overrides: Partial<AdapterContext> = {}): Adapter
 		homeDir: "/nonexistent-pi-usage-home",
 		env: {},
 		fetch: noNetwork,
+		// Never read the developer's real keychain from a test.
+		readKeychainItem: async () => undefined,
 		...overrides,
 	};
 }

@@ -33,6 +33,7 @@ import {
 	type ProviderSnapshot,
 } from "./core.ts";
 import { PROVIDER_ADAPTERS } from "./providers/index.ts";
+import { parseClaudeHeaders, resetClaudeCredentialCache } from "./providers/claude.ts";
 import { resetManagementKeyCache } from "./providers/cliproxyapi.ts";
 import {
 	formatProviderBody,
@@ -78,6 +79,11 @@ function createAdapterContext(ctx: ExtensionContext): AdapterContext {
 		homeDir: homedir(),
 		env: process.env,
 		fetch: (input, init) => globalThis.fetch(input, init),
+		// Tests inject a stub so a suite never reads the developer's real keychain.
+		...(() => {
+			const injected = (ctx as { readKeychainItem?: (service: string) => Promise<string | undefined> }).readKeychainItem;
+			return typeof injected === "function" ? { readKeychainItem: injected } : {};
+		})(),
 	};
 }
 
@@ -85,6 +91,15 @@ function errorMessage(error: unknown): TabError {
 	if (error instanceof ProviderStateError) return { message: error.message, state: error.state };
 	if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return { message: "Request timed out." };
 	return { message: error instanceof Error && error.message ? error.message : "Request failed." };
+}
+
+/**
+ * Store a snapshot that arrived for free (Claude's unified rate-limit headers) so the menu and the
+ * footer read it without a request. The next scheduled refresh still runs on the normal TTL.
+ */
+function mergeLiveSnapshot(snapshot: ProviderSnapshot): void {
+	if (!snapshot.rows.length) return;
+	snapshotCache.set(snapshot.providerId, { snapshot, expiresAt: Date.now() + SNAPSHOT_CACHE_MS });
 }
 
 /** Fresh cached snapshot unless forced; a failed refresh keeps the previous snapshot cached and rethrows. */
@@ -119,7 +134,8 @@ async function visibleAdapters(adapters: readonly ProviderAdapter[], adapterCont
 /** `<providerId> <used>% used` for the session model's provider, else the first visible provider with data. */
 async function computeStatus(ctx: ExtensionContext, adapters: readonly ProviderAdapter[], adapterContext: AdapterContext, signal: AbortSignal): Promise<string | undefined> {
 	const visible = await visibleAdapters(adapters, adapterContext);
-	const preferred = visible.find((adapter) => adapter.id === ctx.model?.provider);
+	const modelProvider = ctx.model?.provider;
+	const preferred = visible.find((adapter) => adapter.id === modelProvider || adapter.aliases?.includes(modelProvider ?? ""));
 	for (const adapter of preferred ? [preferred, ...visible.filter((candidate) => candidate !== preferred)] : visible) {
 		if (signal.aborted) return undefined;
 		let snapshot: ProviderSnapshot | undefined;
@@ -281,6 +297,7 @@ export const __testing = Object.freeze({
 	setStatus,
 	visibleAdapters,
 	clearSnapshotCache: () => snapshotCache.clear(),
+	mergeLiveSnapshot,
 });
 
 export default function usage(pi: ExtensionAPI) {
@@ -316,6 +333,15 @@ export default function usage(pi: ExtensionAPI) {
 		shutdownController = new AbortController();
 		snapshotCache.clear();
 		resetManagementKeyCache();
+		resetClaudeCredentialCache();
+		void refreshStatus(ctx);
+	});
+	pi.on("after_provider_response", (event, ctx) => {
+		const live = parseClaudeHeaders(event.headers);
+		if (!live) return;
+		const previous = snapshotCache.get(live.providerId)?.snapshot;
+		if (previous && previous.statusPercent === live.statusPercent && previous.rows.length === live.rows.length) return;
+		mergeLiveSnapshot(live);
 		void refreshStatus(ctx);
 	});
 	pi.on("model_select", (_event, ctx) => {

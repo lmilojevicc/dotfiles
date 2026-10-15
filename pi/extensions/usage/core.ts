@@ -66,6 +66,11 @@ export type AdapterContext = {
 	env: Readonly<Record<string, string | undefined>>;
 	/** Use this instead of the global fetch so tests never perform real network I/O. */
 	fetch: typeof globalThis.fetch;
+	/**
+	 * Read a platform secret store (the macOS keychain). Injected so tests never read the user's
+	 * real logins; when omitted, the platform store is used.
+	 */
+	readKeychainItem?: (service: string) => Promise<string | undefined>;
 };
 
 export type ProviderAdapter = {
@@ -73,6 +78,11 @@ export type ProviderAdapter = {
 	id: string;
 	/** Tab label. Keep it short. */
 	title: string;
+	/**
+	 * Extra provider ids that select this adapter for the footer status, so one quota source can
+	 * serve several provider names (e.g. Claude behind `claude-bridge` and the built-in provider).
+	 */
+	aliases?: readonly string[];
 	/** True when this provider has usable credentials configured (any state). Gate on presence, not readiness. */
 	hasCredentials(ctx: AdapterContext): Promise<boolean>;
 	/** Fetch a snapshot. Throw Error with a short human message on failure (see ProviderStateError). */
