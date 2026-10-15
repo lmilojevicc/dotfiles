@@ -24,7 +24,10 @@
     "npm:pi-btw",
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
-    "npm:pi-interactive-shell",
+    {
+      "source": "npm:pi-interactive-shell",
+      "extensions": []
+    },
     {
       "source": "npm:pi-commandcode-provider",
       "extensions": [
@@ -49,7 +52,7 @@
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
   "extensions": [
-    "extensions/pi-subagents-host-gate/loader.ts",
+    "extensions/host-gate/loader.ts",
     "-extensions/command-code/index.ts",
     "-extensions/chadineer/index.ts",
     "-extensions/redaction/index.ts",
