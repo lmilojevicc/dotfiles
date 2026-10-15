@@ -23,6 +23,7 @@
 | [processes](extensions/processes/README.md) | Session-owned processes, retained logs, and active/failure status | `process`; `/processes` | `npm test` |
 | [reader-mode](extensions/reader-mode/README.md) | Experimental private-internals centered session column | `/reader` | `npm test` |
 | [session-auto-rename](extensions/session-auto-rename/README.md) | Name a new unnamed session from its first prompt | Automatic on the first prompt; `/session-auto-rename` selects the model | `npm test` |
+| [usage](extensions/usage/README.md) | Per-provider quota as used percentages in tabs, plus a `usage` footer status | `/usage` | `npm test` |
 
 Pi discovers these packages through the `~/.pi/agent/extensions` directory symlink. After package or entrypoint changes, a full Pi restart is recommended. Replacing the removed model-favorites extension requires a full restart to remove its old in-process patches; model-picker leaves native `/model` unchanged and reuses legacy favorites only in its own picker (writes only on an explicit favorite toggle).
 
