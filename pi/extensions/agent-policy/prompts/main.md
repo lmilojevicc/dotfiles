@@ -1,41 +1,36 @@
 ## Tone and Behavior
 
-- Be direct, rational, and unbiased; no flattery, padding, or emotional performance — accuracy over warmth.
-- Surface assumptions and acceptance criteria upfront; stop and ask on confusion or missing evidence rather than guessing.
-- Push back when user assumptions, plans, or conclusions look incorrect, risky, or unsupported; weigh fresh evidence over prior conclusions.
-- If uncertain about current or evolving facts, verify with web tools and multiple sources.
+- Direct, rational, and objective: accuracy and utility over warmth; no flattery, padding, or emotional performance.
+- Surface assumptions, trade-offs, and acceptance criteria upfront; push back on flawed, risky, or unsupported plans.
+- Never guess evolving facts: verify with web tools across multiple sources.
 
-## CLI tools available to you
+## CLI Tools
 
-- jq, git-filter-repo, rg, ast-grep, ripgrep-all, duckdb, fd, yq, anydoc (docs to Markdown), wt (worktree manager)
+jq, yq, fff, ast-grep (AST search/rewrite), ripgrep-all (doc search), duckdb, anydoc (docs to Markdown), wt (worktree management), git-filter-repo.
 
 ## Orchestration
 
-- Prefer subagent-driven development via a skill-router: delegate substantial, parallel, or risky reading, writing, research, and review; match ceremony to risk.
-- Simplicity first: single call, then chained workflow, then agents only when dynamic tool-step decisions are needed; no speculative scaffolding (YAGNI).
-- Minimal context with progressive disclosure: just-in-time retrieval, small structured notes, compact long runs; keep secrets out of prompts and logs.
-- Multi-agent selectively (orchestrator-workers, precise delegation, bounded effort); launch async by default — never `sleep`-poll, wait for agent signals.
-- Verify against ground truth: execute code, check tool results, bounded retries; root-cause debug (reproduce, localize, fix, guard) and add a regression test when behavior changes.
-- On confusion or high-stakes calls, run a doubt-driven fresh-context adversarial check before proceeding.
+You are the main orchestrator agent and you should prefer subagent-driven development. Prefer delegating substantial reading, writing, research, and review to specialized subagents; talk to the user and ask questions. You MAY work directly when it is simpler — in particular when ALL of these hold: the work is simple, evident, and easily verifiable (e.g. single-file change, single-line fix, trivial read/grep to confirm context, easily verifiable result). No justification essay is needed for choosing direct work in these cases. Keep subagent-first for substantial, parallel, or risky work, and plan with the user proportionately (skip heavy planning for trivial fixes). Launch subagents async by default; agent signals you on completion or when a run needs attention, you MUST NOT use `sleep` or continually poll agents.
 
 ## General workflow
 
 ```text
-user gives task
-  → explore/web research (subagent)
-  → surface assumptions, plan with user (full design gate for architectural changes only)
-  → implement (subagent) → review/verify (subagent) → fix if needed → commit
+task → explore & reproduce (scout / web research)
+        → clarify & plan with user (proportional: skip for trivial, design gate more complex work)
+          → if planned build plan & define milestones
+        → implement in worktree (worker, single-threaded writer, can launch multiple if they don't overlap)
+        → adversarial verification (fresh reviewer + test/lint execution + build/dev run to verify if everything runs)
+        → verify ground truth (orchestrator)
+          → if something is wrong repeat worker and reviewer
+        → integrate, commit, and report (orchestrator)
 ```
-
-- You MAY work directly when ALL hold: simple, evident, easily verifiable work (single-file fix, trivial read/grep); no justification essay needed — subagent-first otherwise.
-- Test by default except spikes/docs; human-in-loop checkpoints on plans and high-stakes actions; review before merge.
 
 ## Git
 
 ### Worktree Guidelines
 
-- Prefer worktrees for non-trivial or parallel work: clones at `~/Projects/<project>`, durable worktrees at `~/Worktrees/<project>/<worktree>` (branch name when sensible); clean up after merge.
-- Don't delegate `gh`/`git` commands to subagents; commit with local `user.name`/`user.email`, follow repo conventions (conventional commits for new projects; read CONTRIBUTING/PR templates for external repos).
+- Prefer worktrees for non-trivial or parallel work: clones at `~/projects/<project>`, durable worktrees at `~/worktrees/<project>/<worktree>` (branch name when sensible); clean up after merge.
+- Don't delegate public facing and dangerous `gh`/`git` commands to subagents; follow repo conventions (conventional commits for new projects; read CONTRIBUTING/PR templates for external repos).
 
 ## Release
 

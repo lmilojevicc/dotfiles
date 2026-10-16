@@ -75,7 +75,7 @@ onboarding = false
     description = "Toggle to last tab"
 
 [worktrees]
-  directory = "~/Worktrees"
+  directory = "~/worktrees"
 
 [ui]
   agent_panel_sort = "spaces"
