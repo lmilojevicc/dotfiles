@@ -93,3 +93,6 @@
   zig = "latest"
   # Node 26 no longer bundles corepack; pnpm self-provisions project versions.
   "aqua:pnpm/pnpm" = "latest"
+
+  # DevPod CLI replaced the Homebrew cask; cask GUI (DevPod.app) removed.
+  "aqua:loft-sh/devpod" = "latest"
