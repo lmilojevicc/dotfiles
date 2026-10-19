@@ -73,6 +73,31 @@ vim.opt.errorbells = false -- Disable error bells
 vim.opt.autochdir = false -- Don’t change CWD on buffer open
 vim.opt.path:append("**") -- Search in subdirectories
 vim.opt.mouse = "a" -- Enable mouse in all modes
+
+-- System clipboard
+-- macOS/Windows, or any host with a real display server, uses the native provider.
+-- A headless Linux box (agent-pc over SSH/herdr) has no clipboard tool at all, so
+-- fall back to OSC 52: the multiplexer forwards the escape sequence to the outer
+-- terminal, which owns the real clipboard — the local Mac's. Copy-only on purpose:
+-- an OSC 52 read needs a terminal reply that multiplexers do not relay, so paste
+-- registers stay empty instead of hanging.
+local native_clipboard = vim.fn.has("mac") == 1
+  or vim.fn.has("win32") == 1
+  or (vim.env.DISPLAY or "") ~= ""
+  or (vim.env.WAYLAND_DISPLAY or "") ~= ""
+
+if not native_clipboard and vim.fn.has("nvim-0.10") == 1 then
+  local osc52 = require("vim.ui.clipboard.osc52")
+  local no_paste = function()
+    return {}
+  end
+  vim.g.clipboard = {
+    name = "osc52",
+    copy = { ["+"] = osc52.copy("+"), ["*"] = osc52.copy("*") },
+    paste = { ["+"] = no_paste, ["*"] = no_paste },
+  }
+end
+
 vim.opt.clipboard = "unnamedplus" -- Use system clipboard
 vim.opt.modifiable = true -- Enable buffer modifications
 vim.opt.confirm = true -- Raise confirm dialog for actions that would fail
