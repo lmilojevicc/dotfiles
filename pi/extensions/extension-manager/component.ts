@@ -10,12 +10,17 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 
+export type ExtensionLock = "required" | "global-off";
+/** Informational, not a lock: an owned package can be toggled while its install is gone. */
+export type ExtensionNote = "not-installed";
+
 export type ExtensionManagerRow = {
 	id: string;
 	label: string;
 	searchText: string;
 	enabled: boolean;
-	lock?: "required" | "local-file-package";
+	lock?: ExtensionLock;
+	note?: ExtensionNote;
 };
 
 export type ExtensionManagerResult = "save" | "cancel";
@@ -27,9 +32,13 @@ type Options = {
 	getHeight: () => number;
 	getWidth?: () => number;
 	getTerminalHeight?: () => number;
-	getEnabled: (row: ExtensionManagerRow) => boolean;
+	/** Scope tabs, for example ["Pi (global)", "BB"]; a single or absent tab renders no tab row. */
+	tabs?: readonly string[];
+	getEnabled: (row: ExtensionManagerRow, tab: number) => boolean;
+	getLock?: (row: ExtensionManagerRow, tab: number) => ExtensionLock | undefined;
+	getNote?: (row: ExtensionManagerRow, tab: number) => ExtensionNote | undefined;
 	getStagedCount: () => number;
-	onToggle: (row: ExtensionManagerRow) => void;
+	onToggle: (row: ExtensionManagerRow, tab: number) => void;
 	onChange: () => void;
 	onDone: (result: ExtensionManagerResult) => void;
 };
@@ -39,6 +48,12 @@ const SAVE_HINT = "ctrl+s Save";
 const COMPACT_SAVE_HINT = "^S Save";
 
 const cleanText = (value: string): string => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+
+export const lockSuffix = (lock: ExtensionLock | undefined): string =>
+	lock === "required" ? " · required" : lock === "global-off" ? " · off globally" : "";
+
+export const noteSuffix = (note: ExtensionNote | undefined): string =>
+	note === "not-installed" ? " · not installed" : "";
 
 export function filterExtensionRows(rows: readonly ExtensionManagerRow[], query: string): ExtensionManagerRow[] {
 	if (!query) return [...rows];
@@ -59,6 +74,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 	private filtered: ExtensionManagerRow[];
 	private selected = 0;
 	private pageSize = 1;
+	private tab = 0;
 	private disposed = false;
 	private usable = false;
 	private confirmingDiscard = false;
@@ -82,6 +98,9 @@ export class ExtensionManagerComponent implements Component, Focusable {
 	getQuery(): string { return this.input.getValue(); }
 	getFilteredRows(): readonly ExtensionManagerRow[] { return this.filtered; }
 	getSelectedRow(): ExtensionManagerRow | undefined { return this.filtered[this.selected]; }
+	getTabIndex(): number { return this.tab; }
+	getTabLabel(): string | undefined { return this.options.tabs?.[this.tab]; }
+	getTabCount(): number { return this.options.tabs?.length ?? 0; }
 
 	private move(delta: number, page = false): void {
 		const count = this.filtered.length;
@@ -90,9 +109,28 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		else this.selected = (this.selected + delta + count) % count;
 	}
 
+	private switchTab(delta: number): void {
+		const count = this.getTabCount();
+		if (count < 2) return;
+		this.tab = (this.tab + delta + count) % count;
+	}
+
+	private lockFor(row: ExtensionManagerRow): ExtensionLock | undefined {
+		return this.options.getLock ? this.options.getLock(row, this.tab) : row.lock;
+	}
+
+	private noteFor(row: ExtensionManagerRow): ExtensionNote | undefined {
+		return this.options.getNote ? this.options.getNote(row, this.tab) : row.note;
+	}
+
 	private activate(): void {
 		const row = this.getSelectedRow();
-		if (row) this.options.onToggle(row);
+		if (row) this.options.onToggle(row, this.tab);
+	}
+
+	private save(): void {
+		this.dispose();
+		this.options.onDone("save");
 	}
 
 	handleInput(data: string): void {
@@ -122,8 +160,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 			return;
 		}
 		if (usable && matchesKey(data, SAVE_KEY)) {
-			this.dispose();
-			this.options.onDone("save");
+			this.save();
 			return;
 		}
 		if (kb.matches(data, "tui.select.cancel")) {
@@ -139,6 +176,21 @@ export class ExtensionManagerComponent implements Component, Focusable {
 			return;
 		}
 		if (!usable) return;
+
+		// Tab switches scope, matching Pi's native `pi config` scope key. Shift+Tab is the
+		// reverse direction; both only change the view, never staged state.
+		if (matchesKey(data, "shift+tab")) {
+			this.switchTab(-1);
+			this.invalidate();
+			this.options.onChange();
+			return;
+		}
+		if (kb.matches(data, "tui.input.tab") || matchesKey(data, "tab")) {
+			this.switchTab(1);
+			this.invalidate();
+			this.options.onChange();
+			return;
+		}
 
 		if (kb.matches(data, "tui.select.up")) this.move(-1);
 		else if (kb.matches(data, "tui.select.down")) this.move(1);
@@ -176,8 +228,11 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const confirmKey = kb.getKeys("tui.select.confirm")[0] ?? "unbound";
 		const cancelName = cancelKey === "escape" ? "Esc" : cancelKey;
 		const confirmName = confirmKey === "enter" ? "Enter" : confirmKey;
-		const compactHint = `${COMPACT_SAVE_HINT} · ${cancelName} cancel`;
-		const actionHint = `${SAVE_HINT} · ${confirmName} toggle · ${cancelName} cancel`;
+		const tabRows = this.getTabCount() > 1 ? 1 : 0;
+		const compactHint = tabRows ? `${COMPACT_SAVE_HINT} · Tab · ${cancelName}` : `${COMPACT_SAVE_HINT} · ${cancelName} cancel`;
+		const actionHint = tabRows
+			? `${SAVE_HINT} · Tab scope · ${confirmName} toggle · ${cancelName} cancel`
+			: `${SAVE_HINT} · ${confirmName} toggle · ${cancelName} cancel`;
 		const contentWidth = Math.max(0, width - 4);
 		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
 		if (this.confirmingDiscard) {
@@ -196,7 +251,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 			lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
 			return lines.map((line) => clip(line));
 		}
-		if (width < 24 || height < 10 || visibleWidth(compactHint) > contentWidth) {
+		if (width < 24 || height < 10 + tabRows || visibleWidth(compactHint) > contentWidth) {
 			if (width >= 4 && height >= 3) {
 				const lines = [
 					theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
@@ -216,7 +271,7 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const title = staged > 0 ? `Extensions (${staged} staged)` : "Extensions";
 		const searchPrefix = theme.fg("muted", "Search: ");
 		const search = searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
-		const bodyRows = Math.min(10, Math.max(1, height - 7), Math.max(1, this.options.rows.length));
+		const bodyRows = Math.min(10, Math.max(1, height - 7 - tabRows), Math.max(1, this.options.rows.length));
 		this.pageSize = bodyRows;
 		const selectedExtension = this.filtered.length === 0 ? 0 : Math.min(this.selected, this.filtered.length - 1);
 		const { start, end } = extensionViewport(selectedExtension, this.filtered.length, bodyRows);
@@ -225,9 +280,15 @@ export class ExtensionManagerComponent implements Component, Focusable {
 		const lines = [
 			theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
 			bordered(theme.bold(clip(title, contentWidth))),
-			bordered(clip(search, contentWidth)),
-			bordered(theme.fg("borderMuted", clip(up, contentWidth))),
 		];
+		if (tabRows > 0) {
+			const separator = theme.fg("borderMuted", " │ ");
+			const tabs = (this.options.tabs ?? []).map((label, index) =>
+				index === this.tab ? theme.bold(theme.fg("accent", label)) : theme.fg("muted", label));
+			lines.push(bordered(clip(tabs.join(separator), contentWidth)));
+		}
+		lines.push(bordered(clip(search, contentWidth)));
+		lines.push(bordered(theme.fg("borderMuted", clip(up, contentWidth))));
 
 		for (let slot = 0; slot < bodyRows; slot++) {
 			const index = start + slot;
@@ -237,17 +298,21 @@ export class ExtensionManagerComponent implements Component, Focusable {
 				continue;
 			}
 			const active = index === this.selected;
-			const enabled = this.options.getEnabled(row);
-			const lock = row.lock === "required" ? " · required" : row.lock === "local-file-package" ? " · unavailable (local file package)" : "";
+			const enabled = this.options.getEnabled(row, this.tab);
+			const lock = this.lockFor(row);
 			const marker = active ? theme.fg("accent", "›") : " ";
 			const checkbox = enabled ? theme.fg("success", "[x]") : "[ ]";
-			const label = cleanText(row.label) + lock;
-			lines.push(bordered(clip(`${marker} ${checkbox} ${active ? theme.bold(label) : row.lock ? theme.fg("muted", label) : label}`, contentWidth)));
+			const label = cleanText(row.label) + lockSuffix(lock) + (lock ? "" : noteSuffix(this.noteFor(row)));
+			lines.push(bordered(clip(`${marker} ${checkbox} ${active ? theme.bold(label) : lock ? theme.fg("muted", label) : label}`, contentWidth)));
 		}
 		lines.push(bordered(theme.fg("borderMuted", clip(down, contentWidth))));
 
-		const fullHint = `${SAVE_HINT} · Type search · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
-		const moveHint = `${SAVE_HINT} · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const fullHint = tabRows
+			? `${SAVE_HINT} · Type search · ↑↓ move · Tab scope · ${confirmName} toggle · ${cancelName} cancel`
+			: `${SAVE_HINT} · Type search · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
+		const moveHint = tabRows
+			? `${SAVE_HINT} · ↑↓ move · Tab scope · ${confirmName} toggle · ${cancelName} cancel`
+			: `${SAVE_HINT} · ↑↓ move · ${confirmName} toggle · ${cancelName} cancel`;
 		const footer = visibleWidth(fullHint) <= contentWidth ? fullHint : visibleWidth(moveHint) <= contentWidth ? moveHint : visibleWidth(actionHint) <= contentWidth ? actionHint : compactHint;
 		lines.push(bordered(theme.fg("dim", footer)));
 		lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));

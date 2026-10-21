@@ -13,7 +13,6 @@ const sdkRoot = process.env.PI_POLICY_TEST_SDK ?? join(process.env.HOME!, ".pi/a
 const subagentsRoot = process.env.PI_POLICY_TEST_SUBAGENTS ?? join(process.env.HOME!, ".pi/agent/npm/node_modules/pi-subagents");
 const available = existsSync(join(sdkRoot, "dist/index.js")) && existsSync(join(subagentsRoot, "src/api/required-child-extensions.js"));
 const sourceExtensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
-const mainDraft = readFileSync(new URL("../prompts/main.md", import.meta.url), "utf8");
 const fakeModel = { id: "offline-test", name: "offline-test", provider: "anthropic", api: "anthropic-messages", baseUrl: "https://invalid.example", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100000, maxTokens: 1000 };
 
 
@@ -40,6 +39,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	isolateBBEnvironment(t);
 	const root = mkdtempSync(join(tmpdir(), "agent-policy-native-"));
 	const extensionPath = copyBaselinePolicy(join(root, "baseline-policy"));
+	const mainHeader = `## Policy source: ${join(dirname(extensionPath), "prompts", "main.md")}`;
 	const cwd = join(root, "project");
 	const agentDir = join(root, "agent");
 	mkdirSync(cwd, { recursive: true });
@@ -124,11 +124,11 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	}
 	const rootPrompt = await boundary(parent, "ROOT role");
 	assert.ok(rootPrompt.startsWith("ROOT role"));
-	assert.ok(rootPrompt.includes(mainDraft));
-	assert.match(rootPrompt, /Tone and Behavior/);
+	assert.ok(rootPrompt.includes(mainHeader), "shipped main prompt must load non-empty");
+	assert.match(rootPrompt, /Independent native APPEND fixture/);
 	assert.equal(rootPrompt.split(POLICY_START).length - 1, 1);
 	const misleadingRoot = await boundary(parent, '<active_agent name="worker"/>\nROOT role');
-	assert.ok(misleadingRoot.includes(mainDraft));
+	assert.ok(misleadingRoot.includes(mainHeader));
 	assert.equal(misleadingRoot.split(POLICY_START).length - 1, 1);
 	const factory = createDefaultChildSessionFactory({ loadPiCodingAgent: async () => host });
 	t.after(() => factory.dispose());
@@ -156,10 +156,9 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 		assert.ok(prompt.endsWith(NATIVE_CHILD_BOUNDARIES[fanout ? 1 : 0]), "complete native boundary is appended");
 		assert.equal(selectProfile(prompt, false), "subagent", "foreground layout alone selects native child");
 		assert.ok(prompt.includes(`${mode} role`));
-		assert.match(prompt, /Tone and Behavior/);
-		assert.doesNotMatch(prompt, /MUST use subagent-driven|## Orchestration|Never delegate these actions/);
+		assert.match(prompt, /Independent native APPEND fixture/);
+		assert.ok(!prompt.includes(mainHeader), "children never inherit the root main source");
 		assert.ok(prompt.includes('<active_agent name="worker"/>'));
-		assert.ok(!prompt.includes(mainDraft));
 		assert.doesNotMatch(prompt, /agent-policy:v1:/);
 		const repeated = await boundary(session, prompt);
 		assert.doesNotMatch(repeated, /agent-policy:v1:/);
@@ -191,7 +190,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 		assert.ok(prompt.includes(`<active_agent name="${agent.name}"/>`), selection);
 		assert.ok(prompt.includes(agent.systemPrompt), "builtin body remains intact");
 		assert.doesNotMatch(prompt, /agent-policy:v1:/);
-		assert.ok(!prompt.includes(mainDraft));
+		assert.ok(!prompt.includes(mainHeader));
 		await child.dispose();
 	}
 	for (const name of ["custom-role", "../worker", 'worker"/><active_agent name="scout']) {
@@ -206,6 +205,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	// Populated temporary config proves effective named sources, including under a BB-positive tuple.
 	const populatedPolicyDir = join(root, "populated-policy");
 	copyBaselinePolicy(populatedPolicyDir);
+	const populatedMainHeader = `## Policy source: ${join(dirname(realpathSync(join(populatedPolicyDir, "index.ts"))), "main.md")}`;
 	for (const [file, content] of Object.entries({
 		"common.md": "NATIVE COMMON fixture", "main.md": "NATIVE MAIN fixture",
 		"child.md": "NATIVE CHILD fixture", "worker.md": "worker NATIVE overlay",
@@ -265,7 +265,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 							assert.equal(extensionOrder.at(-1), "<inline:pi-subagents:prompt-boundary>");
 							assert.ok(extensionOrder.indexOf(populatedRequired[0].path) > 0);
 							assert.doesNotMatch(prompt, /NATIVE MAIN fixture/);
-							assert.ok(!prompt.includes(mainDraft));
+							assert.ok(!prompt.includes(populatedMainHeader));
 							assert.equal(prompt.split(POLICY_START).length - 1, 1);
 							assert.deepEqual(childSession.getActiveToolNames(), tools);
 							assert.deepEqual(resolveRequiredChildExtensions(child.sessionId), populatedRequired);
@@ -306,7 +306,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	const secondSnapshotChild = await factory.create({ ...snapshotLaunch.session, onExtensionError: (error: any) => errors.push(error) });
 	assert.match(await boundary(sessions.at(-1)), /NEW CHILD security body[\s\S]*NEW CHILD config mapping body/);
 	await secondSnapshotChild.dispose();
-	assert.ok((await boundary(parent, "ROOT snapshot owner")).includes(mainDraft), "child file snapshots do not alter parent runtime");
+	assert.ok((await boundary(parent, "ROOT snapshot owner")).includes(mainHeader), "child file snapshots do not alter parent runtime");
 	// Reproduce the deployed cause in the actual required planner/factory, not just the loader.
 	unlinkSync(join(populatedPolicyDir, "development.md"));
 	const missingLaunch = buildInProcessChildLaunch({
@@ -389,7 +389,7 @@ test("installed SDK/native loader routes root, foreground, fork, runner, nested,
 	setChildSessionFactory(undefined);
 	assert.throws(() => buildInProcessChildLaunch({ cwd, parentSessionId: parentId, childAgentName: "worker", childIndex: 0, host: "parent", sessionEnabled: false, inheritProjectContext: false, inheritGlobalContext: false, inheritSkills: false, tools: ["read"], capabilityCeiling: { version: 1, denyExtensions: true, sources: ["test-deny"] } }), /denies extensions/);
 	assert.deepEqual(errors, []);
-	assert.ok((await boundary(parent, "ROOT after runner role")).includes(mainDraft), "runner-host activity does not reclassify an already loaded root runtime");
+	assert.ok((await boundary(parent, "ROOT after runner role")).includes(mainHeader), "runner-host activity does not reclassify an already loaded root runtime");
 	await parent.extensionRunner.emit({ type: "session_shutdown", reason: "reload" });
 	assert.deepEqual(resolveRequiredChildExtensions(parentId), []);
 	await parent.extensionRunner.emit({ type: "session_start", reason: "reload" });
@@ -406,6 +406,7 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	mkdirSync(join(agentDir, "npm/node_modules"), { recursive: true });
 	symlinkSync(subagentsRoot, join(agentDir, "npm/node_modules/pi-subagents"), "dir");
 	copyBaselinePolicy(policyDir);
+	const shippedMainHeader = `## Policy source: ${join(dirname(realpathSync(join(policyDir, "index.ts"))), "prompts", "main.md")}`;
 	const appendPath = join(agentDir, "APPEND_SYSTEM.md");
 	writeFileSync(appendPath, "native initial");
 	const skillPath = join(policyDir, "snapshot-skill.md");
@@ -450,7 +451,7 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 		return buildSystemPrompt(result.systemPromptOptions);
 	}
 	const initial = await boundary("ROOT role");
-	assert.ok(initial.includes(mainDraft));
+	assert.ok(initial.includes(shippedMainHeader), "shipped main prompt must load non-empty");
 	assert.match(initial, /native initial/);
 	assert.doesNotMatch(initial, /edited|REFRESHED/);
 	assert.match(initial, /INITIAL skill body/);
@@ -474,7 +475,7 @@ test("installed SDK snapshots policy like native APPEND and actual session.reloa
 	assert.match(updated, /edited common.md/);
 	assert.match(updated, /edited main.md/);
 	assert.equal(updated.split(POLICY_START).length - 1, 1);
-	assert.ok(!updated.includes(mainDraft));
+	assert.ok(!updated.includes(shippedMainHeader), "reload uses the edited config, not the shipped prompt");
 	assert.doesNotMatch(updated, /INITIAL skill body|REFRESHED skill body/);
 	for (const role of ["worker", "reviewer", "scout"]) {
 		const prompt = await boundary(`${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>\nrole body`);

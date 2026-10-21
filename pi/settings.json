@@ -1,39 +1,16 @@
 {
-  "lastChangelogVersion": "1.1.0",
+  "lastChangelogVersion": "1.3.0",
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "xhigh",
   "theme": "catppuccin-mocha",
   "packages": [
-    "npm:pi-zentui",
     "npm:pi-intercom",
     "npm:pi-web-access",
-    {
-      "source": "npm:pi-subagents",
-      "extensions": []
-    },
-    "npm:@juicesharp/rpiv-ask-user-question",
-    {
-      "source": "npm:@narumitw/pi-goal",
-      "extensions": [
-        "-dist/index.ts"
-      ]
-    },
-    "git:github.com/MasuRii/pi-tool-display",
     "npm:@ff-labs/pi-fff",
-    "npm:pi-btw",
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
-    {
-      "source": "npm:pi-interactive-shell",
-      "extensions": []
-    },
-    {
-      "source": "npm:pi-commandcode-provider",
-      "extensions": [
-        "-index.ts"
-      ]
-    },
+    "npm:pi-commandcode-provider",
     "npm:pi-claude-bridge"
   ],
   "skills": [
@@ -52,9 +29,21 @@
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
   "extensions": [
-    "extensions/host-gate/loader.ts",
-    "-extensions/command-code/index.ts",
-    "-extensions/redaction/index.ts",
-    "-builtin:mcp"
+    "extensions/extension-manager/loader.ts",
+    "-builtin:mcp",
+    "-extensions/broadcast-reload/index.ts",
+    "-extensions/codex-enhanced/index.ts",
+    "-extensions/context/index.ts",
+    "-extensions/herdr-agent-state.ts",
+    "-extensions/herdr-pane-namesmith/index.ts",
+    "-extensions/message-jump/index.ts",
+    "-extensions/prefix-keybinds/index.ts",
+    "-extensions/seshagy-agent-state.ts",
+    "-extensions/session-auto-rename/index.ts",
+    "-extensions/session-to-pane/index.ts",
+    "-extensions/startup-header.ts",
+    "-extensions/tasks/index.ts",
+    "-extensions/terminal-focus-cursor/index.ts",
+    "-extensions/usage/index.ts"
   ]
 }

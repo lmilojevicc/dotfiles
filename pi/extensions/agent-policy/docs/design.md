@@ -41,8 +41,8 @@ Initial checked-in configuration:
   "main": ["./prompts/main.md"],
   "mainBb": ["./prompts/main-bb.md"],
   "agents": {
-    "worker": ["~/Projects/skills/skills/chadineer/SKILL.md"],
-    "reviewer": ["~/Projects/skills/skills/chadineer/SKILL.md"]
+    "worker": ["~/.agents/skills/chadineer/SKILL.md"],
+    "reviewer": ["~/.agents/skills/chadineer/SKILL.md"]
   }
 }
 ```
@@ -131,7 +131,7 @@ environment, for provider `pi`:
 
 - **Host origin (`BB_THREAD_ID`)**: any nonblank value, including unfamiliar
   formats, makes the session BB-origin and routes roots to the `mainBb` layer
-  instead of `main`. This mirrors the `host-gate` extension host rule; it works
+  instead of `main`. This mirrors the `extension-manager` gate host rule; it works
   with or without the companion, and also applies to nested/bashed `pi` launches
   that inherit the variable. Whitespace-only values are absent. Ordinary (non-BB)
   hosts keep `main`.
@@ -174,7 +174,7 @@ node --test pi/extensions/agent-policy/tests/*.test.ts
 node --test pi/extensions/chadineer/tests/*.test.ts
 ```
 
-Unit tests cover config aliases and canonical collisions, optional fields, invalid JSON/types/keys/path entries, missing/unreadable config and sources (including unused mappings), valid sibling preservation, frontmatter, deployed-config smoke reads, byte-exact moved main body, one read per unique source, layer order and first-occurrence deduplication. Runtime coverage retains profile/name/fallback routing, generated metadata lookalikes and older boundary/env routes, transitions, full-role text retention, eager snapshots before first prompt/deletion, no per-hook reads, missing-source empty-child behavior, stale cleanup, both Chadineer orders, UUID/path independence, lifecycle disposal and registry conflicts, plus peer errors. BB coverage includes tuple/identity validation, host-origin detection from any nonblank `BB_THREAD_ID` (including whitespace-only absence and companion-only tuples), native precedence, generic-only composition, `mainBb` selection versus the ordinary `main` layer, no-fallback on an empty `mainBb`, the distinct `agent-policy:v1:main-bb` marker with stale ordinary-main replacement/idempotence, neutral routing and once-per-runtime UI/headless diagnostics. File warnings report before the first prompt (or on the first hook when session_start is absent), do not repeat across session events, and refresh on runtime recreation.
+Unit tests cover config aliases and canonical collisions, optional fields, invalid JSON/types/keys/path entries, missing/unreadable config and sources (including unused mappings), valid sibling preservation, frontmatter, deployed-config shape with non-empty prompt-file loads (prompt contents are user-editable), one read per unique source, layer order and first-occurrence deduplication. Runtime coverage retains profile/name/fallback routing, generated metadata lookalikes and older boundary/env routes, transitions, full-role text retention, eager snapshots before first prompt/deletion, no per-hook reads, missing-source empty-child behavior, missing main/mainBb prompt fail-open, stale cleanup, both Chadineer orders, UUID/path independence, lifecycle disposal and registry conflicts, plus peer errors. BB coverage includes tuple/identity validation, host-origin detection from any nonblank `BB_THREAD_ID` (including whitespace-only absence and companion-only tuples), native precedence, generic-only composition, `mainBb` selection versus the ordinary `main` layer, no-fallback on an empty `mainBb`, the distinct `agent-policy:v1:main-bb` marker with stale ordinary-main replacement/idempotence, neutral routing and once-per-runtime UI/headless diagnostics. File warnings report before the first prompt (or on the first hook when session_start is absent), do not repeat across session events, and refresh on runtime recreation.
 
 Installed tests use real SDK resource loaders, sessions/managers, extension runner, public registry, native launch planner, child factory, prompt-runtime/fanout hooks, builtin discovery/alias resolution, and the **actual foreground executor** UUID lookup. Private installed registry reads are observation only in tests. Host aliases bridge installed peers without installing/mutating packages. Auth/catalog paths are temporary, refresh is disabled, and a non-requested model fixture is supplied. No model/network requests, paid work, detached jobs, or publication occur.
 

@@ -1,0 +1,26 @@
+{
+  "packages": {
+    "git:github.com/MasuRii/pi-tool-display": "bb",
+    "npm:@juicesharp/rpiv-ask-user-question": "bb",
+    "npm:pi-btw": "bb",
+    "npm:pi-interactive-shell": "bb",
+    "npm:pi-subagents": "bb",
+    "npm:pi-zentui": "bb"
+  },
+  "extensions": {
+    "extensions/broadcast-reload/index.ts": "bb",
+    "extensions/codex-enhanced/index.ts": "bb",
+    "extensions/context/index.ts": "bb",
+    "extensions/herdr-agent-state.ts": "bb",
+    "extensions/herdr-pane-namesmith/index.ts": "bb",
+    "extensions/message-jump/index.ts": "bb",
+    "extensions/prefix-keybinds/index.ts": "bb",
+    "extensions/seshagy-agent-state.ts": "bb",
+    "extensions/session-auto-rename/index.ts": "bb",
+    "extensions/session-to-pane/index.ts": "bb",
+    "extensions/startup-header.ts": "bb",
+    "extensions/tasks/index.ts": "bb",
+    "extensions/terminal-focus-cursor/index.ts": "bb",
+    "extensions/usage/index.ts": "bb"
+  }
+}

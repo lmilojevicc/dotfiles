@@ -220,13 +220,13 @@ test("registry conflicts surface, never overwrite or dispose another owner", (t)
 	assert.deepEqual(runtime.noticeTypes, ["error", "error"]);
 });
 
-test("main body and manifest-only additions preserve text; empty children and missing skill-only children keep Chadineer independent", (t) => {
+test("deployed main source loads for roots only; empty children and missing skill-only children keep Chadineer independent", (t) => {
 	const runtime = harness(t, { deployed: true });
-	const main = readFileSync(new URL("../prompts/main.md", import.meta.url), "utf8");
-	assert.ok(main.trim());
+	const mainHeader = `## Policy source: ${join(runtime.directory, "main.md")}`;
 	assert.equal(existsSync(new URL("../MAIN_APPEND_SYSTEM.md", import.meta.url)), false);
 	const root = runtime.before().systemPrompt;
-	assert.equal(root, appendPolicy("root role", "main", `## Policy source: ${join(runtime.directory, "main.md")}\nResolve this source's relative file references against ${runtime.directory}.\n\n${main}`));
+	assert.ok(root.includes(mainHeader), "shipped main prompt must load non-empty");
+	assert.match(root, /<!-- agent-policy:v1:main -->/);
 	const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nrole`;
 	assert.equal(runtime.before(prompt).systemPrompt, prompt);
 	writeFileSync(join(runtime.directory, "worker.md"), "not automatically loaded");
@@ -236,7 +236,7 @@ test("main body and manifest-only additions preserve text; empty children and mi
 	runtime.reload();
 	const active = runtime.before(`${prompt}\n${root}`).systemPrompt;
 	assert.match(active, /not automatically loaded/);
-	assert.doesNotMatch(active, /## Orchestration/);
+	assert.ok(!active.includes(mainHeader), "an inherited root main block is stripped from children");
 	assert.ok(active.includes(CHILD_POLICY_MARKER));
 	for (const legacyFirst of [true, false]) {
 		const child = harness(t, { deployed: true, legacy: true, legacyFirst, configure(directory) {
@@ -483,8 +483,38 @@ test("empty mainBb stays empty for BB roots: no fallback to the ordinary main la
 	const plain = harness(t);
 	assert.equal(plain.before().systemPrompt, plain.expected("root role", "main", "COMMON draft\n\nMAIN draft"));
 	const deployed = harness(t, { deployed: true, bbOrigin: true });
-	assert.match(deployed.before().systemPrompt, /Delegation surfaces in BB/);
-	assert.doesNotMatch(deployed.before().systemPrompt, /pi-subagents/);
+	const deployedBbHeader = `## Policy source: ${join(deployed.directory, "main-bb.md")}`;
+	const deployedRoot = deployed.before().systemPrompt;
+	assert.ok(deployedRoot.includes(deployedBbHeader), "shipped BB main prompt must load non-empty");
+	assert.match(deployedRoot, /<!-- agent-policy:v1:main-bb -->/);
+	assert.ok(!deployedRoot.includes(`## Policy source: ${join(deployed.directory, "main.md")}`), "BB roots never fall back to the ordinary main prompt");
+});
+
+test("missing main and mainBb prompt files warn, skip only that layer, and keep siblings plus the extension working", (t) => {
+	const ordinary = harness(t, { configure(directory) { unlinkSync(join(directory, "main.md")); } });
+	ordinary.emit("session_start");
+	assert.equal(ordinary.notices.length, 1);
+	assert.match(ordinary.notices[0], /main\[0\].*main\.md.*ENOENT/);
+	const root = ordinary.before().systemPrompt;
+	assert.match(root, /COMMON draft/);
+	assert.ok(!root.includes(`## Policy source: ${join(ordinary.directory, "main.md")}`), "the missing main prompt is skipped, not synthesized");
+	assert.match(root, /<!-- agent-policy:v1:main -->/);
+	assert.equal(ordinary.registrations.length, 1, "the extension still registers for children");
+	const child = ordinary.before(`${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nworker role`).systemPrompt;
+	assert.match(child, /COMMON draft[\s\S]*CHILD draft/);
+	assert.match(child, /worker overlay/);
+	assert.equal(ordinary.notices.length, 1, "the warning is reported once per runtime");
+
+	const bb = harness(t, { bbOrigin: true, configure(directory) { unlinkSync(join(directory, "main-bb.md")); } });
+	bb.emit("session_start");
+	assert.equal(bb.notices.length, 1);
+	assert.match(bb.notices[0], /mainBb\[0\].*main-bb\.md.*ENOENT/);
+	const bbRoot = bb.before().systemPrompt;
+	assert.match(bbRoot, /COMMON draft/);
+	assert.ok(!bbRoot.includes(`## Policy source: ${join(bb.directory, "main-bb.md")}`), "the missing BB prompt is skipped, not synthesized");
+	assert.ok(!bbRoot.includes(`## Policy source: ${join(bb.directory, "main.md")}`), "no fallback to the ordinary main prompt");
+	assert.match(bbRoot, /<!-- agent-policy:v1:main-bb -->/);
+	assert.equal(bb.registrations.length, 1);
 });
 
 function nativeLayout(role: string, boundary: string, append = false, structured = false): string {
