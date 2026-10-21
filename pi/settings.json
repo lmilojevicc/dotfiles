@@ -54,7 +54,6 @@
   "extensions": [
     "extensions/host-gate/loader.ts",
     "-extensions/command-code/index.ts",
-    "-extensions/chadineer/index.ts",
     "-extensions/redaction/index.ts",
     "-builtin:mcp"
   ]

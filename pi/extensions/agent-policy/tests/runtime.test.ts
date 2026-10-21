@@ -4,10 +4,18 @@ import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
-import chadineer, { CHADINEER_PROMPT, CHADINEER_STATE_ENTRY } from "../../chadineer/index.ts";
 import { appendPolicy, CHILD_PREFIXES, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, CHILD_POLICY_MARKER, LEGACY_START, LEGACY_END, POLICY_START, POLICY_END, selectAgentName, selectProfile } from "../child-profile.ts";
 import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
+
+// Stand-in for the removed legacy Chadineer hook: an enabled peer appending a legacy-marked block.
+const CHADINEER_PROMPT = "Chadineer development guidelines\n\nKeep it concise.";
+function chadineer(pi: any) {
+	pi.on("before_agent_start", (event: any) => {
+		if (event.systemPrompt.includes("<!-- agent-policy:v1:subagent -->")) return;
+		return { systemPrompt: `${event.systemPrompt}\n\n${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}` };
+	});
+}
 
 type Handler = (...args: any[]) => any;
 function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, bbOrigin = false, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
@@ -43,7 +51,7 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 		ui: { notify(message: string, type: string) { assert.ok(type === "warning" || type === "error"); notices.push(message); noticeTypes.push(type); }, setStatus() {} },
 		sessionManager: {
 			getSessionFile: () => sessionFile, getSessionId: () => sessionId,
-			getBranch: () => [{ type: "custom", customType: CHADINEER_STATE_ENTRY, data: { enabled: true } }],
+			getBranch: () => [],
 		},
 	};
 	function install() {

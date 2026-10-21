@@ -9,7 +9,6 @@
 
 | Package | Purpose | Primary activation | Test (from package directory) |
 | --- | --- | --- | --- |
-| [chadineer](extensions/chadineer/README.md) | Opt-in concise development guidelines | `/chadineer` | `npm test` |
 | [codex-enhanced](extensions/codex-enhanced/README.md) | Codex quota, banked resets, and Fast processing | `/codex-enhanced` | `npm test` |
 | [context](extensions/context/README.md) | Context-window usage breakdown and previews | `/context` | `npm test` |
 | [command-code](extensions/command-code/README.md) | Command Code provider, model catalogue, and account usage | Select a `command-code/...` model; `/command-code-usage` | `npm test` |
