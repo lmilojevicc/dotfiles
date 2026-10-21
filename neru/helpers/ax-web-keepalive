@@ -1,0 +1,39 @@
+#!/bin/sh
+# Keeps the Chromium/CEF accessibility opt-in asserted while the target app is
+# frontmost.
+#
+# Chromium drops the tree again a few seconds after it is switched on, unless a
+# client keeps asking for it the way VoiceOver does, so a one-shot flip only
+# works until the next teardown. This re-asserts it every few seconds while the
+# app is in front, then exits: the [hooks] on_app_focus step starts it again the
+# next time the app comes forward.
+#
+# Usage: ax-web-keepalive [bundle-id]
+set -u
+
+target=${1:-com.spotify.client}
+[ "${NERU_BUNDLE_ID:-$target}" = "$target" ] || exit 0
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+lock=${TMPDIR:-/tmp}/neru-ax-keepalive-$target.lock
+
+# One watcher per app: a focus change the running loop already covers must not
+# start a second one.
+mkdir "$lock" 2>/dev/null || exit 0
+
+frontmost() {
+  lsappinfo info -only bundleid "$(lsappinfo front)" 2>/dev/null | sed 's/.*="\(.*\)"$/\1/'
+}
+
+# Detach, so the neru hook that starts this returns at once instead of holding
+# the event queue for as long as the app stays in front.
+(
+  trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+
+  while [ "$(frontmost)" = "$target" ]; do
+    "$here/ax-web-accessibility" "$target" --force >/dev/null 2>&1
+    sleep 4
+  done
+) </dev/null >/dev/null 2>&1 &
+
+exit 0

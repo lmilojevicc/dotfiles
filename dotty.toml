@@ -30,6 +30,9 @@ version = 1
 [packages.mise]
   links = [{ source = "config.toml", target = "~/.config/mise/config.toml" }]
 
+[packages.neru]
+  links = [{ source = ".", target = "~/.config/neru" }]
+
 [packages.nvim]
   links = [{ source = ".", target = "~/.config/nvim" }]
 

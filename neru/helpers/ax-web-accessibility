@@ -1,0 +1,30 @@
+#!/bin/sh
+# Compiles ax-web-accessibility.swift on first use, then runs it.
+#
+# neru's [hooks] on_app_focus calls this on every focus change, so the cost of
+# a focus that is not the target app has to stay flat: the bundle id is checked
+# before anything is compiled or run.
+#
+# Usage: ax-web-accessibility [bundle-id] [--force]
+set -eu
+
+target=${1:-com.spotify.client}
+[ "${NERU_BUNDLE_ID:-$target}" = "$target" ] || exit 0
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+source_file="$here/ax-web-accessibility.swift"
+cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/neru-helpers
+binary="$cache_dir/ax-web-accessibility"
+
+if [ ! -x "$binary" ] || [ "$source_file" -nt "$binary" ]; then
+  command -v swiftc >/dev/null 2>&1 || {
+    echo "ax-web-accessibility: swiftc not found, install the Xcode command line tools" >&2
+    exit 1
+  }
+  mkdir -p "$cache_dir"
+  tmp="$binary.$$.tmp"
+  swiftc -O "$source_file" -o "$tmp"
+  mv -f "$tmp" "$binary"
+fi
+
+exec "$binary" "$target" "${2:-}"
