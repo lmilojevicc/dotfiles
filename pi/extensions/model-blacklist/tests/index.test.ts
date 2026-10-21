@@ -5,9 +5,10 @@ import test from "node:test";
 import type { Provider } from "@earendil-works/pi-ai/compat";
 import modelBlacklist from "../index.ts";
 import { unwrapProvider } from "../provider-wrap.ts";
-import { fakeProvider } from "./helpers.ts";
+import { fakeProvider, fakeRuntime } from "./helpers.ts";
 
 const APPLIED_KEY = Symbol.for("pi.model-blacklist.applied");
+const HOOK_STATE_KEY = Symbol.for("pi.model-blacklist.hook-state");
 
 function createHarness(providers: Provider[]) {
 	const current = new Map(providers.map((provider) => [provider.id, provider]));
@@ -43,6 +44,7 @@ function writeConfig(contents: unknown): void {
 
 test.beforeEach(() => {
 	(globalThis as unknown as Record<symbol, unknown>)[APPLIED_KEY] = new Set<string>();
+	delete (globalThis as unknown as Record<symbol, unknown>)[HOOK_STATE_KEY];
 	rmSync(join(process.env.PI_CODING_AGENT_DIR!, "model-blacklist.json"), { force: true });
 });
 
@@ -129,4 +131,37 @@ test("the command reports unknown providers and an empty configuration", async (
 	writeConfig({ providers: {}, global: [] });
 	await command();
 	assert.match(notices.at(-1)!.message, /No providers configured; no models are hidden/);
+});
+
+test("a provider that re-registers after session_start stays filtered", () => {
+	writeConfig({ providers: { commandcode: ["claude-*"] } });
+	const runtime = fakeRuntime();
+	runtime.registerProvider("commandcode", { models: ["claude-opus-5-5", "deepseek-v4.1-flash"] });
+	const handlers: ((...args: unknown[]) => unknown)[] = [];
+	const pi = {
+		on: (_event: string, handler: (...args: unknown[]) => unknown) => handlers.push(handler),
+		registerCommand: () => {},
+		registerProvider: (provider: Provider) => runtime.registerNativeProvider(provider),
+	};
+	const ctx = {
+		modelRegistry: {
+			runtime,
+			getProvider: (providerId: string) => runtime.getProvider(providerId),
+			getAll: () => [...runtime.providers.values()].flatMap((provider) => [...provider.getModels()]),
+		},
+		ui: { notify: () => {} },
+	};
+	modelBlacklist(pi as never);
+	for (const handler of handlers) handler({ type: "session_start", reason: "startup" }, ctx);
+	assert.deepEqual(runtime.getProvider("commandcode")!.getModels().map((model) => model.id), ["deepseek-v4.1-flash"]);
+
+	// The background catalogue refresh registers the provider config again.
+	runtime.registerProvider("commandcode", { models: ["claude-opus-5-5", "claude-fable-5-1", "deepseek-v4.1-flash"] });
+	assert.deepEqual(runtime.getProvider("commandcode")!.getModels().map((model) => model.id), ["deepseek-v4.1-flash"]);
+
+	// Removing the rule restores the provider and the hook stops wrapping it.
+	writeConfig({ providers: {} });
+	for (const handler of handlers) handler({ type: "session_start", reason: "reload" }, ctx);
+	runtime.registerProvider("commandcode", { models: ["claude-opus-5-5"] });
+	assert.deepEqual(runtime.getProvider("commandcode")!.getModels().map((model) => model.id), ["claude-opus-5-5"]);
 });

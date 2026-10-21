@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { applyBlacklist, type ApplyResult } from "./apply.ts";
 import { readBlacklistConfig } from "./config.ts";
+import { installRegistryHook, type HookState, type RuntimeLike } from "./registry-hook.ts";
 import { compileRules, type CompiledRules } from "./rules.ts";
 
 /**
@@ -19,6 +20,30 @@ function readAppliedProviders(): Set<string> {
 	return created;
 }
 
+/** Rules read by the registry hook, shared with hooks installed before a `/reload`. */
+const HOOK_STATE_KEY = Symbol.for("pi.model-blacklist.hook-state");
+
+function readHookState(): HookState {
+	const store = globalThis as unknown as Record<symbol, unknown>;
+	const existing = store[HOOK_STATE_KEY];
+	if (existing) return existing as HookState;
+	const created: HookState = { applied: readAppliedProviders() };
+	store[HOOK_STATE_KEY] = created;
+	return created;
+}
+
+/** Pi's `ModelRegistry` is a facade over `ModelRuntime`; the field is private in its types. */
+function runtimeOf(ctx: ExtensionContext): RuntimeLike | undefined {
+	const runtime = (ctx.modelRegistry as unknown as { runtime?: Partial<RuntimeLike> }).runtime;
+	if (
+		typeof runtime?.registerProvider !== "function" ||
+		typeof runtime.registerNativeProvider !== "function" ||
+		typeof runtime.getProvider !== "function"
+	)
+		return undefined;
+	return runtime as RuntimeLike;
+}
+
 function applyToContext(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -27,6 +52,13 @@ function applyToContext(
 	const notices: string[] = [];
 	const config = readBlacklistConfig((message) => notices.push(message));
 	const rules = compileRules(config);
+	// Publish the rules before applying them, so a provider restored below is
+	// not re-wrapped by the hook under the previous rules.
+	const hookState = readHookState();
+	hookState.rules = rules;
+	hookState.applied = applied;
+	const runtime = runtimeOf(ctx);
+	if (runtime) installRegistryHook(runtime, hookState);
 	const result = applyBlacklist({
 		registry: ctx.modelRegistry,
 		rules,

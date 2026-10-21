@@ -1,4 +1,5 @@
 import type { AnyModel, Provider } from "@earendil-works/pi-ai/compat";
+import type { RuntimeLike } from "../registry-hook.ts";
 
 /** Minimal model; wrapping only reads `id` and `provider`. */
 export function model(id: string, provider = "test", type = "chat"): AnyModel {
@@ -39,4 +40,22 @@ export function fakeProvider(id: string, chatIds: string[], options: FakeProvide
 
 export function ids(models: readonly { id: string }[]): string[] {
 	return models.map((entry) => entry.id);
+}
+
+/**
+ * Mirrors `ModelRuntime`: a config registration composes a fresh provider and
+ * drops any native one, replacing a wrapper installed earlier.
+ */
+export function fakeRuntime(): RuntimeLike & { providers: Map<string, Provider> } {
+	const providers = new Map<string, Provider>();
+	return {
+		providers,
+		registerProvider: (providerId, config) => {
+			providers.set(providerId, fakeProvider(providerId, (config as { models: string[] }).models));
+		},
+		registerNativeProvider: (provider) => {
+			providers.set(provider.id, provider);
+		},
+		getProvider: (providerId) => providers.get(providerId),
+	};
 }

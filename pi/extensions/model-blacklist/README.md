@@ -43,6 +43,8 @@ On each application the extension wraps the live provider object with `pi.regist
 
 This works uniformly for built-in Pi providers, providers from `models.json`, and providers registered by extensions (legacy config or native object form). Removing a rule restores the provider on the next application instead of waiting for a restart.
 
+Some providers register again after `session_start`. Command Code, for example, loads its live catalogue in the background and calls `pi.registerProvider()` again, which would replace the wrapper. Pi has no event for registry changes, so the first application also patches `registerProvider` and `registerNativeProvider` on the session's `ModelRuntime` (reached through `ctx.modelRegistry.runtime`). Any later registration of a targeted provider is wrapped with the current rules as it lands. The patch is installed once per runtime and reads the latest rules, so it survives `/reload`. On hosts that don't expose the runtime, the patch is skipped and `/model-blacklist` re-applies by hand.
+
 Known limits:
 
 - **Startup resolution is not filtered.** `pi --list-models`, `--model`/`--provider`/`--models`, and the `defaultModel` setting resolve before `session_start`, so a blacklisted model can still start a session or appear in `--list-models`. It is not shown by any in-session surface afterwards.
