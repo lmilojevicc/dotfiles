@@ -36,12 +36,9 @@
   "pypi:huggingface-hub" = "latest"
   "pypi:icloud-hme" = "latest"
   "pypi:rendercv" = "latest"
-  "pypi:spotdl" = "latest"
   "pypi:cloakbrowser" = "latest"
-  "pypi:crawl4ai" = "latest"
   "pypi:graphifyy" = "latest"
-  "pypi:marker-pdf" = "latest"
-  "pypi:parakeet-mlx" = "latest"
+  "pypi:parakeet-mlx" = { version = "latest", os = "macos/arm64" }
   # Keep the working source install/pin (originally a proxy-tools packaging workaround).
   "pypi:oraios/serena" = { version = "1.7.0", package_name = "serena-agent" }
   "pypi:trafilatura" = "latest"
@@ -61,7 +58,6 @@
   "cargo:iroh-ssh" = "latest"
   "cargo:lutgen-cli" = "latest"
   "cargo:lutgen-studio" = "latest"
-  "ubi:tokuhirom/mdroll" = "latest"
 
   # Pinned tools.
   "aqua:golangci/golangci-lint" = "v2.12.2"
