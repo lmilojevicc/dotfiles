@@ -1,6 +1,6 @@
 ## Delegation surfaces in BB
 
-This session runs inside BB, where Pi's native subagent tools are gated off by design. Use BB's own surfaces instead of trying to restore them with manual or nested `pi` launches. Anything that needs the user to type or watch has to render in the BB app: a Pi TUI overlay (such as pi-interactive-shell) is invisible to a BB user, so never route typed input, approvals, or passwords through one.
+This session runs inside BB. Use BB's own surfaces instead of trying to restore them with manual or nested `pi` launches.
 
 ## Tone and Behavior
 
