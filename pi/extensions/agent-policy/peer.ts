@@ -20,8 +20,19 @@ export function resolveRequiredChildAPI(extensionURL: string, agentDir: string):
 	}
 }
 
+/** An agent dir without pi-subagents (such as the BB config) has no children to register for. */
+const NO_CHILDREN = (() => ({ dispose() {} })) as unknown as typeof registerRequiredChildExtensions;
+
 export async function loadRequiredChildAPI(extensionURL: string, agentDir: string): Promise<typeof registerRequiredChildExtensions> {
-	const api = await import(pathToFileURL(resolveRequiredChildAPI(extensionURL, agentDir)).href);
+	let path: string;
+	try {
+		path = resolveRequiredChildAPI(extensionURL, agentDir);
+	} catch (error) {
+		const cause = error instanceof Error ? error.cause : undefined;
+		if (cause instanceof Error && "code" in cause && cause.code === "MODULE_NOT_FOUND") return NO_CHILDREN;
+		throw error;
+	}
+	const api = await import(pathToFileURL(path).href);
 	if (typeof api.registerRequiredChildExtensions !== "function") {
 		throw new Error(`agent-policy: ${PUBLIC_API} lacks registerRequiredChildExtensions`);
 	}

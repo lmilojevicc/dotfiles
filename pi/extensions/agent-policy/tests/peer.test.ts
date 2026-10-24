@@ -37,9 +37,11 @@ test("loads only the exported public function, not a private registry", async (t
 	assert.equal(typeof register({ sessionId: "test", extensions: [] }).dispose, "function");
 });
 
-test("missing peer or malformed public API fails honestly without installing", async (t) => {
+test("missing peer registers nothing; a malformed public API fails honestly without installing", async (t) => {
 	const f = fixture(t);
 	assert.throws(() => resolveRequiredChildAPI(f.url, f.agentDir), /provision a compatible peer/);
+	const noChildren = await loadRequiredChildAPI(f.url, f.agentDir);
+	assert.equal(typeof noChildren({ sessionId: "test", extensions: [] }).dispose, "function", "no installed pi-subagents means no children to register for");
 	f.pkg(join(f.agentDir, "npm"), "export const unrelated = true;");
 	await assert.rejects(loadRequiredChildAPI(f.url, f.agentDir), /lacks registerRequiredChildExtensions/);
 });

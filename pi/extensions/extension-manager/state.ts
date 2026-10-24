@@ -1,45 +1,24 @@
-import type { PackageSource } from "@earendil-works/pi-coding-agent";
-import type { DisabledMap, ManagerConfig, Scope } from "./config.ts";
-import { packageSource, type InventoryEntry } from "./discovery.ts";
+import type { PackageSource, ResolvedResource } from "@earendil-works/pi-coding-agent";
+import { relative } from "node:path";
 
-/**
- * A package or local extension is either listed in settings (enabled everywhere) or owned by
- * `extension-manager.json`, where the value names the host scope that disables it.
- */
-export type EntryScope = "enabled" | Scope;
+const RESOURCE_KEYS = ["extensions", "skills", "prompts", "themes"] as const;
 
-/** Menu tabs, in display order; the label mapping lives in `index.ts`. */
-export const TABS = ["global", "bb"] as const;
+type PackageConfig = Exclude<PackageSource, string>;
 
-export function entryKey(entry: InventoryEntry): string {
-	return `${entry.kind}:${entry.id}`;
+export interface ExtensionChange {
+	resource: ResolvedResource;
+	enabled: boolean;
 }
 
-/** Global disables apply everywhere; a `bb` scope only removes the entry inside BB. */
-export function isScopeEnabled(scope: EntryScope, tab: Scope): boolean {
-	return tab === "global" ? scope !== "global" : scope === "enabled";
+export interface ExtensionSettingsUpdate {
+	extensionPaths: string[];
+	packages: PackageSource[];
+	extensionPathsChanged: boolean;
+	packagesChanged: boolean;
 }
 
-/**
- * The scope a toggle produces, or undefined when the tab locks the row.
- *
- * The BB tab cannot disable an entry that is already off globally; it stays unavailable until
- * the global tab re-enables it, exactly like Pi's own two-layer settings.
- */
-export function toggledScope(scope: EntryScope, tab: Scope): EntryScope | undefined {
-	if (tab === "global") return scope === "global" ? "enabled" : "global";
-	if (scope === "global") return undefined;
-	return scope === "bb" ? "enabled" : "bb";
-}
-
-export function isStagedChange(staged: EntryScope | undefined, baseline: EntryScope | undefined): boolean {
-	return staged !== baseline;
-}
-
-/** Settings order decides load order, so an enabled entry keeps its position when it returns. */
-function withPlainString(packages: readonly PackageSource[], source: string): PackageSource[] {
-	if (packages.some((pkg) => packageSource(pkg) === source)) return [...packages];
-	return [...packages, source];
+function packageSource(pkg: PackageSource): string {
+	return typeof pkg === "string" ? pkg : pkg.source;
 }
 
 function normalizePatternTarget(pattern: string): string {
@@ -50,111 +29,120 @@ function normalizePatternTarget(pattern: string): string {
 }
 
 function isExactOverride(pattern: string): boolean {
-	return pattern.startsWith("+") || pattern.startsWith("-") || pattern.startsWith("!");
+	return pattern.startsWith("+") || pattern.startsWith("-");
 }
 
-/** Remove every exact override that already targets this local entrypoint. */
-function withoutLocalOverrides(
-	extensionPaths: readonly string[],
-	targets: ReadonlySet<string>,
+function targetsResource(pattern: string, targets: ReadonlySet<string>): boolean {
+	return isExactOverride(pattern) && targets.has(normalizePatternTarget(pattern.slice(1)));
+}
+
+function packagePattern(resource: ResolvedResource): string {
+	return normalizePatternTarget(relative(resource.metadata.baseDir ?? "", resource.path));
+}
+
+function topLevelPattern(resource: ResolvedResource, agentDir: string): string {
+	return normalizePatternTarget(relative(resource.metadata.baseDir ?? agentDir, resource.path));
+}
+
+function updateTopLevelPaths(
+	paths: string[],
+	resource: ResolvedResource,
+	enabled: boolean,
+	agentDir: string,
 ): string[] {
-	return extensionPaths.filter((entry) =>
-		!(isExactOverride(entry) && targets.has(normalizePatternTarget(entry.slice(1)))));
+	const pattern = topLevelPattern(resource, agentDir);
+	const matchingTargets = new Set([
+		pattern,
+		resource.path,
+		relative(agentDir, resource.path),
+	].map(normalizePatternTarget));
+	const updated = paths.filter((entry) => !targetsResource(entry, matchingTargets));
+	updated.push(`${enabled ? "+" : "-"}${pattern}`);
+	return updated;
 }
 
-function localTargets(entry: { id: string; path?: string }): Set<string> {
-	return new Set([entry.id, `./${entry.id}`, entry.path]
-		.filter((value): value is string => typeof value === "string")
-		.map(normalizePatternTarget));
+function updatePackage(
+	packages: PackageSource[],
+	resource: ResolvedResource,
+	enabled: boolean,
+): PackageSource[] {
+	const packageIndex = packages.findIndex((pkg) => packageSource(pkg) === resource.metadata.source);
+	if (packageIndex < 0) {
+		throw new Error(`Package source is no longer configured globally: ${resource.metadata.source}`);
+	}
+
+	const updatedPackages = packages.map((pkg) =>
+		typeof pkg === "string" ? pkg : { ...pkg },
+	);
+	const existing = updatedPackages[packageIndex];
+	if (existing === undefined) return packages;
+	const pkg: PackageConfig = typeof existing === "string" ? { source: existing } : existing;
+	updatedPackages[packageIndex] = pkg;
+
+	const pattern = packagePattern(resource);
+	const matchingTargets = new Set([pattern, resource.path].map(normalizePatternTarget));
+	const hadExtensionFilter = pkg.extensions !== undefined;
+	const current = [...(pkg.extensions ?? [])];
+	const updated = current.filter((entry) => !targetsResource(entry, matchingTargets));
+
+	if (enabled) {
+		if (pkg.autoload === false) {
+			// Delta packages start with nothing loaded, so the enable override must
+			// remain explicit even when it is the package's only extension filter.
+			updated.push(`+${pattern}`);
+		} else if (hadExtensionFilter && current.length === 0) {
+			// An empty filter disables every extension. A plain include changes that to
+			// "only this extension"; +path would incorrectly enable the whole package.
+			updated.push(pattern);
+		} else if (updated.length > 0) {
+			updated.push(`+${pattern}`);
+		}
+		// With no remaining filters, omitting the key restores package autoload.
+	} else {
+		updated.push(`-${pattern}`);
+	}
+
+	pkg.extensions = updated.length > 0 ? updated : undefined;
+	const hasResourceFilters = RESOURCE_KEYS.some((key) => pkg[key] !== undefined);
+	if (!hasResourceFilters && pkg.autoload === undefined) {
+		updatedPackages[packageIndex] = pkg.source;
+	}
+	return updatedPackages;
 }
 
-export interface SavePlan {
-	packages: PackageSource[];
-	extensionPaths: string[];
-	packagesChanged: boolean;
-	extensionPathsChanged: boolean;
-	config: ManagerConfig;
-}
+export function applyExtensionChanges(
+	extensionPaths: readonly string[],
+	packages: readonly PackageSource[],
+	changes: readonly ExtensionChange[],
+	agentDir: string,
+): ExtensionSettingsUpdate {
+	let nextExtensionPaths = [...extensionPaths];
+	let nextPackages = packages.map((pkg) => (typeof pkg === "string" ? pkg : { ...pkg }));
+	let extensionPathsChanged = false;
+	let packagesChanged = false;
 
-/**
- * Translate staged scopes into the two files the design keeps in sync.
- *
- * Settings only ever gains or loses plain package strings and one exact `-path` line per disabled
- * local extension; everything else in the file is left for SettingsManager to preserve untouched.
- * A package disabled anywhere is owned by the tracked config and absent from settings, because Pi
- * cannot unload an extension it loaded from settings.
- */
-export function planSave(input: {
-	packages: readonly PackageSource[];
-	extensionPaths: readonly string[];
-	entries: readonly InventoryEntry[];
-	staged: ReadonlyMap<string, EntryScope>;
-	baseline: ReadonlyMap<string, EntryScope>;
-	config: ManagerConfig;
-}): SavePlan {
-	const scopeOf = (entry: InventoryEntry): EntryScope =>
-		input.staged.get(entryKey(entry)) ?? input.baseline.get(entryKey(entry)) ?? "enabled";
-
-	let packages: PackageSource[] = [...input.packages];
-	let extensionPaths: string[] = [...input.extensionPaths];
-	const configPackages: DisabledMap = { ...input.config.packages };
-	const configExtensions: DisabledMap = { ...input.config.extensions };
-
-	for (const entry of input.entries) {
-		const scope = scopeOf(entry);
-		if (entry.kind === "package") {
-			if (scope === "enabled") {
-				packages = withPlainString(packages, entry.id);
-				delete configPackages[entry.id];
-			} else {
-				packages = packages.filter((pkg) => packageSource(pkg) !== entry.id);
-				configPackages[entry.id] = scope;
+	for (const change of changes) {
+		if (change.resource.metadata.origin === "package") {
+			const updated = updatePackage(nextPackages, change.resource, change.enabled);
+			if (updated !== nextPackages) {
+				nextPackages = updated;
+				packagesChanged = true;
 			}
 			continue;
 		}
-		const targets = localTargets(entry);
-		extensionPaths = withoutLocalOverrides(extensionPaths, targets);
-		if (scope === "enabled") {
-			delete configExtensions[entry.id];
-		} else {
-			// Both scopes keep Pi from loading it; the loader decides about non-BB hosts.
-			extensionPaths.push(`-${entry.id}`);
-			configExtensions[entry.id] = scope;
-		}
+		nextExtensionPaths = updateTopLevelPaths(
+			nextExtensionPaths,
+			change.resource,
+			change.enabled,
+			agentDir,
+		);
+		extensionPathsChanged = true;
 	}
 
 	return {
-		packages,
-		extensionPaths,
-		packagesChanged: JSON.stringify(packages) !== JSON.stringify(input.packages),
-		extensionPathsChanged: JSON.stringify(extensionPaths) !== JSON.stringify(input.extensionPaths),
-		config: { packages: configPackages, extensions: configExtensions },
+		extensionPaths: nextExtensionPaths,
+		packages: nextPackages,
+		extensionPathsChanged,
+		packagesChanged,
 	};
-}
-
-/**
- * Drop tracked scopes for packages settings lists again, for example after `pi install`.
- *
- * Pi loads such a package before any extension runs, so the package is enabled everywhere and
- * keeping its scope would make the menu disagree with what Pi loads. The returned config is the
- * effective one; the next save persists it.
- */
-export function reconcileOwned(
-	config: ManagerConfig,
-	settingsSources: readonly string[],
-): { config: ManagerConfig; stale: string[] } {
-	const listed = new Set(settingsSources);
-	const stale = Object.keys(config.packages).filter((source) => listed.has(source)).sort();
-	if (stale.length === 0) return { config, stale };
-	const packages = { ...config.packages };
-	for (const source of stale) delete packages[source];
-	return { config: { ...config, packages }, stale };
-}
-
-/** The scope a configured entry is known to be in before anything is staged. */
-export function baselineScope(entry: InventoryEntry, config: ManagerConfig): EntryScope {
-	if (entry.kind === "package") return config.packages[entry.id] ?? "enabled";
-	if (entry.enabled) return "enabled";
-	// A hand-written `-path` line without a config entry is off everywhere.
-	return config.extensions[entry.id] ?? "global";
 }

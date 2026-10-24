@@ -5,8 +5,6 @@ import {
 	ExtensionManagerComponent,
 	extensionViewport,
 	filterExtensionRows,
-	lockSuffix,
-	noteSuffix,
 	type ExtensionManagerResult,
 	type ExtensionManagerRow,
 } from "../component.ts";
@@ -488,105 +486,4 @@ test("ctrl+s saves rather than confirming when a native binding is remapped onto
 	component.handleInput("\x13");
 	assert.equal(toggles, 0, "save takes precedence over a remapped confirm binding");
 	assert.deepEqual(done, ["save"]);
-});
-
-function tabbedSetup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initialWidth = 100) {
-	const global = new Map(rows.map((item) => [item.id, true]));
-	const bb = new Map(rows.map((item) => [item.id, true]));
-	const done: ExtensionManagerResult[] = [];
-	const terminal = { height: initialHeight, width: initialWidth };
-	const component = new ExtensionManagerComponent({
-		rows,
-		tabs: ["Pi (global)", "BB"],
-		theme: plainTheme as never,
-		keybindings: keys(),
-		getHeight: () => terminal.height,
-		getWidth: () => terminal.width,
-		getTerminalHeight: () => terminal.height,
-		getEnabled: (item, tab) => tab === 0 ? global.get(item.id) === true : global.get(item.id) === true && bb.get(item.id) === true,
-		getLock: (item, tab) => tab === 1 && !global.get(item.id) ? "global-off" : undefined,
-		getStagedCount: () => rows.filter((item) => !global.get(item.id) || !bb.get(item.id)).length,
-		onToggle: (item, tab) => {
-			// The manager refuses a global-off row on the BB tab; the component only reports it.
-			if (tab === 1 && !global.get(item.id)) return;
-			const desired = tab === 0 ? global : bb;
-			desired.set(item.id, !desired.get(item.id));
-		},
-		onChange: () => {},
-		onDone: (result) => done.push(result),
-	});
-	component.focused = true;
-	component.render(initialWidth);
-	return { component, global, bb, done, terminal };
-}
-
-test("Tab switches scopes and staged state survives the round trip", () => {
-	const rows = [row("alpha"), row("beta")];
-	const { component, global, bb, done } = tabbedSetup(rows);
-	let output = component.render(100).join("\n");
-	assert.match(output, /Pi \(global\)/);
-	assert.match(output, /BB/);
-	assert.equal(component.getTabIndex(), 0);
-	assert.equal(component.getTabLabel(), "Pi (global)");
-
-	component.handleInput(enter);
-	assert.equal(global.get(rows[0].id), false);
-	component.handleInput("\t");
-	assert.equal(component.getTabIndex(), 1);
-	output = component.render(100).join("\n");
-	assert.match(output, /\[ \] local · extensions\/alpha\/index\.ts · off globally/);
-	assert.match(output, /Extensions \(1 staged\)/);
-
-	// A globally disabled extension cannot be toggled in the BB tab.
-	component.handleInput(enter);
-	assert.equal(bb.get(rows[0].id), true);
-	component.handleInput(down);
-	component.handleInput(enter);
-	assert.equal(bb.get(rows[1].id), false);
-
-	component.handleInput("\t");
-	assert.equal(component.getTabIndex(), 0);
-	assert.equal(component.getTabLabel(), "Pi (global)");
-	assert.equal(component.getSelectedRow(), rows[1], "selection survives a round trip");
-	component.handleInput("\x1b[Z");
-	assert.equal(component.getTabIndex(), 1, "shift+tab cycles backwards");
-	component.handleInput("\x13");
-	assert.deepEqual(done, ["save"]);
-});
-
-test("tabbed frames keep exact height accounting and show the scope hint", () => {
-	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${String(index).padStart(2, "0")}`));
-	for (const [height, count, linesExpected] of [[11, 3, 11], [13, 5, 13], [19, 10, 18]] as const) {
-		const { component } = tabbedSetup(rows, height, 80);
-		const lines = component.render(80);
-		assert.equal(lines.length, linesExpected);
-		assert.equal(lines.join("\n").match(/\[[ x]\]/g)?.length, count);
-		assert.equal(visibleWidth(lines[0]), 80);
-		assert.equal(visibleWidth(lines.at(-1)!), 80);
-		assert.match(lines.at(-2) ?? "", /ctrl\+s Save/);
-		assert.match(lines.join("\n"), /Tab scope/);
-	}
-});
-
-test("a single or absent tab keeps Tab out of the frame", () => {
-	const rows = [row("alpha")];
-	const done: ExtensionManagerResult[] = [];
-	const component = new ExtensionManagerComponent({
-		rows, tabs: ["Pi (global)"], theme: plainTheme as never, keybindings: keys(),
-		getHeight: () => 19, getEnabled: (item) => item.enabled, getStagedCount: () => 0,
-		onToggle: () => {}, onChange: () => {}, onDone: (result) => done.push(result),
-	});
-	component.render(80);
-	component.handleInput("\t");
-	assert.equal(component.getTabIndex(), 0);
-	assert.doesNotMatch(component.render(80).join("\n"), /Tab scope|Pi \(global\)/);
-	assert.deepEqual(done, []);
-});
-
-test("lock and note suffixes use the package-level manager vocabulary", () => {
-	assert.equal(lockSuffix("required"), " · required");
-	assert.equal(lockSuffix("global-off"), " · off globally");
-	assert.equal(lockSuffix(undefined), "");
-	assert.equal(noteSuffix("not-installed"), " · not installed");
-	assert.equal(noteSuffix(undefined), "");
 });
