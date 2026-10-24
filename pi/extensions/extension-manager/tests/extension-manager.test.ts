@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, test } from "node:test";
@@ -15,6 +16,8 @@ import extensionManager, { SAVE_CHOICE, CANCEL_CHOICE } from "../index.ts";
 import { applyExtensionChanges } from "../state.ts";
 
 const agentDir = getAgentDir();
+// beforeEach wipes agentDir; refuse to run against the real one without tests/register-loader.mjs.
+assert.ok(agentDir.startsWith(tmpdir()), `refusing to wipe non-temporary agent dir ${agentDir}; run npm test`);
 
 function resource(options: {
 	path: string;

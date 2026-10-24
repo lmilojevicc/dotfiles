@@ -54,6 +54,11 @@ version = 1
     { source = "model-blacklist.json", target = "~/.pi/agent/model-blacklist.json" },
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
+    # BB runs Pi with PI_CODING_AGENT_DIR=~/.pi/agent-bb (set on bb.service).
+    { source = "bb/settings.json", target = "~/.pi/agent-bb/settings.json" },
+    { source = "keybindings.json", target = "~/.pi/agent-bb/keybindings.json" },
+    { source = "model-blacklist.json", target = "~/.pi/agent-bb/model-blacklist.json" },
+    { source = "themes", target = "~/.pi/agent-bb/themes" },
   ]
 
 [packages.posting]

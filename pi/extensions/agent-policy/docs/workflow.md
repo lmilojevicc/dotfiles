@@ -4,7 +4,7 @@ This describes the user-authored `prompts/main.md`, moved unchanged from `ORCHES
 
 ## Ordinary versus BB host routing
 
-`BB_THREAD_ID` is a host-origin signal, not a companion-dependent one: BB sets it for every BB-origin session, and any nonblank value selects `mainBb` for roots. The sibling `extension-manager` gate uses the same rule to suppress Pi's native subagent runtime, so the two extensions stay consistent about what "inside BB" means. Consequences worth stating plainly:
+`BB_THREAD_ID` is a host-origin signal, not a companion-dependent one: BB sets it for every BB-origin session, and any nonblank value selects `mainBb` for roots. BB also runs Pi with its own agent dir (`~/.pi/agent-bb`) that does not install pi-subagents, so Pi's native subagent runtime is absent there; agent-policy then registers no child extensions. Consequences worth stating plainly:
 
 - BB roots get BB-appropriate delegation guidance instead of instructions for tools they cannot use (`subagent`/`task`, native child personas, capability ceilings).
 - Nested or manually launched `pi` processes that inherit `BB_THREAD_ID` also receive the BB main layer; this is accepted host routing, not authentication.

@@ -131,7 +131,7 @@ environment, for provider `pi`:
 
 - **Host origin (`BB_THREAD_ID`)**: any nonblank value, including unfamiliar
   formats, makes the session BB-origin and routes roots to the `mainBb` layer
-  instead of `main`. This mirrors the `extension-manager` gate host rule; it works
+  instead of `main`. This matches BB's own agent dir, which omits pi-subagents; it works
   with or without the companion, and also applies to nested/bashed `pi` launches
   that inherit the variable. Whitespace-only values are absent. Ordinary (non-BB)
   hosts keep `main`.

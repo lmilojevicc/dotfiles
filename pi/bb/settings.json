@@ -1,0 +1,38 @@
+{
+  "lastChangelogVersion": "1.4.0",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "deepseek-v4.1-flash",
+  "defaultThinkingLevel": "xhigh",
+  "theme": "catppuccin-mocha",
+  "packages": [
+    "npm:pi-intercom",
+    "npm:pi-web-access",
+    "npm:@ff-labs/pi-fff",
+    "npm:pi-mcp-adapter",
+    "npm:pi-antigravity",
+    "npm:pi-commandcode-provider",
+    "npm:pi-claude-bridge"
+  ],
+  "skills": [
+    ".claude/skills",
+    ".codex/skills",
+    ".opencode/skills"
+  ],
+  "doubleEscapeAction": "tree",
+  "quietStartup": true,
+  "enableInstallTelemetry": false,
+  "collapseChangelog": true,
+  "showHardwareCursor": false,
+  "hideThinkingBlock": false,
+  "editorPaddingX": 0,
+  "defaultProjectTrust": "ask",
+  "tuiMode": "fullscreen",
+  "treeFilterMode": "no-tools",
+  "extensions": [
+    "~/.pi/agent/extensions/agent-policy",
+    "~/.pi/agent/extensions/model-blacklist",
+    "~/.pi/agent/extensions/model-instructions",
+    "~/.pi/agent/extensions/opencode-free",
+    "-builtin:mcp"
+  ]
+}
