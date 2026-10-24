@@ -1,11 +1,24 @@
 {
 	"providers": {
-		"openai": ["!gpt-6*"],
 		"openai-codex": ["*"],
-		"antigravity": ["!gemini-3.8+", "!claude-opus-5+", "!claude-sonnet-5+"],
-		"commandcode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"],
-		"opencode": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*gemini-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"],
-		"opencode-go": ["claude-*", "gpt-*", "o1*", "o3*", "o4*", "chatgpt-*", "*minimax*m1*", "*minimax*m2*", "*nemotron*", "*qwen*3.5*", "*qwen*3.6*", "*qwen*3.7*"]
+		"claude-bridge": ["!claude-{opus,sonnet,haiku}->=5.5*", "!claude-{fable,mythos}-*"],
+		"commandcode": ["claude-*", "gpt-*", "*gemini-*"],
+		"opencode-go": ["claude-*", "gpt-*"]
 	},
-	"global": []
+	"global": [
+		"*claude-{opus,sonnet,haiku}-<5.5*",
+		"*gpt-<6*", "*gpt-oss*",
+		"*gemini-<3.8*",
+		"*deepseek-v<4.1-flash*",
+		"*grok-<4.7*",
+		"*kimi-k<3*",
+		"*glm-<5.3*",
+		"*mimo-v<2.6*",
+		"*minimax*-m<3*",
+		"*muse-spark-<1.3*",
+		"*qwen<3.8*",
+		"*step-<3.7*",
+		"*nemotron*",
+		"*-disabled"
+	]
 }

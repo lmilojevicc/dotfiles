@@ -1,4 +1,7 @@
-/** Model-id pattern parsing: full-string globs and `3.8+` version thresholds. */
+/**
+ * Model-id pattern parsing: full-string globs with `{a,b}` alternatives and
+ * `<5.5`-style version comparisons, plus `3.8+` version thresholds.
+ */
 
 /** Case-insensitive full-string glob matcher. `*` matches any run, `?` one character. */
 export function globToRegExp(pattern: string): RegExp {
@@ -23,6 +26,10 @@ const LEADING_VERSION = /^\d+(?:[.-]\d+)*/;
 const PROBLEM_BARE_NEGATION = "a negation without a pattern";
 const PROBLEM_MISSING_VERSION = "a trailing + without a numeric version (write gemini-3.8+, not gemini-3.8-flash+)";
 const PROBLEM_MISSING_PREFIX = "a version threshold without a model-id prefix (e.g. gemini-3.8+)";
+const PROBLEM_UNCLOSED_BRACE = "an unclosed { (write {opus,sonnet})";
+const PROBLEM_STRAY_BRACE = "a } without a matching {";
+const PROBLEM_NESTED_BRACE = "nested { } alternatives";
+const PROBLEM_MISSING_COMPARISON = "a < or > without a numeric version (write gpt-<6*)";
 
 /** The threshold a pattern encodes, or undefined when it is not a version threshold. */
 function parseThreshold(pattern: string): Threshold | undefined {
@@ -55,7 +62,10 @@ function versionOf(id: string): number[] | undefined {
 export function patternProblem(pattern: string): string | undefined {
 	if (pattern === "!") return PROBLEM_BARE_NEGATION;
 	const body = pattern.startsWith("!") ? pattern.slice(1) : pattern;
-	if (!body.endsWith("+")) return undefined;
+	if (!body.endsWith("+")) {
+		const glob = compileGlob(body);
+		return "problem" in glob ? glob.problem : undefined;
+	}
 	const match = THRESHOLD.exec(body);
 	if (!match) return PROBLEM_MISSING_VERSION;
 	return match[1] === "" ? PROBLEM_MISSING_PREFIX : undefined;
@@ -75,7 +85,10 @@ export interface Matcher {
  * Compile one configured entry. Thresholds compare the id's leading version
  * numerically, so `gemini-3.8+` matches `gemini-3.8-flash`, `gemini-3.9-pro`
  * and `gemini-4-flash`, but not `gemini-3.7-flash`. Wildcards are literal
- * inside a threshold prefix.
+ * inside a threshold prefix. Any other entry is a glob, where `{a,b}` lists
+ * alternatives and `<5.5`, `<=5.5`, `>5.5` or `>=5.5` matches the whole version
+ * number at that position, so `*claude-{opus,sonnet}-<5.5*` hides
+ * `claude-opus-4-8` and `claude-opus-5-high` but keeps `claude-opus-5-10`.
  */
 export function parseMatcher(pattern: string): Matcher {
 	const negated = pattern.startsWith("!");
@@ -94,6 +107,132 @@ export function parseMatcher(pattern: string): Matcher {
 			},
 		};
 	}
-	const regex = globToRegExp(body);
-	return { pattern, negated, matches: (modelId) => regex.test(modelId) };
+	const glob = compileGlob(body);
+	if ("problem" in glob) return { pattern, negated, matches: () => false };
+	return {
+		pattern,
+		negated,
+		matches: (modelId) => {
+			const id = modelId.toLowerCase();
+			return glob.alternatives.some((tokens) => matchTokens(tokens, id));
+		},
+	};
+}
+
+type Operator = "<" | "<=" | ">" | ">=";
+
+type Token =
+	| { kind: "literal"; text: string }
+	| { kind: "star" }
+	| { kind: "any" }
+	| { kind: "version"; operator: Operator; version: number[] };
+
+const VERSION_AT = /\d+(?:[.-]\d+)*/y;
+
+/** The maximal version run starting at `index`, e.g. `5-5` in `claude-opus-5-5-high`. */
+function versionAt(text: string, index: number): string | undefined {
+	VERSION_AT.lastIndex = index;
+	return VERSION_AT.exec(text)?.[0];
+}
+
+function satisfies(version: readonly number[], operator: Operator, bound: readonly number[]): boolean {
+	const order = compare(version, bound);
+	if (operator === "<") return order < 0;
+	if (operator === "<=") return order <= 0;
+	if (operator === ">") return order > 0;
+	return order >= 0;
+}
+
+/**
+ * Expand `{a,b}` alternatives into plain glob bodies. `{,*\/}` allows an
+ * empty alternative; nesting is rejected to keep patterns readable.
+ */
+function expandBraces(body: string): string[] | { problem: string } {
+	const open = body.indexOf("{");
+	const strayClose = body.indexOf("}");
+	if (open === -1) return strayClose === -1 ? [body] : { problem: PROBLEM_STRAY_BRACE };
+	if (strayClose !== -1 && strayClose < open) return { problem: PROBLEM_STRAY_BRACE };
+	const close = body.indexOf("}", open);
+	if (close === -1) return { problem: PROBLEM_UNCLOSED_BRACE };
+	const inner = body.slice(open + 1, close);
+	if (inner.includes("{")) return { problem: PROBLEM_NESTED_BRACE };
+	const rest = expandBraces(body.slice(close + 1));
+	if (!Array.isArray(rest)) return rest;
+	const head = body.slice(0, open);
+	return inner.split(",").flatMap((choice) => rest.map((tail) => head + choice + tail));
+}
+
+/** Split one brace-free glob body into tokens; `<`, `<=`, `>`, `>=` must precede a version. */
+function tokenize(body: string): Token[] | { problem: string } {
+	const tokens: Token[] = [];
+	const text = body.toLowerCase();
+	let index = 0;
+	while (index < text.length) {
+		const character = text[index]!;
+		if (character === "*") {
+			tokens.push({ kind: "star" });
+			index += 1;
+		} else if (character === "?") {
+			tokens.push({ kind: "any" });
+			index += 1;
+		} else if (character === "<" || character === ">") {
+			const operator = (text[index + 1] === "=" ? `${character}=` : character) as Operator;
+			const version = versionAt(text, index + operator.length);
+			if (!version) return { problem: PROBLEM_MISSING_COMPARISON };
+			tokens.push({ kind: "version", operator, version: version.split(/[.-]/).map(Number) });
+			index += operator.length + version.length;
+		} else {
+			const last = tokens.at(-1);
+			if (last?.kind === "literal") last.text += character;
+			else tokens.push({ kind: "literal", text: character });
+			index += 1;
+		}
+	}
+	return tokens;
+}
+
+function compileGlob(body: string): { alternatives: Token[][] } | { problem: string } {
+	const bodies = expandBraces(body);
+	if (!Array.isArray(bodies)) return bodies;
+	const alternatives: Token[][] = [];
+	for (const entry of bodies) {
+		const tokens = tokenize(entry);
+		if (!Array.isArray(tokens)) return tokens;
+		alternatives.push(tokens);
+	}
+	return { alternatives };
+}
+
+const DIGIT = /\d/;
+
+/**
+ * Full-string match with backtracking over `*`. A version token reads the
+ * whole digit run at its position and never starts mid-number, so `<5.5`
+ * sees `5-5` in `claude-opus-5-5-high` rather than a leading `5`.
+ */
+function matchTokens(tokens: readonly Token[], id: string): boolean {
+	const failed = new Set<number>();
+	const step = (tokenIndex: number, position: number): boolean => {
+		if (tokenIndex === tokens.length) return position === id.length;
+		const key = tokenIndex * (id.length + 1) + position;
+		if (failed.has(key)) return false;
+		const token = tokens[tokenIndex]!;
+		let matched = false;
+		if (token.kind === "literal") {
+			matched = id.startsWith(token.text, position) && step(tokenIndex + 1, position + token.text.length);
+		} else if (token.kind === "any") {
+			matched = position < id.length && step(tokenIndex + 1, position + 1);
+		} else if (token.kind === "star") {
+			for (let end = position; end <= id.length && !matched; end += 1) matched = step(tokenIndex + 1, end);
+		} else if (position === 0 || !DIGIT.test(id[position - 1]!)) {
+			const version = versionAt(id, position);
+			matched =
+				version !== undefined &&
+				satisfies(version.split(/[.-]/).map(Number), token.operator, token.version) &&
+				step(tokenIndex + 1, position + version.length);
+		}
+		if (!matched) failed.add(key);
+		return matched;
+	};
+	return step(0, 0);
 }
