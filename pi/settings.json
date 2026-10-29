@@ -10,7 +10,6 @@
     "npm:pi-web-access",
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "git:github.com/MasuRii/pi-tool-display",
     "npm:@ff-labs/pi-fff",
     "npm:pi-btw",
     "npm:pi-mcp-adapter",
