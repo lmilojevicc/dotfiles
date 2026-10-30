@@ -9,6 +9,7 @@
 
 | Package | Purpose | Primary activation | Test (from package directory) |
 | --- | --- | --- | --- |
+| [bash-jobs](extensions/bash-jobs/README.md) | `bash` that never holds the agent: long commands continue as background jobs, with `jobs`/`wait %N`/`kill %N` and a message when they exit | Replaces `bash` (Pi and BB); `/jobs` | `npm test` |
 | [codex-enhanced](extensions/codex-enhanced/README.md) | Codex quota, banked resets, and Fast processing | `/codex-enhanced` | `npm test` |
 | [context](extensions/context/README.md) | Context-window usage breakdown and previews | `/context` | `npm test` |
 | [command-code](extensions/command-code/README.md) | Command Code provider, model catalogue, and account usage | Select a `command-code/...` model; `/command-code-usage` | `npm test` |
