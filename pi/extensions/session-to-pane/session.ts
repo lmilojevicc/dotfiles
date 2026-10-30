@@ -29,6 +29,7 @@ import {
 import {
   getHandoffReadyPath,
   type HandoffReadyData,
+  type HandoffRejectionData,
 } from "./handoff.ts";
 
 export { getHandoffReadyPath, waitForHandoffReady } from "./handoff.ts";
@@ -505,7 +506,7 @@ type PublishReadyFile = (temporaryPath: string, readyPath: string) => void;
 
 export function publishHandoffReady(
   handoffPath: string,
-  data: HandoffReadyData,
+  data: HandoffReadyData | HandoffRejectionData,
   publish: PublishReadyFile = renameSync,
 ): void {
   const readyPath = getHandoffReadyPath(handoffPath);
@@ -531,6 +532,18 @@ export function publishHandoffReady(
   }
 }
 
+/**
+ * Tell the parent why this child could not restore the editor, so it fails with that reason instead
+ * of polling until its readiness deadline. The parent owns the temporary directory and removes it.
+ */
+function rejectHandoff(handoffPath: string, nonce: string, reason: string): false {
+  try {
+    // The parent rejects reasons over 512 characters as malformed; keep the reason it can show.
+    publishHandoffReady(handoffPath, { version: 1, ok: false, nonce, reason: reason.length > 512 ? `${reason.slice(0, 511)}…` : reason });
+  } catch {}
+  return false;
+}
+
 export function restoreEditorFromHandoff(
   ctx: { mode: string; sessionManager: SessionReader; ui: { setEditorText(text: string): void } },
   env: NodeJS.ProcessEnv = process.env,
@@ -539,31 +552,50 @@ export function restoreEditorFromHandoff(
   const nonce = env[HANDOFF_NONCE_ENV];
   if (!handoffPath || !nonce || !existsSync(handoffPath)) return false;
 
+  let handoff: HandoffData | undefined;
   let consumedPath: string | undefined;
   let acknowledged = false;
   try {
-    const data = readProtectedHandoff(handoffPath);
+    handoff = readProtectedHandoff(handoffPath);
     consumedPath = `${handoffPath}.consuming`;
     renameSync(handoffPath, consumedPath);
-    if (ctx.mode !== "tui" || data.nonce !== nonce) return false;
+    if (ctx.mode !== "tui") {
+      return rejectHandoff(handoffPath, handoff.nonce, "the child Pi is not running in interactive TUI mode");
+    }
+    if (handoff.nonce !== nonce) return rejectHandoff(handoffPath, handoff.nonce, "the handoff nonce does not match");
     const currentFile = ctx.sessionManager.getSessionFile();
-    if (!currentFile || ctx.sessionManager.getSessionId() !== data.sessionId) return false;
-    const sessionPath = realpathSync(data.sessionPath);
-    if (realpathSync(currentFile) !== sessionPath) return false;
-    ctx.ui.setEditorText(data.editorText);
+    if (!currentFile || ctx.sessionManager.getSessionId() !== handoff.sessionId) {
+      return rejectHandoff(handoffPath, handoff.nonce, "the child session id does not match the handoff");
+    }
+    const sessionPath = realpathSync(handoff.sessionPath);
+    if (realpathSync(currentFile) !== sessionPath) {
+      return rejectHandoff(handoffPath, handoff.nonce, "the child session file does not match the handoff");
+    }
+    ctx.ui.setEditorText(handoff.editorText);
     unlinkSync(consumedPath);
     consumedPath = undefined;
     publishHandoffReady(handoffPath, {
       version: 1,
       sessionPath,
-      sessionId: data.sessionId,
-      nonce: data.nonce,
+      sessionId: handoff.sessionId,
+      nonce: handoff.nonce,
     });
     acknowledged = true;
     return true;
-  } catch {
+  } catch (error) {
+    if (handoff) {
+      rejectHandoff(
+        handoffPath,
+        handoff.nonce,
+        `restoring the editor failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     return false;
   } finally {
-    if (!acknowledged) cleanupHandoff(consumedPath ?? handoffPath);
+    if (!acknowledged && consumedPath) {
+      // Drop the prompt-bearing file; the temporary directory belongs to the parent, which created
+      // it and cleans it up once it read this child's acknowledgement.
+      try { unlinkSync(consumedPath); } catch {}
+    }
   }
 }

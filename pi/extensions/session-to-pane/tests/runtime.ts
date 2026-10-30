@@ -1,25 +1,20 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { piPackageRoot } from "../../_test-support/pi-package.mjs";
 
-function findPiPackageRoot(): string {
-  let current = dirname(realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim()));
-  while (current !== dirname(current)) {
-    const packagePath = join(current, "package.json");
-    if (existsSync(packagePath)) {
-      try {
-        if (JSON.parse(readFileSync(packagePath, "utf8")).name === "@earendil-works/pi-coding-agent") return current;
-      } catch {}
-    }
-    current = dirname(current);
-  }
-  throw new Error("Could not locate the installed Pi package");
-}
-
-const piRoot = findPiPackageRoot();
-const { createJiti } = await import(pathToFileURL(join(piRoot, "node_modules/jiti/lib/jiti.mjs")).href);
-const jiti = createJiti(join(piRoot, "dist/core/extensions/loader.js"), { interopDefault: false });
+// Pi's dist/ internals are not exported, so load them from the package the shared test loader resolved.
+const piRoot = piPackageRoot();
+const require = createRequire(join(piRoot, "package.json"));
+const { createJiti } = await import(pathToFileURL(require.resolve("jiti")).href);
+// jiti resolves bare specifiers through require, which the shared loader's import hook does not cover.
+const jiti = createJiti(join(piRoot, "dist/core/extensions/loader.js"), {
+  interopDefault: false,
+  alias: {
+    "@earendil-works/pi-coding-agent": join(piRoot, "dist/index.js"),
+    "@earendil-works/pi-tui": fileURLToPath(import.meta.resolve("@earendil-works/pi-tui")),
+  },
+});
 
 export function loadModule<T>(path: string): Promise<T> {
   return jiti.import(resolve(import.meta.dirname, path)) as Promise<T>;

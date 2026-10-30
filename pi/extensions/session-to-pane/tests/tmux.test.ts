@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPiCommand } from "../host.ts";
+import { buildPiCommand, type PiLauncher } from "../host.ts";
 import {
   createTmuxAdapter,
   escapeTmuxFormatLiteral,
@@ -36,7 +36,17 @@ function request(placement: "horizontal" | "vertical" | "tab" = "horizontal") {
   };
 }
 
+const launcher: PiLauncher = { command: "/opt/pi/node", prefixArgs: ["/opt/pi/lib/cli.js"] };
+const piCommand = (placement?: "horizontal" | "vertical" | "tab") =>
+  buildPiCommand(
+    "/sessions/fork ' one.jsonl",
+    "/extensions/bootstrap ' one.ts",
+    placement === undefined ? undefined : request(placement).runtimeState,
+    launcher,
+  );
+
 const readyOptions = {
+  piLauncher: launcher,
   waitForReady: async () => ({ ok: true }),
 };
 
@@ -152,7 +162,7 @@ test("horizontal and vertical splits are detached, pinned, targeted, and launch 
         "-c", "/project with ' quote",
         "-e", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
         "-e", "PI_SESSION_TO_PANE_NONCE=nonce ' one",
-        buildPiCommand("/sessions/fork ' one.jsonl", "/extensions/bootstrap ' one.ts", request().runtimeState),
+        piCommand(placement),
       ];
       assert.deepEqual(calls[1], [
         "-S", socketPath,
@@ -174,6 +184,7 @@ test("tab placement creates a detached window in the captured source session", a
     if (args[2] === "list-panes") return ok(sourceOutput);
     return ok("%9\t$2\t@4\n");
   }, env, {
+    piLauncher: launcher,
     waitForReady: async (expected) => {
       readinessExpectation = expected;
       return { ok: true };
@@ -187,7 +198,7 @@ test("tab placement creates a detached window in the captured source session", a
     "-c", "/project with ' quote",
     "-e", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff ' one.json",
     "-e", "PI_SESSION_TO_PANE_NONCE=nonce ' one",
-    buildPiCommand("/sessions/fork ' one.jsonl", "/extensions/bootstrap ' one.ts", request().runtimeState),
+    piCommand("tab"),
   ];
   assert.equal(calls[1][5], serializeTmuxCommand(creationCommand));
   assert.deepEqual(readinessExpectation, {
@@ -261,6 +272,7 @@ test("readiness failure closes only the proven new pane or window on the pinned 
         if (args[5]?.startsWith('"split-window"') || args[5]?.startsWith('"new-window"')) return ok(createdOutput);
         return ok();
       }, env, {
+        piLauncher: launcher,
         readinessTimeoutMs: 1,
         waitForReady: async (_expected, timeoutMs) => ({ ok: false, error: `timed out after ${timeoutMs}ms` }),
       });
@@ -291,6 +303,7 @@ test("replacement server during readiness is never mutated by cleanup", async ()
     if (args[5]?.startsWith('"split-window"')) return ok("%8\t$2\t@3\n");
     return ok("session-to-pane-server-identity-mismatch\n");
   }, env, {
+    piLauncher: launcher,
     waitForReady: async () => ({ ok: false, error: "readiness timed out" }),
   });
   assert.equal(adapter.validateSource().ok, true);
@@ -311,6 +324,7 @@ test("cleanup failure is reported without changing the proven cleanup target", a
     if (args[5]?.startsWith('"split-window"')) return ok("%8\t$2\t@3\n");
     return { ok: false, stdout: "", stderr: "kill failed", error: "kill failed" };
   }, env, {
+    piLauncher: launcher,
     waitForReady: async () => { throw new Error("readiness failed"); },
   });
   assert.equal(adapter.validateSource().ok, true);

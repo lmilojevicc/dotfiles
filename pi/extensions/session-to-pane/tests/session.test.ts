@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -567,46 +567,63 @@ test("missing or mismatched readiness acknowledgement fails within the injected 
     const mismatched = await waitForHandoffReady(expected, 100, 2);
     assert.equal(mismatched.ok, false);
     assert.match(mismatched.error ?? "", /mismatched/);
+
+    for (const rejection of [
+      { version: 1, ok: false, nonce: handoff.nonce, reason: "" },
+      { version: 1, ok: false, nonce: handoff.nonce },
+      { version: 1, ok: false, nonce: handoff.nonce, reason: "x".repeat(513) },
+    ]) {
+      writeFileSync(getHandoffReadyPath(handoff.path), JSON.stringify(rejection) + "\n", { mode: 0o600 });
+      const invalid = await waitForHandoffReady(expected, 100, 2);
+      assert.equal(invalid.ok, false);
+      assert.match(invalid.error ?? "", /invalid readiness acknowledgement/);
+    }
   } finally {
     if (handoffPath) cleanupHandoff(handoffPath);
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("bootstrap editor hydration failure publishes no acknowledgement and removes the prompt", async () => {
+test("bootstrap editor hydration failure publishes the reason instead of deleting the parent directory", async () => {
   const dir = mkdtempSync(join(tmpdir(), "session-to-pane-bootstrap-failure-"));
+  let handoffPath: string | undefined;
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
     const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "do not retain" });
+    handoffPath = handoff.path;
     const ctx = {
       mode: "tui",
       sessionManager: { getSessionFile: () => sessionPath, getSessionId: () => "fork-session" },
       ui: { setEditorText: () => { throw new Error("editor unavailable"); } },
     } as any;
-    assert.equal(restoreEditorFromHandoff(ctx, {
-      [HANDOFF_PATH_ENV]: handoff.path,
-      [HANDOFF_NONCE_ENV]: handoff.nonce,
-    }), false);
-    assert.equal(existsSync(handoff.path), false);
-    assert.equal(existsSync(getHandoffReadyPath(handoff.path)), false);
-    const readiness = await waitForHandoffReady({
+    const readiness = waitForHandoffReady({
       handoffPath: handoff.path,
       nonce: handoff.nonce,
       sessionPath: sessionPath,
       sessionId: "fork-session",
-    }, 10, 2);
-    assert.equal(readiness.ok, false);
-    assert.match(readiness.error ?? "", /Timed out/);
+    }, 60_000, 5);
+    assert.equal(restoreEditorFromHandoff(ctx, {
+      [HANDOFF_PATH_ENV]: handoff.path,
+      [HANDOFF_NONCE_ENV]: handoff.nonce,
+    }), false);
+    assert.equal(existsSync(handoff.path), false, "the prompt-bearing handoff is still consumed");
+    assert.equal(existsSync(dirname(handoff.path)), true, "the parent-owned directory is left for the parent");
+    const result = await readiness;
+    assert.equal(result.ok, false);
+    assert.match(result.error ?? "", /could not restore the editor: restoring the editor failed: editor unavailable/);
   } finally {
+    if (handoffPath) cleanupHandoff(handoffPath);
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("handoff mismatch never types text and consumes the handoff", () => {
+test("handoff mismatch never types text and reports the mismatch to the waiting parent", async () => {
   const dir = mkdtempSync(join(tmpdir(), "session-to-pane-mismatch-session-"));
+  let handoffPath: string | undefined;
   try {
     const sessionPath = writeSession(dir, [], "fork-session");
     const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "do not type" });
+    handoffPath = handoff.path;
     let typed = false;
     const ctx = {
       mode: "tui",
@@ -619,7 +636,78 @@ test("handoff mismatch never types text and consumes the handoff", () => {
     }), false);
     assert.equal(typed, false);
     assert.equal(existsSync(handoff.path), false);
+    const acknowledgement = JSON.parse(readFileSync(getHandoffReadyPath(handoff.path), "utf8"));
+    assert.deepEqual({
+      version: acknowledgement.version,
+      ok: acknowledgement.ok,
+      nonce: acknowledgement.nonce,
+    }, { version: 1, ok: false, nonce: handoff.nonce });
+    assert.match(acknowledgement.reason, /session id does not match/);
+    const readiness = await waitForHandoffReady({
+      handoffPath: handoff.path,
+      nonce: handoff.nonce,
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
+    }, 60_000, 5);
+    assert.equal(readiness.ok, false);
+    assert.match(readiness.error ?? "", /could not restore the editor: the child session id does not match/);
   } finally {
+    if (handoffPath) cleanupHandoff(handoffPath);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a nonce mismatch is acknowledged so the parent reports it instead of timing out", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-nonce-mismatch-"));
+  let handoffPath: string | undefined;
+  try {
+    const sessionPath = writeSession(dir, [], "fork-session");
+    const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "do not type" });
+    handoffPath = handoff.path;
+    const ctx = {
+      mode: "tui",
+      sessionManager: { getSessionFile: () => sessionPath, getSessionId: () => "fork-session" },
+      ui: { setEditorText: () => { throw new Error("must not type"); } },
+    } as any;
+    assert.equal(restoreEditorFromHandoff(ctx, {
+      [HANDOFF_PATH_ENV]: handoff.path,
+      [HANDOFF_NONCE_ENV]: "expected-nonce",
+    }), false);
+    const readiness = await waitForHandoffReady({
+      handoffPath: handoff.path,
+      nonce: "expected-nonce",
+      sessionPath: sessionPath,
+      sessionId: "fork-session",
+    }, 60_000, 5);
+    assert.equal(readiness.ok, false);
+    assert.match(readiness.error ?? "", /mismatched readiness acknowledgement/);
+  } finally {
+    if (handoffPath) cleanupHandoff(handoffPath);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an unusable handoff is left alone so the parent keeps ownership of its directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-unsafe-handoff-"));
+  let handoffPath: string | undefined;
+  try {
+    const sessionPath = writeSession(dir, [], "fork-session");
+    const handoff = createHandoff({ path: sessionPath, sessionId: "fork-session", editorText: "unsafe" });
+    handoffPath = handoff.path;
+    chmodSync(handoff.path, 0o644);
+    const ctx = {
+      mode: "tui",
+      sessionManager: { getSessionFile: () => sessionPath, getSessionId: () => "fork-session" },
+      ui: { setEditorText: () => {} },
+    } as any;
+    assert.equal(restoreEditorFromHandoff(ctx, {
+      [HANDOFF_PATH_ENV]: handoff.path,
+      [HANDOFF_NONCE_ENV]: handoff.nonce,
+    }), false);
+    assert.equal(existsSync(handoff.path), true, "an unreadable handoff is not deleted by the child");
+    assert.equal(existsSync(getHandoffReadyPath(handoff.path)), false, "an unvalidated handoff is not acknowledged");
+  } finally {
+    if (handoffPath) cleanupHandoff(handoffPath);
     rmSync(dir, { recursive: true, force: true });
   }
 });

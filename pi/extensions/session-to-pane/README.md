@@ -20,6 +20,10 @@ With no argument, the destination chooser offers **Right**, **Below**, and **New
 
 The host is detected on every invocation. tmux wins when `TMUX` is present, including tmux nested inside Herdr; otherwise Herdr is selected from its environment markers. Unsupported or stale selected-host identity fails closed without fallback. Both adapters pin the source identity, quote launch data, restore the draft through a protected bootstrap handoff, and report success only after atomic readiness acknowledgement. Tree and clone launch with the source's current runtime model and thinking level, matching native tree navigation without making a provider request.
 
+The child Pi is started with the installation that runs the current Pi process, not with a bare `pi`: the managed `pi` wrapper when Pi was started through it (`PI_MANAGED_INSTALL_ROOT`), so the child keeps the wrapper's environment; otherwise the absolute interpreter and script, following an npm `.bin/pi` symlink to the bundled `cli.js`; or the compiled Pi binary. tmux runs a created command with the tmux server's `PATH`, and Herdr types it into a fresh shell, so a bare name could resolve to a different installation or none at all; pinning it makes the new pane run the same Pi as the source pane.
+
+When the child cannot restore the draft (not an interactive TUI, mismatched nonce or session, a failing editor), it publishes an acknowledgement that carries its reason instead of deleting the handoff. The command then reports that reason immediately; only the parent, which created the temporary handoff directory, removes it.
+
 ## Installation
 
 This repository's Dotty configuration links the whole `pi/extensions` directory to `~/.pi/agent/extensions`, so no package-specific activation entry is needed. Run `/reload` in an existing Pi session after changing the extension; new sessions discover `session-to-pane/index.ts` automatically.

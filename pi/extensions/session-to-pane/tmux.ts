@@ -10,6 +10,7 @@ import {
   type HostAdapter,
   type HostLaunchRequest,
   type HostLaunchResult,
+  type PiLauncher,
 } from "./host.ts";
 
 export interface TmuxExecResult {
@@ -42,6 +43,7 @@ export interface TmuxAdapter extends HostAdapter {
 }
 
 export interface TmuxAdapterOptions {
+  piLauncher?: PiLauncher;
   readinessTimeoutMs?: number;
   readinessPollIntervalMs?: number;
   waitForReady?: (
@@ -208,7 +210,7 @@ export function createTmuxAdapter(
       "-c", escapeTmuxFormatLiteral(request.cwd),
       "-e", `PI_SESSION_TO_PANE_HANDOFF=${request.handoffPath}`,
       "-e", `PI_SESSION_TO_PANE_NONCE=${request.handoffNonce}`,
-      buildPiCommand(request.sessionPath, request.bootstrapPath, request.runtimeState),
+      buildPiCommand(request.sessionPath, request.bootstrapPath, request.runtimeState, options.piLauncher),
     ];
     const sourceTarget = `${pinnedSource.sessionId}:${pinnedSource.windowId}.${pinnedSource.paneId}`;
     const creationCommand = request.placement === "tab"

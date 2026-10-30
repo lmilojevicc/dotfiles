@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPiCommand, quoteShellArg } from "../host.ts";
+import { buildPiCommand, quoteShellArg, type PiLauncher, type ForkRuntimeState } from "../host.ts";
 import {
   createHerdrAdapter,
   orientationDirection,
@@ -19,7 +19,12 @@ const env = {
   HERDR_TAB_ID: "w1:t1",
 } as NodeJS.ProcessEnv;
 
+const launcher: PiLauncher = { command: "/opt/pi/node", prefixArgs: ["/opt/pi/lib/cli.js"] };
+const piCommand = (sessionPath: string, bootstrapPath: string, runtimeState?: ForkRuntimeState) =>
+  buildPiCommand(sessionPath, bootstrapPath, runtimeState, launcher);
+
 const readyOptions = {
+  piLauncher: launcher,
   waitForReady: async () => ({ ok: true }),
 };
 
@@ -30,13 +35,13 @@ test("orientation names map to unambiguous Herdr physical directions", () => {
 
 test("shell command quotes every argument and does not include editor text", () => {
   assert.equal(quoteShellArg("a'b"), `'a'"'"'b'`);
-  const command = buildPiCommand("/tmp/a b/'session.jsonl", "/tmp/ext ' one.ts", {
+  const command = piCommand("/tmp/a b/'session.jsonl", "/tmp/ext ' one.ts", {
     model: { provider: "provider ' one", modelId: "model ' two" },
     thinkingLevel: "xhigh",
   });
   assert.equal(
     command,
-    `exec 'pi' '--session' '/tmp/a b/'"'"'session.jsonl' '--extension' '/tmp/ext '"'"' one.ts' '--provider' 'provider '"'"' one' '--model' 'model '"'"' two' '--thinking' 'xhigh'`,
+    `exec '/opt/pi/node' '/opt/pi/lib/cli.js' '--session' '/tmp/a b/'"'"'session.jsonl' '--extension' '/tmp/ext '"'"' one.ts' '--provider' 'provider '"'"' one' '--model' 'model '"'"' two' '--thinking' 'xhigh'`,
   );
   assert.ok(!command.includes("selected prompt"));
 });
@@ -74,7 +79,10 @@ test("adapter verifies caller identity, splits relative to it, and launches quot
   ]);
   assert.deepEqual(calls[4], [
     "pane", "run", "w1:p2",
-    "exec 'pi' '--session' '/sessions/fork.jsonl' '--extension' '/extensions/bootstrap.ts' '--provider' 'nondefault-provider' '--model' 'nondefault-model' '--thinking' 'high'",
+    piCommand("/sessions/fork.jsonl", "/extensions/bootstrap.ts", {
+      model: { provider: "nondefault-provider", modelId: "nondefault-model" },
+      thinkingLevel: "high",
+    }),
   ]);
 });
 
@@ -100,7 +108,7 @@ test("tab placement targets the captured source workspace and returns its root p
     "--env", "PI_SESSION_TO_PANE_HANDOFF=/handoff",
     "--env", "PI_SESSION_TO_PANE_NONCE=nonce", "--no-focus",
   ]);
-  assert.deepEqual(calls[4], ["pane", "run", "w1:p9", "exec 'pi' '--session' '/fork' '--extension' '/boot'"]);
+  assert.deepEqual(calls[4], ["pane", "run", "w1:p9", piCommand("/fork", "/boot")]);
 });
 
 test("failed launch in a new tab closes only that returned tab", async () => {
@@ -113,7 +121,7 @@ test("failed launch in a new tab closes only that returned tab", async () => {
     if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }));
     if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
     return ok();
-  }, env);
+  }, env, { piLauncher: launcher });
   assert.equal(adapter.validateSource().ok, true);
   const result = await adapter.launch({
     placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
@@ -134,7 +142,7 @@ test("accepted pane command stays pending until readiness acknowledgement", asyn
     if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
     if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
     return ok();
-  }, env, { waitForReady: async () => readiness });
+  }, env, { piLauncher: launcher, waitForReady: async () => readiness });
   assert.equal(adapter.validateSource().ok, true);
   let settled = false;
   const pending = adapter.launch({
@@ -143,7 +151,7 @@ test("accepted pane command stays pending until readiness acknowledgement", asyn
   }).then((result) => { settled = true; return result; });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(settled, false);
-  assert.deepEqual(calls.at(-1), ["pane", "run", "w1:p2", "exec 'pi' '--session' '/fork' '--extension' '/boot'"]);
+  assert.deepEqual(calls.at(-1), ["pane", "run", "w1:p2", piCommand("/fork", "/boot")]);
 
   acknowledge!({ ok: true });
   assert.deepEqual(await pending, { ok: true, paneId: "w1:p2" });
@@ -164,6 +172,7 @@ test("readiness failure closes only the proven pane or tab and never the source"
         }
         return ok();
       }, env, {
+        piLauncher: launcher,
         readinessTimeoutMs: 1,
         waitForReady: async (_expected, timeoutMs) => ({
           ok: false,
@@ -208,7 +217,7 @@ test("launch failure closes only the newly returned pane", async () => {
     if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:new" } } }));
     if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
     return ok();
-  }, env);
+  }, env, { piLauncher: launcher });
   assert.equal(adapter.validateSource().ok, true);
   const result = await adapter.launch({
     placement: "vertical", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
@@ -217,4 +226,61 @@ test("launch failure closes only the newly returned pane", async () => {
   assert.equal(result.ok, false);
   assert.deepEqual(calls.at(-1), ["pane", "close", "w1:new"]);
   assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"));
+});
+
+test("an invalid new tab identity still closes the identity Herdr proved", async (t) => {
+  for (const [name, createOutput, expectedClose] of [
+    ["tab id only", { result: { tab: { tab_id: "w1:t2" } } }, ["tab", "close", "w1:t2"]],
+    ["root pane id only", { result: { root_pane: { pane_id: "w1:p9" } } }, ["pane", "close", "w1:p9"]],
+    ["no identity", {}, undefined],
+  ] as const) {
+    await t.test(name, async () => {
+      const calls: string[][] = [];
+      const adapter = createHerdrAdapter((args) => {
+        calls.push(args);
+        if (args[0] === "--version") return ok("herdr");
+        if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+        if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
+        if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify(createOutput));
+        return ok();
+      }, env, { piLauncher: launcher });
+      assert.equal(adapter.validateSource().ok, true);
+      const result = await adapter.launch({
+        placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
+        handoffPath: "/handoff", handoffNonce: "nonce",
+      });
+      assert.equal(result.ok, false);
+      assert.match(result.error ?? "", /invalid new tab identity/);
+      assert.ok(!calls.some((call) => call[1] === "run"), "an unproven tab is never launched into");
+      assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"), "never the source pane");
+      assert.ok(!calls.some((call) => call[0] === "tab" && call[1] === "close" && call[2] === "w1:t1"), "never the source tab");
+      if (expectedClose) {
+        assert.deepEqual(calls.at(-1), expectedClose);
+        assert.equal(result.cleanupError, undefined);
+      } else {
+        assert.ok(!calls.some((call) => call[1] === "close"), "nothing was proven, so nothing is closed");
+      }
+    });
+  }
+});
+
+test("a failed close of a partially identified tab is reported", async () => {
+  const calls: string[][] = [];
+  const adapter = createHerdrAdapter((args) => {
+    calls.push(args);
+    if (args[0] === "--version") return ok("herdr");
+    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
+    if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" } } }));
+    if (args[0] === "tab" && args[1] === "close") return { ok: false, stdout: "", stderr: "close failed", error: "close failed" };
+    return ok();
+  }, env, { piLauncher: launcher });
+  assert.equal(adapter.validateSource().ok, true);
+  const result = await adapter.launch({
+    placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
+    handoffPath: "/handoff", handoffNonce: "nonce",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error ?? "", /invalid new tab identity/);
+  assert.equal(result.cleanupError, "close failed");
 });

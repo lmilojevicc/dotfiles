@@ -10,6 +10,7 @@ import {
   type HostAdapter,
   type HostLaunchRequest,
   type HostLaunchResult,
+  type PiLauncher,
 } from "./host.ts";
 
 export type HerdrDirection = "right" | "down";
@@ -82,6 +83,7 @@ export interface HerdrAdapter extends HostAdapter {
 }
 
 export interface HerdrAdapterOptions {
+  piLauncher?: PiLauncher;
   readinessTimeoutMs?: number;
   readinessPollIntervalMs?: number;
   waitForReady?: (
@@ -141,13 +143,29 @@ export function createHerdrAdapter(
 
     let paneId: string | undefined;
     let createdTabId: string | undefined;
+    const closeCreatedTarget = (error: string): HostLaunchResult => {
+      const closeArgs = createdTabId ? ["tab", "close", createdTabId] : ["pane", "close", paneId];
+      const close = exec(closeArgs, 5000);
+      return {
+        ok: false,
+        paneId,
+        error,
+        cleanupError: close.ok ? undefined : close.error || `could not close the unused ${createdTabId ? "tab" : "pane"}`,
+      };
+    };
+
     if (request.placement === "tab") {
       const created = exec(["tab", "create", "--workspace", sourceWorkspaceId, ...commonArgs], 5000);
       if (!created.ok) return { ok: false, error: created.error || "Herdr could not create a tab in the source workspace" };
       const parsed = parseCreatedTab(created.stdout);
       paneId = parsed.paneId;
       createdTabId = parsed.tabId;
-      if (!paneId || !createdTabId) return { ok: false, error: "Herdr returned an invalid new tab identity" };
+      if (!paneId || !createdTabId) {
+        const error = "Herdr returned an invalid new tab identity";
+        // Close whatever identity Herdr did prove; only a tab or pane id can be closed.
+        if (!paneId && !createdTabId) return { ok: false, error };
+        return closeCreatedTarget(error);
+      }
     } else {
       const split = exec([
         "pane", "split",
@@ -162,20 +180,9 @@ export function createHerdrAdapter(
       }
     }
 
-    const closeCreatedTarget = (error: string): HostLaunchResult => {
-      const closeArgs = createdTabId ? ["tab", "close", createdTabId] : ["pane", "close", paneId];
-      const close = exec(closeArgs, 5000);
-      return {
-        ok: false,
-        paneId,
-        error,
-        cleanupError: close.ok ? undefined : close.error || `could not close the unused ${createdTabId ? "tab" : "pane"}`,
-      };
-    };
-
     const run = exec([
       "pane", "run", paneId,
-      buildPiCommand(request.sessionPath, request.bootstrapPath, request.runtimeState),
+      buildPiCommand(request.sessionPath, request.bootstrapPath, request.runtimeState, options.piLauncher),
     ], 5000);
     if (!run.ok) return closeCreatedTarget(run.error || "Herdr could not launch Pi in the new pane");
 

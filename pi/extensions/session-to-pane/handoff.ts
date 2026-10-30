@@ -15,16 +15,29 @@ export interface HandoffReadinessResult {
 
 export interface HandoffReadyData {
   version: 1;
+  ok?: true;
   sessionPath: string;
   sessionId: string;
   nonce: string;
 }
 
+/** A child that refused or failed to restore the editor, so the parent can report why. */
+export interface HandoffRejectionData {
+  version: 1;
+  ok: false;
+  nonce: string;
+  reason: string;
+}
+
+export type HandoffAcknowledgement = HandoffReadyData | HandoffRejectionData;
+
+const MAX_REJECTION_REASON_LENGTH = 512;
+
 export function getHandoffReadyPath(handoffPath: string): string {
   return join(dirname(handoffPath), "ready.json");
 }
 
-function readProtectedReady(readyPath: string): HandoffReadyData {
+function readProtectedReady(readyPath: string): HandoffAcknowledgement {
   const parent = dirname(readyPath);
   const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
   const dirStat = lstatSync(parent);
@@ -38,9 +51,20 @@ function readProtectedReady(readyPath: string): HandoffReadyData {
   if (fileStat.size <= 0 || fileStat.size > 16 * 1024) {
     throw new Error("Invalid readiness acknowledgement size");
   }
-  const parsed = JSON.parse(readFileSync(readyPath, "utf8")) as Partial<HandoffReadyData>;
+  const parsed = JSON.parse(readFileSync(readyPath, "utf8")) as Partial<HandoffReadyData & HandoffRejectionData>;
+  if (parsed.version !== 1) throw new Error("Invalid readiness acknowledgement");
+  if (parsed.ok === false) {
+    if (
+      typeof parsed.nonce !== "string" ||
+      typeof parsed.reason !== "string" ||
+      parsed.reason.length === 0 ||
+      parsed.reason.length > MAX_REJECTION_REASON_LENGTH
+    ) {
+      throw new Error("Invalid readiness acknowledgement");
+    }
+    return parsed as HandoffRejectionData;
+  }
   if (
-    parsed.version !== 1 ||
     typeof parsed.sessionPath !== "string" ||
     typeof parsed.sessionId !== "string" ||
     typeof parsed.nonce !== "string"
@@ -62,6 +86,12 @@ export async function waitForHandoffReady(
     if (existsSync(readyPath)) {
       try {
         const ready = readProtectedReady(readyPath);
+        if (ready.ok === false) {
+          if (ready.nonce !== expected.nonce) {
+            return { ok: false, error: "Child Pi returned a mismatched readiness acknowledgement" };
+          }
+          return { ok: false, error: `Child Pi could not restore the editor: ${ready.reason}` };
+        }
         if (
           ready.nonce !== expected.nonce ||
           ready.sessionId !== expected.sessionId ||

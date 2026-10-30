@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { loadModule } from "./runtime.ts";
 
@@ -32,7 +32,7 @@ test("bootstrap registers only a session_start handoff restore", () => {
   assert.equal(typed, false, "missing handoff environment is a safe no-op");
 });
 
-test("bootstrap hydration failure leaves no acknowledgement or prompt-bearing handoff", () => {
+test("bootstrap hydration failure removes the prompt and acknowledges the reason to the parent", () => {
   const dir = mkdtempSync(join(tmpdir(), "session-to-pane-bootstrap-test-"));
   const previousPath = process.env[HANDOFF_PATH_ENV];
   const previousNonce = process.env[HANDOFF_NONCE_ENV];
@@ -68,8 +68,12 @@ test("bootstrap hydration failure leaves no acknowledgement or prompt-bearing ha
       ui: { setEditorText: () => { throw new Error("editor unavailable"); } },
     });
 
-    assert.equal(existsSync(handoff.path), false);
-    assert.equal(existsSync(getHandoffReadyPath(handoff.path)), false);
+    assert.equal(existsSync(handoff.path), false, "the prompt-bearing handoff is consumed");
+    assert.equal(existsSync(dirname(handoff.path)), true, "the parent-owned directory is not deleted by the child");
+    const acknowledgement = JSON.parse(readFileSync(getHandoffReadyPath(handoff.path), "utf8"));
+    assert.equal(acknowledgement.ok, false);
+    assert.equal(acknowledgement.nonce, handoff.nonce);
+    assert.match(acknowledgement.reason, /editor unavailable/);
   } finally {
     if (previousPath === undefined) delete process.env[HANDOFF_PATH_ENV];
     else process.env[HANDOFF_PATH_ENV] = previousPath;
