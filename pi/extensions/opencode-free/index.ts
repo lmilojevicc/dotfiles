@@ -58,10 +58,19 @@
  *   OPENCODE_FREE_CATALOG_URL  Pi catalog endpoint for the `opencode` provider
  *   OPENCODE_FREE_VERSION_URL  endpoint that reports the latest OpenCode version
  *   OPENCODE_FREE_OFFLINE=1    skip all discovery requests (use cache/baseline)
+ *
+ * ## Startup cost
+ *
+ * Pi loads extensions in invocations that never start a session (`--list-models`,
+ * package commands) and asks extensions not to do network or process work from
+ * the factory. This extension therefore registers the last known catalogue from
+ * disk (or the bundled baseline) synchronously, and refreshes the OpenCode
+ * version and the catalogue from Pi's catalog refresh (`fetchModels`) and from a
+ * background task started on `session_start` and cancelled on `session_shutdown`.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { getAgentDir, VERSION as PI_VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -98,10 +107,24 @@ const MODELS_URL = process.env.OPENCODE_FREE_MODELS_URL ?? DEFAULT_MODELS_URL;
 const CATALOG_URL = process.env.OPENCODE_FREE_CATALOG_URL ?? DEFAULT_CATALOG_URL;
 const VERSION_URL = process.env.OPENCODE_FREE_VERSION_URL ?? DEFAULT_VERSION_URL;
 const MODELS_DEV_URL = process.env.OPENCODE_FREE_MODELS_DEV_URL ?? DEFAULT_MODELS_DEV_URL;
-const OFFLINE = process.env.OPENCODE_FREE_OFFLINE === "1" || process.env.PI_OFFLINE !== undefined;
+
+/** Same truthiness Pi's own `--offline` handling uses (`isTruthyEnvFlag` in dist/main.js). */
+function truthyEnvFlag(value: string | undefined): boolean {
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
+/**
+ * Pi normalizes `--offline` to `PI_OFFLINE=1` after reading argv, so checking
+ * both covers an extension loaded either side of that. `PI_OFFLINE=0` is not
+ * offline for Pi's own flag handling, so it must not be offline here either.
+ */
+const OFFLINE =
+	process.argv.includes("--offline") || truthyEnvFlag(process.env.OPENCODE_FREE_OFFLINE) || truthyEnvFlag(process.env.PI_OFFLINE);
 
 const AGENT_DIR = getAgentDir();
-const CACHE_PATH = join(AGENT_DIR, "opencode-free.json");
+/** Exported for tests. */
+export const CACHE_PATH = join(AGENT_DIR, "opencode-free.json");
 const MODELS_STORE_PATH = join(AGENT_DIR, "models-store.json");
 
 /** Catalog freshness window; older entries trigger a discovery request on startup. */
@@ -110,7 +133,6 @@ const VERSION_TTL_MS = 6 * 60 * 60 * 1000;
 /** models.dev is only consulted for models Pi's catalog does not know yet. */
 const MODELS_DEV_TTL_MS = 24 * 60 * 60 * 1000;
 const MODELS_DEV_TIMEOUT_MS = 4000;
-const STARTUP_DISCOVERY_TIMEOUT_MS = 2500;
 const NETWORK_TIMEOUT_MS = 10_000;
 
 const B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -142,6 +164,8 @@ type CacheEntry = {
 	models?: Model<Api>[];
 	liveIds?: string[];
 	modelsCheckedAt?: number;
+	/** Every id discovery has published, so availability filtering can tell our models from user additions. */
+	discoveredIds?: string[];
 	modelsDev?: Record<string, ModelsDevMeta>;
 	modelsDevCheckedAt?: number;
 };
@@ -155,12 +179,28 @@ function readCache(): CacheEntry {
 	}
 }
 
-function writeCache(patch: Partial<CacheEntry>): void {
+let cacheWrites = 0;
+
+/**
+ * Merge the patch into the cache and replace the file atomically. Every BB
+ * thread runs its own Pi process against the same cache file, so a plain
+ * read-modify-write can expose a half-written JSON document or lose the other
+ * writer's keys. Writing a complete temp file in the same directory and
+ * renaming it means readers only ever see a complete document and the last
+ * complete write wins.
+ *
+ * Exported for tests.
+ */
+export function writeCache(patch: Partial<CacheEntry>): void {
+	cacheWrites += 1;
+	const temp = join(dirname(CACHE_PATH), `.opencode-free.${process.pid}.${cacheWrites}.tmp`);
 	try {
 		mkdirSync(dirname(CACHE_PATH), { recursive: true });
-		writeFileSync(CACHE_PATH, `${JSON.stringify({ ...readCache(), ...patch }, null, 1)}\n`);
+		writeFileSync(temp, `${JSON.stringify({ ...readCache(), ...patch }, null, 1)}\n`);
+		renameSync(temp, CACHE_PATH);
 	} catch {
 		// A read-only agent directory must not break the provider.
+		rmSync(temp, { force: true });
 	}
 }
 
@@ -185,9 +225,9 @@ function parseVersion(text: string): string | undefined {
 }
 
 /** Version of the locally installed OpenCode CLI, when one is on PATH. */
-async function localOpenCodeVersion(): Promise<string | undefined> {
+async function localOpenCodeVersion(signal?: AbortSignal): Promise<string | undefined> {
 	try {
-		const { stdout } = await promisify(execFile)("opencode", ["--version"], { encoding: "utf8", timeout: 4000 });
+		const { stdout } = await promisify(execFile)("opencode", ["--version"], { encoding: "utf8", timeout: 4000, signal });
 		return parseVersion(String(stdout));
 	} catch {
 		return undefined;
@@ -197,6 +237,15 @@ async function localOpenCodeVersion(): Promise<string | undefined> {
 const cache = readCache();
 let openCodeVersion = process.env.OPENCODE_FREE_VERSION ?? cache.version ?? FALLBACK_OPENCODE_VERSION;
 let versionRefreshInFlight: Promise<void> | undefined;
+
+/** Ids this extension's discovery has ever published: the baseline plus everything seen since. */
+const discoveredIds = new Set<string>(BASELINE_FREE_MODELS.map((model) => model.id));
+for (const model of cache.models ?? []) {
+	if (typeof model?.id === "string") discoveredIds.add(model.id);
+}
+for (const id of cache.discoveredIds ?? []) {
+	if (typeof id === "string") discoveredIds.add(id);
+}
 
 function userAgent(): string {
 	return process.env.OPENCODE_FREE_UA ?? `opencode/latest/${openCodeVersion}/cli`;
@@ -208,22 +257,22 @@ function userAgent(): string {
  * found. The homebrew tap tracks the v2 release channel, which is the channel
  * the Zen gateway currently accepts.
  */
-function refreshOpenCodeVersion(): Promise<void> {
+function refreshOpenCodeVersion(signal?: AbortSignal): Promise<void> {
 	if (OFFLINE) return Promise.resolve();
 	if (versionRefreshInFlight) return versionRefreshInFlight;
 	versionRefreshInFlight = (async () => {
 		let version: string | undefined;
 		let source = "tap";
 		try {
-			version = parseVersion(await fetchText(VERSION_URL));
+			version = parseVersion(await fetchText(VERSION_URL, signal ? { signal } : {}));
 		} catch {
 			version = undefined;
 		}
 		if (!version) {
-			version = await localOpenCodeVersion();
+			version = await localOpenCodeVersion(signal);
 			source = "local";
 		}
-		if (!version) return;
+		if (!version || signal?.aborted) return;
 		openCodeVersion = version;
 		writeCache({ version, versionCheckedAt: Date.now(), versionSource: source });
 	})().finally(() => {
@@ -232,9 +281,15 @@ function refreshOpenCodeVersion(): Promise<void> {
 	return versionRefreshInFlight;
 }
 
-function ensureFreshOpenCodeVersion(): void {
+/**
+ * Kick off a background version refresh when the cached one is stale. Never
+ * awaited by its callers: requests keep the cached/local version until a newer
+ * one arrives.
+ */
+function ensureFreshOpenCodeVersion(signal?: AbortSignal): void {
+	if (OFFLINE) return;
 	if (Date.now() - (readCache().versionCheckedAt ?? 0) < VERSION_TTL_MS) return;
-	void refreshOpenCodeVersion().catch(() => {});
+	void refreshOpenCodeVersion(signal).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -881,8 +936,14 @@ function buildDiscovery(
 	if (!fetched) return { models, liveIds: effectiveLiveIds, checkedAt: cached?.checkedAt ?? 0 };
 	const result: Discovery = { models: models.length > 0 ? models : (cached?.models ?? []), liveIds: effectiveLiveIds, checkedAt: Date.now() };
 	discovery = result;
+	for (const model of result.models) discoveredIds.add(model.id);
 	if (models.length > 0) {
-		writeCache({ models, liveIds: effectiveLiveIds ? [...effectiveLiveIds] : undefined, modelsCheckedAt: result.checkedAt });
+		writeCache({
+			models,
+			liveIds: effectiveLiveIds ? [...effectiveLiveIds] : undefined,
+			modelsCheckedAt: result.checkedAt,
+			discoveredIds: [...discoveredIds],
+		});
 	}
 	return result;
 }
@@ -912,27 +973,39 @@ async function discoverFreeModels(options: { stored?: readonly Model<Api>[]; sig
 }
 
 /**
- * Pi restores a provider's persisted catalog before any network refresh, so a
- * store copy written by an older discovery would otherwise win over the current
- * one (including for metadata such as context windows). Replace known ids with
- * the fresh discovery result, drop ids the live endpoint no longer serves, and
- * keep unknown entries such as `models.json` additions. Exported for tests.
+ * Pi restores a provider's persisted catalog before any network refresh and
+ * then publishes the fresh discovery through the provider's own model state, so
+ * the candidates already carry the current metadata on top of any `models.json`
+ * modelOverrides Pi composed into them. That leaves two jobs here:
+ *
+ *   - keep a known id's candidate object, so an override is not replaced by the
+ *     raw discovery copy,
+ *   - drop ids the live endpoint stopped serving, but only ones that came from
+ *     this extension's discovery: a `models.json` addition this extension never
+ *     saw must survive even when the endpoint does not list it.
+ *
+ * Exported for tests.
  */
 export function filterDiscoveredModels(
 	candidates: readonly Model<Api>[],
 	latest: readonly Model<Api>[],
 	liveIds?: Set<string>,
+	discoveryIds?: ReadonlySet<string>,
 ): Model<Api>[] {
 	if (latest.length === 0) return [...candidates];
-	const byId = new Map(latest.map((model) => [model.id, model]));
+	const known = new Set(latest.map((model) => model.id));
 	const out: Model<Api>[] = [];
 	for (const model of candidates) {
-		const known = byId.get(model.id);
-		if (known) {
-			out.push(known);
+		if (known.has(model.id)) {
+			out.push(model);
 			continue;
 		}
-		if (liveIds && !liveIds.has(model.id)) continue;
+		// Without a live list there is no evidence that an id disappeared.
+		if (!liveIds || liveIds.has(model.id)) {
+			out.push(model);
+			continue;
+		}
+		if (discoveryIds?.has(model.id)) continue;
 		out.push(model);
 	}
 	return out;
@@ -941,23 +1014,55 @@ export function filterDiscoveredModels(
 /** Live free ids from the last discovery; lets `filterModels` hide removed baseline entries. */
 let lastLiveIds: Set<string> | undefined;
 
+/**
+ * Background refresh started on `session_start` and cancelled on `session_shutdown`.
+ *
+ * It publishes the same state a `fetchModels` refresh does, including the live
+ * ids `filterModels` needs to hide baseline entries the endpoint dropped.
+ */
+let sessionRefresh: AbortController | undefined;
+
+function startBackgroundRefresh(): void {
+	if (OFFLINE) return;
+	stopBackgroundRefresh();
+	const controller = new AbortController();
+	sessionRefresh = controller;
+	const { signal } = controller;
+	void (async () => {
+		ensureFreshOpenCodeVersion(signal);
+		const result = await discoverFreeModels({ signal });
+		if (result.liveIds) lastLiveIds = result.liveIds;
+	})().catch(() => {
+		// The next catalog refresh retries; nothing here is worth an extension error.
+	});
+}
+
+function stopBackgroundRefresh(): void {
+	sessionRefresh?.abort();
+	sessionRefresh = undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Extension
 // ---------------------------------------------------------------------------
 
-export default async function openCodeFreeExtension(pi: ExtensionAPI) {
-	ensureFreshOpenCodeVersion();
-
-	// Resolve models before registering: Pi waits for async extension factories,
-	// so print-mode and headless subagent runs see the current free list too.
-	let initial: Discovery;
-	try {
-		initial = await discoverFreeModels({ timeoutMs: STARTUP_DISCOVERY_TIMEOUT_MS });
-	} catch {
-		initial = { models: [], checkedAt: Date.now() };
+/**
+ * Registers the provider from the cache (or the bundled baseline) without any
+ * network or process work: Pi already waits for async factories, but it also
+ * loads extensions for invocations that never start a session, and the docs ask
+ * extensions not to start processes or network requests in the factory. The
+ * OpenCode version and the model catalogue are refreshed from `fetchModels`
+ * (Pi's catalog refresh) and from a `session_start` background task.
+ */
+export default function openCodeFreeExtension(pi: ExtensionAPI): void {
+	const cached = cachedDiscovery();
+	if (cached) {
+		// Seed the in-memory discovery so availability filtering works before the first refresh.
+		discovery = cached;
+		lastLiveIds = cached.liveIds;
+		for (const model of cached.models) discoveredIds.add(model.id);
 	}
-	const models = initial.models.length > 0 ? initial.models : BASELINE_FREE_MODELS;
-	lastLiveIds = initial.liveIds;
+	const models = cached?.models.length ? cached.models : BASELINE_FREE_MODELS;
 
 	pi.registerProvider(
 		createProvider({
@@ -978,6 +1083,10 @@ export default async function openCodeFreeExtension(pi: ExtensionAPI) {
 			models,
 			async fetchModels(context) {
 				try {
+					// Pi's `createProvider` already skips `fetchModels` when network access is disallowed or the
+					// refresh was aborted; this guard only covers direct calls and a signal aborted since then.
+					if (context.signal.aborted) return discovery?.models ?? models;
+					ensureFreshOpenCodeVersion(context.signal);
 					const stored = (context.stored?.models ?? []) as Model<Api>[];
 					const result = await discoverFreeModels({ stored, signal: context.signal });
 					if (result.liveIds) lastLiveIds = result.liveIds;
@@ -987,11 +1096,18 @@ export default async function openCodeFreeExtension(pi: ExtensionAPI) {
 					return discovery?.models ?? BASELINE_FREE_MODELS;
 				}
 			},
-			filterModels: (candidates) => filterDiscoveredModels(candidates, discovery?.models ?? [], lastLiveIds),
+			filterModels: (candidates) => filterDiscoveredModels(candidates, discovery?.models ?? [], lastLiveIds, discoveredIds),
 			api: {
 				"openai-responses": withFingerprint(openAIResponsesApi()),
 				"openai-completions": withFingerprint(openAICompletionsApi()),
 			},
 		}),
 	);
+
+	pi.on("session_start", () => {
+		startBackgroundRefresh();
+	});
+	pi.on("session_shutdown", () => {
+		stopBackgroundRefresh();
+	});
 }

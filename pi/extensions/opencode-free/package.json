@@ -1,0 +1,15 @@
+{
+  "name": "pi-extension-opencode-free",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --import ../_test-support/register-loader.mjs --import ./tests/setup.mjs --test ./tests/*.test.ts"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
+  }
+}

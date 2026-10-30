@@ -33,8 +33,9 @@ answers violations with `403 FreeTierError`.
   streams every request to these APIs, which the gateway also requires.
 - **Version**: resolves the newest OpenCode version for the `User-Agent` from
   the homebrew tap formula, then the installed `opencode` binary, then a
-  bundled fallback. Refreshed in the background every 6 hours, after any
-  `FreeTierError`, and on a cold cache.
+  bundled fallback. Refreshed every 6 hours, after any `FreeTierError`, and on
+  a cold cache, always from Pi's catalog refresh or the session-start
+  background task — never while the extension loads.
 - **Models**: fetches `https://pi.dev/api/models/providers/opencode`
   (Pi's own catalog for the Zen provider) and intersects it with
   `https://opencode.ai/zen/v1/models` so new free models appear and removed
@@ -66,19 +67,33 @@ answers violations with `403 FreeTierError`.
   has neither a sibling nor a canonical entry, so it keeps its advertised
   200K/32K even though it accepted 1,048,570 tokens in the same probe series.
 
-  Pi restores its persisted catalog before any network refresh, so the
-  availability filter replaces restored entries with the current discovery and
-  drops ids the live endpoint no longer serves; unknown entries such as
-  `models.json` additions are kept.
+  Pi restores its persisted catalog before any network refresh and then
+  publishes the fresh discovery on top of the registered baseline, so the
+  availability filter keeps each candidate as Pi composed it (including any
+  `models.json` `modelOverrides`) and only hides ids that came from this
+  extension's own discovery and that the live endpoint no longer serves.
+  Unknown entries such as `models.json` additions always stay.
 - **Caching**: results land in `~/.pi/agent/opencode-free.json` with a 15 minute
   freshness window, so print-mode runs and headless subagent processes do not
-  re-fetch on every start. When both discovery endpoints are unreachable the
-  last cache (or a bundled baseline) keeps the provider usable. Pi's models
-  store receives the same list whenever Pi runs a catalog refresh.
+  re-fetch on every start. Every Pi process on the machine (one per BB thread)
+  shares that file, so a write goes to a temporary file in the same directory
+  and is renamed into place: a concurrent reader sees a complete document or
+  the previous one, never a truncated file. When both discovery endpoints are
+  unreachable the last cache (or a bundled baseline) keeps the provider usable.
+  Pi's models store receives the same list whenever Pi runs a catalog refresh.
 
-The catalog is resolved inside an async extension factory, which Pi awaits
-before startup model selection, so `pi --model opencode-free/...`, `/model` and
-subagents all see the current list.
+## Startup cost
+
+Loading the extension does no network or process work. Pi loads extensions in
+invocations that never start a session (`pi --list-models`, package commands)
+and asks extensions not to spawn processes or open sockets from the factory, so
+the factory registers the last cached catalogue (or the bundled baseline)
+synchronously. The OpenCode version and the free-model catalogue are refreshed
+from Pi's catalog refresh (`fetchModels`) and from a background task started on
+`session_start`, which `session_shutdown` cancels — a background request
+aborted that way publishes nothing. Print mode and subagents therefore see the
+cached list, which the background refresh replaces while a session runs, so
+none of them pays a load-time round trip.
 
 ## When Zen changes the gate again
 
@@ -90,8 +105,8 @@ fingerprint, rerun the bisection against a real client:
    this file for the plugin used on 2026-10-16).
 2. Replay the captured request with the same headers, then mutate one dimension
    at a time (headers, session id timestamp, tool list, `stream`) until it 403s.
-3. Update [`index.ts`](index.ts) accordingly and extend
-   [`selftest.ts`](selftest.ts) with the case that changed.
+3. Update [`index.ts`](index.ts) accordingly and extend the matching test
+   under [`tests/`](tests/) with the case that changed.
 
 ## Environment overrides
 
@@ -105,15 +120,28 @@ fingerprint, rerun the bisection against a real client:
 | `OPENCODE_FREE_VERSION_URL` | Endpoint reporting the latest OpenCode version |
 | `OPENCODE_FREE_OFFLINE=1` | Skip all discovery requests (use cache/baseline) |
 
+`PI_OFFLINE` and Pi's `--offline` flag disable the same requests. The check
+matches Pi's own `--offline` handling, so `PI_OFFLINE=0` is not offline.
+
 ## Test
 
 ```bash
-bun run pi/extensions/opencode-free/selftest.ts
+npm --prefix pi/extensions/opencode-free test
 ```
 
-Covers identifier timestamps, fingerprint tool injection, free-model merging
-and error rewriting. It does not hit the network; live gate behaviour is
-verified by running a prompt:
+Node's test runner with the managed Pi install as the module host and a
+temporary agent dir, so nothing touches the real config. Coverage:
+
+| File | Covers |
+| --- | --- |
+| [`tests/models.test.ts`](tests/models.test.ts) | Gateway identifier, fingerprint tool injection, free-model merging, models.dev precedence, the availability filter, error rewriting |
+| [`tests/factory.test.ts`](tests/factory.test.ts) | The factory registers the cached catalogue with no network or process work; `fetchModels` refreshes version and catalogue; `models.json` additions and overrides survive the availability filter |
+| [`tests/background.test.ts`](tests/background.test.ts) | `session_start` refreshes in the background and `session_shutdown` aborts it without publishing |
+| [`tests/session-refresh.test.ts`](tests/session-refresh.test.ts) | The background refresh publishes the live ids the availability filter needs |
+| [`tests/offline.test.ts`](tests/offline.test.ts) | In child processes: `OPENCODE_FREE_OFFLINE=1` and `PI_OFFLINE=1` make no requests, `PI_OFFLINE=0` still refreshes |
+| [`tests/cache.test.ts`](tests/cache.test.ts) | Atomic cache writes: no temporary files left behind, an unparseable or unwritable file tolerated, and concurrent writer processes never expose a truncated document |
+
+Network access is stubbed; live gate behaviour is verified by running a prompt:
 
 ```bash
 pi --model opencode-free/big-pickle -p "Reply with exactly: PONG"
