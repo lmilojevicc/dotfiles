@@ -709,3 +709,50 @@ test("sweep hit overlapping an uncorrelated pane is labeled ambiguous, not dupli
     run.cleanup();
   }
 });
+
+test("degraded Herdr/process scans are reported instead of a clean picture", async () => {
+  const herdr = stubHerdrClient({
+    listPanes: () => ({ available: true as const, panes: [], error: "pane list failed" }),
+  });
+  const run = await runBroadcastCommand({
+    rawArgs: "",
+    herdr,
+    discovery: {
+      listPiProcesses: () => ({
+        available: false as const,
+        processes: [],
+        error: "ps is not available",
+      }),
+    },
+  });
+  try {
+    const message = run.notifications.join("\n");
+    // Reload summary: both silent degradations must be visible.
+    assert.ok(message.includes("Herdr fallback unavailable (pane list failed)"));
+    assert.ok(message.includes("process sweep unavailable (ps is not available)"));
+  } finally {
+    run.cleanup();
+  }
+});
+
+test("--status reports a failed process sweep", async () => {
+  const run = await runBroadcastCommand({
+    rawArgs: "--status",
+    herdr: stubHerdrClient({
+      listPanes: () => ({ available: true as const, panes: [] }),
+    }),
+    discovery: {
+      listPiProcesses: () => ({
+        available: false as const,
+        processes: [],
+        error: "ps is not available",
+      }),
+    },
+  });
+  try {
+    const message = run.notifications.join("\n");
+    assert.ok(message.includes("Process sweep: unavailable (ps is not available)"));
+  } finally {
+    run.cleanup();
+  }
+});

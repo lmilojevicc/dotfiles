@@ -7,6 +7,7 @@ import type {
 import {
   createSessionServer,
   getDefaultSocketDir,
+  getSocketMarkerPath,
   getSocketPath,
   type RequestMessage,
   type SessionResponse,
@@ -66,12 +67,37 @@ export function createBroadcastReloadExtension(
     exitHandler: undefined,
   };
 
-  function isSafeToReload(ctx?: ExtensionContext): boolean {
-    if (state.isAgentRunning) return false;
+  /**
+   * What Pi's own reload requires before it will act: no active run, no
+   * compaction, nothing queued. `handleReloadCommand` refuses otherwise and
+   * resolves normally, so this must be the last check before `ctx.reload()`.
+   */
+  function canReloadNow(ctx?: ExtensionContext): boolean {
     if (!ctx) return false;
     if (!ctx.isIdle()) return false;
     if (ctx.hasPendingMessages()) return false;
     return true;
+  }
+
+  function isSafeToReload(ctx?: ExtensionContext): boolean {
+    if (state.isAgentRunning) return false;
+    return canReloadNow(ctx);
+  }
+
+  /**
+   * Remember a reload request for a busy session. Pi declines a reload while
+   * the session streams or compacts, so the request is applied from
+   * `agent_settled` instead of being reported as done now.
+   */
+  function queueReload(ctx: ExtensionContext | undefined, reason: string): void {
+    const alreadyQueued = state.pendingReload;
+    state.pendingReload = true;
+    if (!alreadyQueued) {
+      ctx?.ui?.notify?.(
+        `Broadcast reload queued: ${reason}. It will reload once the current task settles.`,
+        "info"
+      );
+    }
   }
 
   function triggerLocalReload(): void {
@@ -112,25 +138,27 @@ export function createBroadcastReloadExtension(
     }
 
     if (msg.type === "reload") {
-      if (!safe && !msg.force) {
-        state.pendingReload = true;
-        ctx?.ui?.notify?.(
-          "Broadcast reload queued: agent is busy and will reload safely once current task settles.",
-          "info"
-        );
+      if (!safe) {
+        // Busy sessions are always queued, even when the sender forced the
+        // request: Pi refuses to reload while streaming/compacting and
+        // resolves anyway, so an immediate "reloading" would be lost.
+        const busyReason = state.isAgentRunning
+          ? "agent run in progress"
+          : "pending messages or non-idle state";
+        queueReload(ctx, busyReason);
         return {
           ok: true,
           pid: process.pid,
           sessionId: state.activeSessionId,
           cwd: state.activeCwd,
           status: "queued_busy",
-          reason: state.isAgentRunning
-            ? "Agent run in progress"
-            : "Pending messages or non-idle state",
+          reason: msg.force
+            ? `Reload forced while ${busyReason}; queued until the session settles`
+            : busyReason,
         };
       }
 
-      // Safe to reload immediately (or forced)
+      // Safe to reload now: idle sessions accept the reload synchronously.
       setImmediate(() => {
         triggerLocalReload();
       });
@@ -141,7 +169,7 @@ export function createBroadcastReloadExtension(
         sessionId: state.activeSessionId,
         cwd: state.activeCwd,
         status: "reloading",
-        reason: safe ? "Agent is idle" : "Reload forced",
+        reason: "Agent is idle",
       };
     }
 
@@ -157,7 +185,20 @@ export function createBroadcastReloadExtension(
   function startServer(): void {
     stopServer();
 
-    const { cleanup } = createSessionServer(socketPath, handleIncomingRequest);
+    // A failed listen must not crash Pi: warn once and run without IPC. Peers
+    // then see this session as unreachable and report it for manual /reload.
+    const { cleanup } = createSessionServer(socketPath, handleIncomingRequest, {
+      // On Windows the socket is a named pipe, which has no directory entry, so
+      // a `<pid>.sock` marker keeps peer discovery and liveness checks working.
+      markerPath: getSocketMarkerPath(process.pid, socketDir),
+      onError: (error) => {
+        console.error(`[broadcast-reload] IPC disabled for this session: ${error.message}`);
+        state.activeCtx?.ui?.notify?.(
+          `Broadcast reload IPC unavailable for this session (${error.message}); other sessions cannot reload it.`,
+          "warning"
+        );
+      },
+    });
     state.serverCleanup = cleanup;
 
     state.exitHandler = () => {
@@ -299,7 +340,15 @@ export function createBroadcastReloadExtension(
     const client = getDiscoveryClient();
     if (!client) return;
     const scanned = client.listPiProcesses();
-    if (!scanned.available) return;
+    summary.discoveryAvailable = scanned.available;
+    if (!scanned.available) {
+      // The sweep is the only layer that finds pi sessions without a socket
+      // and without a Herdr pane. Losing it silently would report a complete
+      // picture of unreachable sessions that is not complete.
+      summary.discoveryError = scanned.error || "process scan failed";
+      return;
+    }
+    summary.discoveryError = undefined;
     const known = new Set<number>([process.pid, ...extraKnownPids]);
     for (const status of summary.statuses) known.add(status.pid);
     const ambiguous =
@@ -367,6 +416,22 @@ export function createBroadcastReloadExtension(
     return lines;
   }
 
+  /** Scan layers that could not run, so their blind spots are never hidden. */
+  function scanWarnings(summary: BroadcastSummary): string[] {
+    const warnings: string[] = [];
+    if (summary.herdrAvailable && summary.herdrError) {
+      warnings.push(
+        `Herdr fallback unavailable (${summary.herdrError}); plugin-less sessions were not reached.`
+      );
+    }
+    if (summary.discoveryError) {
+      warnings.push(
+        `process sweep unavailable (${summary.discoveryError}); pi sessions without a socket or Herdr pane were not detected.`
+      );
+    }
+    return warnings;
+  }
+
   function composeReloadMessage(summary: BroadcastSummary, isForce: boolean): string {
     const scope: string[] = [];
     const pluginParts: string[] = [];
@@ -406,21 +471,32 @@ export function createBroadcastReloadExtension(
       scope.push(`manual /reload needed: ${pids}`);
     }
 
+    const warnings = scanWarnings(summary);
+    const warningText = warnings.length > 0 ? ` ⚠️ ${warnings.join(" ")}` : "";
     if (scope.length === 0) {
-      return "No other active pi sessions found. Reloading current session...";
+      return `No other active pi sessions found.${warningText}`;
     }
     const forceNote =
       isForce &&
       (summary.herdrSkippedBusy.length > 0 || summary.herdrSkippedUnknown.length > 0)
         ? " Note: --force never injects into working/unknown Herdr panes."
         : "";
-    return `Broadcasted reload to other session(s) (${scope.join(" | ")}).${forceNote} Reloading current session...`;
+    return `Broadcasted reload to other session(s) (${scope.join(" | ")}).${forceNote}${warningText}`;
   }
 
   // Internal command executed via sendUserMessage to gain ExtensionCommandContext
   pi.registerCommand("_broadcast_reload_apply", {
     description: "Internal command to trigger local runtime reload",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      // Re-check what Pi's reload requires right before asking for it: the run
+      // may have started between the request and this dispatch, and Pi declines
+      // a reload during a run (it warns and resolves), so an unguarded
+      // ctx.reload() would silently drop the request.
+      if (!canReloadNow(ctx)) {
+        queueReload(ctx, "the session became busy before the reload could run");
+        return;
+      }
+      state.pendingReload = false;
       await ctx.reload();
     },
   });
@@ -442,7 +518,9 @@ export function createBroadcastReloadExtension(
           "  /broadcast-reload          Safely reload all active sessions (defers busy agents)",
           "                             Also reaches sessions without this plugin via Herdr pane input (idle panes only)",
           "  /broadcast-reload --status Check status of all active sessions without reloading",
-          "  /broadcast-reload --force  Force immediate reload on plugin sessions (never force-injects working Herdr panes)",
+          "  /broadcast-reload --force  Reload the current session even while it is busy",
+          "                             Busy plugin sessions are queued and reload when they settle",
+          "                             (never force-injects working/unknown Herdr panes)",
           "  /broadcast-reload --help   Show this help message",
         ].join("\n");
         ctx.ui?.notify?.(helpText, "info");
@@ -477,6 +555,12 @@ export function createBroadcastReloadExtension(
         }
 
         lines.push(...formatHerdrStatusLines(herdr, summary.herdrError));
+
+        if (summary.discoveryError) {
+          lines.push(
+            `• Process sweep: unavailable (${summary.discoveryError}); pi sessions without a socket or Herdr pane were not detected.`
+          );
+        }
 
         if (summary.unreachable.length > 0) {
           lines.push(`• Other pi processes without plugin or Herdr pane (manual /reload):`);
@@ -570,9 +654,20 @@ export function createBroadcastReloadExtension(
         unknownPidPaneRefs(herdr)
       );
 
-      ctx.ui?.notify?.(composeReloadMessage(summary, isForce), "info");
-
-      // Reload current session
+      // Reload current session. Re-check what Pi's reload requires: the socket
+      // broadcast and the Herdr/ps scans above can take seconds while the TUI
+      // stays interactive, and Pi declines a reload during an active run. A
+      // declined reload must be queued, not reported as one that happened.
+      const summaryText = composeReloadMessage(summary, isForce);
+      if (!canReloadNow(ctx)) {
+        ctx.ui?.notify?.(
+          `${summaryText} Current session became busy; its reload is queued and will apply once the current task settles.`,
+          "warning"
+        );
+        state.pendingReload = true;
+        return;
+      }
+      ctx.ui?.notify?.(`${summaryText} Reloading current session...`, "info");
       await ctx.reload();
     },
   });
@@ -606,7 +701,7 @@ export function createBroadcastReloadExtension(
 
     // Check if there is a pending reload queued while we were busy
     if (state.pendingReload) {
-      if (isSafeToReload(ctx)) {
+      if (canReloadNow(ctx)) {
         state.pendingReload = false;
         ctx?.ui?.notify?.("Agent task settled. Applying queued broadcast reload...", "info");
         triggerLocalReload();

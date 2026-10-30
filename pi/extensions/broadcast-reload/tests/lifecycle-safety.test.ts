@@ -133,13 +133,22 @@ test("busy session defers reload until agent_settled", async () => {
   }
 });
 
-test("busy session reloads immediately if force: true is sent", async () => {
+test("forced reload on a busy session is queued, never reported as applied", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-life-test-"));
   const { pi, sentUserMessages, emit } = createMockPi();
 
   createBroadcastReloadExtension(pi, { socketDir: tmpDir, herdr: null, discovery: null });
 
-  const ctx = createMockContext({ isIdle: () => false });
+  let idleState = false; // streaming: Pi's own reload would decline and resolve
+  const notifications: string[] = [];
+  const ctx = createMockContext({
+    isIdle: () => idleState,
+    ui: {
+      notify: (msg: string) => {
+        notifications.push(msg);
+      },
+    } as any,
+  });
   await emit("session_start", { type: "session_start", reason: "startup" }, ctx);
   await emit("agent_start", {}, ctx);
 
@@ -149,15 +158,117 @@ test("busy session reloads immediately if force: true is sent", async () => {
     // Send reload with force: true
     const res = await sendSocketMessage(socketPath, { type: "reload", senderPid: 9999, force: true });
     assert.equal(res.ok, true);
-    assert.equal(res.status, "reloading");
+    assert.equal(res.status, "queued_busy");
+    assert.match(res.reason ?? "", /forced/i);
 
+    // Nothing may be dispatched into a busy session: Pi would decline it.
     await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(sentUserMessages.length, 0);
+    assert.ok(notifications.some((n) => n.includes("queued")));
+
+    // The queued reload is applied once the run settles.
+    idleState = true;
+    await emit("agent_settled", {}, ctx);
     assert.equal(sentUserMessages.length, 1);
     assert.equal(sentUserMessages[0].content, "/_broadcast_reload_apply");
   } finally {
     await emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test("the internal apply command queues instead of reloading a busy session", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-life-test-"));
+  const { pi, commands, sentUserMessages, emit } = createMockPi();
+
+  createBroadcastReloadExtension(pi, { socketDir: tmpDir, herdr: null, discovery: null });
+
+  let idleState = false; // a run started between the request and this dispatch
+  let reloadCalls = 0;
+  const notifications: string[] = [];
+  const ctx = createMockContext({
+    isIdle: () => idleState,
+    reload: async () => {
+      reloadCalls += 1;
+    },
+    ui: {
+      notify: (msg: string) => {
+        notifications.push(msg);
+      },
+    } as any,
+  } as any);
+
+  await emit("session_start", { type: "session_start", reason: "startup" }, ctx);
+
+  try {
+    const apply = commands.get("_broadcast_reload_apply");
+    assert.ok(apply);
+
+    // Busy: Pi would decline the reload, so it must not even be attempted.
+    await apply.handler("", ctx);
+    assert.equal(reloadCalls, 0);
+    assert.ok(notifications.some((n) => n.includes("queued")));
+
+    // The request stays queued and is dispatched when the agent settles.
+    idleState = true;
+    await emit("agent_settled", {}, ctx);
+    assert.equal(sentUserMessages.length, 1);
+    assert.equal(sentUserMessages[0].content, "/_broadcast_reload_apply");
+
+    // Idle now: the same command does reload.
+    await apply.handler("", ctx);
+    assert.equal(reloadCalls, 1);
+  } finally {
+    await emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, ctx);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("/broadcast-reload queues the local reload when the session turns busy meanwhile", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-life-test-"));
+  const { pi, commands, sentUserMessages, emit } = createMockPi();
+
+  createBroadcastReloadExtension(pi, { socketDir: tmpDir, herdr: null, discovery: null });
+
+  // Idle for the initial safety check, busy for the re-check after the
+  // broadcast and the scans: the user started a prompt while the command ran.
+  const idleAnswers = [true, false];
+  let reloadCalls = 0;
+  const notifications: string[] = [];
+  const cmdCtx = {
+    ...createMockContext(),
+    isIdle: () => (idleAnswers.length > 0 ? idleAnswers.shift()! : true),
+    ui: {
+      notify: (msg: string) => {
+        notifications.push(msg);
+      },
+    },
+    reload: async () => {
+      reloadCalls += 1;
+    },
+  } as unknown as ExtensionCommandContext;
+
+  await emit("session_start", { type: "session_start", reason: "startup" }, cmdCtx);
+
+  try {
+    const cmd = commands.get("broadcast-reload");
+    assert.ok(cmd);
+
+    await cmd.handler("", cmdCtx);
+
+    // Pi would decline a reload now, so it must be queued instead of claimed.
+    assert.equal(reloadCalls, 0);
+    assert.ok(notifications.some((n) => n.includes("Current session became busy")));
+
+    // Once the session settles, the queued reload is dispatched.
+    await emit("agent_settled", {}, cmdCtx);
+    assert.equal(sentUserMessages.length, 1);
+    assert.equal(sentUserMessages[0].content, "/_broadcast_reload_apply");
+  } finally {
+    await emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, cmdCtx);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  assert.equal(reloadCalls, 0);
 });
 
 test("/broadcast-reload --status queries without reloading", async () => {

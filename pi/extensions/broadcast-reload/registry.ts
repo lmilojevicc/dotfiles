@@ -4,6 +4,7 @@ import {
   getDefaultSocketDir,
   parsePidFromSocketPath,
   isProcessAlive,
+  resolveSocketAddress,
   sendSocketMessage,
   type RequestMessage,
   type SessionResponse,
@@ -46,6 +47,13 @@ export interface BroadcastSummary {
   herdrFailed: HerdrFailedPane[];
   /** pi PIDs with no socket and no Herdr pane: need manual /reload. */
   unreachable: UnreachableSession[];
+  /**
+   * Process-discovery sweep: false until a scan ran successfully. A set
+   * `discoveryError` means the sweep could not run at all, so `unreachable`
+   * is an incomplete picture rather than proof that nothing was missed.
+   */
+  discoveryAvailable: boolean;
+  discoveryError?: string;
 }
 
 export function listActiveSocketPaths(socketDir: string = getDefaultSocketDir()): string[] {
@@ -99,6 +107,7 @@ export async function broadcastToSessions(options: {
     herdrSkippedUnknown: [],
     herdrFailed: [],
     unreachable: [],
+    discoveryAvailable: false,
   };
 
   const tasks = socketPaths.map(async (socketPath) => {
@@ -118,7 +127,8 @@ export async function broadcastToSessions(options: {
     }
 
     try {
-      const res = await sendSocketMessage(socketPath, options.request, timeoutMs);
+      // `socketPath` is the on-disk marker; on Windows that maps to a named pipe.
+      const res = await sendSocketMessage(resolveSocketAddress(socketPath), options.request, timeoutMs);
       summary.statuses.push(res);
 
       if (res.status === "reloading") {

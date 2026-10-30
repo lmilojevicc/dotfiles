@@ -5,9 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import {
   createSessionServer,
+  getSocketMarkerPath,
   getSocketPath,
   isProcessAlive,
   parsePidFromSocketPath,
+  resolveSocketAddress,
   sendSocketMessage,
   type RequestMessage,
   type SessionResponse,
@@ -88,6 +90,85 @@ test("sendSocketMessage times out when no response is sent", async () => {
     try {
       fs.unlinkSync(socketPath);
     } catch {}
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("a failed listen is reported once instead of crashing the process", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-br-test-"));
+  // A basename longer than the sun_path limit makes listen() fail on every
+  // platform (EINVAL/ENAMETOOLONG), so IPC has to degrade, not throw.
+  const socketPath = path.join(tmpDir, `${"x".repeat(200)}.sock`);
+  const markerPath = path.join(tmpDir, "failed-listen.sock");
+
+  let resolveError: (error: Error) => void = () => {};
+  const errorReported = new Promise<Error>((resolve) => {
+    resolveError = resolve;
+  });
+  const errors: Error[] = [];
+
+  const { server, cleanup } = createSessionServer(
+    socketPath,
+    (): SessionResponse => ({ ok: true, pid: process.pid, status: "idle" }),
+    {
+      markerPath,
+      onError: (error) => {
+        errors.push(error);
+        resolveError(error);
+      },
+    }
+  );
+
+  try {
+    const error = await errorReported;
+    assert.ok(error.message.length > 0);
+    assert.equal(server.listening, false);
+    assert.equal(errors.length, 1);
+    // No marker may advertise a listener that never came up.
+    assert.equal(fs.existsSync(markerPath), false);
+  } finally {
+    cleanup();
+    cleanup(); // idempotent
+    assert.equal(fs.existsSync(socketPath), false);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("Windows sessions publish a socket-dir marker that maps to the named pipe", () => {
+  const dir = path.join(os.tmpdir(), "pi-marker-test");
+  // A named pipe is not a directory entry, so discovery needs the marker.
+  assert.equal(getSocketPath(4321, dir, "win32"), "\\\\.\\pipe\\pi-broadcast-reload-4321");
+  assert.equal(getSocketMarkerPath(4321, dir), path.join(dir, "4321.sock"));
+  assert.equal(resolveSocketAddress(path.join(dir, "4321.sock"), "win32"), "\\\\.\\pipe\\pi-broadcast-reload-4321");
+
+  // POSIX: the socket file itself is the marker, so nothing is rewritten.
+  assert.equal(getSocketPath(4321, dir, "linux"), path.join(dir, "4321.sock"));
+  assert.equal(resolveSocketAddress(path.join(dir, "4321.sock"), "linux"), path.join(dir, "4321.sock"));
+
+  // An unparseable marker is not turned into a pipe name.
+  assert.equal(resolveSocketAddress(path.join(dir, "not-a-pid.sock"), "win32"), path.join(dir, "not-a-pid.sock"));
+});
+
+test("a published marker is created, served, and removed on cleanup", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-br-test-"));
+  const socketPath = path.join(tmpDir, `${process.pid}.sock`);
+  const markerPath = path.join(tmpDir, "marker.sock");
+
+  const { cleanup } = createSessionServer(
+    socketPath,
+    (msg: RequestMessage): SessionResponse => ({ ok: true, pid: process.pid, status: "idle", reason: msg.type }),
+    { markerPath }
+  );
+
+  try {
+    // The marker names the PID that owns the socket, like the POSIX socket file.
+    assert.equal(fs.readFileSync(markerPath, "utf8").trim(), String(process.pid));
+    const res = await sendSocketMessage(socketPath, { type: "ping" });
+    assert.equal(res.status, "idle");
+  } finally {
+    cleanup();
+    assert.equal(fs.existsSync(markerPath), false);
+    assert.equal(fs.existsSync(socketPath), false);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
