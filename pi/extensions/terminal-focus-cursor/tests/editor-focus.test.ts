@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	CURSOR_MARKER,
+	Editor,
+	type EditorTheme,
+	type Terminal,
+	TuiMainScreen,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 
-import { createEditorFocus, FOCUS_IN, FOCUS_OUT, type Scheduler } from "../editor-focus.ts";
+import { createEditorFocus, type EditorFactory, FOCUS_IN, FOCUS_OUT, type Scheduler } from "../editor-focus.ts";
 
 function manualScheduler() {
 	let nextId = 0;
@@ -204,4 +211,144 @@ test("throwing predecessor's genuine ownership transfer is not restored", () => 
 	assert.equal(h.editor.focused, false);
 	assert.deepEqual(h.writes, [false]);
 	h.focus.cleanup();
+});
+
+const editorTheme = {
+	borderColor: (text: string) => text,
+	selectList: {
+		selectedText: (text: string) => text,
+		description: (text: string) => text,
+		scrollInfo: (text: string) => text,
+		noMatch: (text: string) => text,
+	},
+} as unknown as EditorTheme;
+
+/** Real pi-tui editor plus the real renderer, whose terminal only records what Pi would write. */
+function renderedEditor(showHardwareCursor: boolean) {
+	const clock = manualScheduler();
+	const writes: string[] = [];
+	const terminal = {
+		columns: 40,
+		rows: 12,
+		write: (data: string) => writes.push(data),
+		hideCursor: () => writes.push("<hide>"),
+		showCursor: () => writes.push("<show>"),
+	} as unknown as Terminal;
+	const tui = new TuiMainScreen(terminal, showHardwareCursor);
+	let factory: EditorFactory | undefined;
+	const focus = createEditorFocus({
+		createDefaultEditor: (nextTui, theme) => new Editor(nextTui, theme),
+		scheduler: clock.scheduler,
+	});
+	focus.install({
+		getEditorComponent: () => factory,
+		setEditorComponent: (next) => {
+			factory = next;
+		},
+	});
+	clock.runAll();
+	assert.ok(factory, "the focus layer installed an editor factory");
+	const editor = factory(tui, editorTheme, {} as never);
+	tui.addChild(editor);
+	editor.setText("draft 界 ok");
+	// Pi's setCustomEditorComponent focuses the editor it just created.
+	(editor as Editor).focused = true;
+	const render = () => {
+		writes.length = 0;
+		tui.renderNow();
+		return { lines: tui.captureRenderState().previousLines, writes: [...writes] };
+	};
+	return { focus, editor: editor as Editor, render };
+}
+
+test("blur removes the real editor's inverse-video cursor and refocus restores it", () => {
+	const h = renderedEditor(false);
+	const focused = h.render();
+	assert.ok(
+		focused.lines.some((line) => line.includes("\x1b[7m")),
+		"pi-tui resolves the editor's fake-cursor markers to inverse video",
+	);
+
+	h.focus.handleTerminalInput(FOCUS_OUT);
+	const blurred = h.render();
+	assert.deepEqual(
+		blurred.lines.filter((line) => line.includes("\x1b[7m")),
+		[],
+		"the blurred editor draws no inverse-video cursor",
+	);
+	assert.equal(blurred.lines.join("").includes("\x1b_pi:"), false, "no cursor marker row survives the blur");
+	assert.deepEqual(
+		blurred.lines.map(visibleWidth),
+		focused.lines.map(visibleWidth),
+		"hiding the cursor keeps line widths",
+	);
+	assert.equal(h.editor.getText(), "draft 界 ok");
+
+	h.focus.handleTerminalInput(FOCUS_IN);
+	assert.deepEqual(h.render().lines, focused.lines, "refocus restores the cursor");
+	h.focus.cleanup();
+});
+
+test("blur hides the hardware cursor of a real editor", () => {
+	const h = renderedEditor(true);
+	assert.ok(h.render().writes.includes("<show>"), "the focused editor positions the hardware cursor");
+	h.focus.handleTerminalInput(FOCUS_OUT);
+	const blurred = h.render();
+	assert.equal(blurred.lines.some((line) => line.includes("\x1b[7m")), false);
+	assert.equal(blurred.writes.includes("<show>"), false, "a blurred editor shows no hardware cursor");
+	assert.ok(blurred.writes.includes("<hide>"));
+	h.focus.cleanup();
+});
+
+test("reinstall through Pi's editor reset reuses the fallback editor and its in-memory state", () => {
+	const clock = manualScheduler();
+	const clearedStatus: unknown[] = [];
+	let created = 0;
+	const createFallback = () => ({
+		history: ["first prompt"],
+		setWorkingStatusIndicator(indicator: unknown) {
+			clearedStatus.push(indicator);
+		},
+		render: () => [],
+		handleInput() {},
+	});
+	const focus = createEditorFocus({
+		createDefaultEditor: () => {
+			created += 1;
+			return createFallback() as never;
+		},
+		scheduler: clock.scheduler,
+	});
+	let factory: unknown;
+	const ui = {
+		getEditorComponent: () => factory as never,
+		setEditorComponent: (next: unknown) => {
+			factory = next;
+		},
+	};
+	const tui = { requestRender() {} };
+	focus.install(ui);
+	clock.runAll();
+	const first = (factory as (...args: unknown[]) => unknown)(tui, editorTheme, {});
+
+	// /new, /resume, /fork and /clone run Pi's resetExtensionUI(), which drops the factory and
+	// restores Pi's cached default editor before this extension installs again.
+	factory = undefined;
+	focus.install(ui);
+	clock.runAll();
+	const second = (factory as (...args: unknown[]) => unknown)(tui, editorTheme, {});
+
+	assert.equal(second, first, "the same editor instance comes back after the reset");
+	assert.equal(created, 1, "the fallback editor is created once per TUI");
+	assert.deepEqual(
+		(second as ReturnType<typeof createFallback>).history,
+		["first prompt"],
+		"prompt history survives the reinstall",
+	);
+	assert.deepEqual(clearedStatus, [undefined], "reuse drops the previous session's working-status indicator");
+
+	const other = (factory as (...args: unknown[]) => unknown)({ requestRender() {} }, editorTheme, {});
+	assert.notEqual(other, first, "another TUI still gets its own editor");
+	assert.equal(created, 2);
+	focus.cleanup();
 });

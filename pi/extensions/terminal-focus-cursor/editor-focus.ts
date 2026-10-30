@@ -8,6 +8,20 @@ const PATCHED = Symbol.for("milo.pi.terminal-focus-cursor.patched");
 const EDITOR_FACTORY_LAYERS = Symbol.for("milo.pi.editor-factory-layers.v1");
 const FOCUS_LAYER_ID = "terminal-focus-cursor";
 const INVERSE_VIDEO_SPAN = /\x1b\[7m([\s\S]*?)\x1b\[(?:0|27)m/g;
+// pi-tui draws the editor cursor as zero-width APC markers: CURSOR_MARKER (exported from pi-tui) plus
+// the FAKE_CURSOR_START/END pair around the cursor grapheme. TuiBase.resolveFakeCursors turns the fake
+// cursor into `\x1b[7m`...`\x1b[27m` and extractCursorPosition consumes CURSOR_MARKER *after* the component
+// renders, so the blurred branch has to strip all three markers itself.
+const FAKE_CURSOR_START = "\x1b_pi:fc\x07";
+const FAKE_CURSOR_END = "\x1b_pi:/fc\x07";
+const CURSOR_MARKERS = [CURSOR_MARKER, FAKE_CURSOR_START, FAKE_CURSOR_END] as const;
+
+/** Drop every cursor decoration a line carries, keeping the grapheme it wraps. */
+function hideCursor(line: string): string {
+	let hidden = line;
+	for (const marker of CURSOR_MARKERS) hidden = hidden.replaceAll(marker, "");
+	return hidden.replace(INVERSE_VIDEO_SPAN, "$1");
+}
 
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
 
@@ -100,6 +114,23 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 		tui?.requestRender();
 	};
 
+	// Pi restores its own cached default editor in resetExtensionUI() and loses in-memory prompt history
+	// when a factory builds a fresh one, so the fallback editor is created once per TUI and reused.
+	const defaultEditors = new WeakMap<TUI, EditorComponent>();
+
+	const defaultEditorFor = (nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager): EditorComponent => {
+		const reused = defaultEditors.get(nextTui);
+		if (reused) {
+			// A reinstalled editor is new to Pi; drop the status indicator of the previous session.
+			(reused as PatchableEditor & { setWorkingStatusIndicator?: (indicator: undefined) => void })
+				.setWorkingStatusIndicator?.(undefined);
+			return reused;
+		}
+		const created = createDefaultEditor(nextTui, theme, keybindings);
+		defaultEditors.set(nextTui, created);
+		return created;
+	};
+
 	const patchEditor = (nextEditor: PatchableEditor, nextTui: TUI): PatchableEditor => {
 		tui = nextTui;
 		editor = nextEditor;
@@ -112,9 +143,7 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 		nextEditor.render = (width: number): string[] => {
 			// Host focus controls cursor presentation, not the editor's keyboard ownership.
 			const lines = originalRender(width);
-			return paneFocused
-				? lines
-				: lines.map((line) => line.replaceAll(CURSOR_MARKER, "").replace(INVERSE_VIDEO_SPAN, "$1"));
+			return paneFocused ? lines : lines.map(hideCursor);
 		};
 
 		nextEditor.handleInput = (data: string): void => {
@@ -150,7 +179,7 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 					(nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
 						const nextEditor = baseFactory
 							? baseFactory(nextTui, theme, keybindings)
-							: createDefaultEditor(nextTui, theme, keybindings);
+							: defaultEditorFor(nextTui, theme, keybindings);
 						return patchEditor(nextEditor as PatchableEditor, nextTui);
 					};
 				ui.setEditorComponent(installEditorLayer(previousFactory, FOCUS_LAYER_ID, focusLayer));

@@ -23,6 +23,15 @@ export interface TerminalFocusCursorDependencies {
 	createDefaultEditor: EditorFactory;
 }
 
+/**
+ * Fallback editor for the case where no other extension installed an editor factory.
+ * Pi's own default editor passes `embedWorkingStatus: true`; without it the streaming Working
+ * indicator leaves the editor's top border and falls back to the separate status row.
+ * Pi copies paddingX/autocompleteMaxVisible/borderColor and the CustomEditor handlers itself.
+ */
+export const createPiDefaultEditor: EditorFactory = (tui, theme, keybindings) =>
+	new CustomEditor(tui, theme, keybindings, { embedWorkingStatus: true });
+
 export function selectPlatform(ctx: SelectionContext, env: Record<string, string | undefined>): Platform | undefined {
 	if (env.HERDR_ENV === "1") return ctx.mode === "tui" ? "herdr" : undefined;
 	return ctx.mode === "tui" && ctx.hasUI && env.TMUX ? "tmux" : undefined;
@@ -37,7 +46,7 @@ function defaultDependencies(): TerminalFocusCursorDependencies {
 			setTimeout: (callback, delay) => setTimeout(callback, delay),
 			clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
 		},
-		createDefaultEditor: (tui, theme, keybindings) => new CustomEditor(tui, theme, keybindings),
+		createDefaultEditor: createPiDefaultEditor,
 	};
 }
 

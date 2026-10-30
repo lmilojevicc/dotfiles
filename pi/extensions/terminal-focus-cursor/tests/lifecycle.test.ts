@@ -1,27 +1,20 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { piPackageRoot } from "../../_test-support/pi-package.mjs";
 
 async function loadIndex() {
-	const cli = realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim());
-	// Pi has shipped both dist/cli.js and dist/cli/index.js entry points.
-	const candidates = [dirname(cli), dirname(dirname(cli)), dirname(dirname(dirname(cli)))];
-	const packageRoot = candidates.find((directory) => {
-		const manifest = join(directory, "package.json");
-		return existsSync(manifest) && JSON.parse(readFileSync(manifest, "utf8")).name === "@earendil-works/pi-coding-agent";
-	});
-	assert.ok(packageRoot, "CLI must belong to the Pi coding-agent package");
+	// The extension imports Pi by specifier; load it with the same Pi the shared test loader resolved.
+	const packageRoot = piPackageRoot();
 	const require = createRequire(join(packageRoot, "package.json"));
 	const { createJiti } = await import(pathToFileURL(require.resolve("jiti")).href);
 	const jiti = createJiti(import.meta.url, {
 		alias: {
 			"@earendil-works/pi-coding-agent": join(packageRoot, "dist/index.js"),
-			"@earendil-works/pi-tui": require.resolve("@earendil-works/pi-tui"),
+			"@earendil-works/pi-tui": fileURLToPath(import.meta.resolve("@earendil-works/pi-tui")),
 		},
 		moduleCache: false,
 	});
@@ -115,4 +108,11 @@ test("injected lifecycle switches authority, cancels timers, and never writes to
 	assert.equal(runtime.timers.size, 0);
 	assert.equal(runtime.inputUnsubscribes(), 3);
 	assert.deepEqual(runtime.writes, ["\x1b[?1004h", "\x1b[?1004l"]);
+});
+
+test("the fallback editor keeps Pi's default editor options", async () => {
+	const { createPiDefaultEditor } = await loadIndex();
+	const editor = createPiDefaultEditor({ requestRender() {} } as never, { borderColor: (text: string) => text } as never, {} as never);
+	assert.equal(editor.embedWorkingStatus, true, "the Working indicator stays inside the editor's top border");
+	assert.equal(typeof editor.setWorkingStatusIndicator, "function");
 });
