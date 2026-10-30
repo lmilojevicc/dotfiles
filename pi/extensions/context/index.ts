@@ -594,6 +594,14 @@ export function normalizeCategoryItems(items: ContextItem[], categoryTokens: num
  });
 }
 
+/** Order entries by share of their category, largest first; original order breaks ties. */
+export function sortCategoryItems(items: ContextItem[]): ContextItem[] {
+ return items
+  .map((item, index) => ({ item, index }))
+  .sort((a, b) => b.item.tokens - a.item.tokens || a.index - b.index)
+  .map(({ item }) => item);
+}
+
 /** A sequential second layer: the root overlay is never rendered or styled by this component. */
 export async function showCategoryMenu(
  ctx: Pick<ExtensionCommandContext, "ui">,
@@ -603,7 +611,8 @@ export async function showCategoryMenu(
 ): Promise<ContextItem | undefined> {
  activeContextOverlays++;
  let restoreHover = () => {};
- const displayedItems = normalizeCategoryItems(items, category.tokens);
+ const orderedItems = sortCategoryItems(items);
+ const displayedItems = normalizeCategoryItems(orderedItems, category.tokens);
  try {
   const selected = await ctx.ui.custom((tui, theme, _keys, done) => {
    restoreHover = enableOverlayHover(tui);
@@ -616,7 +625,7 @@ export async function showCategoryMenu(
    let hitboxes: { index: number; row: number; startCol: number; endCol: number }[] = [];
    let escHitbox: ReturnType<typeof escCloseHitbox> | undefined;
    const choose = (next: number) => {
-    index = Math.max(0, Math.min(items.length - 1, next));
+    index = Math.max(0, Math.min(orderedItems.length - 1, next));
     if (index < offset) offset = index;
     if (index >= offset + pageSize) offset = index - pageSize + 1;
     tui.requestRender();
@@ -641,11 +650,11 @@ export async function showCategoryMenu(
      pendingG = false;
      if (matchesKey(data, Key.up) || data === "k") choose(index - 1);
      else if (matchesKey(data, Key.down) || data === "j") choose(index + 1);
-     else if (data === "G" || matchesKey(data, Key.end)) choose(items.length - 1);
+     else if (data === "G" || matchesKey(data, Key.end)) choose(orderedItems.length - 1);
      else if (matchesKey(data, Key.home)) choose(0);
      else if (matchesKey(data, Key.ctrl("d")) || matchesKey(data, "pageDown")) choose(index + pageSize);
      else if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, "pageUp")) choose(index - pageSize);
-     else if (matchesKey(data, Key.enter) || data === "l") { if (items.length) done(index); }
+     else if (matchesKey(data, Key.enter) || data === "l") { if (orderedItems.length) done(index); }
      else {
       const mouse = parseSgrMousePacket(data);
       if (!mouse || mouse.final !== "M") return;
@@ -699,7 +708,7 @@ export async function showCategoryMenu(
       ...rows,
       ...Array.from({ length: pageSize - rows.length }, () => `${border("│")}${" ".repeat(inner)}${border("│")}`),
       `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-      `${border("│")}${padLine(theme.fg("dim", ` ${items.length ? `${offset + 1}-${offset + visible.length}/${items.length}` : "No items"} · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
+      `${border("│")}${padLine(theme.fg("dim", ` ${orderedItems.length ? `${offset + 1}-${offset + visible.length}/${orderedItems.length}` : "No items"} · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
       border(`╰${"─".repeat(inner)}╯`),
      ];
      const top = 1 + Math.floor((Math.max(1, terminalHeight - 2) - Math.min(lines.length, maxHeight)) / 2);
@@ -710,7 +719,7 @@ export async function showCategoryMenu(
     },
    };
   }, { overlay: true, overlayOptions: contextOverlayOptions });
-  return selected === undefined ? undefined : items[selected as number];
+  return selected === undefined ? undefined : orderedItems[selected as number];
  } finally { restoreHover(); activeContextOverlays--; }
 }
 

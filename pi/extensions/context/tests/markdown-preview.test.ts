@@ -144,13 +144,14 @@ test("/context memory and full SKILL.md render by default; advertisements and to
    sessionManager: emptySession,
   };
   await navigate(ctx, 1, 0, (component) => assertMarkdown(component.render(80), "Memory heading"));
-  await navigate(ctx, 2, 1, (component) => {
+  // Skills sort largest-first: wrapper, advertisement, then the zero-token on-disk SKILL.md.
+  await navigate(ctx, 2, 2, (component) => {
    assertMarkdown(component.render(80), "Skill heading");
    component.handleInput("r");
    assert.match(component.render(80).join("\n"), /# Skill heading/);
   });
-  for (const category of [2, 3]) {
-   await navigate(ctx, category, 0, (component) => {
+  for (const [category, item] of [[2, 1], [3, 0]] as const) {
+   await navigate(ctx, category, item, (component) => {
     const before = component.render(80);
     assert.match(before[1], /controls escaped/);
     assert.doesNotMatch(before.at(-2)!, /\[r\]/);

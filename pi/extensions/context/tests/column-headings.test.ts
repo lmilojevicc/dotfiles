@@ -103,14 +103,14 @@ for (const width of [80, 64, 44]) {
    assertNumericAlignment(scrolled, true);
    assertFullWidthBody(scrolled, width);
    assert.match(scrolled.at(-2), /19-30\/30/);
-   // First visible item is 18 after scrolling; heading was inserted before row 8.
+   // Entries sort largest-first, so the page starting at position 18 holds the item numbered 11.
    const rightInnerX = Math.floor((100 - width) / 2) + width - 2;
    h.component.handleMouse({ type: "move", screenX: rightInnerX, screenY: 7 });
    const hover = h.component.render(width)[6].match(/\x1b\[48;5;212m(.*?)\x1b\[49m/)![1];
    assert.equal(visibleWidth(hover), width - 2, "right-edge hover covers the full row");
    if (category === "Context") h.component.handleInput(`\x1b[<0;${rightInnerX + 1};8M`);
    else h.component.handleMouse({ type: "press", button: "left", screenX: rightInnerX, screenY: 7 });
-   assert.equal((await run)?.content, "18");
+   assert.equal((await run)?.content, "11");
   });
  }
 }

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { collectContextBreakdown, normalizeCategoryItems, showCategoryMenu, showTextPreview } from "../index.ts";
+import { collectContextBreakdown, normalizeCategoryItems, showCategoryMenu, showTextPreview, sortCategoryItems } from "../index.ts";
 
 const theme = {
  fg: (color: string, text: string) => `\x1b[38;5;${({ accent: 201, border: 202, muted: 203, warning: 205, dim: 208, text: 209 } as Record<string, number>)[color] ?? 207}m${text}\x1b[39m`,
@@ -76,6 +76,35 @@ test("submenu labels and leaf titles escape terminal controls without mutating s
  assert.doesNotMatch(leafText, /[\x00-\x09\x0b-\x1f\x7f-\x9f]/);
  leaf.handleInput("\x1b");
  await preview;
+});
+
+test("submenu lists the largest category shares first, keeps ties in source order and selects what it shows", async () => {
+ const items = [
+  { label: "small", tokens: 5, content: "small content", source: "Session entry" },
+  { label: "big", tokens: 70, content: "big content", source: "Session entry" },
+  { label: "tie first", tokens: 25, content: "tie first content", source: "Session entry" },
+  { label: "tie second", tokens: 25, content: "tie second content", source: "Session entry" },
+ ];
+ assert.deepEqual(sortCategoryItems(items).map((item) => item.label), ["big", "tie first", "tie second", "small"]);
+ assert.deepEqual(items.map((item) => item.label), ["small", "big", "tie first", "tie second"], "source order is not mutated");
+ let component: any;
+ const run = showCategoryMenu({ ui: { custom: (factory: any) => new Promise((resolve) => {
+  component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, null, resolve);
+ }) } } as any, { label: "Tool results", tokens: 125, color: "warning" }, items, 1000);
+ const rendered = component.render(80).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+ const positions = ["big", "tie first", "tie second", "small"].map((label) => rendered.indexOf(label));
+ assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])), rendered);
+ assert.match(rendered, /70\s+7\.0%\s+56%/);
+ assert.match(rendered, /5\s+0\.5%\s+4%/);
+ component.handleInput("\x1b[B");
+ component.handleInput("\r");
+ assert.equal((await run)?.content, "tie first content");
+ const second = showCategoryMenu({ ui: { custom: (factory: any) => new Promise((resolve) => {
+  const menu = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, null, resolve);
+  menu.render(80);
+  menu.handleInput("\r");
+ }) } } as any, { label: "Tool results", tokens: 125, color: "warning" }, items, 1000);
+ assert.equal((await second)?.content, "big content");
 });
 
 test("submenu reconciles 100 raw result tokens to a 50-token parent", async () => {
