@@ -71,7 +71,7 @@ Settings live at `~/.pi/agent/codex-enhanced.json` (or `$PI_CODING_AGENT_DIR/cod
 - **Fast mode** only adds `service_tier: "priority"` to eligible canonical Codex requests without an explicit tier.
 - **Server compaction** only handles Pi compaction for eligible canonical OpenAI Codex Responses sessions. It requests Responses Compaction V2, persists the encrypted compaction item, and replays that opaque history on later requests. Remote errors/missing content fall back to normal local compaction. A portable local summary remains available for ineligible models.
 
-Offline tests use synthetic accounts, temporary config/journals, mocked HTTP/keys, real Pi-TUI raw-key matching and ANSI/cell-width utilities, and subprocess coordination/crash fixtures; they do not start live Pi or contact accounts. The TUI peer package must be installed; for a nonstandard global Pi installation, set `PI_TEST_AGENT_PACKAGE` to its package directory:
+Offline tests use synthetic accounts, temporary config/journals, mocked HTTP/keys, real Pi-TUI raw-key matching and ANSI/cell-width utilities, and subprocess coordination/crash fixtures; they do not start live Pi or contact accounts. The shared test loader ([`../_test-support`](../_test-support/README.md)) resolves the Pi packages from Pi's managed install; for a nonstandard installation, set `PI_PACKAGE_ROOT` to the `@earendil-works/pi-coding-agent` package directory:
 
 ```sh
 npm test
