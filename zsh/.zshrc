@@ -13,6 +13,9 @@ export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
+# Must precede zinit's bun/uv snippets, which run mise shims at source time.
+export MISE_ENV="${MISE_ENV:-macos}"
+
 # PATH
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
@@ -359,7 +362,6 @@ else
 fi
 
 if command -v mise &>/dev/null; then
-    export MISE_ENV="${MISE_ENV:-macos}"
     eval "$(mise activate zsh)"
 fi
 

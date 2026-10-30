@@ -106,3 +106,4 @@
 
   # DevPod CLI replaced the Homebrew cask; cask GUI (DevPod.app) removed.
   "aqua:loft-sh/devpod" = "latest"
+"ubi:fosrl/cli" = { version = "0.19.1", exe = "pangolin" }
