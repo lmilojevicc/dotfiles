@@ -30,7 +30,9 @@ After installing or reloading extension changes, run `/reload` and then `/new`; 
 
 ## Behavior and privacy
 
-The first prompt is sent to the selected model in a separate background completion. It uses no tools, disables cache retention, uses a fresh session ID, allows no retries, and is bounded to 10 seconds and 64 output tokens. The model provider still receives that prompt, so its privacy terms apply.
+The first prompt is sent to the selected model in a separate background completion. It uses no tools, disables cache retention, uses a fresh session ID, allows no retries, and is bounded to 10 seconds and 64 output tokens; the 10 seconds are enforced here with an abort signal, not only passed to the provider as a hint. A request still running after 10 seconds is cancelled and reported as a failed rename. The model provider still receives that prompt, so its privacy terms apply.
+
+Only the first user prompt of an interactive session is named: a run started by an extension's custom message (`pi.sendMessage(..., { triggerTurn: true })`, which has no prompt) is ignored instead of using up the session's naming attempt, and one-shot runs (`pi -p`, `pi --json`) are skipped so they never spend a provider request on a name that nobody reads.
 
 The generated name uses the first nonblank output line, removes reasoning blocks, unsafe controls, and matching outer quotes, and is limited to 50 Unicode code points (longer names end in `...`). An existing or manually assigned name is never overwritten. Pending results are aborted or ignored when a manual name appears, the session changes, or the session shuts down, preventing stale completions from renaming another session.
 

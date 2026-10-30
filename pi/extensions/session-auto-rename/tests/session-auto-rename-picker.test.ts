@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { piModuleUrl } from "../../_test-support/pi-package.mjs";
 
 const UP = "\x1b[A";
 const DOWN = "\x1b[B";
@@ -28,11 +29,10 @@ function fullId(model: { provider: string; id: string }): string {
 	return `${model.provider}/${model.id}`;
 }
 
+// Strip every terminal sequence Pi emits, including the APC cursor marker (ESC _ pi:fc BEL) that Pi 1.4
+// puts inside the search input line; a regex that only knows CSI and OSC leaves that marker in the text.
 function plain(text: string): string {
-	return text
-		.replace(/\x1b_[\s\S]*?\x1b\\/gu, "")
-		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/gu, "")
-		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/gu, "");
+	return stripTerminalSequences(text);
 }
 
 test("searchable picker scrolls, filters, cancels, and preserves model identity", async () => {
@@ -43,9 +43,8 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 	writeFileSync(join(agentDir, "session-auto-rename.json"), `${JSON.stringify({ model: configuredId })}\n`);
 
 	try {
-		const piExecutable = realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim());
-		const loaderUrl = pathToFileURL(join(dirname(piExecutable), "core/extensions/loader.js")).href;
-		const { createExtensionRuntime, loadExtensions } = await import(loaderUrl);
+		// Pi's extension loader is not an exported subpath, so load it from the package the shared loader resolved.
+		const { createExtensionRuntime, loadExtensions } = await import(piModuleUrl("dist/core/extensions/loader.js"));
 		const runtime = createExtensionRuntime();
 		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
 		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
@@ -169,7 +168,8 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		({ pending } = await openPicker());
 		picker.handleInput("provider-b/shared");
 		for (const width of [1, 2, 5, 10]) {
-			for (const line of picker.render(width)) assert.ok(plain(line).length <= width);
+			// Measure terminal cells, not UTF-16 units: the rows use box/arrow glyphs and styled segments.
+			for (const line of picker.render(width)) assert.ok(visibleWidth(line) <= width, `${JSON.stringify(plain(line))} fits ${width}`);
 		}
 		picker.handleInput(ENTER);
 		await pending;

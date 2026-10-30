@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { piModuleUrl } from "../../_test-support/pi-package.mjs";
 
 type Deferred = {
 	promise: Promise<unknown>;
@@ -34,9 +34,8 @@ test("background naming returns immediately and ignores stale completions", asyn
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 
 	try {
-		const piExecutable = realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim());
-		const loaderUrl = pathToFileURL(join(dirname(piExecutable), "core/extensions/loader.js")).href;
-		const { createExtensionRuntime, loadExtensions } = await import(loaderUrl);
+		// Pi's extension loader is not an exported subpath, so load it from the package the shared loader resolved.
+		const { createExtensionRuntime, loadExtensions } = await import(piModuleUrl("dist/core/extensions/loader.js"));
 		const completions: Deferred[] = [];
 		const notifications: string[] = [];
 		let sessionName: string | undefined;
@@ -54,6 +53,7 @@ test("background naming returns immediately and ignores stale completions", asyn
 		const model = { provider: "test", id: "fast", name: "Fast" };
 		const ctx = {
 			hasUI: true,
+			mode: "tui",
 			ui: { notify: (message: string) => notifications.push(message) },
 			model,
 			modelRegistry: {
@@ -71,40 +71,73 @@ test("background naming returns immediately and ignores stale completions", asyn
 			assert.ok(handler, `${event} handler was registered`);
 			return handler(...args);
 		};
+		const userPrompt = (prompt: string) => invoke("before_agent_start", { messageType: "user", prompt }, ctx);
+		const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 		invoke("session_start", {}, ctx);
-		assert.equal(invoke("before_agent_start", { prompt: "First prompt" }, ctx), undefined);
+		assert.equal(userPrompt("First prompt"), undefined);
 		assert.equal(completions.length, 1, "completion launched synchronously in the background");
 		completions[0].resolve(successfulTitle);
-		await new Promise((resolve) => setImmediate(resolve));
+		await settle();
 		assert.equal(sessionName, "Generated title", "fresh completion set the generated title");
 
 		sessionName = undefined;
 		invoke("session_start", {}, ctx);
-		invoke("before_agent_start", { prompt: "Manual name prompt" }, ctx);
+		userPrompt("Manual name prompt");
 		assert.equal(completions.length, 2);
 		sessionName = "Manual title";
 		invoke("session_info_changed", { name: sessionName }, ctx);
 		completions[1].resolve(successfulTitle);
-		await new Promise((resolve) => setImmediate(resolve));
+		await settle();
 		assert.equal(sessionName, "Manual title", "manual name was not overwritten");
 
 		sessionName = undefined;
 		invoke("session_start", {}, ctx);
-		invoke("before_agent_start", { prompt: "Old session prompt" }, ctx);
+		userPrompt("Old session prompt");
 		assert.equal(completions.length, 3);
 		invoke("session_start", {}, ctx);
 		completions[2].resolve(successfulTitle);
-		await new Promise((resolve) => setImmediate(resolve));
+		await settle();
 		assert.equal(sessionName, undefined, "completion from an invalidated session was ignored");
 
 		invoke("session_start", {}, ctx);
-		invoke("before_agent_start", { prompt: "Rejected prompt" }, ctx);
+		userPrompt("Rejected prompt");
 		const secret = "secret-token\u001b[31m";
 		completions[3].reject(new Error(secret));
-		await new Promise((resolve) => setImmediate(resolve));
+		await settle();
 		assert.equal(notifications.at(-1), "Session auto-rename failed.");
 		assert.equal(notifications.some((message) => message.includes(secret)), false);
+
+		// A custom-triggered run carries `message` instead of `prompt`; it must neither crash nor use up
+		// the session's only naming attempt.
+		sessionName = undefined;
+		invoke("session_start", {}, ctx);
+		const completionsBeforeCustom = completions.length;
+		assert.equal(
+			invoke("before_agent_start", {
+				messageType: "custom",
+				message: { customType: "injected", content: "Injected turn" },
+			}, ctx),
+			undefined,
+			"custom-message run is ignored without throwing",
+		);
+		assert.equal(completions.length, completionsBeforeCustom, "custom-message run started no naming request");
+		userPrompt("First real prompt");
+		assert.equal(completions.length, completionsBeforeCustom + 1, "custom run did not consume eligibility");
+		completions.at(-1)?.resolve(successfulTitle);
+		await settle();
+		assert.equal(sessionName, "Generated title", "first real user prompt still named the session");
+
+		// One-shot runs end right after the turn, so they must not spend a provider request on a name.
+		for (const mode of ["print", "json"]) {
+			sessionName = undefined;
+			const oneShotCtx = { ...ctx, mode };
+			invoke("session_start", {}, oneShotCtx);
+			const completionsBeforeOneShot = completions.length;
+			invoke("before_agent_start", { messageType: "user", prompt: `${mode} prompt` }, oneShotCtx);
+			assert.equal(completions.length, completionsBeforeOneShot, `${mode} mode started no naming request`);
+			assert.equal(sessionName, undefined);
+		}
 	} finally {
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
