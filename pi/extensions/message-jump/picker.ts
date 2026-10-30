@@ -25,7 +25,11 @@ export class MessagePicker extends Container {
 		this.messages = messages; this.tui = tui; this.theme = theme; this.kb = kb; this.done = done;
 		this.positions = new Map(messages.map((message, i) => [message.id, i + 1]));
 		this.input = new Input({ prompt: " Search: ", placeholder: "type to filter messages", placeholderStyle: (s) => this.theme.fg("muted", s) });
-		this.input.setValue(query);
+		// Input.setValue keeps the field's own caret where it is, and a fresh Input starts at 0, so a
+		// prefilled `/jump words` query would leave the caret before its first character. Insert
+		// through the input's typing path instead: the caret then ends up after the query and typing
+		// or Backspace refines it instead of prepending to it.
+		for (const char of query) this.input.handleInput(char);
 		this.rebuild();
 		this.addChild(new Spacer(1));
 		this.addChild({ render: (width) => new Text(this.theme.bold("Jump to Message"), 1, 0).render(width), invalidate() {} });
@@ -80,6 +84,10 @@ export class MessagePicker extends Container {
 			if (!this.closed) this.tui.requestRender();
 		}
 	}
+	private isPaging(data: string): boolean {
+		return this.kb.matches(data, "tui.select.pageUp") || this.kb.matches(data, "tui.select.pageDown") ||
+			matchesKey(data, "alt+up") || matchesKey(data, "alt+down");
+	}
 	handleInput(data: string): void {
 		if (this.closed) return;
 		// Ctrl+Y is reserved for copying, before configurable selector or Input yank bindings.
@@ -91,8 +99,10 @@ export class MessagePicker extends Container {
 		} else if (this.kb.matches(data, "tui.select.up") || this.kb.matches(data, "tui.select.down")) {
 			const delta = this.kb.matches(data, "tui.select.up") ? -1 : 1;
 			if (this.matches.length) this.selected = (this.selected + delta + this.matches.length) % this.matches.length;
-		} else if (this.kb.matches(data, "tui.select.pageUp") || this.kb.matches(data, "tui.select.pageDown")) {
-			const delta = this.kb.matches(data, "tui.select.pageUp") ? -this.visible : this.visible;
+		} else if (this.isPaging(data)) {
+			// PageUp/PageDown belong to the fullscreen viewport in the only supported mode, so paging
+			// also has keys neither the viewport nor the search field uses: Alt+Up and Alt+Down.
+			const delta = this.kb.matches(data, "tui.select.pageUp") || matchesKey(data, "alt+up") ? -this.visible : this.visible;
 			this.selected = Math.max(0, Math.min(this.matches.length - 1, this.selected + delta));
 		} else {
 			const before = this.input.getValue();

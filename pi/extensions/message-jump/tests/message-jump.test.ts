@@ -10,6 +10,10 @@ import { MessagePicker } from "../picker.ts";
 
 const entry = (id: string, content: any = "same") => ({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
 const theme = { fg: (_: string, s: string) => s, bold: (s: string) => s } as any;
+// Pi draws its soft cursor as zero-width APC markers around the character under the caret
+// (pi-tui dist/tui.js FAKE_CURSOR_START/FAKE_CURSOR_END, emitted by components/input.js:406-408),
+// which stripVTControlCharacters leaves in the line and so splits the text under the caret.
+const plain = (line: string): string => stripVTControlCharacters(line).replace(/\x1b_pi:[^\x07]*\x07/g, "");
 function host(mode = "fullscreen", version = VERSION, componentCount = 7) {
 	const instance = new InteractiveMode() as any;
 	instance.version = version;
@@ -334,11 +338,41 @@ test("picker: Ctrl+Y copies full highlighted text, keeps search/selection open, 
 	picker.handleInput("\x1b[A"); picker.handleInput("\x19"); await Promise.resolve();
 	assert.equal(copied[1], oldText, "copy original multiline text, never truncated preview or metadata");
 	assert.ok(picker.render(80).some(line => line.startsWith("› duplicate needle 世界")));
-	assert.ok(stripVTControlCharacters(picker.render(80)[3]).includes("needle"), "Ctrl+Y does not yank into the search field");
+	assert.equal(plain(picker.render(80)[3]).trimEnd(), " Search: needle", "Ctrl+Y does not yank into the search field");
 	assert.deepEqual(done, []);
 	for (const width of [1, 2, 10, 40, 80]) assert.ok(picker.render(width).every(line => visibleWidth(line) <= width));
 	picker.handleInput("\x1b"); assert.deepEqual(done, [undefined]);
 	picker.handleInput("\x19"); assert.equal(copied.length, 2, "closed picker ignores copy");
+});
+
+test("picker: prefilled query leaves the caret after it, so typing appends and Backspace refines", () => {
+	const values = collectMessages([entry("alpha", "needle alpha"), entry("beta", "needle beta")]);
+	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
+	const picker = new MessagePicker(values, tui, theme, kb, () => {}, "needle");
+	const search = () => plain(picker.render(80)[3]).trimEnd();
+	assert.equal(search(), " Search: needle");
+	picker.handleInput("x");
+	assert.equal(search(), " Search: needlex", "typing appends to the prefilled query instead of prepending");
+	assert.ok(picker.render(80).some(line => line.includes("No matching messages")), "the appended character filters the list");
+	picker.handleInput("\x7f");
+	assert.equal(search(), " Search: needle", "Backspace deletes the appended character, not nothing");
+	assert.ok(picker.render(80).includes("› needle beta"), "the restored query filters and selects the latest match");
+});
+
+test("picker: alt+up/alt+down page the list where the fullscreen viewport owns PageUp/PageDown", () => {
+	const values = collectMessages(Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)));
+	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
+	// Why the picker needs its own paging keys: the viewport listener consumes these before the
+	// focused picker, and /jump only runs in fullscreen.
+	assert.equal(kb.matches("\x1b[5~", "tui.altScreen.pageUp"), true);
+	const picker = new MessagePicker(values, tui, theme, kb, () => {});
+	assert.ok(picker.render(80).includes("› prompt 12"), "the latest message is selected first");
+	picker.handleInput("\x1bp"); // Legacy encoding of alt+up.
+	assert.ok(picker.render(80).includes("› prompt 2"), "alt+up pages toward older messages");
+	picker.handleInput("\x1b[1;3B"); // CSI encoding of alt+down.
+	assert.ok(picker.render(80).includes("› prompt 12"), "alt+down pages toward newer messages");
 });
 
 test("picker: copying unavailable text works; empty/no-result/failure/pending copies are safe", async () => {
