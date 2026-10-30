@@ -35,7 +35,6 @@
 
   # Node CLI tools, isolated from the runtime's global npm prefix.
   "npm:@firecrawl/anydoc" = "latest"
-  "npm:command-code" = "latest"
   "npm:tokscale" = "latest"
   "npm:agent-browser" = "latest"
   "npm:@devcontainers/cli" = "latest"
@@ -106,4 +105,4 @@
 
   # DevPod CLI replaced the Homebrew cask; cask GUI (DevPod.app) removed.
   "aqua:loft-sh/devpod" = "latest"
-"ubi:fosrl/cli" = { version = "0.19.1", exe = "pangolin" }
+  "ubi:fosrl/cli" = { version = "0.19.1", exe = "pangolin" }
