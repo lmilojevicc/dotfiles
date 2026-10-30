@@ -233,9 +233,11 @@ export class TaskWidget {
 		this.tui?.requestRender();
 	}
 
+	/** Expand a collapsed widget first; otherwise flip the temporary show-all view. */
 	toggle(): void {
 		if (!this.registered) return;
-		this.toggleShowAllOverride = !this.toggleShowAllOverride;
+		if (this.collapsed) this.collapsed = false;
+		else this.toggleShowAllOverride = !this.toggleShowAllOverride;
 		this.tui?.requestRender(true);
 	}
 

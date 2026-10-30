@@ -1,4 +1,4 @@
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TodoInput } from "../domain/types.js";
 import { reduceTasks } from "../domain/reducer.js";
@@ -31,7 +31,9 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const input = validateToolArguments(
 				{ name: TOOL_NAME, description: "", parameters: TodoRuntimeParameters },
-				{ type: "toolCall", id: _toolCallId, name: TOOL_NAME, arguments: params },
+				// The private validation call works on Pi's parsed JSON arguments, so cross that boundary
+				// explicitly: inert metadata values are JSON at runtime but not statically typed as such.
+				{ type: "toolCall", id: _toolCallId, name: TOOL_NAME, arguments: params as JsonObject },
 			) as TodoInput;
 			const id = sessionId(ctx);
 			const result = reduceTasks(getSnapshot(id), input);

@@ -89,13 +89,16 @@ test("only unmodified primary headline clicks toggle; press/release, rows, space
 	widget.dispose();
 });
 
-test("collapsed state survives updates, preferences, show-all toggle and temporary empty lists; reset/rebind/dispose restore defaults", () => {
+test("collapsed state survives updates and preferences; the toggle shortcut expands it; reset/rebind/dispose restore defaults", () => {
 	const { h, widget } = mountedWidget();
 	h.component.handleMouse?.(mouse());
 	commitSnapshot("s", snapshot([task(1, "completed"), task(2, "completed"), task(3, "in_progress"), task(4)], 1));
 	widget.refresh();
 	widget.setConfig({ ...DEFAULT_TASKS_CONFIG, collapseCompleted: true, maxVisible: 1 });
+	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
 	widget.toggle();
+	assert.equal(h.component.render(120).length, 5, "the collapse shortcut expands a collapsed widget");
+	h.component.handleMouse?.(mouse());
 	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
 	const removed = h.component;
 	commitSnapshot("s", snapshot());
@@ -123,6 +126,18 @@ test("collapsed state survives updates, preferences, show-all toggle and tempora
 	widget.bind(h.ui);
 	widget.refresh();
 	assert.equal(h.component.render(120).length, 4);
+	widget.dispose();
+});
+
+test("the toggle shortcut expands a collapsed widget instead of silently inverting show-all", () => {
+	const { h, widget } = mountedWidget();
+	const limited = h.component.render(120);
+	h.component.handleMouse?.(mouse());
+	assert.deepEqual(h.component.render(120), [limited[0], ""]);
+	widget.toggle();
+	assert.deepEqual(h.component.render(120), limited, "expanding restores the configured view, not a show-all view");
+	widget.toggle();
+	assert.equal(h.component.render(120).at(-2), "└─ ◻ #3 Task 3", "a second press flips show-all as before");
 	widget.dispose();
 });
 
@@ -164,7 +179,7 @@ test("installed fullscreen TUI turns a press/release into one toggle and ignores
 		columns: 120, rows: 24, kittyProtocolActive: false,
 		start: (onInput) => { input = onInput; }, stop() {}, drainInput: async () => {},
 		write: (data) => { writes.push(data); }, moveBy() {}, hideCursor() {}, showCursor() {},
-		clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {},
+		clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
 	};
 	const tui = new TuiAltScreen(terminal, false, undefined, { copyOnSelect: false });
 	const root = new Container();

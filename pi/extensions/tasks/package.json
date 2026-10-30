@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --import ./tests/register-loader.mjs --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --import ../_test-support/register-loader.mjs --import ./tests/setup.mjs --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "pi": {

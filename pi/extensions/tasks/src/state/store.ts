@@ -6,6 +6,8 @@ export interface Slot {
 	pendingHumanRevision?: number;
 	announcedRevision: number;
 	migrationWarning?: string;
+	/** A branch marker already follows the replayed legacy snapshot, so the notice was shown. */
+	migrationAnnounced?: boolean;
 }
 
 const slots = new Map<string, Slot>();
@@ -71,6 +73,11 @@ export function takeMigrationWarning(id: string): string | undefined {
 	const warning = slot.migrationWarning;
 	delete slot.migrationWarning;
 	return warning;
+}
+
+export function markMigrationAnnounced(id: string): void {
+	const slot = slots.get(id);
+	if (slot) slot.migrationAnnounced = true;
 }
 
 export function resetStore(): void {

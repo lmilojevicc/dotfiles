@@ -135,3 +135,57 @@ test("replay of an announced edit does not schedule a reminder loop", () => {
 	]));
 	assert.equal(synchronizationMessage("a"), undefined);
 });
+
+const LEGACY_RESULT = {
+	type: "message",
+	message: {
+		role: "toolResult",
+		toolName: "todo",
+		details: {
+			nextId: 3,
+			tasks: [
+				{ id: 1, subject: "Prerequisite", status: "pending" },
+				{ id: 2, subject: "Dependent", status: "in_progress", blockedBy: [1] },
+			],
+		},
+	},
+};
+
+test("a legacy migration notice is persisted so reloading the branch does not repeat it", async () => {
+	const handlers = new Map<string, Function>();
+	const appended: Array<[string, unknown]> = [];
+	const notifications: string[] = [];
+	const pi = {
+		on: (name: string, handler: Function) => handlers.set(name, handler),
+		appendEntry: (customType: string, data: unknown) => { appended.push([customType, data]); },
+	} as any;
+	registerLifecycle(pi, { refresh() {}, dispose() {} });
+	const branch: unknown[] = [LEGACY_RESULT];
+	const context = () => ({
+		mode: "tui",
+		ui: { notify(message: string) { notifications.push(message); } },
+		sessionManager: { getSessionId: () => "legacy", getBranch: () => branch },
+	});
+	await handlers.get("session_start")!({}, context());
+	assert.equal(notifications.length, 1);
+	assert.match(notifications[0]!, /^Migrated legacy tasks: /);
+	assert.equal(appended.length, 1);
+	// The marker is now part of the branch, exactly as a later /reload or resume would read it.
+	branch.push({ type: "custom", customType: appended[0]![0], data: appended[0]![1] });
+	await handlers.get("session_start")!({ reason: "reload" }, context());
+	assert.equal(notifications.length, 1, "an already reported migration is not notified again");
+	assert.equal(appended.length, 1);
+	assert.equal(getSnapshot("legacy").tasks.length, 2);
+});
+
+test("a clean legacy migration without repairs is not persisted as a notice", async () => {
+	const handlers = new Map<string, Function>();
+	const appended: unknown[] = [];
+	registerLifecycle({
+		on: (name: string, handler: Function) => handlers.set(name, handler),
+		appendEntry: (...args: unknown[]) => { appended.push(args); },
+	} as any, { refresh() {}, dispose() {} });
+	const branch = [{ type: "message", message: { role: "toolResult", toolName: "todo", details: { nextId: 2, tasks: [{ id: 1, subject: "Clean", status: "pending" }] } } }];
+	await handlers.get("session_start")!({}, { mode: "tui", ui: { notify() {} }, sessionManager: { getSessionId: () => "clean", getBranch: () => branch } });
+	assert.deepEqual(appended, []);
+});

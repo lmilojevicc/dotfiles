@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { loadGlobalTasksConfig, type TaskDisplayConfig } from "./config/tasks-config.js";
 import { progress } from "./ui/format.js";
 import { taskActivity } from "./state/activity.js";
-import { replayBranch, SYNC_MESSAGE } from "./state/replay.js";
+import { replayBranch, MIGRATION_ENTRY, SYNC_MESSAGE } from "./state/replay.js";
 import {
 	clearForeground,
 	evictSlot,
@@ -10,6 +10,7 @@ import {
 	getSlot,
 	getSnapshot,
 	markAnnounced,
+	markMigrationAnnounced,
 	restoreSlot,
 	sessionId,
 	setForeground,
@@ -77,7 +78,13 @@ export function registerLifecycle(pi: ExtensionAPI, ui: LifecycleUI): void {
 		ui.setConfig?.(loadGlobalTasksConfig());
 		ui.refresh(true);
 		const warning = takeMigrationWarning(id);
-		if (warning) ctx.ui.notify(warning, "warning");
+		// Remember in the branch that this migration was reported, so /reload or resuming the session
+		// does not repeat a notice the user already saw.
+		if (warning && !getSlot(id).migrationAnnounced) {
+			ctx.ui.notify(warning, "warning");
+			pi.appendEntry(MIGRATION_ENTRY, { warning });
+			markMigrationAnnounced(id);
+		}
 	});
 	pi.on("session_tree", async (_event, ctx) => replay(ctx, false));
 	pi.on("session_compact", async (_event, ctx) => replay(ctx, true));

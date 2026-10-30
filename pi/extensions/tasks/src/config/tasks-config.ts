@@ -6,6 +6,7 @@ import {
 	readFileSync,
 	realpathSync,
 	renameSync,
+	statSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -38,6 +39,55 @@ type ConfigLayer = Partial<Omit<TaskDisplayConfig, "glyphs">> & { glyphs?: TaskG
 
 const isMissing = (error: unknown): error is NodeJS.ErrnoException =>
 	error instanceof Error && "code" in error && error.code === "ENOENT";
+
+const isExisting = (error: unknown): error is NodeJS.ErrnoException =>
+	error instanceof Error && "code" in error && error.code === "EEXIST";
+
+// Several Pi sessions may share one agent directory, so a save must not just be atomic per write:
+// the whole read-merge-rename cycle needs to exclude other processes.
+const LOCK_SUFFIX = ".lock";
+const LOCK_RETRY_MS = 10;
+const LOCK_TIMEOUT_MS = 5_000;
+const LOCK_STALE_MS = 30_000;
+
+function sleep(milliseconds: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+/** A lock left behind by a killed process or a suspend must not block saves forever. */
+function isStaleLock(path: string, now: number): boolean {
+	let stats;
+	try {
+		stats = statSync(path);
+	} catch (error) {
+		if (isMissing(error)) return false;
+		throw error;
+	}
+	if (!stats.isFile()) throw new Error(`Refusing to use a non-file task config lock: ${path}`);
+	return now - stats.mtimeMs > LOCK_STALE_MS;
+}
+
+function acquireLock(path: string): () => void {
+	const deadline = Date.now() + LOCK_TIMEOUT_MS;
+	for (;;) {
+		try {
+			closeSync(openSync(path, "wx", 0o600));
+			return () => {
+				try { unlinkSync(path); } catch {}
+			};
+		} catch (error) {
+			if (!isExisting(error)) throw error;
+			if (isStaleLock(path, Date.now())) {
+				try { unlinkSync(path); } catch {}
+				continue;
+			}
+			if (Date.now() >= deadline) {
+				throw new Error(`Timed out waiting for the task config lock at ${path}; another Pi session may be saving task settings.`);
+			}
+			sleep(LOCK_RETRY_MS);
+		}
+	}
+}
 
 function readObject(path: string): JsonObject {
 	try {
@@ -120,34 +170,41 @@ export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentD
 	const path = join(canonicalDirectory, "tasks-config.json");
 	assertSafeExistingDestination(path);
 
-	const existing = readExistingObject(path);
-	const next: JsonObject = { ...existing };
-	for (const key of DISPLAY_KEYS) {
-		if (config[key] === undefined) continue;
-		next[key] = key === "glyphs" ? { ...objectValue(existing.glyphs), ...config.glyphs } : config[key];
-	}
-
-	assertSafeDirectory(canonicalDirectory);
-	assertSafeExistingDestination(path);
-	const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-	let fd: number | undefined;
-	let created = false;
+	// Lock the read-merge-rename cycle: without it, two sessions that both read the same snapshot
+	// each persist their own row and the later rename silently discards the other session's change.
+	const release = acquireLock(`${path}${LOCK_SUFFIX}`);
 	try {
-		fd = openSync(temporary, "wx", 0o600);
-		created = true;
-		writeFileSync(fd, JSON.stringify(next, null, 2));
-		closeSync(fd);
-		fd = undefined;
+		const existing = readExistingObject(path);
+		const next: JsonObject = { ...existing };
+		for (const key of DISPLAY_KEYS) {
+			if (config[key] === undefined) continue;
+			next[key] = key === "glyphs" ? { ...objectValue(existing.glyphs), ...config.glyphs } : config[key];
+		}
+
 		assertSafeDirectory(canonicalDirectory);
 		assertSafeExistingDestination(path);
-		renameSync(temporary, path);
-	} catch (error) {
-		if (fd !== undefined) {
-			try { closeSync(fd); } catch {}
+		const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+		let fd: number | undefined;
+		let created = false;
+		try {
+			fd = openSync(temporary, "wx", 0o600);
+			created = true;
+			writeFileSync(fd, JSON.stringify(next, null, 2));
+			closeSync(fd);
+			fd = undefined;
+			assertSafeDirectory(canonicalDirectory);
+			assertSafeExistingDestination(path);
+			renameSync(temporary, path);
+		} catch (error) {
+			if (fd !== undefined) {
+				try { closeSync(fd); } catch {}
+			}
+			if (created) {
+				try { unlinkSync(temporary); } catch {}
+			}
+			throw error;
 		}
-		if (created) {
-			try { unlinkSync(temporary); } catch {}
-		}
-		throw error;
+	} finally {
+		release();
 	}
 }

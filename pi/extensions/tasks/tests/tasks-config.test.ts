@@ -1,5 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -10,6 +11,7 @@ import {
 	readdirSync,
 	rmSync,
 	symlinkSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -204,4 +206,53 @@ test("exclusive temporary-file creation never overwrites or removes an existing 
 	assert.throws(() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent), /EEXIST/);
 	assert.equal(readFileSync(temporary, "utf8"), "unchanged");
 	assert.equal(existsSync(f.global), false);
+});
+
+function waitFor(path: string, timeoutMs = 10_000): void {
+	const deadline = Date.now() + timeoutMs;
+	while (!existsSync(path)) {
+		if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
+		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+	}
+}
+
+/** A second Pi session in the middle of its own settings save: it owns the lock while it merges and renames. */
+const PEER_SAVE = `
+import { closeSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const [agent, marker, holdMs] = process.argv.slice(1);
+const config = join(agent, "tasks-config.json");
+closeSync(openSync(config + ".lock", "wx", 0o600));
+writeFileSync(marker, "locked");
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(holdMs));
+const temporary = join(agent, "peer.tmp");
+writeFileSync(temporary, JSON.stringify({ maxVisible: 25 }, null, 2));
+renameSync(temporary, config);
+unlinkSync(config + ".lock");
+`;
+
+test("a save waits for another session's lock and merges into the row that session committed", (t) => {
+	const f = fixture(t);
+	const marker = join(f.root, "peer-locked");
+	const peer = spawn(process.execPath, ["--input-type=module", "-e", PEER_SAVE, f.agent, marker, "500"], { stdio: "ignore" });
+	t.after(() => peer.kill());
+	waitFor(marker);
+	const started = Date.now();
+	saveGlobalTasksConfig({ showAll: true }, f.agent);
+	const waited = Date.now() - started;
+	assert.ok(waited >= 400, `a save must wait for the peer lock, waited only ${waited}ms`);
+	// The peer's row survives because this save merged into the file the peer committed.
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { maxVisible: 25, showAll: true });
+	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+});
+
+test("a stale lock from a crashed session is replaced instead of blocking saves forever", (t) => {
+	const f = fixture(t);
+	const lock = `${f.global}.lock`;
+	writeFileSync(lock, "");
+	const stale = new Date(Date.now() - 5 * 60_000);
+	utimesSync(lock, stale, stale);
+	saveGlobalTasksConfig({ showAll: true }, f.agent);
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { showAll: true });
+	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
 });
