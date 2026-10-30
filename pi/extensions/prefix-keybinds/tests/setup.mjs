@@ -1,3 +1,5 @@
+// Suite-specific resolution on top of _test-support/register-loader.mjs: these tests replace Pi's SDK
+// and TUI with local fakes so key handling can be exercised with synthetic names.
 import { registerHooks } from "node:module";
 
 const MOCKS = new Map([

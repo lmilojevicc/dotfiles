@@ -17,6 +17,6 @@
     "e": "app.editor.external",
     "o": "app.tools.expand",
     "t": "app.thinking.toggle",
-    "p": "pi.peek"
+    "c": "app.message.copy"
   }
 }

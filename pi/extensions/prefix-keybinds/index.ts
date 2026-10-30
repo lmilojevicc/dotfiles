@@ -35,7 +35,7 @@ type NativeActionInfo = {
 	defaultKeys: string | string[];
 };
 
-type ExtensionAction = "pi.reload" | "pi.peek" | "pi.model-picker";
+type ExtensionAction = "pi.reload" | "pi.model-picker";
 type PrefixAction = AppKeybinding | ExtensionAction;
 
 const NATIVE_ACTIONS = {
@@ -44,6 +44,7 @@ const NATIVE_ACTIONS = {
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
 	"app.suspend": { defaultKeys: "ctrl+z", description: "Suspend to background" },
 	"app.thinking.cycle": { defaultKeys: "shift+tab", description: "Cycle thinking level" },
+	"app.thinking.save": { defaultKeys: "ctrl+s", description: "Save thinking level" },
 	"app.model.cycleForward": { defaultKeys: "ctrl+p", description: "Cycle to next model" },
 	"app.model.cycleBackward": { defaultKeys: "shift+ctrl+p", description: "Cycle to previous model" },
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
@@ -54,6 +55,7 @@ const NATIVE_ACTIONS = {
 		description: "Toggle named session filter",
 	},
 	"app.editor.external": { defaultKeys: "ctrl+g", description: "Open external editor" },
+	"app.message.copy": { defaultKeys: "ctrl+x", description: "Copy selection or last assistant message" },
 	"app.message.followUp": { defaultKeys: "alt+enter", description: "Queue follow-up message" },
 	"app.message.dequeue": { defaultKeys: "alt+up", description: "Restore queued messages" },
 	"app.clipboard.pasteImage": { defaultKeys: "ctrl+v", description: "Paste image from clipboard" },
@@ -99,7 +101,6 @@ const NATIVE_ACTIONS = {
 
 const EXTENSION_ACTIONS = {
 	"pi.reload": { defaultKeys: [], description: "Reload extensions, skills, prompts, and themes" },
-	"pi.peek": { defaultKeys: [], description: "Open peek (session scrollback browser)" },
 	"pi.model-picker": { defaultKeys: [], description: "Browse models and save the global default" },
 } satisfies Record<ExtensionAction, NativeActionInfo>;
 
@@ -118,10 +119,13 @@ const DEFAULT_BINDINGS: Record<string, PrefixAction> = {
 	e: "app.editor.external",
 	o: "app.tools.expand",
 	t: "app.thinking.toggle",
-	p: "pi.peek",
+	// The prefix layer owns ctrl+x, so Pi's native app.message.copy shortcut is unreachable
+	// while the layer is installed; expose the same action one key deeper instead.
+	c: "app.message.copy",
 };
 
 const PATCHED = Symbol.for("milo.pi.prefix-keybinds.patched");
+const RESET = Symbol.for("milo.pi.prefix-keybinds.reset");
 const EDITOR_FACTORY_LAYERS = Symbol.for("milo.pi.editor-factory-layers.v1");
 const PREFIX_LAYER_ID = "prefix-keybinds";
 
@@ -180,6 +184,7 @@ type PrefixEditor = EditorComponent & {
 	actionHandlers?: Map<AppKeybinding, () => void>;
 	dispose?: () => void;
 	[PATCHED]?: true;
+	[RESET]?: () => void;
 };
 
 type EditorLayerBuilder = (baseFactory: EditorFactory | undefined) => EditorFactory;
@@ -225,7 +230,19 @@ function installEditorLayer(
 }
 
 let runtimeState: RuntimeState | undefined;
+let runtimeSignature: string | undefined;
+let configLoadCount = 0;
 let prefixPaletteOpen = false;
+
+// Editors this extension patched and that Pi has not disposed yet. Pi replaces the editor component
+// without disposing the old instance, so `session_shutdown` resets these to disarm timers left armed
+// by an active prefix layer.
+const liveEditors = new Set<PrefixEditor>();
+
+function resetLiveEditors(): void {
+	for (const editor of [...liveEditors]) editor[RESET]?.();
+	liveEditors.clear();
+}
 
 function acquireVstackModalLock(): () => void {
 	const host = globalThis as unknown as Record<PropertyKey, unknown>;
@@ -252,6 +269,112 @@ function isPrefixAction(action: string): action is PrefixAction {
 
 function prefixActionIds(): PrefixAction[] {
 	return Object.keys(PREFIX_ACTIONS) as PrefixAction[];
+}
+
+// Mirrors the key names Pi's key matcher (`matchesKey` in @earendil-works/pi-tui) understands.
+// A key id outside this set (a typo such as "ctrl_+x" or "foo") can never match a keystroke, so
+// persisting one would silently disarm the layer; validate before saving and when loading config.
+const NAMED_KEY_IDS = new Set([
+	"escape",
+	"esc",
+	"tab",
+	"enter",
+	"return",
+	"space",
+	"backspace",
+	"insert",
+	"delete",
+	"clear",
+	"home",
+	"end",
+	"pageup",
+	"pagedown",
+	"up",
+	"down",
+	"left",
+	"right",
+	"f1",
+	"f2",
+	"f3",
+	"f4",
+	"f5",
+	"f6",
+	"f7",
+	"f8",
+	"f9",
+	"f10",
+	"f11",
+	"f12",
+]);
+const KEY_MODIFIERS = ["ctrl", "shift", "alt", "super"];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Describe why `key` cannot be pressed in Pi, or return undefined when it is a usable key id.
+ * The accepted shape matches Pi's own parser: leading `ctrl+`/`shift+`/`alt+`/`super+` modifiers
+ * (each at most once) followed by a single character or a named key.
+ */
+function keyIdProblem(key: string): string | undefined {
+	if (!key) return "the key is empty";
+
+	let rest = key.toLowerCase();
+	const seen = new Set<string>();
+	for (;;) {
+		const modifier = KEY_MODIFIERS.find((name) => rest.startsWith(`${name}+`));
+		if (!modifier) break;
+		if (seen.has(modifier)) return `"${key}" repeats the ${modifier} modifier`;
+		seen.add(modifier);
+		rest = rest.slice(modifier.length + 1);
+	}
+
+	if (!rest) return `"${key}" has modifiers but no key`;
+	if (rest.includes("+") && rest !== "+") return `"${key}" is not a key Pi can report`;
+
+	const characters = [...rest];
+	if (characters.length === 1) {
+		const codePoint = characters[0]?.codePointAt(0) ?? 0;
+		if (codePoint >= 0x20 && codePoint !== 0x7f) return undefined;
+		return `"${key}" is a control character, not a key id`;
+	}
+
+	if (NAMED_KEY_IDS.has(rest)) return undefined;
+	return `"${key}" is not a key Pi can report; use one character (x), a named key (escape, tab), or a modifier combination (ctrl+x)`;
+}
+
+/** Rank action ids by how closely they contain the mistyped id, best match first. */
+function closeActionIds(action: string): PrefixAction[] {
+	const query = action.trim().toLowerCase();
+	if (!query) return [];
+
+	const score = (id: string): number => {
+		let position = -1;
+		let matched = 0;
+		for (const character of query) {
+			const found = id.indexOf(character, position + 1);
+			if (found < 0) return 0;
+			position = found;
+			matched += 1;
+		}
+		return matched * 10 - (id.length - query.length);
+	};
+
+	return prefixActionIds()
+		.map((id) => ({ id, score: score(id) }))
+		.filter((candidate) => candidate.score > 0)
+		.sort((left, right) => right.score - left.score)
+		.slice(0, 3)
+		.map((candidate) => candidate.id);
+}
+
+function unknownActionMessage(action: string): string {
+	const suggestions = closeActionIds(action);
+	const hint = suggestions.length > 0
+		? `Did you mean ${suggestions.map((id) => `"${id}"`).join(" or ")}?`
+		: "Run /prefix-keybinds actions to list the supported actions.";
+	return `Unknown prefix action "${action}". ${hint}`;
 }
 
 function bindingFromAction(key: string, action: PrefixAction): ResolvedBinding {
@@ -337,7 +460,10 @@ function readRawConfigs(cwd: string, warnings: string[]): Array<{ path: string; 
 
 function applyRawConfig(config: MutableConfig, raw: RawConfig, source: string, warnings: string[]) {
 	if (typeof raw.prefixKey === "string" && raw.prefixKey.trim().length > 0) {
-		config.prefixKey = raw.prefixKey.trim();
+		const prefixKey = raw.prefixKey.trim();
+		const problem = keyIdProblem(prefixKey);
+		if (problem) warnings.push(`${source}: ignored prefixKey because ${problem}`);
+		else config.prefixKey = prefixKey;
 	}
 
 	if (typeof raw.timeoutMs === "number" && Number.isFinite(raw.timeoutMs) && raw.timeoutMs > 0) {
@@ -349,7 +475,15 @@ function applyRawConfig(config: MutableConfig, raw: RawConfig, source: string, w
 	}
 
 	if (Array.isArray(raw.cancelKeys) && raw.cancelKeys.every((key) => typeof key === "string")) {
-		config.cancelKeys = raw.cancelKeys.filter((key) => key.trim().length > 0).map((key) => key.trim());
+		const cancelKeys: string[] = [];
+		for (const key of raw.cancelKeys) {
+			const trimmed = key.trim();
+			if (!trimmed) continue;
+			const problem = keyIdProblem(trimmed);
+			if (problem) warnings.push(`${source}: ignored cancel key because ${problem}`);
+			else cancelKeys.push(trimmed);
+		}
+		config.cancelKeys = cancelKeys;
 	}
 
 	if (raw.replaceDefaults === true) {
@@ -362,6 +496,12 @@ function applyRawConfig(config: MutableConfig, raw: RawConfig, source: string, w
 		const normalizedKey = key.trim();
 		if (!normalizedKey) {
 			warnings.push(`${source}: ignored an empty binding key`);
+			continue;
+		}
+
+		const keyProblem = keyIdProblem(normalizedKey);
+		if (keyProblem) {
+			warnings.push(`${source}: ignored ${normalizedKey} because ${keyProblem}`);
 			continue;
 		}
 
@@ -387,6 +527,7 @@ function applyRawConfig(config: MutableConfig, raw: RawConfig, source: string, w
 }
 
 function loadConfig(cwd: string): { config: ResolvedConfig; warnings: string[] } {
+	configLoadCount += 1;
 	const warnings: string[] = [];
 	const mutable = defaultMutableConfig();
 
@@ -398,21 +539,33 @@ function loadConfig(cwd: string): { config: ResolvedConfig; warnings: string[] }
 	return { warnings, config: resolvedFromMutable(mutable) };
 }
 
+/**
+ * Stat-only fingerprint of every config file the merge reads. `ensureState` runs on each key press,
+ * so the parsed config is cached until one of these files is created, removed, or edited.
+ */
+function configSignature(cwd: string): string {
+	const parts = [cwd];
+	for (const path of configPaths(cwd)) {
+		try {
+			const stats = statSync(path);
+			parts.push(`${path}\u0000${stats.mtimeMs}\u0000${stats.size}`);
+		} catch {
+			parts.push(`${path}\u0000missing`);
+		}
+	}
+	return parts.join("\u0001");
+}
+
 function loadState(cwd: string): RuntimeState {
 	const { config, warnings } = loadConfig(cwd);
-	return { cwd, config, warnings };
+	runtimeState = { cwd, config, warnings };
+	runtimeSignature = configSignature(cwd);
+	return runtimeState;
 }
 
 function ensureState(cwd: string): RuntimeState {
-	// Always re-read config so edits to prefix-keybinds.json apply without restarting Pi.
-	// Keep last cwd for callers that only care about path; warnings only on path change.
-	const next = loadState(cwd);
-	if (!runtimeState || runtimeState.cwd !== cwd) {
-		runtimeState = next;
-		return runtimeState;
-	}
-	runtimeState = { ...next, warnings: [] };
-	return runtimeState;
+	if (runtimeState && runtimeSignature === configSignature(cwd)) return runtimeState;
+	return loadState(cwd);
 }
 
 function rawConfigFromResolved(config: ResolvedConfig): RawConfig {
@@ -439,8 +592,54 @@ function rawConfigFromResolved(config: ResolvedConfig): RawConfig {
 	};
 }
 
-function persistConfig(cwd: string, config: ResolvedConfig): string {
-	const path = configWritePath(cwd, config.loadedPaths);
+/**
+ * What a command changed. Persisting only the change (never the merged view) keeps the other config
+ * layers authoritative: writing every merged value plus `replaceDefaults` into one file would shadow
+ * the global/project/environment files for good after a single `/prefix-keybinds set`.
+ */
+type ConfigChange =
+	| { kind: "prefix"; prefixKey: string }
+	| { kind: "binding"; key: string; action: PrefixAction }
+	| { kind: "unbind"; key: string }
+	| { kind: "replace"; config: ResolvedConfig };
+
+function readRawConfigFile(path: string): RawConfig {
+	if (!existsSync(path)) return {};
+
+	const text = readFileSync(path, "utf8");
+	if (!text.trim()) return {};
+
+	const parsed = parseJsonConfig(text) as unknown;
+	if (!isPlainObject(parsed)) throw new Error(`${path} does not contain a JSON object`);
+	return parsed as RawConfig;
+}
+
+function bindingsOf(raw: RawConfig): Record<string, RawBinding> {
+	return raw.bindings && typeof raw.bindings === "object" && !Array.isArray(raw.bindings) ? { ...raw.bindings } : {};
+}
+
+function applyConfigChange(raw: RawConfig, change: ConfigChange): RawConfig {
+	switch (change.kind) {
+		case "prefix":
+			return { ...raw, prefixKey: change.prefixKey };
+		case "binding": {
+			const bindings = bindingsOf(raw);
+			bindings[change.key] = change.action;
+			return { ...raw, bindings };
+		}
+		case "unbind": {
+			// `false` removes the binding from the merge, including a value inherited from a default
+			// or a lower-precedence file.
+			const bindings = bindingsOf(raw);
+			bindings[change.key] = false;
+			return { ...raw, bindings };
+		}
+		case "replace":
+			return rawConfigFromResolved(change.config);
+	}
+}
+
+function writeRawConfig(path: string, raw: RawConfig): void {
 	const temporaryPath = `${path}.${process.pid}.${globalThis.crypto.randomUUID()}.tmp`;
 	mkdirSync(dirname(path), { recursive: true });
 	let existingMode: number | undefined;
@@ -450,7 +649,7 @@ function persistConfig(cwd: string, config: ResolvedConfig): string {
 		// New files retain writeFileSync's previous default permissions, subject to umask.
 	}
 	try {
-		writeFileSync(temporaryPath, `${JSON.stringify(rawConfigFromResolved(config), null, 2)}\n`, {
+		writeFileSync(temporaryPath, `${JSON.stringify(raw, null, 2)}\n`, {
 			encoding: "utf8",
 			mode: existingMode ?? 0o666,
 		});
@@ -464,7 +663,14 @@ function persistConfig(cwd: string, config: ResolvedConfig): string {
 		}
 		throw error;
 	}
-	runtimeState = { cwd, config: { ...config, loadedPaths: [path] }, warnings: [] };
+}
+
+function persistConfig(cwd: string, config: ResolvedConfig, change: ConfigChange): string {
+	const path = configWritePath(cwd, config.loadedPaths);
+	const raw = change.kind === "replace" ? rawConfigFromResolved(change.config) : applyConfigChange(readRawConfigFile(path), change);
+	writeRawConfig(path, raw);
+	// Re-read so the in-memory merge matches the layers the written file now takes part in.
+	loadState(cwd);
 	return path;
 }
 
@@ -668,8 +874,18 @@ async function showNativeActionsModal(ui: ExtensionUIContext) {
 	await ui.select("Pi/prefix actions", prefixActionIds().map(formatAction));
 }
 
-function notifyConfigSaved(ctx: ExtensionCommandContext, path: string) {
-	ctx.ui.notify(`Saved prefix keybindings to ${path}`, "info");
+function saveConfig(ctx: ExtensionCommandContext, config: ResolvedConfig, change: ConfigChange): string | undefined {
+	try {
+		const path = persistConfig(ctx.cwd, config, change);
+		ctx.ui.notify(`Saved prefix keybindings to ${path}`, "info");
+		return path;
+	} catch (error) {
+		ctx.ui.notify(
+			`Could not save prefix keybindings: ${error instanceof Error ? error.message : String(error)}`,
+			"error",
+		);
+		return undefined;
+	}
 }
 
 async function chooseNativeAction(ctx: ExtensionCommandContext): Promise<PrefixAction | undefined> {
@@ -681,9 +897,14 @@ async function configurePrefix(ctx: ExtensionCommandContext) {
 	const nextPrefix = (await ctx.ui.input("Prefix key", `Current: ${state.config.prefixKey}`))?.trim();
 	if (!nextPrefix) return;
 
+	const problem = keyIdProblem(nextPrefix);
+	if (problem) {
+		ctx.ui.notify(`Prefix key not saved: ${problem}`, "warning");
+		return;
+	}
+
 	const nextConfig = { ...state.config, prefixKey: nextPrefix };
-	const path = persistConfig(ctx.cwd, nextConfig);
-	notifyConfigSaved(ctx, path);
+	saveConfig(ctx, nextConfig, { kind: "prefix", prefixKey: nextPrefix });
 }
 
 async function configureSetBinding(ctx: ExtensionCommandContext, keyArg?: string, actionArg?: string) {
@@ -696,12 +917,29 @@ async function configureSetBinding(ctx: ExtensionCommandContext, keyArg?: string
 		return;
 	}
 
-	const action = actionArg && isPrefixAction(actionArg) ? actionArg : await chooseNativeAction(ctx);
+	const keyProblem = keyIdProblem(key);
+	if (keyProblem) {
+		ctx.ui.notify(`Key not saved: ${keyProblem}`, "warning");
+		return;
+	}
+
+	const requestedAction = actionArg?.trim();
+	let action: PrefixAction | undefined;
+	if (requestedAction) {
+		// An explicitly given action is never replaced by a picker: the same typo in a config file is
+		// reported instead of silently ignored, and a stray dialog cannot appear in scripted use.
+		if (!isPrefixAction(requestedAction)) {
+			ctx.ui.notify(unknownActionMessage(requestedAction), "warning");
+			return;
+		}
+		action = requestedAction;
+	} else {
+		action = await chooseNativeAction(ctx);
+	}
 	if (!action) return;
 
 	const nextConfig = withBinding(state.config, key, action);
-	const path = persistConfig(ctx.cwd, nextConfig);
-	notifyConfigSaved(ctx, path);
+	saveConfig(ctx, nextConfig, { kind: "binding", key, action });
 }
 
 async function configureRemoveBinding(ctx: ExtensionCommandContext, keyArg?: string) {
@@ -712,8 +950,7 @@ async function configureRemoveBinding(ctx: ExtensionCommandContext, keyArg?: str
 	if (!key) return;
 
 	const nextConfig = withoutBinding(state.config, key);
-	const path = persistConfig(ctx.cwd, nextConfig);
-	notifyConfigSaved(ctx, path);
+	saveConfig(ctx, nextConfig, { kind: "unbind", key });
 }
 
 async function configureReset(ctx: ExtensionCommandContext) {
@@ -721,8 +958,8 @@ async function configureReset(ctx: ExtensionCommandContext) {
 	if (!confirmed) return;
 
 	const nextConfig = { ...defaultResolvedConfig(), loadedPaths: ensureState(ctx.cwd).config.loadedPaths };
-	const path = persistConfig(ctx.cwd, nextConfig);
-	notifyConfigSaved(ctx, path);
+	// A reset is the one write that replaces the whole layer, so it keeps `replaceDefaults`.
+	saveConfig(ctx, nextConfig, { kind: "replace", config: nextConfig });
 }
 
 async function configureWizard(ctx: ExtensionCommandContext) {
@@ -774,14 +1011,22 @@ async function handlePrefixCommand(args: string, ctx: ExtensionCommandContext) {
 		case "actions":
 			await showNativeActionsModal(ctx.ui);
 			break;
-		case "prefix":
-			if (rest[0]) {
-				const path = persistConfig(ctx.cwd, { ...state.config, prefixKey: rest[0] });
-				notifyConfigSaved(ctx, path);
-			} else {
+		case "prefix": {
+			const requestedPrefix = rest[0];
+			if (!requestedPrefix) {
 				await configurePrefix(ctx);
+				break;
 			}
+
+			const problem = keyIdProblem(requestedPrefix);
+			if (problem) {
+				ctx.ui.notify(`Prefix key not saved: ${problem}`, "warning");
+				break;
+			}
+
+			saveConfig(ctx, { ...state.config, prefixKey: requestedPrefix }, { kind: "prefix", prefixKey: requestedPrefix });
 			break;
+		}
 		case "set":
 			await configureSetBinding(ctx, rest[0], rest[1]);
 			break;
@@ -896,7 +1141,6 @@ function patchWithPrefix(
 
 	const SLASH_ACTIONS: Partial<Record<ExtensionAction, { command: string; notify?: string }>> = {
 		"pi.reload": { command: "/reload", notify: "Reloading pi resources..." },
-		"pi.peek": { command: "/peek" },
 	};
 
 	const runBinding = (binding: ResolvedBinding) => {
@@ -970,21 +1214,31 @@ function patchWithPrefix(
 		originalHandleInput(data);
 	};
 
+	const resetEditor = () => clearPrefix();
+
 	editor.dispose = () => {
-		clearPrefix();
+		liveEditors.delete(editor);
+		resetEditor();
 		originalDispose?.();
 	};
 
+	editor[RESET] = resetEditor;
+	liveEditors.add(editor);
 	editor[PATCHED] = true;
 	return editor;
 }
 
 export const __testing = Object.freeze({
+	configLoadCount: () => configLoadCount,
 	configWritePath,
+	ensureState,
 	installEditorLayer,
+	isPrefixAction,
+	keyIdProblem,
 	loadConfig,
 	patchWithPrefix,
 	persistConfig,
+	resetLiveEditors,
 });
 
 export default function (pi: ExtensionAPI) {
@@ -1023,6 +1277,9 @@ export default function (pi: ExtensionAPI) {
 		// (for example pi-zentui) run first; then wrap whatever editor is active.
 		installTimer = setTimeout(() => {
 			installTimer = undefined;
+			clearPrefixActiveState(ctx.ui);
+			// Pi may still hold the editor patched for a replaced session, and it never disposes it.
+			resetLiveEditors();
 			const previousFactory = ctx.ui.getEditorComponent() as EditorFactory | undefined;
 			const prefixLayer: EditorLayerBuilder = (baseFactory) =>
 				(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
@@ -1039,6 +1296,9 @@ export default function (pi: ExtensionAPI) {
 		sessionActive = false;
 		if (installTimer !== undefined) clearTimeout(installTimer);
 		installTimer = undefined;
+		// Disarm a layer left active at shutdown: Pi replaces the patched editor without disposing it,
+		// so its timeout would otherwise fire against a dead editor and a stale UI context.
+		resetLiveEditors();
 		clearPrefixActiveState(ctx.ui);
 	});
 }

@@ -1,3 +1,6 @@
+// Pi's cursor marker: terminal-focus-cursor/editor-focus.ts (loaded by these tests) strips it.
+export const CURSOR_MARKER = "\x1b_pi:c\x07";
+
 export function matchesKey(data, key) {
 	return data === key;
 }
