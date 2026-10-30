@@ -12,6 +12,7 @@ import {
 	fstatSync,
 	mkdirSync,
 	openSync,
+	readFileSync,
 	readdirSync,
 	readSync,
 	renameSync,
@@ -62,6 +63,16 @@ export function groupAlive(pgid: number | undefined): boolean {
 	if (!pgid) return false;
 	try {
 		process.kill(-pgid, 0);
+		return true;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
+function processAlive(pid: number): boolean {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
 		return true;
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "EPERM";
@@ -338,8 +349,9 @@ function shellQuote(value: string): string {
  * Shell functions that make `%N` in `jobs`, `wait` and `kill` reach the background jobs of earlier
  * calls, anywhere in a command. A command that starts its own jobs (`cmd & wait %1`, so `$!` is set)
  * keeps bash's meaning of `%N`; asking `jobs` instead would make bash forget jobs that just ended.
- * The extension keeps `job-N.pgid` while a job runs and writes `job-N.status` when it ends;
- * `job-N.watched` tells it the command already has the result, so no message follows.
+ * The extension keeps `job-N.pgid` while a job runs and writes `job-N.status` when it ends.
+ * `job-N.waiting` holds the pid of a shell waiting for the job, and `job-N.watched` says that shell
+ * read the result (or killed the job), so the extension sends no message about the end.
  */
 function jobControlScript(dir: string): string {
 	return `# bash-jobs: %N in jobs, wait and kill refers to background jobs of earlier bash calls.
@@ -363,22 +375,25 @@ wait() {
 	done
 	__pi_s=0
 	for __pi_a in "$@"; do
-		{ : > "$__pi_jobs/job-\${__pi_a#%}.watched"; } 2>/dev/null || :
+		{ printf '%s\n' "$$" >> "$__pi_jobs/job-\${__pi_a#%}.waiting"; } 2>/dev/null || :
 		while [ ! -e "$__pi_jobs/job-\${__pi_a#%}.status" ]; do sleep 0.2; done
 		__pi_s=$(cat "$__pi_jobs/job-\${__pi_a#%}.status" 2>/dev/null) || __pi_s=1
+		{ : > "$__pi_jobs/job-\${__pi_a#%}.watched"; } 2>/dev/null || :
 	done
 	return "$__pi_s"
 }
 kill() {
-	__pi_first=\${1-} __pi_n=$# __pi_t=
+	__pi_first=\${1-} __pi_n=$# __pi_t= __pi_ids= __pi_zero=
+	__pi_sig=$__pi_first
+	case $__pi_sig in -s|-n) __pi_sig=\${2-} ;; esac
+	case $__pi_sig in -0|0) __pi_zero=1 ;; esac
 	while [ "$__pi_n" -gt 0 ]; do
 		__pi_a=$1
 		shift
 		__pi_n=$((__pi_n - 1))
 		case $__pi_a in
 		%[0-9]*) if __pi_job "$__pi_a" && __pi_g=$(cat "$__pi_jobs/job-\${__pi_a#%}.pgid" 2>/dev/null); then
-			{ : > "$__pi_jobs/job-\${__pi_a#%}.watched"; } 2>/dev/null || :
-			__pi_a=-$__pi_g __pi_t=1
+			__pi_ids="$__pi_ids \${__pi_a#%}" __pi_a=-$__pi_g __pi_t=1
 		fi ;;
 		esac
 		set -- "$@" "$__pi_a"
@@ -386,7 +401,14 @@ kill() {
 	if [ -n "$__pi_t" ]; then
 		case $__pi_first in -*) ;; *) set -- -s TERM "$@" ;; esac
 	fi
-	command kill "$@"
+	# Only a signal that was sent means the command has the result: kill -0 only asks.
+	if command kill "$@"; then
+		if [ -z "$__pi_zero" ]; then
+			for __pi_i in $__pi_ids; do { : > "$__pi_jobs/job-$__pi_i.watched"; } 2>/dev/null || :; done
+		fi
+		return 0
+	fi
+	return 1
 }
 `;
 }
@@ -435,7 +457,7 @@ export class JobTable {
 			// Status first, so a shell waiting on the job sees it before the pgid it could signal is gone.
 			this.writeState(`job-${ended.id}.status`, `${ended.exitStatus()}\n`);
 			rmSync(join(this.dir, `job-${ended.id}.pgid`), { force: true });
-			if (existsSync(join(this.dir, `job-${ended.id}.watched`))) ended.reported = true;
+			if (this.consumed(ended.id)) ended.reported = true;
 			this.writeJobList();
 			if (ended.end !== "shutdown") {
 				if (this.events) this.events.ended(ended);
@@ -444,6 +466,26 @@ export class JobTable {
 			this.events?.changed();
 		};
 		return job;
+	}
+
+	/**
+	 * Whether a command already has this job's result, so its end needs no message. The shell functions in
+	 * the control script say so twice: `job-N.waiting` holds the pid of a shell waiting for the job, and
+	 * `job-N.watched` is created once that shell read the status (or the kill it sent went out). A wait
+	 * whose shell was killed (Esc, a stopped turn) leaves only a dead pid, so the message is still sent.
+	 */
+	private consumed(id: number): boolean {
+		const watched = join(this.dir, `job-${id}.watched`);
+		let waiting = "";
+		try {
+			waiting = readFileSync(join(this.dir, `job-${id}.waiting`), "utf8");
+		} catch {
+			// Nothing waited in the shell for this job.
+		}
+		const took = existsSync(watched);
+		rmSync(watched, { force: true });
+		rmSync(join(this.dir, `job-${id}.waiting`), { force: true });
+		return took || waiting.split("\n").some((line) => processAlive(Number(line)));
 	}
 
 	background(job: Job, reason: BackgroundReason): void {

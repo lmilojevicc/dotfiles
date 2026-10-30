@@ -8,6 +8,16 @@ import { groupAlive, type Job, JobTable, removeStaleTables, type RunOptions, run
 
 const tables: JobTable[] = [];
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!condition()) {
+		if (Date.now() > deadline) throw new Error("Timed out waiting for the condition");
+		await sleep(20);
+	}
+}
+
 function table(): { table: JobTable; ended: Job[] } {
 	const created = new JobTable(mkdtempSync(join(tmpdir(), "jobs-")));
 	const ended: Job[] = [];
@@ -209,6 +219,34 @@ test("kill %N stops a background job from inside a larger command", async () => 
 	const again = controlled(jobs, "kill %1");
 	assert.deepEqual(await runCommand(jobs, again), { kind: "exited", exitCode: 1 });
 	assert.match(again.output(), /no such job/);
+});
+
+test("a wait whose shell was killed still lets the job's end be reported", async () => {
+	const { table: jobs, ended } = table();
+	const first = await runCommand(jobs, controlled(jobs, "sleep 1", { waitMs: 100 }));
+	const job = (first as { job: Job }).job;
+	const controller = new AbortController();
+	const waiting = runCommand(jobs, controlled(jobs, "wait %1", { signal: controller.signal }));
+	// The job is still running and the shell has announced that it waits for it.
+	await until(() => existsSync(join(jobs.dir, "job-1.waiting")));
+	controller.abort();
+	await assert.rejects(waiting, /^Error: aborted$/);
+	await job.ended;
+	// The result never reached anyone: the wait was killed before the job ended.
+	assert.equal(job.reported, false);
+	assert.deepEqual(ended, [job]);
+});
+
+test("kill -0 %N only asks whether a job is up, so its end is still reported", async () => {
+	const { table: jobs, ended } = table();
+	const first = await runCommand(jobs, controlled(jobs, "sleep 0.5", { waitMs: 100 }));
+	const job = (first as { job: Job }).job;
+	const run = controlled(jobs, "kill -0 %1 && echo alive");
+	assert.deepEqual(await runCommand(jobs, run), { kind: "exited", exitCode: 0 });
+	assert.equal(run.output(), "alive\n");
+	await job.ended;
+	assert.equal(job.reported, false);
+	assert.deepEqual(ended, [job]);
 });
 
 test("a command's own jobs keep bash's meaning of %N", async () => {

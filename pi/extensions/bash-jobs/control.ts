@@ -161,6 +161,24 @@ export function runningJobsSection(jobs: Job[]): string {
 	].join("\n");
 }
 
+/**
+ * Left in the session when Pi ends with jobs still running. They die with the process, and a restart
+ * (a new model, thinking level or environment in BB) reads the same session file, so the next process
+ * must know that the jobs the transcript still talks about are gone.
+ */
+export function stoppedJobsReport(jobs: Job[]): string {
+	const one = jobs.length === 1;
+	return [
+		one
+			? "This background job was stopped because the Pi process ended:"
+			: `These ${jobs.length} background jobs were stopped because the Pi process ended:`,
+		...jobs.map((job) => `%${job.id}  ${quote(job.label, 60)}  (pid ${job.pid}, output ${job.logPath})`),
+		one
+			? 'It is gone, so `wait %N` and `kill %N` answer "no such job"; run the command again if you still need it.'
+			: 'They are gone, so `wait %N` and `kill %N` answer "no such job"; run a command again if you still need it.',
+	].join("\n");
+}
+
 export function listJobs(jobs: Job[]): string {
 	if (jobs.length === 0) return "No background jobs.";
 	return jobs

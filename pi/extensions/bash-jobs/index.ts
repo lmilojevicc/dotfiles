@@ -31,6 +31,7 @@ import {
 	quote,
 	runningJobsSection,
 	runningReport,
+	stoppedJobsReport,
 } from "./control.ts";
 import { type Job, JobTable, removeStaleTables, runCommand } from "./jobs.ts";
 
@@ -82,6 +83,15 @@ interface JobDetails {
 	signal: string | null;
 }
 
+/** The jobs that died with the Pi process, listed in one message instead of one each. */
+interface StoppedJobsDetails {
+	stopped: JobDetails[];
+	/** Their results are lost, so the message reads as a failure. */
+	failed: true;
+}
+
+type MessageDetails = JobDetails | StoppedJobsDetails;
+
 function jobDetails(job: Job): JobDetails {
 	return {
 		id: job.id,
@@ -96,17 +106,28 @@ function jobDetails(job: Job): JobDetails {
 	};
 }
 
+/** Job numbers a stored `bash-job` message names, so a restarted Pi never reuses one the model has seen. */
+function messageJobIds(details: { id?: number; stopped?: Array<{ id?: number }> } | undefined): number[] {
+	const ids: number[] = [];
+	if (typeof details?.id === "number") ids.push(details.id);
+	for (const job of details?.stopped ?? []) if (typeof job.id === "number") ids.push(job.id);
+	return ids;
+}
+
 /** The highest job number used earlier in this session, so new jobs never reuse a number the model has seen. */
 function highestJobId(ctx: ExtensionContext): number {
 	let highest = 0;
 	for (const entry of ctx.sessionManager.getEntries() as Array<Record<string, any>>) {
-		const id =
+		// A bash result carries the job it moved to; other tools' details are none of our business.
+		const ids =
 			entry.type === "custom_message"
 				? entry.customType === MESSAGE_TYPE
-					? entry.details?.id
-					: undefined
-				: entry.message?.details?.job?.id;
-		if (typeof id === "number" && id > highest) highest = id;
+					? messageJobIds(entry.details)
+					: []
+				: typeof entry.message?.details?.job?.id === "number"
+					? [entry.message.details.job.id]
+					: [];
+		for (const id of ids) if (id > highest) highest = id;
 	}
 	return highest;
 }
@@ -201,6 +222,14 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		if (state?.ctx.mode !== "tui") return;
 		const count = state.table.running().length;
 		state.ctx.ui.setStatus("bash-jobs", count ? `${count} background job${count === 1 ? "" : "s"}` : undefined);
+	}
+
+	/**
+	 * Text for the user rather than for the model, such as the `/jobs` answer: shown in the transcript
+	 * and no triggerTurn, so an idle session stays idle and a running turn is not steered.
+	 */
+	function showToUser(text: string, details?: JobDetails): void {
+		pi.sendMessage({ customType: MESSAGE_TYPE, content: text, display: true, details }, { triggerTurn: false });
 	}
 
 	function withNotice(result: AgentToolResult<unknown>, job: Job, mode: string): AgentToolResult<unknown> {
@@ -351,8 +380,10 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			const label = params.command.trim();
 			const duplicate = current.table.findRunning(label, ctx.cwd);
 			if (duplicate) {
+				// Nothing ran, so this is a failed call like `wait %7` for a missing job, not a successful one.
 				return textResult(
 					`Not run: ${quote(label)} is already running as job %${duplicate.id} (for ${formatDuration(Date.now() - duplicate.startedAt)}). Its output goes to ${duplicate.logPath}. Run \`kill %${duplicate.id}\` first to start it again.`,
+					true,
 				);
 			}
 
@@ -396,7 +427,7 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerMessageRenderer<JobDetails>(MESSAGE_TYPE, (message, { expanded, outputPad }, theme) => {
+	pi.registerMessageRenderer<MessageDetails>(MESSAGE_TYPE, (message, { expanded, outputPad }, theme) => {
 		const text =
 			typeof message.content === "string"
 				? message.content
@@ -413,13 +444,19 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const current = attach(ctx);
 			const [verb, target] = args.trim().split(/\s+/);
+			// BB runs Pi over RPC and drops notifications, so outside the TUI the answer goes into the transcript.
+			const tui = ctx.mode === "tui";
 			if (verb !== "kill" && verb !== "stop") {
-				ctx.ui.notify(listJobs([...current.table.jobs.values()]), "info");
+				const listing = listJobs([...current.table.jobs.values()]);
+				if (tui) ctx.ui.notify(listing, "info");
+				else showToUser(listing);
 				return;
 			}
 			const job = current.table.get(Number(target?.replace(/^%/, "")));
 			if (!job?.running) {
-				ctx.ui.notify(`No running job ${target ?? ""}`.trim(), "warning");
+				const text = `No running job ${target ?? ""}`.trim();
+				if (tui) ctx.ui.notify(text, "warning");
+				else showToUser(text);
 				return;
 			}
 			job.watchers++;
@@ -428,17 +465,15 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			} finally {
 				job.watchers--;
 			}
-			// The model learns about it on its next turn without being woken for it.
-			pi.sendMessage(
-				{
-					customType: MESSAGE_TYPE,
-					content: `The user stopped background job %${job.id} ${quote(job.label)}.`,
-					display: true,
-					details: jobDetails(job),
-				},
-				{ deliverAs: "nextTurn" },
-			);
-			ctx.ui.notify(`Stopped job %${job.id}`, "info");
+			const stopped = `The user stopped background job %${job.id} ${quote(job.label)}.`;
+			const details = jobDetails(job);
+			if (tui) {
+				// The model learns about it on its next turn without being woken for it.
+				pi.sendMessage({ customType: MESSAGE_TYPE, content: stopped, display: true, details }, { deliverAs: "nextTurn" });
+				ctx.ui.notify(`Stopped job %${job.id}`, "info");
+			} else {
+				showToUser(stopped, details);
+			}
 		},
 	});
 
@@ -461,6 +496,20 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			// The next runtime binds the same table on its session_start; jobs that end meanwhile are queued.
 			current.table.bind(undefined);
 			return;
+		}
+		const running = current.table.running();
+		if (running.length > 0) {
+			// These jobs die with this process, and the next process on this session file (BB restarts Pi
+			// for a new model, thinking level or environment) would otherwise believe they are still up.
+			pi.sendMessage(
+				{
+					customType: MESSAGE_TYPE,
+					content: stoppedJobsReport(running),
+					display: true,
+					details: { stopped: running.map(jobDetails), failed: true },
+				},
+				{ triggerTurn: false },
+			);
 		}
 		tables().delete(current.id);
 		await current.table.stopAll();

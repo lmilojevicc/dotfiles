@@ -1,9 +1,9 @@
 /**
  * End to end through a real Pi session: the faux model makes the tool calls, the extension replaces
- * the bash tool, and real processes run. PI_BASH_WAIT_SECONDS is 1 (see register-loader.mjs).
+ * the bash tool, and real processes run. PI_BASH_WAIT_SECONDS is 1 (see tests/setup.mjs).
  */
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,6 +12,7 @@ import {
 	type AgentSession,
 	createAgentSession,
 	DefaultResourceLoader,
+	type ExtensionAPI,
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
@@ -22,16 +23,41 @@ import { groupAlive } from "../jobs.ts";
 interface Harness {
 	session: AgentSession;
 	calls: () => number;
-	close: () => Promise<void>;
+	close: (reason?: "quit" | "reload" | "new" | "resume" | "fork") => Promise<void>;
 }
 
-async function harness(responses: FauxResponseStep[], mode: "rpc" | "print" = "rpc"): Promise<Harness> {
-	const dir = mkdtempSync(join(tmpdir(), "session-"));
+interface HarnessOptions {
+	mode?: "rpc" | "print" | "tui";
+	/** Agent dir and scratch space; pass the same one to reopen a session. */
+	dir?: string;
+	/** Continue an existing session, for example one reopened from a session file. */
+	sessionManager?: SessionManager;
+	/** Stand-in for the terminal, so notifications can be observed. */
+	ui?: Record<string, unknown>;
+	/** Receives each call's `structuredContent`; Pi's tool result messages do not keep it. */
+	structuredResults?: unknown[];
+}
+
+/** Report the machine-readable half of every tool result, which session history drops. */
+function structuredResultCapture(results: unknown[]): (pi: ExtensionAPI) => void {
+	return (pi) => {
+		pi.on("tool_result", (event) => {
+			results.push(event.structuredContent);
+		});
+	};
+}
+
+async function harness(responses: FauxResponseStep[], options: HarnessOptions = {}): Promise<Harness> {
+	const dir = options.dir ?? mkdtempSync(join(tmpdir(), "session-"));
 	const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1" }] });
 	faux.setResponses(responses);
 	const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: join(dir, "models.json") });
 	modelRuntime.registerNativeProvider(faux.provider);
-	const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, extensionFactories: [bashJobs] });
+	const resourceLoader = new DefaultResourceLoader({
+		cwd: dir,
+		agentDir: dir,
+		extensionFactories: [bashJobs, ...(options.structuredResults ? [structuredResultCapture(options.structuredResults)] : [])],
+	});
 	await resourceLoader.reload();
 	const { session } = await createAgentSession({
 		cwd: dir,
@@ -40,19 +66,25 @@ async function harness(responses: FauxResponseStep[], mode: "rpc" | "print" = "r
 		thinkingLevel: "off",
 		modelRuntime,
 		resourceLoader,
-		sessionManager: SessionManager.inMemory(dir),
+		sessionManager: options.sessionManager ?? SessionManager.inMemory(dir),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
 		tools: ["bash"],
 	});
-	await session.bindExtensions({ mode });
+	await session.bindExtensions({ mode: options.mode ?? "rpc", uiContext: options.ui as never });
 	return {
 		session,
 		calls: () => faux.state.callCount,
-		close: async () => {
-			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		close: async (reason = "quit") => {
+			await session.extensionRunner.emit({ type: "session_shutdown", reason });
 			session.dispose();
 		},
 	};
+}
+
+/** A session manager backed by a real file, which is what a restarted Pi reads. */
+function sessionFile(): { dir: string; manager: SessionManager } {
+	const dir = mkdtempSync(join(tmpdir(), "session-"));
+	return { dir, manager: SessionManager.create(dir, join(dir, "sessions")) };
 }
 
 function bash(args: Record<string, unknown>): FauxResponseStep {
@@ -121,6 +153,7 @@ test("a long command returns after the wait, and its exit wakes the agent with t
 });
 
 test("job control works across calls, and a stopped job sends no message", async () => {
+	const structured: unknown[] = [];
 	const h = await harness([
 		bash({ command: "sleep 30", run_in_background: "true" }),
 		bash({ command: "sleep 30", background: true }),
@@ -129,12 +162,15 @@ test("job control works across calls, and a stopped job sends no message", async
 		bash({ command: "jobs" }),
 		bash({ command: "wait %7" }),
 		fauxAssistantMessage("Done."),
-	]);
+	], { structuredResults: structured });
 	try {
 		await h.session.prompt("start the server");
 		const results = toolResults(h.session).map(text);
 		assert.match(results[0], /^Started in the background as job %1 \(pid \d+\)\. Its output goes to .*job-1\.log\./);
 		assert.match(results[1], /^Not run: `sleep 30` is already running as job %1/);
+		// Nothing ran, so the call reports a failure like `wait %7` for a missing job.
+		assert.equal(toolResults(h.session)[1].isError, true);
+		assert.equal((structured[1] as { exit_code?: number } | undefined)?.exit_code, 1, "the structured result reports the failure too");
 		assert.match(results[2], /^%1 {2}`sleep 30` {2}running \d+s/);
 		assert.equal(results[3], "Stopped job %1 `sleep 30`.");
 		assert.match(results[4], /^%1 {2}`sleep 30` {2}was stopped after \d+s/);
@@ -162,6 +198,27 @@ test("wait %N returns the result in place of a message", async () => {
 		await sleep(500);
 		assert.equal(h.calls(), 3);
 		assert.deepEqual(notices(h.session), []);
+	} finally {
+		await h.close();
+	}
+});
+
+test("a wait that an aborted turn gives up on still lets the job's message arrive", async () => {
+	const h = await harness([
+		bash({ command: "sleep 2; echo finished", background: true }),
+		bash({ command: "wait %1 && echo waited" }),
+		fauxAssistantMessage("Still building."),
+	]);
+	try {
+		const turn = h.session.prompt("build it");
+		// The second call waits for %1 from the shell: kill that shell while the job keeps running.
+		const jobs = join(tmpdir(), "pi-bash-jobs", `${h.session.sessionManager.getSessionId()}-${process.pid}`);
+		await until(() => existsSync(join(jobs, "job-1.waiting")));
+		await h.session.abort();
+		await turn;
+		assert.deepEqual(notices(h.session), []);
+		await until(() => notices(h.session).length === 1);
+		assert.match(notices(h.session)[0], /^Background job %1 `sleep 2; echo finished` exited with code 0 after \d+s\./);
 	} finally {
 		await h.close();
 	}
@@ -292,7 +349,7 @@ test("an explicit timeout still kills the command", async () => {
 });
 
 test("a one-shot run says that jobs stop when it ends, and shutdown stops them", async () => {
-	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Done.")], "print");
+	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Done.")], { mode: "print" });
 	let pid: number | undefined;
 	try {
 		await h.session.prompt("go");
@@ -304,4 +361,143 @@ test("a one-shot run says that jobs stop when it ends, and shutdown stops them",
 		await h.close();
 	}
 	assert.ok(!groupAlive(pid));
+});
+
+test("/jobs outside the TUI answers in the transcript without waking the agent", async () => {
+	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Started.")]);
+	try {
+		await h.session.prompt("/jobs");
+		assert.equal(notices(h.session).at(-1), "No background jobs.");
+		await h.session.prompt("start the server");
+		const calls = h.calls();
+		await h.session.prompt("/jobs");
+		const listing = h.session.messages.filter((message) => message.role === "custom").at(-1) as {
+			display?: boolean;
+			customType?: string;
+			content: unknown;
+		};
+		// BB drops notifications, so the listing has to be a message it displays.
+		assert.equal(listing.customType, "bash-job");
+		assert.equal(listing.display, true);
+		assert.match(text(listing), /^%1 {2}`sleep 30` {2}running \d+s/);
+		await h.session.prompt("/jobs kill 1");
+		assert.equal(h.calls(), calls);
+		assert.match(notices(h.session).at(-1) ?? "", /^The user stopped background job %1 `sleep 30`\./);
+		await h.session.prompt("/jobs");
+		assert.match(notices(h.session).at(-1) ?? "", /^%1 {2}`sleep 30` {2}was stopped after \d+s/);
+		assert.equal(h.calls(), calls);
+	} finally {
+		await h.close();
+	}
+});
+
+test("the TUI keeps the notification for /jobs instead of a message", async () => {
+	const notified: string[] = [];
+	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Started.")], {
+		mode: "tui",
+		ui: { notify: (message: string) => notified.push(message), setStatus: () => {} },
+	});
+	try {
+		await h.session.prompt("start the server");
+		await h.session.prompt("/jobs");
+		assert.match(notified.at(-1) ?? "", /^%1 {2}`sleep 30` {2}running \d+s/);
+		assert.deepEqual(notices(h.session), []);
+	} finally {
+		await h.close();
+	}
+});
+
+test("a shutdown with jobs running tells the next process on the session file", async () => {
+	const { dir, manager } = sessionFile();
+	const file = manager.getSessionFile();
+	assert.ok(file);
+	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Started.")], {
+		dir,
+		sessionManager: manager,
+	});
+	let pid: number | undefined;
+	try {
+		await h.session.prompt("start the server");
+		pid = toolResults(h.session)[0].details.job.pid;
+	} finally {
+		// BB restarts Pi on a model, thinking-level or environment change, keeping the session file.
+		await h.close("new");
+	}
+	assert.ok(!groupAlive(pid));
+
+	// The message is in the file, not only in the dead process.
+	const entries = SessionManager.open(file).getEntries() as Array<Record<string, any>>;
+	const stopped = entries.filter((entry) => entry.type === "custom_message" && entry.customType === "bash-job");
+	assert.equal(stopped.length, 1);
+	assert.match(
+		text(stopped[0]),
+		/^This background job was stopped because the Pi process ended:\n%1 {2}`sleep 30` {2}\(pid \d+, output .*job-1\.log\)\nIt is gone, so `wait %N` and `kill %N` answer "no such job"/,
+	);
+
+	// And the next process sends it to the model, without reusing %1 for a new job.
+	const seen: string[] = [];
+	const next = await harness(
+		[
+			(context) => {
+				for (const message of context.messages) seen.push(text(message as { content: unknown }));
+				return fauxAssistantMessage("Good to know.");
+			},
+			bash({ command: "sleep 5", background: true }),
+			fauxAssistantMessage("Started."),
+		],
+		{ dir, sessionManager: SessionManager.open(file) },
+	);
+	try {
+		await next.session.prompt("what happened to the server?");
+		assert.ok(seen.some((message) => /stopped because the Pi process ended/.test(message)));
+		await next.session.prompt("start another");
+		assert.equal(toolResults(next.session).at(-1)?.details.job.id, 2);
+	} finally {
+		await next.close();
+	}
+});
+
+test("a shutdown with no running jobs leaves no message behind", async () => {
+	const { dir, manager } = sessionFile();
+	const h = await harness(
+		[bash({ command: "sleep 30", background: true }), bash({ command: "kill %1" }), fauxAssistantMessage("Done.")],
+		{ dir, sessionManager: manager },
+	);
+	try {
+		await h.session.prompt("start it, then stop it");
+	} finally {
+		await h.close();
+	}
+	const entries = (SessionManager.open(manager.getSessionFile() as string).getEntries() as Array<Record<string, any>>).filter(
+		(entry) => entry.type === "custom_message",
+	);
+	assert.deepEqual(entries, []);
+});
+
+test("a reload keeps the jobs and writes no shutdown message", async () => {
+	const { dir, manager } = sessionFile();
+	const h = await harness([bash({ command: "sleep 30", background: true }), fauxAssistantMessage("Started.")], {
+		dir,
+		sessionManager: manager,
+	});
+	let pid: number | undefined;
+	try {
+		await h.session.prompt("start the server");
+		pid = toolResults(h.session)[0].details.job.pid;
+	} finally {
+		await h.close("reload");
+	}
+	try {
+		assert.ok(groupAlive(pid));
+		const entries = (SessionManager.open(manager.getSessionFile() as string).getEntries() as Array<Record<string, any>>).filter(
+			(entry) => entry.type === "custom_message",
+		);
+		assert.deepEqual(entries, []);
+	} finally {
+		try {
+			process.kill(-(pid as number), "SIGKILL");
+		} catch {
+			// The job is gone already.
+		}
+	}
 });
