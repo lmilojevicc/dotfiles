@@ -31,10 +31,10 @@ export const NATIVE_STRUCTURED_OUTPUT_SUFFIX = [
 
 function appendedNativeLaunchTag(systemPrompt: string): string | undefined {
 	let prompt = systemPrompt.trimEnd();
-	// Repeated composition / either Chadineer hook order may leave owned blocks after the suffix.
-	// Inspect only complete trailing blocks; appendPolicy still owns validation and removal.
+	// Inherited text / either Chadineer hook order may leave owned blocks after the suffix.
+	// Inspect only complete trailing blocks; stripOwnedBlocks still owns validation and removal.
 	for (;;) {
-		const markers = [[POLICY_START, POLICY_END], [LEGACY_START, LEGACY_END]]
+		const markers = [[POLICY_OPEN, POLICY_CLOSE], [LEGACY_START, LEGACY_END]]
 			.find(([, end]) => prompt.endsWith(end));
 		if (!markers) break;
 		const start = prompt.lastIndexOf(markers[0]);
@@ -99,8 +99,10 @@ export function selectAgentName(systemPrompt: string, profile: PolicyProfile): s
 	return tag ? tagName(tag) : undefined;
 }
 
-export const POLICY_START = "<!-- agent-policy:v1:start -->";
-export const POLICY_END = "<!-- agent-policy:v1:end -->";
+/** Owned Pi prompt section: Pi wraps its text in a `<agent_policy>` tag of the same name. */
+export const POLICY_SECTION = "agent_policy";
+export const POLICY_OPEN = `<${POLICY_SECTION}>`;
+export const POLICY_CLOSE = `</${POLICY_SECTION}>`;
 export const CHILD_POLICY_MARKER = "<!-- agent-policy:v1:subagent -->";
 export const MAIN_POLICY_MARKER = "<!-- agent-policy:v1:main -->";
 export const MAIN_BB_POLICY_MARKER = "<!-- agent-policy:v1:main-bb -->";
@@ -115,18 +117,29 @@ function removeBlocks(prompt: string, start: string, end: string): string {
 	while (index !== -1) {
 		const finish = result.indexOf(end, index + start.length);
 		if (finish === -1) throw new Error(`agent-policy: unterminated owned block ${start}`);
-		result = result.slice(0, index) + result.slice(finish + end.length);
+		const before = result.slice(0, index).trimEnd();
+		const after = result.slice(finish + end.length).trimStart();
+		// Close the seam the removed block left, instead of stacking its blank lines.
+		result = `${before}${before && after ? "\n" : ""}${after}`;
 		index = result.indexOf(start);
 	}
 	return result.trimEnd();
 }
 
-export function appendPolicy(systemPrompt: string, profile: PolicyProfile, policy: string): string {
-	let retained = removeBlocks(systemPrompt, POLICY_START, POLICY_END);
-	if (!policy.trim()) return retained;
-	if (profile === "subagent") retained = removeBlocks(retained, LEGACY_START, LEGACY_END);
+/** The owned section text for a layer, or undefined when the layer composed nothing. */
+export function policySection(profile: PolicyProfile, policy: string): string | undefined {
+	if (!policy.trim()) return undefined;
 	const marker = profile === "subagent"
 		? CHILD_POLICY_MARKER
 		: profile === "main-bb" ? MAIN_BB_POLICY_MARKER : MAIN_POLICY_MARKER;
-	return `${retained}\n\n${POLICY_START}\n${marker}\n${policy}\n${POLICY_END}`;
+	return `${marker}\n\n${policy}`;
+}
+
+/** A layer inherited as prompt text (fork or child role body) must not keep its parent's block.
+ *  The section wrapper is ours, so its complete blocks are removed wherever they appear. A peer
+ *  hook's legacy block is only replaced when this layer composes text to replace it with.
+ */
+export function stripOwnedBlocks(prompt: string, profile: PolicyProfile, dropLegacy = profile === "subagent"): string {
+	const retained = removeBlocks(prompt, POLICY_OPEN, POLICY_CLOSE);
+	return dropLegacy ? removeBlocks(retained, LEGACY_START, LEGACY_END) : retained;
 }

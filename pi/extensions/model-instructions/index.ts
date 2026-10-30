@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type ModelInstructions = Map<string, string[]>;
+
+/** Owned Pi prompt section: Pi wraps its text in a `<model_instructions>` tag of the same name. */
+export const PROMPT_SECTION = "model_instructions";
+
+function warn(ctx: ExtensionContext, message: string): void {
+	// BB drops notify in RPC mode, so a non-TUI host also gets stderr even when it has a UI.
+	if (ctx.hasUI) ctx.ui.notify(message, "warning");
+	if (ctx.mode !== "tui") console.error(message);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,26 +54,28 @@ export default function modelInstructionsExtension(
 			// Removing the file intentionally disables all model-specific instructions.
 			if (isRecord(error) && error.code === "ENOENT") {
 				lastError = undefined;
+				delete event.systemPromptOptions.sections[PROMPT_SECTION];
 				return;
 			}
 			const reason = error instanceof Error ? error.message : String(error);
 			const message = `Model instructions skipped (${configPath.pathname}): ${reason}`;
 			if (message !== lastError) {
-				if (ctx.hasUI) ctx.ui.notify(message, "warning");
-				else console.error(message);
+				warn(ctx, message);
 				lastError = message;
 			}
 			return;
 		}
 
-		if (!ctx.model) return;
-		const instructions = instructionsFor(models, ctx.model);
-		if (instructions.length === 0) return;
-
-		// Pi rebuilds the base prompt for each run; never persist model-specific text
+		// Pi rebuilds the base prompt options for each run; never persist model-specific text
 		// into session messages, where it could leak into a later model's context.
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Model-specific instructions\n\n${instructions.map((text) => `- ${text}`).join("\n")}`,
-		};
+		const instructions = ctx.model ? instructionsFor(models, ctx.model) : [];
+		if (instructions.length === 0) {
+			delete event.systemPromptOptions.sections[PROMPT_SECTION];
+			return;
+		}
+		// Mutate the section instead of returning systemPrompt: a returned prompt forces the whole
+		// text for that run and silently drops every section later handlers add.
+		event.systemPromptOptions.sections[PROMPT_SECTION] =
+			`## Model-specific instructions\n\n${instructions.map((text) => `- ${text}`).join("\n")}`;
 	});
 }

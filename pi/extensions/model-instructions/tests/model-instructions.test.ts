@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import modelInstructionsExtension, { instructionsFor, parseConfig } from "../index.ts";
+import modelInstructionsExtension, { instructionsFor, PROMPT_SECTION, parseConfig } from "../index.ts";
 
 type Handler = (...args: any[]) => any;
 
@@ -20,6 +20,7 @@ function runtime(t: test.TestContext) {
 	const ctx = {
 		model: { provider: "openai-codex", id: "gpt-6-astra" } as { provider: string; id: string } | undefined,
 		hasUI: true,
+		mode: "rpc" as string,
 		ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
 	};
 	return {
@@ -27,8 +28,15 @@ function runtime(t: test.TestContext) {
 		write(models: Record<string, unknown>) { writeFileSync(path, JSON.stringify({ models })); },
 		raw(text: string) { writeFileSync(path, text); },
 		remove() { unlinkSync(path); },
-		before(systemPrompt = "Shared baseline\nEarlier extension instructions") {
-			return handlers.get("before_agent_start")!({ systemPrompt }, ctx);
+		/** One run: Pi starts from fresh base options, so only this run's mutation is observed. */
+		before(sections: Record<string, string> = {}) {
+			const options = { sections, systemPrompt: "Shared baseline\nEarlier extension instructions" };
+			const result = handlers.get("before_agent_start")!(
+				{ systemPrompt: options.systemPrompt, systemPromptOptions: options },
+				ctx,
+			);
+			assert.equal(result, undefined, "the extension must never force the whole system prompt");
+			return options.sections[PROMPT_SECTION];
 		},
 	};
 }
@@ -66,51 +74,62 @@ test("rejects malformed schema rather than partially applying rules", () => {
 	assert.deepEqual(parseConfig({ models: { model: [] } }).get("model"), []);
 });
 
-test("appends to the chained prompt quietly without registering tools or persistent messages", (t) => {
+test("sets its own prompt section quietly without registering tools or persistent messages", (t) => {
 	const r = runtime(t);
 	assert.deepEqual([...r.handlers.keys()], ["before_agent_start"]);
 	r.write({ "gpt-6-astra": ["First rule", "Second rule\nwith another line"] });
-	const expected = { systemPrompt: "Shared baseline\nEarlier extension instructions\n\n## Model-specific instructions\n\n- First rule\n- Second rule\nwith another line" };
-	assert.deepEqual(r.before(), expected);
-	assert.deepEqual(r.before(), expected, "a new run receives the same base, not accumulated rules");
+	const expected = "## Model-specific instructions\n\n- First rule\n- Second rule\nwith another line";
+	assert.equal(r.before(), expected);
+	assert.equal(r.before(), expected, "a new run receives the same base, not accumulated rules");
 	assert.deepEqual(r.notifications, []);
 });
 
 test("reads the active model each run and never carries instructions across switches", (t) => {
 	const r = runtime(t);
 	r.write({ "gpt-6-astra": ["Astra rule"], "claude-sonnet-4-6": ["Claude rule"] });
-	assert.match(r.before().systemPrompt, /Astra rule/);
+	assert.match(r.before()!, /Astra rule/);
 	r.ctx.model = { provider: "anthropic", id: "claude-sonnet-4-6" };
-	assert.match(r.before().systemPrompt, /Claude rule/);
-	assert.doesNotMatch(r.before().systemPrompt, /Astra rule/);
+	assert.match(r.before()!, /Claude rule/);
+	assert.doesNotMatch(r.before()!, /Astra rule/);
 	r.ctx.model = { provider: "unknown", id: "unconfigured" };
 	assert.equal(r.before(), undefined);
 	r.ctx.model = undefined;
 	assert.equal(r.before(), undefined);
 	r.ctx.model = { provider: "openai-codex", id: "gpt-6-astra" };
-	assert.match(r.before().systemPrompt, /Astra rule/);
+	assert.match(r.before()!, /Astra rule/);
+});
+
+test("deletes a stale section when the active model has no instructions", (t) => {
+	const r = runtime(t);
+	r.write({ "gpt-6-astra": ["Astra rule"] });
+	assert.match(r.before({ [PROMPT_SECTION]: "stale rules" })!, /Astra rule/);
+	r.ctx.model = { provider: "anthropic", id: "claude-sonnet-4-6" };
+	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined);
+	r.ctx.model = { provider: "openai-codex", id: "gpt-6-astra" };
+	r.write({ "gpt-6-astra": [] });
+	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined, "an explicit empty entry removes the section");
 });
 
 test("config edits, empty entries, and deletions take effect on the next run", (t) => {
 	const r = runtime(t);
 	assert.equal(r.before(), undefined, "a missing config is a quiet no-op");
 	r.write({ "gpt-6-astra": ["Old rule"] });
-	assert.match(r.before().systemPrompt, /Old rule/);
+	assert.match(r.before()!, /Old rule/);
 	r.write({ "gpt-6-astra": ["New rule"] });
-	assert.match(r.before().systemPrompt, /New rule/);
-	assert.doesNotMatch(r.before().systemPrompt, /Old rule/);
+	assert.match(r.before()!, /New rule/);
+	assert.doesNotMatch(r.before()!, /Old rule/);
 	r.write({ "gpt-6-astra": [] });
 	assert.equal(r.before(), undefined);
 	r.write({ "gpt-6-astra": ["Restored rule"] });
 	r.remove();
-	assert.equal(r.before(), undefined);
+	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined, "a removed config clears the section too");
 	assert.deepEqual(r.notifications, []);
 });
 
 test("invalid config warns once, skips stale rules, and recovers without reload", (t) => {
 	const r = runtime(t);
 	r.write({ "gpt-6-astra": ["Old rule"] });
-	assert.match(r.before().systemPrompt, /Old rule/);
+	assert.match(r.before()!, /Old rule/);
 	r.raw("{");
 	assert.equal(r.before(), undefined);
 	assert.equal(r.before(), undefined);
@@ -118,7 +137,7 @@ test("invalid config warns once, skips stale rules, and recovers without reload"
 	assert.equal(r.notifications[0].level, "warning");
 	assert.match(r.notifications[0].message, /Model instructions skipped .*instructions.json/);
 	r.write({ "gpt-6-astra": ["Recovered rule"] });
-	assert.match(r.before().systemPrompt, /Recovered rule/);
+	assert.match(r.before()!, /Recovered rule/);
 	r.raw("{");
 	r.before();
 	assert.equal(r.notifications.length, 2, "a successful read resets warning suppression");
@@ -127,17 +146,29 @@ test("invalid config warns once, skips stale rules, and recovers without reload"
 	assert.equal(r.notifications.length, 3, "a different error is reported");
 });
 
-test("headless errors go to stderr, not UI or stdout, and are deduplicated", (t) => {
+test("warnings reach a non-terminal host on stderr, a TUI through notify only, and are deduplicated", (t) => {
 	const r = runtime(t);
-	r.ctx.hasUI = false;
-	r.raw("[]");
 	const errors = t.mock.method(console, "error", () => {});
 	const stdout = t.mock.method(console, "log", () => {});
-	assert.equal(r.before(), undefined);
+	r.raw("[]");
+	// RPC (BB) has a UI, but its notify is dropped; stderr is the only channel that survives.
 	assert.equal(r.before(), undefined);
 	assert.equal(errors.mock.callCount(), 1);
+	assert.equal(r.notifications.length, 1);
+	assert.equal(r.notifications[0].level, "warning");
+	r.notifications.length = 0;
+	r.ctx.mode = "tui";
+	r.raw("{");
+	assert.equal(r.before(), undefined);
+	assert.equal(errors.mock.callCount(), 1, "a real TUI reports through notify only");
+	assert.equal(r.notifications.length, 1);
+	r.ctx.hasUI = false;
+	r.ctx.mode = "print";
+	r.raw('{"models":{"m":"text"}}');
+	assert.equal(r.before(), undefined);
+	assert.equal(errors.mock.callCount(), 2, "a headless host still logs to stderr");
+	assert.equal(r.notifications.length, 1, "headless hosts have no UI notification");
 	assert.equal(stdout.mock.callCount(), 0);
-	assert.deepEqual(r.notifications, []);
 });
 
 test("bundled Astra rules target UI copy without removing essential information", () => {

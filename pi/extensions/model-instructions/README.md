@@ -1,7 +1,10 @@
 # Model instructions
 
-Appends model-specific instructions to Pi's system prompt, alongside the shared
-`APPEND_SYSTEM.md`. No tools, commands, banners, or persistent chat messages.
+Adds model-specific instructions to Pi's system prompt as one owned
+`model_instructions` section, alongside the shared `APPEND_SYSTEM.md`. No tools,
+commands, banners, or persistent chat messages. Because it sets a named section
+instead of returning `systemPrompt`, sections other extensions add to the same run
+(bash-jobs' `background_jobs`, for example) survive.
 
 ## Configuration
 
@@ -38,10 +41,11 @@ read at the next `before_agent_start`; no reload is needed for rule changes.
 Selecting a different model takes effect on the next agent run. Instructions are
 not persisted in conversation history or accumulated across runs.
 
-Missing config means no additional instructions. Invalid/unreadable config skips
-all rules for that run and reports the error once until it changes or recovers
-(UI warning in interactive/RPC mode, stderr in headless mode). It never overwrites
-your JSON or silently reuses old rules.
+Missing config means no additional instructions, and the section is removed. Invalid
+or unreadable config skips all rules for that run and reports the error once until it
+changes or recovers: a UI warning plus stderr on every host that is not the TUI (RPC
+hosts such as BB accept the notification and drop it), stderr alone when headless. It
+never overwrites your JSON or silently reuses old rules.
 
 ## Limits
 
@@ -59,6 +63,8 @@ cd pi/extensions/model-instructions
 npm test
 ```
 
-Tests cover validation, matching/overrides, prompt composition, model switching,
-live config edits, missing/invalid files, and quiet/headless behavior. They do not
+Tests cover validation, matching/overrides, section composition and removal, model
+switching, live config edits, missing/invalid files, and quiet/TUI/RPC/headless
+diagnostics. A cross-extension session test in `pi/extensions/bash-jobs/tests` proves
+the section survives alongside a later extension's section. They do not
 assert that a live model will comply with the instructions.

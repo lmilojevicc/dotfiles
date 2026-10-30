@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { registerRequiredChildExtensions, RequiredChildExtensionRegistration } from "pi-subagents/required-child-extensions";
-import { appendPolicy, selectAgentName, selectProfile } from "./child-profile.ts";
+import { POLICY_SECTION, policySection, type PolicyProfile, selectAgentName, selectProfile, stripOwnedBlocks } from "./child-profile.ts";
 import { composeSources, readConfigSnapshot } from "./config.ts";
 import type { BBPolicySignal } from "./bb-profile.ts";
 
@@ -32,18 +32,20 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 
 	function report(error: unknown, ctx: ExtensionContext): never {
 		const message = `agent-policy: ${error instanceof Error ? error.message : String(error)}`;
-		ctx.ui.notify(message, "error");
-		if (!ctx.hasUI) console.error(message);
+		// BB drops notify in RPC mode, so a non-TUI host also gets stderr even when it has a UI.
+		if (ctx.hasUI) ctx.ui.notify(message, "error");
+		if (ctx.mode !== "tui") console.error(message);
 		throw new Error(message, { cause: error });
 	}
 
 	function ensureRegistration(ctx: ExtensionContext): void {
 		if (!diagnosticReported) {
-			diagnosticReported = true;
 			for (const warning of [...config.warnings, ...(bbDiagnostic ? [bbDiagnostic] : [])]) {
 				if (ctx.hasUI) ctx.ui.notify(warning, "warning");
-				else console.error(warning);
+				if (ctx.mode !== "tui") console.error(warning);
 			}
+			// Only once every diagnostic was emitted; a throwing notify retries on the next run.
+			diagnosticReported = true;
 		}
 		// Native executor required-extension lookups use the Pi ID, not the file path.
 		const next = ctx.sessionManager.getSessionId();
@@ -68,17 +70,26 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 	pi.on("session_shutdown", () => dispose());
 	pi.on("before_agent_start", (event, ctx) => {
 		ensureRegistration(ctx);
-			try {
+		try {
 			const nativeProfile = selectProfile(event.systemPrompt, options.backgroundChild);
 			const profile = selectProfile(event.systemPrompt, options.backgroundChild, bbWorkflowWorker);
 			// BB has no name contract: only native classification admits named sources.
 			const agentName = selectAgentName(event.systemPrompt, nativeProfile);
-			// Pi starts each hook chain from its base prompt; reapply the cached text each run.
 			// A BB-origin root replaces the main layer; child routing is unaffected either way.
+			const layer: PolicyProfile = profile === "main" && bbOrigin ? "main-bb" : profile;
 			const policy = profile === "main"
 				? composeSources(config.common, bbOrigin ? config.mainBb : config.main)
 				: composeSources(config.common, config.child, agentName === undefined ? [] : config.agents.get(agentName) ?? []);
-			return { systemPrompt: appendPolicy(event.systemPrompt, profile === "main" && bbOrigin ? "main-bb" : profile, policy) };
+			// Mutate the section instead of returning systemPrompt: a returned prompt forces the whole
+			// text for that run and silently drops every section later handlers add.
+			const section = policySection(layer, policy);
+			// Pi renders a fresh base prompt each run; drop owned blocks inherited as text (fork/child role bodies).
+			for (const key of ["customPrompt", "appendSystemPrompt"] as const) {
+				const text = event.systemPromptOptions[key];
+				if (text) event.systemPromptOptions[key] = stripOwnedBlocks(text, layer, section !== undefined && layer === "subagent");
+			}
+			if (section === undefined) delete event.systemPromptOptions.sections[POLICY_SECTION];
+			else event.systemPromptOptions.sections[POLICY_SECTION] = section;
 		} catch (error) {
 			report(error, ctx);
 		}
