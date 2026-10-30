@@ -1,3 +1,6 @@
+// Suite-specific resolution on top of _test-support/register-loader.mjs: these tests replace Pi's SDK
+// and TUI with local fakes. Deep @earendil-works/pi-tui/* paths are left to the shared loader, so the
+// fake TUI still measures and keys against the installed Pi.
 import { registerHooks } from "node:module";
 
 const MOCKS = new Map([

@@ -23,7 +23,7 @@
 
 import { homedir } from "node:os";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { matchesKey, type KeyId } from "@earendil-works/pi-tui";
 import {
 	formatStatus,
 	ProviderStateError,
@@ -47,6 +47,16 @@ import {
 
 const STATUS_KEY = "usage";
 const SNAPSHOT_CACHE_MS = 5 * 60_000;
+
+/**
+ * Match input against any of several bindings. Every binding goes through Pi's key matcher:
+ * comparing raw bytes misses the escape sequence a terminal sends for a letter under the Kitty
+ * keyboard protocol or xterm's modifyOtherKeys fallback (Shift+R arrives as `\x1b[27;2;114~`),
+ * which silently killed the documented letter keys in such terminals.
+ */
+function matchesAnyKey(data: string, ...keys: readonly KeyId[]): boolean {
+	return keys.some((key) => matchesKey(data, key));
+}
 
 type CacheEntry = { snapshot?: ProviderSnapshot; expiresAt: number; promise?: Promise<ProviderSnapshot> };
 
@@ -131,11 +141,20 @@ async function visibleAdapters(adapters: readonly ProviderAdapter[], adapterCont
 	return adapters.filter((_, index) => visible[index]);
 }
 
+/**
+ * The adapter that serves a Pi provider id: its own id, or one of its aliases (Claude behind
+ * `claude-bridge` and the built-in `anthropic` provider, for example). The footer and the panel's
+ * initial tab share this predicate so both agree on which quota source a session belongs to.
+ */
+function adapterForProvider(adapters: readonly ProviderAdapter[], providerId: string | undefined): ProviderAdapter | undefined {
+	if (!providerId) return undefined;
+	return adapters.find((adapter) => adapter.id === providerId || adapter.aliases?.includes(providerId));
+}
+
 /** `<providerId> <used>% used` for the session model's provider, else the first visible provider with data. */
 async function computeStatus(ctx: ExtensionContext, adapters: readonly ProviderAdapter[], adapterContext: AdapterContext, signal: AbortSignal): Promise<string | undefined> {
 	const visible = await visibleAdapters(adapters, adapterContext);
-	const modelProvider = ctx.model?.provider;
-	const preferred = visible.find((adapter) => adapter.id === modelProvider || adapter.aliases?.includes(modelProvider ?? ""));
+	const preferred = adapterForProvider(visible, ctx.model?.provider);
 	for (const adapter of preferred ? [preferred, ...visible.filter((candidate) => candidate !== preferred)] : visible) {
 		if (signal.aborted) return undefined;
 		let snapshot: ProviderSnapshot | undefined;
@@ -230,8 +249,9 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, dep
 		void visibleAdapters(adapters, adapterContext).then((visible) => {
 			if (viewSignal.aborted) return;
 			tabs = visible;
-			const preferred = visible.findIndex((adapter) => adapter.id === ctx.model?.provider);
-			activateTab(preferred >= 0 ? preferred : 0);
+			const preferred = adapterForProvider(visible, ctx.model?.provider);
+			const preferredIndex = preferred ? visible.indexOf(preferred) : -1;
+			activateTab(preferredIndex >= 0 ? preferredIndex : 0);
 			render();
 		});
 
@@ -272,18 +292,18 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, dep
 			},
 			handleInput: (data: string) => {
 				if (viewSignal.aborted) return;
-				if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) close();
+				if (matchesAnyKey(data, "escape", "ctrl+c")) close();
 				else if (matchesKey(data, "shift+tab")) activateTab(activeTab - 1);
 				else if (matchesKey(data, "tab")) activateTab(activeTab + 1);
-				else if (data.toLowerCase() === "r") load(true);
-				else if (matchesKey(data, "up") || data === "k") scroll(-1);
-				else if (matchesKey(data, "down") || data === "j") scroll(1);
+				else if (matchesAnyKey(data, "r", "shift+r")) load(true);
+				else if (matchesAnyKey(data, "up", "k")) scroll(-1);
+				else if (matchesAnyKey(data, "down", "j")) scroll(1);
 				// Terminal multiplexers (herdr among them) swallow PgUp/PgDn/Home/End before they reach
-				// the app, so the same moves are also bound to plain characters that always arrive.
-				else if (matchesKey(data, "pageup") || data === "K") scroll(-bandView.bandSize);
-				else if (matchesKey(data, "pagedown") || data === "J") scroll(bandView.bandSize);
-				else if (matchesKey(data, "home") || data === "g") scrollTo(0);
-				else if (matchesKey(data, "end") || data === "G") scrollTo(Number.POSITIVE_INFINITY);
+				// the app, so the same moves are also bound to letter keys that do arrive.
+				else if (matchesAnyKey(data, "pageup", "shift+k")) scroll(-bandView.bandSize);
+				else if (matchesAnyKey(data, "pagedown", "shift+j")) scroll(bandView.bandSize);
+				else if (matchesAnyKey(data, "home", "g")) scrollTo(0);
+				else if (matchesAnyKey(data, "end", "shift+g")) scrollTo(Number.POSITIVE_INFINITY);
 			},
 		};
 	});

@@ -73,6 +73,13 @@ function number(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** A finite number from a header string; a header that is not numeric is unknown, never NaN. */
+function headerNumber(value: string | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 /** ISO timestamp or epoch (seconds/ms) to epoch seconds. */
 function epochSeconds(value: unknown): number | undefined {
 	if (typeof value === "number" && Number.isFinite(value)) return value > 1e11 ? value / 1000 : value;
@@ -310,7 +317,7 @@ export function parseClaudeHeaders(headers: Readonly<Record<string, string>> | u
 		const utilization = lookup.get(`${HEADER_PREFIX}${abbreviation}-utilization`);
 		const reset = lookup.get(`${HEADER_PREFIX}${abbreviation}-reset`);
 		if (utilization === undefined && reset === undefined) continue;
-		const usedPercent = normalizeUtilization(utilization === undefined ? undefined : Number(utilization), true);
+		const usedPercent = normalizeUtilization(headerNumber(utilization), true);
 		const resetsAt = epochSeconds(reset);
 		if (usedPercent === undefined && resetsAt === undefined) continue;
 		rows.push({

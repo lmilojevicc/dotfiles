@@ -8,7 +8,7 @@ import {
 	resetClaudeCredentialCache,
 } from "../providers/claude.ts";
 import { adapterContext, fakeFetch, jsonResponse, plain, theme, widths } from "./helpers.ts";
-import { formatFrame, formatProviderBody } from "../render.ts";
+import { formatFrame, formatProviderBody, formatProviderLines } from "../render.ts";
 
 /** Trimmed from a real `GET /api/oauth/usage` response for a Pro subscription. */
 const LIVE_USAGE = {
@@ -117,6 +117,29 @@ test("headers from other providers or with a blocked status are handled honestly
 	assert.equal(blocked?.subtitle, "five_hour");
 	assert.ok(blocked?.notes?.some((note) => note.includes("limit status: rejected")));
 	assert.ok(blocked?.notes?.some((note) => note.includes("overage: exhausted")));
+});
+
+test("a non-numeric live utilization is unknown, not NaN", () => {
+	assert.equal(
+		parseClaudeHeaders({ "anthropic-ratelimit-unified-5h-utilization": "n/a" }),
+		undefined,
+		"a window with neither a usable utilization nor a reset is dropped",
+	);
+	const snapshot = parseClaudeHeaders({
+		"anthropic-ratelimit-unified-status": "allowed",
+		"anthropic-ratelimit-unified-5h-utilization": "n/a",
+		"anthropic-ratelimit-unified-5h-reset": "1760563800",
+		"anthropic-ratelimit-unified-7d-utilization": "0.08",
+	});
+	assert.ok(snapshot);
+	const five = snapshot.rows.find((row) => row.label === "5h");
+	assert.equal(five?.windows[0]?.usedPercent, undefined, "a non-numeric header is unknown, not NaN");
+	assert.equal(five?.windows[0]?.resetsAt, 1760563800, "its reset still renders");
+	assert.equal(snapshot.statusPercent, 8, "the footer skips the unknown window instead of publishing NaN");
+	assert.doesNotMatch(JSON.stringify(snapshot), /NaN/);
+	const rendered = plain(formatProviderLines(theme, "Claude", { snapshot, loading: false }, 80)).join("\n");
+	assert.doesNotMatch(rendered, /NaN/, "the tab never prints NaN%");
+	assert.match(rendered, /\?%/, "an unknown window renders as ?% with an empty bar");
 });
 
 test("the adapter sends the Claude usage request with the bearer token and beta header", async () => {

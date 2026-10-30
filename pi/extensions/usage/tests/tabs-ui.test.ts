@@ -221,6 +221,30 @@ test("/usage renders an explicit empty state, and dynamic adapters drive the tab
 	await view;
 });
 
+test("/usage opens the aliased provider's tab for a bridge session, like the footer does", async () => {
+	__testing.clearSnapshotCache();
+	const first: ProviderAdapter = { id: "codex", title: "Codex", hasCredentials: async () => true, fetch: async () => snapshotFor("codex", 10) };
+	const aliased: ProviderAdapter = {
+		id: "claude",
+		title: "Claude",
+		aliases: ["claude-bridge", "anthropic"],
+		hasCredentials: async () => true,
+		fetch: async () => snapshotFor("claude", 20),
+	};
+	const ui = fakeUi();
+	const view = __testing.openUsage(
+		{ mode: "tui", hasUI: true, model: { provider: "claude-bridge" }, ui } as never,
+		new AbortController().signal,
+		{ adapters: [first, aliased], adapterContext: () => adapterContext() },
+	);
+	await settle();
+	const frame = plain(ui.component.render(80));
+	assert.equal(frame[1], "  Codex  /  Claude", "both providers still have a tab");
+	assert.equal(frame[3], "  claude", "the session provider's tab is active through its alias, not tab 0");
+	ui.component.handleInput("\x1b");
+	await view;
+});
+
 test("/usage is interactive-only", async () => {
 	const ui = fakeUi();
 	await __testing.openUsage({ mode: "rpc", hasUI: true, ui } as never, new AbortController().signal);
@@ -295,6 +319,66 @@ test("/usage scrolls with j/k, pages with J/K and jumps with g/G", async () => {
 	assert.match(frame(), /↑↓\/jk scroll/, "hints name the keys that actually arrive");
 	assert.match(frame(), /J\/K page/, "hints document paging without PgUp/PgDn");
 	assert.doesNotMatch(frame(), /PgUp\/PgDn/, "unreachable keys in a multiplexer are not advertised");
+});
+
+test("/usage key bindings match through Pi's key matcher, so escaped letters keep working", async () => {
+	__testing.clearSnapshotCache();
+	const rows: UsageRow[] = Array.from({ length: 40 }, (_, index) => ({
+		label: `account-${index}`,
+		windows: [{ label: "weekly", usedPercent: index }],
+	}));
+	let fetches = 0;
+	const adapter: ProviderAdapter = {
+		id: "fixture-keys",
+		title: "Fixture",
+		hasCredentials: async () => true,
+		fetch: async () => {
+			fetches += 1;
+			return { providerId: "fixture-keys", title: "Fixture", rows, observedAt: nowSeconds };
+		},
+	};
+	const ui = fakeUi(20);
+	const ctx = { mode: "tui", hasUI: true, model: { provider: "fixture-keys" }, ui };
+	void __testing.openUsage(ctx as never, new AbortController().signal, { adapters: [adapter], adapterContext: () => adapterContext() });
+	await settle();
+	const frame = () => plain(ui.component.render(80) as string[]).join("\n");
+	const range = () => {
+		const match = /rows (\d+)-(\d+) of (\d+)/.exec(frame());
+		return match ? { first: Number(match[1]), last: Number(match[2]), total: Number(match[3]) } : undefined;
+	};
+
+	// xterm modifyOtherKeys level 2 (Pi's fallback when the terminal has no Kitty support) sends
+	// Shift+letter as CSI 27;2;<codepoint>~; the Kitty protocol sends CSI <codepoint>;<mod>u.
+	const modifyOtherKeys = (letter: string) => `\x1b[27;2;${letter.toUpperCase().charCodeAt(0)}~`;
+	const kittyShift = (letter: string) => `\x1b[${letter.charCodeAt(0)};2u`;
+
+	const initial = range()!;
+	const band = initial.last - initial.first + 1;
+	ui.component.handleInput("j");
+	assert.equal(range()!.first, initial.first + 1, "plain j still scrolls one row");
+	ui.component.handleInput(modifyOtherKeys("k"));
+	assert.equal(range()!.first, initial.first, "Shift+K pages up from an escaped key sequence");
+	ui.component.handleInput("K");
+	assert.equal(range()!.first, 1, "plain uppercase K still pages up and clamps at the top");
+	ui.component.handleInput(modifyOtherKeys("j"));
+	assert.equal(range()!.first, 1 + band, "Shift+J pages down from an escaped key sequence");
+	ui.component.handleInput(kittyShift("j"));
+	assert.equal(range()!.first, 1 + 2 * band, "Shift+J pages down from a Kitty CSI-u sequence too");
+	ui.component.handleInput(modifyOtherKeys("g"));
+	assert.equal(range()!.last, initial.total, "Shift+G jumps to the last row from an escaped key sequence");
+	ui.component.handleInput(kittyShift("g"));
+	assert.equal(range()!.last, initial.total, "Shift+G also matches as a Kitty CSI-u sequence");
+	ui.component.handleInput("\x1b[103u");
+	assert.equal(range()!.first, 1, "g still jumps to the first row, including as a CSI-u sequence");
+
+	const before = fetches;
+	ui.component.handleInput(modifyOtherKeys("r"));
+	assert.match(frame(), /refreshing…/, "Shift+R refreshes from an escaped key sequence");
+	await settle();
+	assert.equal(fetches, before + 1);
+	ui.component.handleInput("R");
+	await settle();
+	assert.equal(fetches, before + 2, "plain uppercase R still refreshes");
 });
 
 test("/usage paging through the handler always advances and terminates", async () => {
