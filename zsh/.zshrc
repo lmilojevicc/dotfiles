@@ -359,6 +359,7 @@ else
 fi
 
 if command -v mise &>/dev/null; then
+    export MISE_ENV="${MISE_ENV:-macos}"
     eval "$(mise activate zsh)"
 fi
 

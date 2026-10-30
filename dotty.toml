@@ -28,7 +28,7 @@ version = 1
   links = [{ source = ".", target = "~/.config/lazygit" }]
 
 [packages.mise]
-  links = [{ source = "config.toml", target = "~/.config/mise/config.toml" }]
+  links = [{ source = ".", target = "~/.config/mise" }]
 
 [packages.neru]
   links = [{ source = ".", target = "~/.config/neru" }]

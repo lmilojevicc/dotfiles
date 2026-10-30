@@ -1,0 +1,119 @@
+# mise config — agent-pc layer (NixOS).
+#
+# There is no shared config.toml: each host owns exactly one file here, and the
+# shell exports MISE_ENV so mise loads only that one. This machine's ~/.zshrc
+# sets `MISE_ENV=agent-pc` (the dotfiles .zshrc is the Mac's, and sets
+# `MISE_ENV=macos`).
+#
+# Division of labour on this box:
+#   nixpkgs  -> kernel, systemd, LUKS/initrd, sshd, networkd, zsh, gcc, iroh-ssh
+#   mise     -> everything below
+#   /opt/mise (root-owned) -> binaries the systemd units execute
+#
+# `lockfile = true` plus `latest` is the intended combination here: `latest`
+# says "track upstream", the lockfile records the exact version and checksum
+# that got resolved, so `mise install --locked` reproduces it.
+
+[settings]
+  lockfile = true
+  # Unmanaged `go install` builds must survive Go version changes.
+  go.set_gobin = false
+  # Only matters if python ever becomes a mise tool here (it is uv's job now),
+  # but a python shim shadowing the system one breaks NixOS scripts.
+  shims.exclude = ["python", "python3", "pip", "pip3"]
+
+[env]
+  GOBIN = "{{env.HOME}}/go/bin"
+  # Vendor-installed agents (pi, claude, fff-mcp) live here and are NOT
+  # mise-managed — they self-update. They still need to be on PATH.
+  _.path = ["{{env.HOME}}/.local/bin"]
+
+  # Deliberately NOT set here:
+  #   BB_DATA_DIR / PI_CODING_AGENT_DIR  — these belong to bb.service. Setting
+  #     them globally would make an interactive `pi` use the service's config
+  #     dir (~/.pi/agent-bb) instead of your own (~/.pi/agent).
+  #   DOCKER_HOST / XDG_RUNTIME_DIR      — the NixOS rootless-docker module sets
+  #     these per login shell already.
+  #   COLORTERM                          — environment.sessionVariables in
+  #     configuration.nix sets it for every PAM session, non-interactive too.
+
+[tools]
+  # ---------------------------------------------------------------- runtimes --
+  # Verified on this box: core:rust and core:go install prebuilt toolchains and
+  # build fine (rustc links, cargo builds). node is pinned because aqua's node
+  # version list is interleaved across LTS branches and `latest` is unreliable.
+  rust = "latest"
+  go = "latest"
+  "aqua:nodejs/node" = "26.13.0"     # LTS; bb-app engines allow ^22.19||^24||^26
+  "aqua:astral-sh/uv" = "latest"     # owns python: `uv python install 3.15`
+
+  # ------------------------------------------------------------- core CLI ----
+  "aqua:jqlang/jq" = "latest"
+  "aqua:mikefarah/yq" = "latest"
+  "aqua:BurntSushi/ripgrep" = "latest"
+  "aqua:phiresky/ripgrep-all" = "latest"
+  "aqua:ast-grep/ast-grep" = "latest"
+  "aqua:sharkdp/fd" = "latest"
+  "aqua:sharkdp/bat" = "latest"
+  "aqua:eza-community/eza" = "latest"
+  "aqua:junegunn/fzf" = "latest"
+  "aqua:ajeetdsouza/zoxide" = "latest"
+  "aqua:starship/starship" = "latest"
+  # duckdb must use the AQUA backend, not github. The github backend's asset
+  # scoring picks libduckdb-linux-amd64.zip (headers + libduckdb.so, no CLI) for
+  # 1.5.x, so `duckdb` installed but never ran. aqua expects the 1.5-era asset
+  # name duckdb_cli-linux-amd64.zip and installs the real binary (verified:
+  # v1.5.6). Do not switch this to 2.0 — the aqua recipe still looks for the old
+  # asset name there, and the github backend is the one that works for 2.0.
+  "aqua:duckdb/duckdb" = "1.5.6"
+
+  # --------------------------------------------------------------- TUIs ------
+  "aqua:jesseduffield/lazygit" = "latest"
+  "aqua:jesseduffield/lazydocker" = "latest"
+  "aqua:derailed/k9s" = "latest"
+  "aqua:sxyazi/yazi" = "latest"
+  "aqua:aristocratos/btop" = "latest"  # static musl build, verified running on NixOS
+  "aqua:cli/cli" = "latest"          # gh
+
+  # tmux, neovim and tree-sitter stay in nixpkgs: C binaries whose prebuilt
+  # releases want libraries nix-ld does not link by default, and all three are
+  # already installed by agent-pc-user.nix.
+
+  # --------------------------------------------------- own / third-party -----
+  "aqua:max-sixty/worktrunk" = "latest"      # wt
+  "aqua:topgrade-rs/topgrade" = "latest"
+  "github:lmilojevicc/dotty" = "0.2.1"
+  "github:lmilojevicc/seshagy" = "0.14.0"
+  # herdr lives here and NOT in a nix flake. The flake input was removed in the
+  # same pass; keeping both meant a 29 MB mise copy shadowing a nix-store copy
+  # plus an extra flake input and Cachix substituter for nothing.
+  # Its release attestation fails mise's Sigstore TSA check.
+  "github:herdrdev/herdr[github_attestations=false]" = "latest"
+  "github:so-fancy/diff-so-fancy" = "latest"
+
+  # Note: iroh-ssh stays in nixpkgs. It lives inside the initramfs closure and
+  # configuration.nix asserts version == 0.2.10 to guard transport behaviour.
+  # A mise copy in $HOME cannot satisfy either requirement.
+
+  # ------------------------------------------------------- services --------
+  # bb is both a service (bb.service, from /opt/mise) and an interactive CLI, so
+  # it belongs in the user store too. cliproxyapi and pangolin are daemons with no
+  # interactive use: they are declared ONLY in the /etc/mise/config.toml that
+  # agent-pc-tools.nix generates, so they are not duplicated here.
+  # Ceiling: bb-app's native prebuilds must match the node major.
+  # pino@9.14.0 is hand-published by matteo.collina (pino's own maintainer) with
+  # no SLSA attestation, while 9.13.0 and 10.0.0 were published by GitHub Actions
+  # *with* provenance. aube's no-downgrade policy therefore reads the 9.x pin as a
+  # trust downgrade. Verified on the registry: benign backport, not a compromise.
+  # Re-check when bb-app moves to pino 10 or 9.14.1 ships with provenance.
+  "npm:bb-app" = { version = "0.48.0", trust_policy_excludes = ["pino@9.14.0"] }
+  "npm:@firecrawl/anydoc" = "latest"
+  "npm:@tokscale/cli" = "latest"
+
+  # ------------------------------------------------- python via pipx --------
+  "pipx:git-filter-repo" = "latest"
+  "pipx:ddgr" = "latest"
+  "pipx:posting" = "latest"
+
+  # ------------------------------------------------------- Go tools ---------
+  "go:golang.org/x/tools/gopls" = "latest"

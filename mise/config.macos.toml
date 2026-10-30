@@ -1,11 +1,25 @@
-# Global runtimes and CLI tools; project mise.toml files may override them.
+# mise config — macOS layer.
+#
+# There is no shared config.toml: each host owns exactly one file here, and the
+# shell exports MISE_ENV so mise loads only that one. On the Mac,
+# dotfiles/zsh/.zshrc sets `MISE_ENV=macos`; agent-pc's own ~/.zshrc sets
+# `MISE_ENV=agent-pc`.
+#
+# Both files are self-contained on purpose — settings and [env] are duplicated
+# rather than factored into a base file, so a mistake in one host cannot reach
+# the other.
+#
 # Homebrew retains Python/Deno only where formula dependencies require them.
 # Rust toolchains stay with rustup; Pi self-manages under ~/.pi/agent.
 # No lockfile: each machine resolves "latest" independently.
 
 [settings]
-  # Unmanaged go install builds must survive Go version changes.
+  # Unmanaged `go install` builds must survive Go version changes.
   go.set_gobin = false
+  # Never shim the interpreter names: distro packagers and Makefiles invoke
+  # `python`/`pip` by bare name, and a mise shim would shadow them. Needs
+  # mise >= 2026.10 (nixpkgs 2026.5.12 rejects the field).
+  shims.exclude = ["python", "python3", "pip", "pip3"]
 
 [env]
   # Override even an inherited mise-version GOBIN; go: tools remain isolated.
