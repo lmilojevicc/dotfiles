@@ -32,7 +32,7 @@ export default function modelPicker(pi: ExtensionAPI): void {
 				cancelPicker = () => done(undefined);
 				return new ModelPickerComponent({
 					models, current: ctx.model, scoped: ctx.scopedModels.length > 0, vimMode,
-					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir),
+					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir, models),
 					theme, keybindings,
 					// Reserve vertical inset here, not via host margin: Pi can place a fixed
 					// top margin outside a one-row terminal after resize.

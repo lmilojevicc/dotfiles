@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { ModelPickerComponent } from "../component.ts";
+import { favoriteKey, legacyFavoriteKey, toggleFavorite } from "../favorites.ts";
 import { model, keys, plainTheme } from "./fixtures.ts";
 
 const up = "\x1b[A", down = "\x1b[B", tab = "\t", escape = "\x1b";
@@ -258,7 +262,7 @@ test("resize before repaint disables confirmation and navigation until the new f
 	assert.deepEqual(selected, [entries[1]]);
 });
 
-const favoriteKey = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`;
+const legacyKey = legacyFavoriteKey;
 
 test("legacy favorites order, distinct current marker and opening preferences", () => {
 	for (const [favorites, current, expected] of [
@@ -281,7 +285,7 @@ test("legacy favorites order, distinct current marker and opening preferences", 
 test("add/remove/readd stars retain highlighted tuple, query and provider without reorder", () => {
 	let saved = ["unavailable/model", "alpha/shared"];
 	const { component } = setup({ favorites: saved, onToggleFavorite: (item) => {
-		const id = favoriteKey(item);
+		const id = legacyKey(item);
 		saved = saved.includes(id) ? saved.filter((value) => value !== id) : [...saved, id];
 		return saved;
 	} });
@@ -362,4 +366,28 @@ test("minimum layout preserves scope/session, cursor, visible row and save/cance
 	assert.match(lines[2], /› ★\* beta\/shared/);
 	assert.match(lines[3], /Enter save Esc close/);
 	component.handleInput("\r"); assert.deepEqual(selected, [entries[1]]);
+});
+
+test("one stored favorite stars one model even when provider/ID joins collide", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "picker-collision-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const nested = model("openrouter", "vendor/model"), flat = model("openrouter/vendor", "model");
+	const rows = (component: ModelPickerComponent) =>
+		component.render(100).filter((line) => line.includes("openrouter/vendor/model"));
+	const star = (line: string) => line.includes("★");
+	const tuple = setup({ models: [nested, flat], favorites: [favoriteKey(flat)] });
+	assert.equal(tuple.component.getSelectedModel(), flat);
+	assert.deepEqual(rows(tuple.component).map(star), [true, false], "the tuple names exactly one catalogue model");
+	// A pre-tuple entry keeps starring both, but removing one no longer removes the other.
+	writeFileSync(join(root, "model-favorites.json"), JSON.stringify({ favorites: [legacyKey(nested)] }));
+	const { component } = setup({
+		models: [nested, flat], favorites: [legacyKey(nested)],
+		onToggleFavorite: (item) => toggleFavorite(item, root, [nested, flat]),
+	});
+	component.render(100);
+	assert.deepEqual(rows(component).map(star), [true, true]);
+	component.handleInput("\x06");
+	assert.equal(component.getSelectedModel(), nested);
+	assert.deepEqual(rows(component).map(star), [false, true], "only the toggled model lost its star");
+	assert.deepEqual(JSON.parse(readFileSync(join(root, "model-favorites.json"), "utf8")).favorites, [favoriteKey(flat)]);
 });

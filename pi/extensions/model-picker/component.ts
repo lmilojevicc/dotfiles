@@ -4,7 +4,7 @@ import {
 	type Component, type Focusable, type Keybinding,
 } from "@earendil-works/pi-tui";
 import { modelKey, modelLabel, orderModels, providerCounts, searchModels, searchTier, type PickerModel } from "./domain.ts";
-import { favoriteKey, favoritesError } from "./favorites.ts";
+import { favoriteIdentities, favoritesError } from "./favorites.ts";
 
 type PickerScope = { kind: "all" } | { kind: "favorites" } | { kind: "provider"; provider: string };
 const scopeLabel = (scope: PickerScope): string =>
@@ -62,11 +62,13 @@ export class ModelPickerComponent implements Component, Focusable {
 	private paste: "search" | "ignore" | undefined;
 	private pasteTail = "";
 	private favorites: readonly string[];
+	private favoriteIds: Map<string, number>;
 	private favoriteError: string | undefined;
 
 	constructor(options: Options) {
 		this.options = options;
 		this.favorites = options.favorites ?? [];
+		this.favoriteIds = favoriteIdentities(this.favorites, options.models);
 		this.favoriteError = options.favoriteError;
 		this.matches = orderModels(options.models, this.favorites, options.current);
 		this.results = this.matches;
@@ -78,7 +80,7 @@ export class ModelPickerComponent implements Component, Focusable {
 			favoriteIndex >= 0 ? favoriteIndex : Math.max(0, currentIndex);
 	}
 
-	private isFavorite(model: PickerModel): boolean { return this.favorites.includes(favoriteKey(model)); }
+	private isFavorite(model: PickerModel): boolean { return this.favoriteIds.has(modelKey(model)); }
 
 	get focused(): boolean { return this._focused; }
 	set focused(value: boolean) {
@@ -179,6 +181,7 @@ export class ModelPickerComponent implements Component, Focusable {
 			if (this.pane === "models" && model && this.visibleSelection === modelKey(model) && this.options.onToggleFavorite) {
 				try {
 					this.favorites = this.options.onToggleFavorite(model);
+					this.favoriteIds = favoriteIdentities(this.favorites, this.options.models);
 					this.favoriteError = undefined;
 					// Refresh membership only. Re-ranking is reserved for query/scope changes or reopen.
 					if (this.scope.kind === "favorites") {

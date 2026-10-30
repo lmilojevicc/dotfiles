@@ -25,6 +25,16 @@ function validateGlobalRoot(agentDir: string): void {
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
+/**
+ * Only global-scope load errors block this extension: they are the file it reads and
+ * rewrites, and a malformed one cannot hold a default. Pi itself treats a malformed
+ * project settings file as a warning (settings-diagnostics), so a project error must not
+ * make model switching less robust than the native selector. Draining still clears both.
+ */
+const globalErrors = (settings: SettingsManager): string =>
+	settings.drainErrors().filter(({ scope }) => scope === "global")
+		.map(({ scope, error }) => `${scope}: ${error.message}`).join("; ");
+
 export async function switchAndSave(
 	pi: Pick<ExtensionAPI, "setModel">,
 	ctx: Pick<ExtensionContext, "cwd" | "isProjectTrusted">,
@@ -35,8 +45,8 @@ export async function switchAndSave(
 	try {
 		validateGlobalRoot(agentDir);
 		settings = SettingsManager.create(ctx.cwd, agentDir, { projectTrusted: ctx.isProjectTrusted() });
-		const errors = settings.drainErrors();
-		if (errors.length) throw new Error(errors.map(({ scope, error }) => `${scope}: ${error.message}`).join("; "));
+		const errors = globalErrors(settings);
+		if (errors) throw new Error(errors);
 	} catch (error) {
 		return { status: "not-switched", error: `Cannot load settings: ${message(error)}` };
 	}
@@ -50,8 +60,8 @@ export async function switchAndSave(
 		validateGlobalRoot(agentDir);
 		settings.setDefaultModelAndProvider(model.provider, model.id);
 		await settings.flush();
-		const errors = settings.drainErrors();
-		if (errors.length) throw new Error(errors.map(({ scope, error }) => `${scope}: ${error.message}`).join("; "));
+		const errors = globalErrors(settings);
+		if (errors) throw new Error(errors);
 		return { status: "saved" };
 	} catch (error) {
 		return { status: "switched-not-saved", error: message(error) };

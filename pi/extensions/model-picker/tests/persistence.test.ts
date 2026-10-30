@@ -163,3 +163,19 @@ test("actual AgentSession mutation then transcript failure reports uncertain swi
 	assert.deepEqual(result, { status: "switch-failed", error: "transcript write failed" });
 	assert.equal(readFileSync(path, "utf8"), bytes);
 });
+
+test("malformed trusted project settings only warn: the global default still saves", async (t) => {
+	const { agent, path, ctx, cwd } = fixture(t);
+	const project = join(cwd, ".pi/settings.json");
+	writeFileSync(path, '{"theme":"dark"}');
+	writeFileSync(project, "{");
+	let switched = 0;
+	const result = await switchAndSave({ setModel: async () => { switched++; return true; } }, ctx, selected, agent);
+	assert.equal(result.status, "saved");
+	assert.equal(switched, 1);
+	assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { theme: "dark", defaultProvider: "beta", defaultModel: "shared" });
+	assert.equal(readFileSync(project, "utf8"), "{");
+	// Pi itself only warns about this; a later save keeps working once the file is fixed.
+	writeFileSync(project, '{"defaultProvider":"project"}');
+	assert.equal((await switchAndSave({ setModel: async () => true }, ctx, selected, agent)).status, "saved");
+});
