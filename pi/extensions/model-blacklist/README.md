@@ -38,19 +38,22 @@ Edit **`~/.pi/agent/model-blacklist.json`** (repository: `pi/model-blacklist.jso
 
 ## Mechanism and limits
 
-On each application the extension wraps the live provider object with `pi.registerProvider()` in its native form, delegating authentication, login, streaming, discovery, and refresh to the original provider. The wrapper:
+On each application the extension filters models where Pi **stores** providers: at `runtime.models.setProvider` on the session's `ModelRuntime` (reached through `ctx.modelRegistry.runtime`). Every provider Pi composes — built-in, `models.json`, extension config, or native object form — is filtered on the way in. The providers already stored are wrapped by writing the `providers` map directly, because `setProvider` also supersedes any in-flight catalogue refresh for that provider and would abort the startup refresh; the wrapping covers the catalogue that exists before `session_start`. Nothing is re-registered, so no later composition can re-add a hidden model.
+
+The wrapper delegates authentication, login, streaming, discovery, and refresh to the original provider, and:
 
 - removes blacklisted models from `getModels()` and `getAllModels()`;
 - removes them from `filterModels()` and `filterAllModels()`, chaining the provider's own policy.
 
-This works uniformly for built-in Pi providers, providers from `models.json`, and providers registered by extensions (legacy config or native object form). Removing a rule restores the provider on the next application instead of waiting for a restart.
+The wrapper reads the current rules on every call, so `/model-blacklist` or the next `session_start` changes what every stored provider exposes immediately, without re-wrapping: removing a rule unhides its models, and a provider that re-registered or was recomposed in the background never comes back unfiltered. Each application also recomputes Pi's model snapshot (`runtime.updateModelSnapshot()`), so the picker, cycling, and scoped models see the new catalogue at once.
 
-Some providers register again after `session_start`. Command Code, for example, loads its live catalogue in the background and calls `pi.registerProvider()` again, which would replace the wrapper. Pi has no event for registry changes, so the first application also patches `registerProvider` and `registerNativeProvider` on the session's `ModelRuntime` (reached through `ctx.modelRegistry.runtime`). Any later registration of a targeted provider is wrapped with the current rules as it lands. The patch is installed once per runtime and reads the latest rules, so it survives `/reload`. On hosts that don't expose the runtime, the patch is skipped and `/model-blacklist` re-applies by hand.
+The store patch is installed once per store, and the marker that records it survives `/reload`. `session_shutdown` clears the rules, so a reload that drops the extension unhides everything instead of leaving a stale filter behind; the next session's `session_start` installs its rules again.
+
+All diagnostics (config warnings and the `/model-blacklist` report) go through `ctx.ui.notify` when Pi has UI, and outside the TUI they are also written to stderr, because hosts such as BB run Pi in RPC mode and drop notifications. A host whose runtime has no patchable model store is reported that way instead of silently hiding nothing.
 
 Known limits:
 
 - **Startup resolution is not filtered.** `pi --list-models`, `--model`/`--provider`/`--models`, and the `defaultModel` setting resolve before `session_start`, so a blacklisted model can still start a session or appear in `--list-models`. It is not shown by any in-session surface afterwards.
-- **`models.json` model definitions stay in the raw catalogue.** `models.json` is composed above the provider, so those IDs remain visible to `getModels()` even though availability filtering hides them from the picker, cycling, and scoped models. Built-in and extension-provider models are removed from both.
 - **No hard block.** A blacklisted model already active or passed at startup keeps working; the extension only hides it from selection surfaces.
 - **Non-chat models** (image, classifier) are filtered too, since the wrapper overrides `filterAllModels`.
 

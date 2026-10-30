@@ -1,5 +1,5 @@
 import type { AnyModel, Provider } from "@earendil-works/pi-ai/compat";
-import type { RuntimeLike } from "../registry-hook.ts";
+import type { HookState, RuntimeLike } from "../store-hook.ts";
 
 /** Minimal model; wrapping only reads `id` and `provider`. */
 export function model(id: string, provider = "test", type = "chat"): AnyModel {
@@ -43,19 +43,42 @@ export function ids(models: readonly { id: string }[]): string[] {
 }
 
 /**
- * Mirrors `ModelRuntime`: a config registration composes a fresh provider and
- * drops any native one, replacing a wrapper installed earlier.
+ * Stands in for `ModelRuntime.models`: providers live in one map, and Pi writes
+ * every composed provider through `setProvider`. `setProviderCalls` records the
+ * writes that reached the original method; the hook must not add to it for
+ * providers it patches in place, since setProvider aborts in-flight refreshes.
  */
-export function fakeRuntime(): RuntimeLike & { providers: Map<string, Provider> } {
-	const providers = new Map<string, Provider>();
-	return {
-		providers,
-		registerProvider: (providerId, config) => {
-			providers.set(providerId, fakeProvider(providerId, (config as { models: string[] }).models));
+export interface FakeRuntime extends RuntimeLike {
+	providers: Map<string, Provider>;
+	setProviderCalls: string[];
+	snapshotUpdates: number;
+}
+
+export function fakeRuntime(providers: Provider[] = []): FakeRuntime {
+	const map = new Map(providers.map((provider) => [provider.id, provider]));
+	const runtime: FakeRuntime = {
+		providers: map,
+		setProviderCalls: [],
+		snapshotUpdates: 0,
+		models: {
+			providers: map,
+			setProvider: (provider: Provider) => {
+				runtime.setProviderCalls.push(provider.id);
+				map.set(provider.id, provider);
+			},
 		},
-		registerNativeProvider: (provider) => {
-			providers.set(provider.id, provider);
+		updateModelSnapshot: () => {
+			runtime.snapshotUpdates += 1;
 		},
-		getProvider: (providerId) => providers.get(providerId),
 	};
+	return runtime;
+}
+
+/** A runtime whose `models` store is missing or shaped differently than Pi's. */
+export function runtimeWithoutStore(): RuntimeLike {
+	return { updateModelSnapshot: () => {} };
+}
+
+export function stateFor(rules?: HookState["rules"]): HookState {
+	return rules ? { rules } : {};
 }

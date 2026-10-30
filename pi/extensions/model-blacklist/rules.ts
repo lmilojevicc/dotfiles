@@ -21,6 +21,8 @@ export interface CompiledRules {
 	providers: string[];
 	/** Number of cross-provider patterns. */
 	globalPatternCount: number;
+	/** The cross-provider patterns, in config order. */
+	globalPatterns: string[];
 	/** Total number of configured patterns, negations and thresholds included. */
 	patternCount: number;
 	/** Whether one model id is hidden on one provider. */
@@ -40,12 +42,25 @@ export function compileRules(config: BlacklistConfig): CompiledRules {
 	}
 
 	const effective = (providerId: string): Matcher[] => [...(compiled.get(providerId) ?? []), ...globalPatterns];
+	// Pi reads every provider's models many times while it starts (each registration refreshes the
+	// whole catalogue), and matching each id against every glob each time froze startup for seconds.
+	// Rules never change after compilation, so each answer is computed once.
+	const blocked = new Map<string, boolean>();
 
 	return {
 		providers,
 		globalPatternCount: globalPatterns.length,
+		globalPatterns: globalPatterns.map(({ pattern }) => pattern),
 		patternCount: globalPatterns.length + [...compiled.values()].reduce((count, entries) => count + entries.length, 0),
-		isBlocked: (providerId, modelId) => hides(effective(providerId), modelId),
+		isBlocked: (providerId, modelId) => {
+			const key = `${providerId}\0${modelId}`;
+			let result = blocked.get(key);
+			if (result === undefined) {
+				result = hides(effective(providerId), modelId);
+				blocked.set(key, result);
+			}
+			return result;
+		},
 		patternsFor: (providerId) => effective(providerId).map(({ pattern }) => pattern),
 	};
 }
