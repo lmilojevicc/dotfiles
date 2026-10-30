@@ -1,33 +1,43 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { renameHerdrPane } from "./herdr.ts";
+import { readHerdrPaneLabel, renameHerdrPane } from "./herdr.ts";
 
 export interface NamesmithDependencies {
 	env: NodeJS.ProcessEnv;
+	read: typeof readHerdrPaneLabel;
 	rename: typeof renameHerdrPane;
 }
 
-type Rename = {
+type Target = {
 	paneId: string;
 	socketPath: string;
+};
+
+type Rename = Target & {
 	name: string | undefined;
 	warn: () => void;
 };
 
+function sameTarget(left: Target | undefined, right: Target): boolean {
+	return !!left && left.paneId === right.paneId && left.socketPath === right.socketPath;
+}
+
 function sameRename(left: Rename | undefined, right: Rename): boolean {
-	return left?.paneId === right.paneId && left.socketPath === right.socketPath && left.name === right.name;
+	return sameTarget(left, right) && left!.name === right.name;
 }
 
 export function createHerdrPaneNamesmith(
 	pi: ExtensionAPI,
-	dependencies: NamesmithDependencies = { env: process.env, rename: renameHerdrPane },
+	dependencies: NamesmithDependencies = { env: process.env, read: readHerdrPaneLabel, rename: renameHerdrPane },
 ): void {
 	let closed = false;
 	let pending: Rename | undefined;
 	let running: Promise<void> | undefined;
 	let successful: Rename | undefined;
-	let attemptedTarget: Pick<Rename, "paneId" | "socketPath"> | undefined;
+	// The last non-empty label this runtime sent to a pane: the only label it may clear again.
+	let ownLabel: (Target & { name: string }) | undefined;
+	let failed: Rename | undefined;
+	let warned: Rename | undefined;
 	let shutdown: Promise<void> | undefined;
-	let warned = false;
 
 	async function drain(): Promise<void> {
 		while (!closed && pending) {
@@ -35,16 +45,21 @@ export function createHerdrPaneNamesmith(
 			pending = undefined;
 			if (sameRename(successful, rename)) continue;
 			// Even a failed request may have changed this target's label.
-			attemptedTarget = { paneId: rename.paneId, socketPath: rename.socketPath };
+			if (rename.name !== undefined) {
+				ownLabel = { paneId: rename.paneId, socketPath: rename.socketPath, name: rename.name };
+			}
 			try {
 				await dependencies.rename(rename.paneId, rename.socketPath, rename.name);
 				successful = rename;
-				warned = false;
+				failed = undefined;
+				warned = undefined;
 			} catch {
 				// Failed requests may have changed the pane; only acknowledged success deduplicates.
 				successful = undefined;
-				if (!closed && !warned) {
-					warned = true;
+				failed = rename;
+				// One warning per failure streak; a different target or name is a new streak.
+				if (!closed && !(warned && sameRename(warned, rename))) {
+					warned = rename;
 					try {
 						rename.warn();
 					} catch {
@@ -69,10 +84,13 @@ export function createHerdrPaneNamesmith(
 	function synchronize(name: string | undefined, ctx: ExtensionContext): void {
 		const { HERDR_ENV, HERDR_SOCKET_PATH, HERDR_PANE_ID } = dependencies.env;
 		if (closed || ctx.mode !== "tui" || HERDR_ENV !== "1" || !HERDR_SOCKET_PATH || !HERDR_PANE_ID) return;
+		const target = { paneId: HERDR_PANE_ID, socketPath: HERDR_SOCKET_PATH };
+		const normalized = name || undefined;
+		// Nothing to clear: an unnamed session must not delete a label this runtime never wrote.
+		if (normalized === undefined && !(ownLabel && sameTarget(ownLabel, target))) return;
 		pending = {
-			paneId: HERDR_PANE_ID,
-			socketPath: HERDR_SOCKET_PATH,
-			name: name || undefined,
+			...target,
+			name: normalized,
 			warn: () => ctx.ui.notify("Herdr pane name sync failed; will retry on the next name/session event.", "warning"),
 		};
 		startDrain();
@@ -80,6 +98,13 @@ export function createHerdrPaneNamesmith(
 
 	pi.on("session_start", (_event, ctx) => synchronize(pi.getSessionName(), ctx));
 	pi.on("session_info_changed", (event, ctx) => synchronize(event.name, ctx));
+	// A transient failure (startup socket hiccup, lost response, reloading herdr) is not re-queued by
+	// a timer; the next settled agent run re-attempts the name that failed.
+	pi.on("agent_settled", (_event, ctx) => {
+		const retry = failed;
+		if (!retry || closed || pending || running) return;
+		synchronize(retry.name, ctx);
+	});
 	// Pi creates a fresh extension runtime after reload/new/resume/fork; never reopen this one.
 	pi.on("session_shutdown", (event) => {
 		if (shutdown) return shutdown;
@@ -87,9 +112,12 @@ export function createHerdrPaneNamesmith(
 		pending = undefined;
 		shutdown = (async () => {
 			await running;
-			if (event.reason !== "quit" || !attemptedTarget) return;
+			if (event.reason !== "quit" || !ownLabel) return;
+			const { paneId, socketPath, name } = ownLabel;
 			try {
-				await dependencies.rename(attemptedTarget.paneId, attemptedTarget.socketPath, undefined);
+				// Only remove the label this runtime wrote; a newer user or tool label stays untouched.
+				if ((await dependencies.read(paneId, socketPath)) !== name) return;
+				await dependencies.rename(paneId, socketPath, undefined);
 			} catch {
 				// Exit cleanup is bounded and best effort; never notify a stopped TUI.
 			}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import test from "node:test";
-import { renameHerdrPane } from "../herdr.ts";
+import { readHerdrPaneLabel, renameHerdrPane } from "../herdr.ts";
 
 class FakeSocket extends EventEmitter {
 	writes: string[] = [];
@@ -168,4 +168,62 @@ test("synchronous connection and write errors reject without escaping", async ()
 	socket.emit("connect");
 	await assert.rejects(promise, /request failed/);
 	assert.equal(socket.destroys, 1);
+});
+
+function readHarness() {
+	const socket = new FakeSocket();
+	const promise = readHerdrPaneLabel("own-pane", "own-socket", {
+		platform: "darwin", connect: () => socket as unknown as Socket,
+	});
+	socket.emit("connect");
+	const request = JSON.parse(socket.writes[0]);
+	const reply = (result: unknown) => socket.data(`${JSON.stringify({ id: request.id, result })}\n`);
+	return { socket, promise, request, reply };
+}
+
+test("pane.get asks for this runtime's own pane and reads the label", async () => {
+	const h = readHarness();
+	assert.deepEqual(h.request, { id: h.request.id, method: "pane.get", params: { pane_id: "own-pane" } });
+	h.reply({ type: "pane_info", pane: { pane_id: "own-pane", label: "Pi session" } });
+	assert.equal(await h.promise, "Pi session");
+	assert.equal(h.socket.destroys, 1);
+});
+
+for (const [description, pane] of [
+	["null label", { pane_id: "own-pane", label: null }],
+	["omitted label", { pane_id: "own-pane" }],
+] as const) {
+	test(`pane.get maps a ${description} to no label`, async () => {
+		const h = readHarness();
+		h.reply({ type: "pane_info", pane });
+		assert.equal(await h.promise, undefined);
+		assert.equal(h.socket.destroys, 1);
+	});
+}
+
+for (const [description, result] of [
+	["missing pane", { type: "pane_info" }],
+	["null pane", { type: "pane_info", pane: null }],
+	["array pane", { type: "pane_info", pane: [] }],
+	["non-string label", { type: "pane_info", pane: { label: 7 } }],
+] as const) {
+	test(`pane.get rejects a ${description} instead of guessing ownership`, async () => {
+		const h = readHarness();
+		h.reply(result);
+		await assert.rejects(h.promise, /Invalid Herdr response/);
+		assert.equal(h.socket.destroys, 1);
+	});
+}
+
+test("pane.get rejects server errors and enforces the same deadline", async (t) => {
+	const h = readHarness();
+	h.socket.data(`${JSON.stringify({ id: h.request.id, error: { message: "pane_not_found" } })}\n`);
+	await assert.rejects(h.promise, /Herdr read rejected/);
+
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const stuck = readHarness();
+	const rejection = assert.rejects(stuck.promise, /Herdr read timed out/);
+	t.mock.timers.tick(2_000);
+	await rejection;
+	assert.equal(stuck.socket.destroys, 1);
 });
