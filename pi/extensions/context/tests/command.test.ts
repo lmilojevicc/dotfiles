@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import contextUsageExtension from "../index.ts";
+import { projectionOf } from "./session-projection.ts";
 
 type Handler = (args: string, ctx: any) => Promise<void>;
 
@@ -18,7 +19,7 @@ function runtime(mode: string, usage?: { tokens: number | null; percent: number 
 		getContextUsage: () => usage,
 		getSystemPrompt: () => "example system prompt",
 		getSystemPromptOptions: () => ({ selectedTools: [], contextFiles: [], skills: [] }),
-		sessionManager: { buildContextEntries: () => [] },
+		sessionManager: { buildSessionProjection: () => projectionOf([]) },
 		ui: {
 			notify: (message: string, level: string) => notices.push({ message, level }),
 			custom: async (factory: any) => {
@@ -105,7 +106,7 @@ test("root gg requires consecutive keyboard g's within one home visit", async ()
   getContextUsage: () => ({ tokens: 50, percent: 5, contextWindow: 1000 }),
   getSystemPrompt: () => "prompt",
   getSystemPromptOptions: () => ({ contextFiles: [], skills: [], selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [] },
+  sessionManager: { buildSessionProjection: () => projectionOf([]) },
   ui: { custom: (factory: any) => new Promise((resolve) => {
    const component = factory({ mode: "inline", terminal: { rows: 24, columns: 80 }, requestRender() {} }, {
     fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text,

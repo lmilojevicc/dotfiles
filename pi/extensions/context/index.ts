@@ -2,6 +2,7 @@ import {
 	type BuildSystemPromptOptions,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
+	type SessionEntry,
 	type ToolInfo,
 	type Theme,
 	estimateTokens,
@@ -9,8 +10,7 @@ import {
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { Key, Markdown, matchesKey, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
-import { mouseBaseButton, parseSgrMousePacket } from "./sgr-mouse.ts";
+import { Key, Markdown, matchesKey, visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { padLine, wrapRawLines } from "./format.ts";
 
 export type ContextPart = {
@@ -39,8 +39,6 @@ export type ContextItem = {
 type ContextPreview = {
 	key: PreviewKey;
 	label: string;
-	title: string;
-	content: string;
 };
 
 // Preserve Markdown escapes; only raw mode doubles source backslashes for reversibility.
@@ -99,12 +97,21 @@ export function hasActiveTextPreview(): boolean {
 	return activeContextOverlays > 0;
 }
 
-// Fullscreen uses 1003 normally, but limits multiplexers to 1002. Restore that mode on close.
-function enableOverlayHover(tui: any): () => void {
+/**
+ * Fullscreen enables 1003 (hover) normally but only 1002 inside multiplexers, where the renderer
+ * deliberately avoids all-motion reports. While one of these dialogs is open, upgrade to 1003 so
+ * hover keeps working in tmux/zellij/screen, then restore the renderer's own mode on close.
+ *
+ * `mouseEnabled` is the renderer's private `mouse: false` flag and not part of the public `TUI`
+ * interface, so it is read defensively: if pi-tui renames it we skip the upgrade rather than switch
+ * mouse tracking on for a host that turned it off.
+ */
+function enableOverlayHover(tui: TUI): () => void {
 	const term = process.env.TERM?.toLowerCase() ?? "";
 	const multiplexed = process.env.TMUX !== undefined || process.env.ZELLIJ !== undefined ||
 		process.env.STY !== undefined || term.startsWith("tmux") || term.startsWith("screen");
-	if (tui.mode !== "fullscreen" || !multiplexed || !tui.mouseEnabled) return () => {};
+	const mouseEnabled = (tui as { mouseEnabled?: unknown }).mouseEnabled === true;
+	if (tui.mode !== "fullscreen" || !multiplexed || !mouseEnabled) return () => {};
 	tui.terminal.write("\x1b[?1003h");
 	return () => tui.terminal.write("\x1b[?1003l");
 }
@@ -198,51 +205,6 @@ export async function showTextPreview(
 						else if (matchesKey(data, "pageDown")) scrollTo(scrollOffset + pageSize);
 						else if (matchesKey(data, Key.home)) scrollTo(0);
 						else if (matchesKey(data, Key.end)) scrollTo(totalLines - pageSize);
-						else {
-							const mouse = parseSgrMousePacket(data);
-							if (!mouse) return;
-							if (mouse.final === "m") {
-								scrollbarDragOffset = null;
-								return;
-							}
-							const overEsc = Boolean(
-								escHitbox &&
-									mouse.row === escHitbox.row &&
-									mouse.col >= escHitbox.startCol &&
-									mouse.col <= escHitbox.endCol,
-							);
-							setEscHovered(overEsc);
-							const button = mouseBaseButton(mouse.code);
-							const motion = (mouse.code & 32) !== 0;
-							if (button === 0 && !motion) {
-								if (overEsc) {
-									done(undefined);
-									return;
-								}
-								if (
-									scrollbarHitbox &&
-									mouse.col === scrollbarHitbox.col &&
-									mouse.row >= scrollbarHitbox.startRow &&
-									mouse.row <= scrollbarHitbox.endRow
-								) {
-									const trackRow = mouse.row - scrollbarHitbox.startRow;
-									const inThumb =
-										trackRow >= scrollbarHitbox.thumbStart &&
-										trackRow < scrollbarHitbox.thumbStart + scrollbarHitbox.thumbSize;
-									scrollbarDragOffset = inThumb
-										? trackRow - scrollbarHitbox.thumbStart
-										: Math.floor(scrollbarHitbox.thumbSize / 2);
-									dragScrollbarTo(mouse.row);
-									return;
-								}
-							}
-							if (motion && scrollbarDragOffset !== null) {
-								dragScrollbarTo(mouse.row);
-								return;
-							}
-							if (button === 64) scrollTo(scrollOffset - 3);
-							else if (button === 65) scrollTo(scrollOffset + 3);
-						}
 					},
 
 					handleMouse(event: TuiMouseEvent) {
@@ -427,17 +389,59 @@ export function resolveUsedTokens(
 
 type ContextBreakdown = {
 	parts: ContextPart[];
-	previews: Record<PreviewKey, string>;
+	/** Aggregate preview text per category, assembled only when it is actually requested. */
+	previews: Record<PreviewKey, () => string>;
  items: Record<PreviewKey, ContextItem[]>;
 };
 
+/** Base64 image data is megabytes of payload the model sees as one block; show its size instead. */
+function imagePlaceholder(block: { mimeType?: string; data?: string }): string {
+	const data = typeof block.data === "string" ? block.data : "";
+	const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+	const bytes = Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+	const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	return `[image ${block.mimeType ?? "unknown"}, ${size}]`;
+}
+
+/** Keep text blocks intact, replace image blocks with their placeholder. */
+function compactContent(value: unknown): unknown {
+	if (!Array.isArray(value)) return value;
+	return value.map((block) =>
+		typeof block === "object" && block !== null && (block as { type?: unknown }).type === "image"
+			? imagePlaceholder(block as { mimeType?: string; data?: string })
+			: block,
+	);
+}
+
 function previewValue(value: unknown): string {
-	if (typeof value === "string") return value;
-	return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+	const content = compactContent(value);
+	if (typeof content === "string") return content;
+	return `\`\`\`json\n${JSON.stringify(content, null, 2)}\n\`\`\``;
+}
+
+/** Defer joining a category's preview sections until something asks for them. */
+function joinedPreview(parts: Array<() => string>, empty: string): () => string {
+	return () => parts.map((part) => part()).join("\n\n") || empty;
 }
 
 function leafValue(value: unknown): string {
-	return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? String(value);
+	const content = compactContent(value);
+	return typeof content === "string" ? content : JSON.stringify(content, null, 2) ?? String(content);
+}
+
+/** estimateTokens() only knows Pi's own message shapes; locally injected custom content can be structured. */
+function messageTokens(message: Parameters<typeof estimateTokens>[0]): number {
+	const content = (message as { content?: unknown }).content;
+	const structured = content !== undefined && typeof content !== "string" && !Array.isArray(content);
+	return structured ? tokenEstimate(content) : estimateTokens(message);
+}
+
+/** Name a projected message after the raw entry that owns it; projection drops the entry typing. */
+function projectedEntryLabel(sourceEntry: SessionEntry, role: string): string {
+	if (sourceEntry.type === "compaction") return "compaction";
+	if (sourceEntry.type === "branch_summary") return "branch_summary";
+	if (sourceEntry.type === "custom_message") return `Custom: ${sourceEntry.customType}`;
+	return role;
 }
 
 /** 按真实请求的 systemPrompt、tools、messages 三部分同步组装计数与预览。 */
@@ -448,21 +452,21 @@ export function collectContextBreakdown(
 	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "";
 	const selectedTools = new Set(options.selectedTools ?? ["read", "bash", "edit", "write"]);
-	const toolDefinitionPreview: string[] = [];
-	const toolResultPreview: string[] = [];
-	const contextPreview: string[] = [];
+	const toolDefinitionPreview: Array<() => string> = [];
+	const toolResultPreview: Array<() => string> = [];
+	const contextPreview: Array<() => string> = [];
 	let toolDefinitionTokens = 0;
 	let toolResultTokens = 0;
 	let contextTokens = 0;
 
 	const items: Record<PreviewKey, ContextItem[]> = { systemPrompt: [], memoryFiles: [], skills: [], tools: [], toolResults: [], contextFiles: [] };
- const memoryPreview: string[] = [];
+ const memoryPreview: Array<() => string> = [];
 	let memoryTokens = 0;
 	for (const file of options.contextFiles ?? []) {
 		const tokens = embeddedTokens(systemPrompt, file.content);
         memoryTokens += tokens;
         items.memoryFiles.push({ label: file.path, tokens, content: file.content, source: "Embedded memory file", raw: false });
-		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
+		memoryPreview.push(() => `## ${file.path}\n\n${previewValue(file.content)}`);
 	}
 
 	const skillsText = formatSkillsForPrompt(options.skills ?? []).trim();
@@ -488,12 +492,18 @@ export function collectContextBreakdown(
 		const tokens = tokenEstimate(definition);
         toolDefinitionTokens += tokens;
         items.tools.push({ label: tool.name, tokens, content: JSON.stringify(definition, null, 2), source: "Local registered tool schema · estimate", raw: true });
-		toolDefinitionPreview.push(`## Definition: ${tool.name}\n\n${previewValue(definition)}`);
+		toolDefinitionPreview.push(() => `## Definition: ${tool.name}\n\n${previewValue(definition)}`);
 	}
 
-	for (const entry of ctx.sessionManager.buildContextEntries()) {
-		if (entry.type === "message") {
-			const message = entry.message;
+	// The provider receives the projection, not the raw branch: a context_edit can omit an entry
+	// (replacement: null) or swap its content, and only the newest compaction is a live checkpoint.
+	for (const projected of ctx.sessionManager.buildSessionProjection().entries) {
+		if (projected.messages.length === 0) continue;
+		const source = projected.sourceEntry;
+		const entryHeading = source.type === "compaction" ? "Compaction" : source.type === "branch_summary" ? "Branch summary" : undefined;
+		for (const message of projected.messages) {
+			const label = projectedEntryLabel(source, message.role);
+			const heading = entryHeading ?? label;
 			if (message.role === "assistant") {
 				for (const block of message.content) {
 					if (block.type === "toolCall") {
@@ -501,18 +511,18 @@ export function collectContextBreakdown(
                         contextTokens += tokens;
                         items.contextFiles.push({ label: `Assistant tool call: ${block.name}`, tokens, content: leafValue(block.arguments), source: "Local session entry · provider payload unavailable", raw: true });
 						contextPreview.push(
-							`## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
+							() => `## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
 						);
 					} else if (block.type === "text") {
 						const tokens = tokenEstimate(block.text);
                         contextTokens += tokens;
                         items.contextFiles.push({ label: "Assistant", tokens, content: block.text, source: "Local session entry · provider payload unavailable", raw: false });
-						contextPreview.push(`## Assistant\n\n${block.text}`);
+						contextPreview.push(() => `## Assistant\n\n${block.text}`);
 					} else if (block.type === "thinking") {
 						const tokens = tokenEstimate(block.thinking);
                         contextTokens += tokens;
                         items.contextFiles.push({ label: "Assistant thinking", tokens, content: block.thinking, source: "Local session entry · provider payload unavailable", raw: false });
-						contextPreview.push(`## Assistant thinking\n\n${block.thinking}`);
+						contextPreview.push(() => `## Assistant thinking\n\n${block.thinking}`);
 					}
 				}
 			} else if (message.role === "toolResult") {
@@ -520,38 +530,28 @@ export function collectContextBreakdown(
                 toolResultTokens += tokens;
                 items.toolResults.push({ label: `Result: ${message.toolName}`, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: true });
 				toolResultPreview.push(
-					`## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
+					() => `## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
 				);
 			} else if (message.role === "bashExecution") {
+				// convertToLlm() drops `!!` executions before the request; they are not context.
+				if (message.excludeFromContext) continue;
                 const tokens = estimateTokens(message);
 				toolResultTokens += tokens;
                 items.toolResults.push({ label: `Bash: ${message.command}`, tokens, content: leafValue(message.output), source: "Local session entry · provider payload unavailable", raw: true });
 				toolResultPreview.push(
-					`## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
+					() => `## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
 				);
 			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
 				const tokens = estimateTokens(message);
                 contextTokens += tokens;
-                items.contextFiles.push({ label: message.role, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: false });
-				contextPreview.push(`## ${message.role}\n\n${message.summary}`);
+                items.contextFiles.push({ label, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: false });
+				contextPreview.push(() => `## ${heading}\n\n${message.summary}`);
 			} else {
-				const tokens = estimateTokens(message);
+				const tokens = messageTokens(message);
                 contextTokens += tokens;
-                items.contextFiles.push({ label: message.role, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: typeof message.content !== "string" });
-				contextPreview.push(`## ${message.role}\n\n${previewValue(message.content)}`);
+                items.contextFiles.push({ label, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: typeof message.content !== "string" });
+				contextPreview.push(() => `## ${heading}\n\n${previewValue(message.content)}`);
 			}
-		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
-			const tokens = tokenEstimate(entry.summary);
-            contextTokens += tokens;
-            items.contextFiles.push({ label: entry.type, tokens, content: entry.summary, source: "Local session entry · provider payload unavailable", raw: false });
-			contextPreview.push(
-				`## ${entry.type === "compaction" ? "Compaction" : "Branch summary"}\n\n${entry.summary}`,
-			);
-		} else if (entry.type === "custom_message") {
-			const tokens = tokenEstimate(entry.content);
-            contextTokens += tokens;
-            items.contextFiles.push({ label: `Custom: ${entry.customType}`, tokens, content: leafValue(entry.content), source: "Local session entry · provider payload unavailable", raw: typeof entry.content !== "string" });
-			contextPreview.push(`## Custom: ${entry.customType}\n\n${previewValue(entry.content)}`);
 		}
 	}
 
@@ -568,12 +568,12 @@ export function collectContextBreakdown(
 			{ label: "Context", tokens: contextTokens, color: "warning" },
 		] satisfies ContextPart[],
 		previews: {
-			systemPrompt: systemPrompt || "No system prompt.",
-			memoryFiles: memoryPreview.join("\n\n") || "No memory files in context.",
-			skills: skillsText || "No skills in context.",
-			tools: toolDefinitionPreview.join("\n\n") || "No active tool definitions.",
-			toolResults: toolResultPreview.join("\n\n") || "No tool results in the current context.",
-			contextFiles: contextPreview.join("\n\n") || "No conversation context.",
+			systemPrompt: () => systemPrompt || "No system prompt.",
+			memoryFiles: joinedPreview(memoryPreview, "No memory files in context."),
+			skills: () => skillsText || "No skills in context.",
+			tools: joinedPreview(toolDefinitionPreview, "No active tool definitions."),
+			toolResults: joinedPreview(toolResultPreview, "No tool results in the current context."),
+			contextFiles: joinedPreview(contextPreview, "No conversation context."),
 		},
 	};
 }
@@ -655,15 +655,6 @@ export async function showCategoryMenu(
      else if (matchesKey(data, Key.ctrl("d")) || matchesKey(data, "pageDown")) choose(index + pageSize);
      else if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, "pageUp")) choose(index - pageSize);
      else if (matchesKey(data, Key.enter) || data === "l") { if (orderedItems.length) done(index); }
-     else {
-      const mouse = parseSgrMousePacket(data);
-      if (!mouse || mouse.final !== "M") return;
-      const button = mouseBaseButton(mouse.code);
-      if (button === 64) choose(index - 3);
-      else if (button === 65) choose(index + 3);
-      else if ((mouse.code & 32) !== 0) mouseAt(mouse.row, mouse.col, false);
-      else if (button === 0) mouseAt(mouse.row, mouse.col, true);
-     }
     },
     handleMouse(event: TuiMouseEvent) {
      if (event.type === "wheel") choose(index + Math.sign(event.wheelDelta ?? 0) * 3);
@@ -751,48 +742,14 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const rawPreviews: ContextPreview[] = [
-				{
-					key: "systemPrompt",
-					label: "System prompt",
-					title: "System Prompt",
-					content: breakdown.previews.systemPrompt,
-				},
-				{
-					key: "memoryFiles",
-					label: "Memory",
-					title: "Memory Files",
-					content: breakdown.previews.memoryFiles,
-				},
-				{
-					key: "skills",
-					label: "Skills",
-					title: "Skills",
-					content: breakdown.previews.skills,
-				},
-				{
-					key: "tools",
-					label: "Tools definition",
-					title: "Tools definition",
-					content: breakdown.previews.tools,
-				},
-				{
-					key: "toolResults",
-					label: "Tool results",
-					title: "Tool Results",
-					content: breakdown.previews.toolResults,
-				},
-				{
-					key: "contextFiles",
-					label: "Context",
-					title: "Context",
-					content: breakdown.previews.contextFiles,
-				},
+			const previews: ContextPreview[] = [
+				{ key: "systemPrompt", label: "System prompt" },
+				{ key: "memoryFiles", label: "Memory" },
+				{ key: "skills", label: "Skills" },
+				{ key: "tools", label: "Tools definition" },
+				{ key: "toolResults", label: "Tool results" },
+				{ key: "contextFiles", label: "Context" },
 			];
-			const previews = rawPreviews.map((preview) => ({
-				...preview,
-				content: normalizePreviewText(preview.content),
-			}));
 			const previewByKey = new Map(previews.map((preview) => [preview.key, preview]));
 			const visiblePreviews = previews.filter((preview) =>
 				allParts.some((part) => part.label === preview.label),
@@ -832,7 +789,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								handleInput(data: string) {
 									if (matchesKey(data, "pageDown")) { scrollRows(rootPageSize); return; }
 									if (matchesKey(data, "pageUp")) { scrollRows(-rootPageSize); return; }
-									if (!parseSgrMousePacket(data)) keepSelectionVisible = true;
+									keepSelectionVisible = true;
 									if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
 										done(undefined);
 										return;
@@ -862,55 +819,6 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									if (matchesKey(data, Key.enter) || data === "l") {
 										done(visiblePreviews[selectedPreviewIndex]?.key);
 										return;
-									}
-
-									const mouse = parseSgrMousePacket(data);
-									if (!mouse || mouse.final !== "M") return;
-									if (mouseBaseButton(mouse.code) === 64) { scrollRows(-3); return; }
-									if (mouseBaseButton(mouse.code) === 65) { scrollRows(3); return; }
-									if ((mouse.code & 32) !== 0) {
-										// SGR 1003 的无按键 hover code 为 35，不能按左键事件过滤。
-										const overEsc = Boolean(
-											escHitbox &&
-												mouse.row === escHitbox.row &&
-												mouse.col >= escHitbox.startCol &&
-												mouse.col <= escHitbox.endCol,
-										);
-										const hovered = previewHitboxes.find(
-											(candidate) =>
-												mouse.row === candidate.row &&
-												mouse.col >= candidate.startCol &&
-												mouse.col <= candidate.endCol,
-										);
-										if (overEsc !== escHovered || hovered?.key !== hoveredKey) {
-											escHovered = overEsc;
-											hoveredKey = hovered?.key;
-											tui.requestRender();
-										}
-										return;
-									}
-									if (mouseBaseButton(mouse.code) !== 0) return;
-									if (
-										escHitbox &&
-										mouse.row === escHitbox.row &&
-										mouse.col >= escHitbox.startCol &&
-										mouse.col <= escHitbox.endCol
-									) {
-										done(undefined);
-										return;
-									}
-									const hitbox = previewHitboxes.find(
-										(candidate) =>
-											mouse.row === candidate.row &&
-											mouse.col >= candidate.startCol &&
-											mouse.col <= candidate.endCol,
-									);
-									if (hitbox) {
-										selectedPreviewIndex = Math.max(
-											0,
-											visiblePreviews.findIndex((preview) => preview.key === hitbox.key),
-										);
-										done(hitbox.key);
 									}
 								},
 								handleMouse(event: TuiMouseEvent) {

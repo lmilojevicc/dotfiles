@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import contextUsageExtension, { showCategoryMenu, showTextPreview, type ContextPart } from "../index.ts";
+import { projectionOf } from "./session-projection.ts";
 
 const theme = {
  fg: (_color: string, text: string) => text,
@@ -27,7 +28,7 @@ function root(ui: any, prompt = "prompt") {
  return handler("", {
   mode: "tui", getContextUsage: () => ({ tokens: 50, percent: 5, contextWindow: 1000 }),
   getSystemPrompt: () => prompt, getSystemPromptOptions: () => ({ selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [] }, ui,
+  sessionManager: { buildSessionProjection: () => projectionOf([]) }, ui,
  });
 }
 
@@ -71,8 +72,7 @@ for (const width of [80, 64, 44]) {
   assert.equal(sliceByColumn(stripSgr(lines[6]), 5, labelWidth), "System prompt".padEnd(labelWidth));
   // 24-row terminal gives top=1, heading row=7 (1-based).
   h.component.handleMouse({ type: "press", button: "left", screenX: 50, screenY: 6 });
-  h.component.handleInput("\x1b[<0;51;7M");
-  assert.equal(h.completions, 0);
+  assert.equal(h.completions, 0, "the heading row has no hitbox");
   h.component.handleInput("G");
   assert.match(h.component.render(width).find((line: string) => line.includes("› ")), /Context/);
   h.component.handleInput("g"); h.component.handleInput("g");
@@ -95,8 +95,7 @@ for (const width of [80, 64, 44]) {
    assert.match(label, /… ?$/, "long wide labels use all available cells before numeric columns");
    assert.ok(visibleWidth(label.trimEnd()) >= labelWidth - 1);
    h.component.handleMouse({ type: "press", button: "left", screenX: 50, screenY: 6 });
-   h.component.handleInput("\x1b[<0;51;7M");
-   assert.equal(h.completions, 0, "both mouse routes ignore the heading");
+   assert.equal(h.completions, 0, "the heading row has no hitbox");
    h.component.handleInput("G");
    const scrolled = h.component.render(width);
    assert.equal(scrolled[5], initial[5], "heading stays above the scrolling body");
@@ -108,8 +107,7 @@ for (const width of [80, 64, 44]) {
    h.component.handleMouse({ type: "move", screenX: rightInnerX, screenY: 7 });
    const hover = h.component.render(width)[6].match(/\x1b\[48;5;212m(.*?)\x1b\[49m/)![1];
    assert.equal(visibleWidth(hover), width - 2, "right-edge hover covers the full row");
-   if (category === "Context") h.component.handleInput(`\x1b[<0;${rightInnerX + 1};8M`);
-   else h.component.handleMouse({ type: "press", button: "left", screenX: rightInnerX, screenY: 7 });
+   h.component.handleMouse({ type: "press", button: "left", screenX: rightInnerX, screenY: 7 });
    assert.equal((await run)?.content, "11");
   });
  }
@@ -221,8 +219,7 @@ for (const columns of [82, 66, 46]) {
   assert.match(render()[1], /System prompt/);
   press(width - 1, 6);
   assert.equal(h.completions, 1, "category heading has no hitbox");
-  // Exercise raw SGR at the same far-right cell as normalized mouse events.
-  h.component.handleInput(`\x1b[<0;${width};8M`);
+  press(width - 1, 7); // First submenu item at terminal row 8.
   await next();
   assert.match(render()[3], /line 1/);
   h.component.handleMouse({ type: "wheel", wheelDelta: 1 });

@@ -7,6 +7,7 @@ import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agen
 import { visibleWidth } from "@earendil-works/pi-tui";
 import contextUsageExtension, { collectContextBreakdown, showTextPreview } from "../index.ts";
 import { wrapRawLines } from "../format.ts";
+import { projectionOf } from "./session-projection.ts";
 
 initTheme("dark");
 const stripSgr = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "");
@@ -66,7 +67,7 @@ async function navigate(ctx: any, category: number, item: number, inspect: (comp
  assert.equal(dialogs, 5, "document returns through the submenu to home");
 }
 
-const emptySession = { buildContextEntries: () => [] };
+const emptySession = { buildSessionProjection: () => projectionOf([]) };
 test("/context system prompt defaults to styled Markdown; r exposes complete reversible source and restores a bounded Markdown viewport", async () => {
  const suffix = Array.from({ length: 45 }, (_, n) => `\n\nSection ${n}\n===`).join("");
  const source = "# System heading  \n\n**strong** and \\*literal\\*\n\tindent\r\n\\t literal\x1b[2J\x07\x9b0m\n" + "x".repeat(180) + "TAIL" + suffix;
@@ -128,7 +129,13 @@ test("/context system prompt defaults to styled Markdown; r exposes complete rev
   assertMarkdown(component.render(44), "System heading");
   assert.equal(status(component.render(44)).start, 1);
  });
- assert.deepEqual(collectContextBreakdown(ctx as any, []), before, "preview modes never mutate source or accounting");
+ const after = collectContextBreakdown(ctx as any, []);
+ const { previews: afterPreviews, ...afterRest } = after;
+ const { previews: beforePreviews, ...beforeRest } = before;
+ assert.deepEqual(afterRest, beforeRest, "preview modes never mutate source or accounting");
+ for (const key of Object.keys(beforePreviews) as Array<keyof typeof beforePreviews>) {
+  assert.equal(afterPreviews[key](), beforePreviews[key](), `the ${key} preview text is stable`);
+ }
 });
 
 test("/context memory and full SKILL.md render by default; advertisements and tool schemas stay raw", async () => {
@@ -196,7 +203,7 @@ test("natural-language session leaves render Markdown while structured content s
  const text = "# Message";
  const result = collectContextBreakdown({
   getSystemPrompt: () => "", getSystemPromptOptions: () => ({ selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [
+  sessionManager: { buildSessionProjection: () => projectionOf([
    { type: "message", message: { role: "user", content: text } },
    { type: "message", message: { role: "assistant", content: [{ type: "text", text }, { type: "thinking", thinking: text }] } },
    { type: "message", message: { role: "branchSummary", summary: text } },
@@ -206,7 +213,7 @@ test("natural-language session leaves render Markdown while structured content s
    { type: "custom_message", customType: "note", content: text },
    { type: "message", message: { role: "user", content: [{ type: "text", text }] } },
    { type: "custom_message", customType: "structured", content: { heading: text } },
-  ] },
+  ]) },
  } as any, []);
  assert.equal(result.items.contextFiles.length, 10);
  assert.ok(result.items.contextFiles.slice(0, 8).every((item) => item.raw === false && item.content === text));

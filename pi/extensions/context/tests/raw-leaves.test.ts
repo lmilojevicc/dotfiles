@@ -4,6 +4,7 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 
 initTheme("dark");
 import { collectContextBreakdown, showTextPreview } from "../index.ts";
+import { projectionOf } from "./session-projection.ts";
 
 const theme = {
  fg: (_color: string, text: string) => text,
@@ -16,12 +17,12 @@ test("document leaves default to Markdown with raw headings and whitespace acces
  const breakdown = collectContextBreakdown({
   getSystemPrompt: () => text,
   getSystemPromptOptions: () => ({ contextFiles: [{ path: "AGENTS.md", content: text }], skills: [], selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [
+  sessionManager: { buildSessionProjection: () => projectionOf([
    { type: "message", message: { role: "user", content: text } },
    { type: "message", message: { role: "assistant", content: [{ type: "text", text }] } },
    { type: "message", message: { role: "toolResult", toolName: "read", content: [{ type: "text", text }] } },
    { type: "custom_message", customType: "note", content: text },
-  ] },
+  ]) },
  } as any, []);
  const leaves = [
   ...breakdown.items.memoryFiles,
@@ -64,7 +65,7 @@ test("raw leaves expose reversible tabs, CRLF, ESC and literal backslashes witho
  const breakdown = collectContextBreakdown({
   getSystemPrompt: () => original,
   getSystemPromptOptions: () => ({ contextFiles: [{ path: "AGENTS.md", content: original }], selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [{ type: "message", message: { role: "user", content: original } }] },
+  sessionManager: { buildSessionProjection: () => projectionOf([{ type: "message", message: { role: "user", content: original } }]) },
  } as any, []);
  const leaves = [breakdown.items.memoryFiles[0], breakdown.items.systemPrompt[0], breakdown.items.contextFiles[0]];
  for (const leaf of leaves) {
@@ -90,10 +91,10 @@ test("structured session leaves use plain local serialization, not Markdown or a
  const breakdown = collectContextBreakdown({
   getSystemPrompt: () => "",
   getSystemPromptOptions: () => ({ selectedTools: [] }),
-  sessionManager: { buildContextEntries: () => [
+  sessionManager: { buildSessionProjection: () => projectionOf([
    { type: "message", message: { role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "# file" } }] } },
    { type: "message", message: { role: "bashExecution", command: "echo hi", output: "# output" } },
-  ] },
+  ]) },
  } as any, []);
  assert.equal(breakdown.items.contextFiles[0].content, '{\n  "path": "# file"\n}');
  assert.equal(breakdown.items.contextFiles[0].raw, true);

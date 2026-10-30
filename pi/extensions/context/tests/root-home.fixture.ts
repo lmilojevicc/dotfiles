@@ -1,5 +1,6 @@
 import contextUsageExtension from "../index.ts";
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
+import { projectionOf } from "./session-projection.ts";
 
 // Semantic ANSI adapter: each color is distinct and fixed, independent of the user's theme.
 // It intentionally emits complete SGR wrappers, including for empty bar segments.
@@ -46,10 +47,10 @@ export async function captureRootHome() {
 		getContextUsage: () => ({ tokens: 180, percent: null, contextWindow: 256 }),
 		getSystemPrompt: () => prompt,
 		getSystemPromptOptions: () => ({ selectedTools: ["fixture_tool"], contextFiles: [{ path: "AGENTS.md", content: memory }], skills }),
-		sessionManager: { buildContextEntries: () => [
+		sessionManager: { buildSessionProjection: () => projectionOf([
 			{ type: "message", message: { role: "toolResult", toolCallId: "1", toolName: "fixture_tool", content: "tool output seed", isError: false } },
 			{ type: "custom_message", customType: "fixture", content: "conversation seed" },
-		] },
+		]) },
 		ui: {
 			custom: (factory: any, config: unknown) => new Promise<void>((resolve) => {
 				options.push(config);

@@ -6,6 +6,7 @@ import test from "node:test";
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { collectContextBreakdown, normalizeCategoryItems, showCategoryMenu, showTextPreview, sortCategoryItems } from "../index.ts";
+import { projectionOf } from "./session-projection.ts";
 
 const theme = {
  fg: (color: string, text: string) => `\x1b[38;5;${({ accent: 201, border: 202, muted: 203, warning: 205, dim: 208, text: 209 } as Record<string, number>)[color] ?? 207}m${text}\x1b[39m`,
@@ -141,11 +142,11 @@ test("submenu items identify local schema, advertised skills, unloaded disk sour
   const breakdown = collectContextBreakdown({
    getSystemPrompt: () => `Base instructions\nMEMORY_SAMPLE\n${advertisement}`,
    getSystemPromptOptions: () => ({ selectedTools: ["lookup"], skills: [skill, hidden], contextFiles: [{ path: "AGENTS.md", content: "MEMORY_SAMPLE" }] }),
-   sessionManager: { buildContextEntries: () => [
+   sessionManager: { buildSessionProjection: () => projectionOf([
     { type: "message", message: { role: "user", content: "question" } },
     { type: "message", message: { role: "assistant", content: [{ type: "text", text: "hello" }] } },
     { type: "message", message: { role: "toolResult", toolName: "lookup", content: "result", toolCallId: "1" } },
-   ] },
+   ]) },
   } as any, [{ name: "lookup", description: "Find", parameters: { type: "object" } }] as any);
   assert.equal(breakdown.items.memoryFiles[0].content, "MEMORY_SAMPLE");
   assert.equal(breakdown.items.memoryFiles[0].raw, false);
@@ -180,7 +181,7 @@ test("multiple advertised skills each remain individually selectable", () => {
  const breakdown = collectContextBreakdown({
   getSystemPrompt: () => prompt,
   getSystemPromptOptions: () => ({ selectedTools: [], skills, contextFiles: [] }),
-  sessionManager: { buildContextEntries: () => [] },
+  sessionManager: { buildSessionProjection: () => projectionOf([]) },
  } as any, []);
  assert.deepEqual(breakdown.items.skills.map((item) => item.label), ["alpha", "beta", "Skill prompt wrapper · unattributed"]);
  assert.ok(breakdown.items.skills[0].tokens > 0 && breakdown.items.skills[1].tokens > 0);
