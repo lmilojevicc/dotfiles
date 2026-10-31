@@ -58,7 +58,6 @@ version = 1
     { source = "subagent.json", target = "~/.pi/agent/subagent.json" },
     { source = "agent-policy.json", target = "~/.pi/agent/agent-policy.json" },
     { source = "model-instructions.json", target = "~/.pi/agent/model-instructions.json" },
-    { source = "web-search.json", target = "~/.pi/agent/web-search.json" },
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
     # BB runs Pi with PI_CODING_AGENT_DIR=~/.pi/agent-bb (set on bb.service).

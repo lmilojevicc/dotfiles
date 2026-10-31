@@ -13,3 +13,6 @@ yazi/plugins/*
 # mise sidecar lock dirs (aube/uv per-package locks): machine-local state that
 # mise writes into ~/.config/mise, which is this directory. Regenerated on install.
 mise/.mise/
+
+# Pi web-search config: per machine (API keys, browser profile).
+pi/web-search.json
