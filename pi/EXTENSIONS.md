@@ -40,8 +40,9 @@ All user-owned Pi config files are real files at the `pi/` root of this reposito
 | `agent-policy.json` | agent-policy | `PI_AGENT_POLICY_CONFIG` |
 | `model-instructions.json` | model-instructions | `PI_MODEL_INSTRUCTIONS_CONFIG` |
 | `model-picker.json`, `model-blacklist.json`, `prefix-keybinds.json` | model-picker, model-blacklist, prefix-keybinds | `PI_PREFIX_KEYBINDS_CONFIG` (prefix-keybinds) |
-| `zentui.json`, `zentui-status-bridge.json`, `pi-lens.json` | pi-zentui, zentui-status-bridge | — |
-| `subagent.json` | pi-subagents | — (pinned by that package to `extensions/subagent/config.json`, a nested symlink to this file) |
+| `zentui.json`, `zentui-status-bridge.json` | pi-zentui, zentui-status-bridge | — |
+| `pi-lens.json` | pi-lens | `PI_LENS_CONFIG_PATH` (required: pi-lens never looks in `<agentDir>` itself; `.zshrc` sets it to `~/.pi/agent/pi-lens.json`) |
+| `subagent.json` | pi-subagents | — (linked to `~/.pi/agent/subagent.json` for consistency, but the package reads only `<agentDir>/extensions/subagent/config.json`, a symlink in this repo to this file) |
 
 Intentionally machine-local, never in dotfiles: `codex-enhanced.json`, `model-favorites.json`, `session-auto-rename.json` (runtime-rewritten user preferences), `opencode-free.json` and `models*.json`/`commandcode-models.json` (catalogue caches), `claude-bridge.json` (one-shot marker), `auth.json`/`antigravity-accounts.json` (secrets), `web-search.json` (API keys, browser-cookie profile), `trust.json`, `mcp-*.json`, `crashes.json`, `run-history.jsonl`.
 

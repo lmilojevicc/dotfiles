@@ -6,6 +6,9 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import modelInstructionsExtension, { instructionsFor, PROMPT_SECTION, parseConfig, resolveDefaultConfigPath } from "../index.ts";
 
+// Tests set this override themselves; ignore one exported by the developer's shell.
+delete process.env.PI_MODEL_INSTRUCTIONS_CONFIG;
+
 type Handler = (...args: any[]) => any;
 
 function runtime(t: test.TestContext) {
