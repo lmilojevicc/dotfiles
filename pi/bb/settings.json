@@ -5,7 +5,6 @@
   "defaultThinkingLevel": "xhigh",
   "theme": "catppuccin-mocha",
   "packages": [
-    "npm:pi-intercom",
     "npm:pi-web-access",
     "npm:@ff-labs/pi-fff",
     "npm:pi-mcp-adapter",
