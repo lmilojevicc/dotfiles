@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -639,7 +639,15 @@ function applyConfigChange(raw: RawConfig, change: ConfigChange): RawConfig {
 	}
 }
 
-function writeRawConfig(path: string, raw: RawConfig): void {
+function writeRawConfig(configPath: string, raw: RawConfig): void {
+	// Write through a symlink (dotty links the config from dotfiles): renaming onto the link
+	// itself would replace it with a plain file and the change would never reach the repo.
+	let path = configPath;
+	try {
+		path = realpathSync(configPath);
+	} catch {
+		// A new file has nothing to resolve yet.
+	}
 	const temporaryPath = `${path}.${process.pid}.${globalThis.crypto.randomUUID()}.tmp`;
 	mkdirSync(dirname(path), { recursive: true });
 	let existingMode: number | undefined;

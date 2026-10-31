@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import prefixKeybindsExtension, { __testing } from "../index.ts";
 import { __testing as focusTesting } from "../../terminal-focus-cursor/editor-focus.ts";
+
+// Tests set this override themselves; ignore one exported by the developer's shell.
+delete process.env.PI_PREFIX_KEYBINDS_CONFIG;
 
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(join(path, ".."), { recursive: true });
@@ -142,6 +145,26 @@ test("editor wrapper dispatches bindings and forwards ordinary input", () => {
 	assert.equal(dispatched, 1);
 	assert.equal(ui.notifications.length, 0);
 	patched.dispose?.();
+});
+
+test("persistence writes through a symlinked config instead of replacing the link", () => {
+	const root = mkdtempSync(join(tmpdir(), "prefix-keybinds-symlink-"));
+	try {
+		const real = join(root, "dotfiles", "prefix.json");
+		const link = join(root, "agent", "prefix.json");
+		mkdirSync(join(root, "dotfiles"));
+		mkdirSync(join(root, "agent"));
+		writeJson(real, { prefixKey: "ctrl+y" });
+		symlinkSync(real, link);
+		const next = { ...config(), loadedPaths: [link] };
+		__testing.persistConfig(root, { ...next, prefixKey: "ctrl+x" }, { kind: "prefix", prefixKey: "ctrl+x" });
+		assert.ok(lstatSync(link).isSymbolicLink(), "the link survives");
+		assert.deepEqual(JSON.parse(readFileSync(real, "utf8")), { prefixKey: "ctrl+x" });
+		assert.deepEqual(readdirSync(join(root, "agent")), ["prefix.json"]);
+		assert.deepEqual(readdirSync(join(root, "dotfiles")), ["prefix.json"]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("atomic persistence preserves permissions and cleans failed temporary files", () => {
