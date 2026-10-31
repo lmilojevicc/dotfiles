@@ -33,6 +33,11 @@ export const DEFAULT_TASKS_CONFIG: TaskDisplayConfig = {
 	glyphs: {},
 };
 
+/** The global settings file in the agent dir. */
+export const CONFIG_FILE = "todo-config.json";
+/** Its name before the extension was renamed from tasks to todo; read only while the new file does not exist. */
+export const LEGACY_CONFIG_FILE = "tasks-config.json";
+
 const DISPLAY_KEYS = ["collapseCompleted", "showAll", "maxVisible", "sortOrder", "hiddenAt", "glyphs"] as const;
 type JsonObject = Record<string, unknown>;
 type ConfigLayer = Partial<Omit<TaskDisplayConfig, "glyphs">> & { glyphs?: TaskGlyphsConfig };
@@ -141,8 +146,19 @@ export function normalizeTasksConfig(value: JsonObject): TaskDisplayConfig {
 	return { ...DEFAULT_TASKS_CONFIG, ...normalized, glyphs: normalized.glyphs ?? {} };
 }
 
+function exists(path: string): boolean {
+	try {
+		lstatSync(path);
+		return true;
+	} catch (error) {
+		if (isMissing(error)) return false;
+		throw error;
+	}
+}
+
 export function loadGlobalTasksConfig(agentDir = getAgentDir()): TaskDisplayConfig {
-	return normalizeTasksConfig(readObject(join(agentDir, "tasks-config.json")));
+	const path = join(agentDir, CONFIG_FILE);
+	return normalizeTasksConfig(readObject(exists(path) ? path : join(agentDir, LEGACY_CONFIG_FILE)));
 }
 
 function assertSafeDirectory(canonicalDirectory: string): void {
@@ -167,14 +183,16 @@ export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentD
 	// A deliberately symlinked agent directory is supported; writes stay at its canonical location.
 	const canonicalDirectory = realpathSync(agentDir);
 	assertSafeDirectory(canonicalDirectory);
-	const path = join(canonicalDirectory, "tasks-config.json");
+	const path = join(canonicalDirectory, CONFIG_FILE);
 	assertSafeExistingDestination(path);
 
 	// Lock the read-merge-rename cycle: without it, two sessions that both read the same snapshot
 	// each persist their own row and the later rename silently discards the other session's change.
 	const release = acquireLock(`${path}${LOCK_SUFFIX}`);
 	try {
-		const existing = readExistingObject(path);
+		// The first save carries the legacy file's settings over; the legacy file is left untouched.
+		const legacy = join(canonicalDirectory, LEGACY_CONFIG_FILE);
+		const existing = exists(path) || !exists(legacy) ? readExistingObject(path) : readObject(legacy);
 		const next: JsonObject = { ...existing };
 		for (const key of DISPLAY_KEYS) {
 			if (config[key] === undefined) continue;

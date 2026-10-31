@@ -14,7 +14,7 @@ initTheme();
 function fixture(t: TestContext) {
 	const agent = mkdtempSync(join(tmpdir(), "task-settings-"));
 	t.after(() => rmSync(agent, { recursive: true, force: true }));
-	return { agent, path: join(agent, "tasks-config.json") };
+	return { agent, path: join(agent, "todo-config.json") };
 }
 
 test("settings exposes only the five approved display rows with upstream copy", () => {
@@ -54,7 +54,7 @@ test("SettingsList renders global scope, fits narrow widths, cycles all five row
 	assert.deepEqual(loadGlobalTasksConfig(f.agent), config);
 	assert.equal(changed, 5);
 	assert.equal(done, true);
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 });
 
 for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {

@@ -634,7 +634,7 @@ test("selected completed rows are bold before dim strikethrough", () => {
 test("empty and no-result states use actionable inspection-first copy", () => {
 	const empty = renderTasksBoard({ snapshot: snapshot(), config: DEFAULT_TASKS_CONFIG, state: state({ selectedId: undefined }), theme: plainTheme, keybindings, width: 80, terminalRows: 28 });
 	assert.match(empty.join("\n"), /No tasks in this session\./);
-	assert.match(empty.join("\n"), /Use \/tasks to create and manage tasks\./);
+	assert.match(empty.join("\n"), /Use \/todo to create and manage tasks\./);
 	assert.match(render(80, 28, { query: "missing" }).join("\n"), /No tasks match "missing"\./);
 	assert.match(render(80, 28, { filter: "Completed", collapseCompleted: false, query: "impossible" }).join("\n"), /Esc clears search\./);
 	const completed = snapshot([task(1, "completed"), task(2, "completed")]);
@@ -995,5 +995,5 @@ test("command uses public overlay options, single-open guard, and non-TUI fallba
 	let customCalled = false;
 	await openTasksBoard(pi, { mode: "rpc", ui: { custom: () => { customCalled = true; }, notify: (message: string, type: string) => notices.push([message, type]) } } as any, () => DEFAULT_TASKS_CONFIG);
 	assert.equal(customCalled, false);
-	assert.deepEqual(notices.at(-1), ["/tasks-board requires TUI mode; task data remains available through the todo tool.", "warning"]);
+	assert.deepEqual(notices.at(-1), ["/todo-board requires TUI mode; task data remains available through the todo tool.", "warning"]);
 });

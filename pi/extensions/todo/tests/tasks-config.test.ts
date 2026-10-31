@@ -25,7 +25,7 @@ function fixture(t: TestContext) {
 	const agent = join(root, "agent");
 	mkdirSync(join(cwd, ".pi"), { recursive: true });
 	mkdirSync(agent, { recursive: true });
-	return { root, cwd, agent, project: join(cwd, ".pi", "tasks-config.json"), global: join(agent, "tasks-config.json") };
+	return { root, cwd, agent, project: join(cwd, ".pi", "tasks-config.json"), global: join(agent, "todo-config.json") };
 }
 
 function symlink(t: TestContext, target: string, path: string, directory = false): boolean {
@@ -110,7 +110,7 @@ test("global save retains unknown keys, custom sorts and glyphs while persisting
 	}
 	assert.deepEqual(saved.future, existing.future);
 	assert.equal(readFileSync(f.global, "utf8").includes("\n  \""), true);
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 	if (process.platform !== "win32") assert.equal(lstatSync(f.global).mode & 0o777, 0o600);
 	assert.equal(existsSync(f.project), false);
 });
@@ -122,7 +122,7 @@ for (const contents of ["{ not json\n", "null", "[]", "true", "42", '"text"']) {
 		assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
 		assert.throws(() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent), /malformed JSON|must contain a JSON object/);
 		assert.equal(readFileSync(f.global, "utf8"), contents);
-		assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+		assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 	});
 }
 
@@ -140,7 +140,7 @@ test("unreadable global config falls back and is unchanged when save is rejected
 		chmodSync(f.global, 0o600);
 	}
 	assert.equal(readFileSync(f.global, "utf8"), original);
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 });
 
 for (const targetKind of ["outside", "inside", "missing"] as const) {
@@ -195,7 +195,7 @@ test("failed atomic serialization leaves existing global config intact and remov
 	circular.push(circular);
 	assert.throws(() => saveGlobalTasksConfig({ sortOrder: circular }, f.agent), /circular/i);
 	assert.equal(readFileSync(f.global, "utf8"), original);
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 });
 
 test("exclusive temporary-file creation never overwrites or removes an existing file", (t) => {
@@ -221,7 +221,7 @@ const PEER_SAVE = `
 import { closeSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const [agent, marker, holdMs] = process.argv.slice(1);
-const config = join(agent, "tasks-config.json");
+const config = join(agent, "todo-config.json");
 closeSync(openSync(config + ".lock", "wx", 0o600));
 writeFileSync(marker, "locked");
 Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(holdMs));
@@ -243,7 +243,7 @@ test("a save waits for another session's lock and merges into the row that sessi
 	assert.ok(waited >= 400, `a save must wait for the peer lock, waited only ${waited}ms`);
 	// The peer's row survives because this save merged into the file the peer committed.
 	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { maxVisible: 25, showAll: true });
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 });
 
 test("a stale lock from a crashed session is replaced instead of blocking saves forever", (t) => {
@@ -254,5 +254,30 @@ test("a stale lock from a crashed session is replaced instead of blocking saves 
 	utimesSync(lock, stale, stale);
 	saveGlobalTasksConfig({ showAll: true }, f.agent);
 	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { showAll: true });
-	assert.deepEqual(readdirSync(f.agent), ["tasks-config.json"]);
+	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
+});
+
+test("the pre-rename tasks-config.json is read while todo-config.json does not exist", (t) => {
+	const f = fixture(t);
+	const legacy = join(f.agent, "tasks-config.json");
+	writeFileSync(legacy, JSON.stringify({ maxVisible: 4, future: { kept: true } }));
+	assert.equal(loadGlobalTasksConfig(f.agent).maxVisible, 4);
+
+	// The first save carries the old settings, unrelated keys included, into the new file and leaves the old one alone.
+	saveGlobalTasksConfig({ showAll: true }, f.agent);
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { maxVisible: 4, future: { kept: true }, showAll: true });
+	assert.deepEqual(JSON.parse(readFileSync(legacy, "utf8")), { maxVisible: 4, future: { kept: true } });
+
+	// From then on the old file is ignored.
+	writeFileSync(legacy, JSON.stringify({ maxVisible: 9 }));
+	assert.equal(loadGlobalTasksConfig(f.agent).maxVisible, 4);
+	assert.deepEqual(readdirSync(f.agent).sort(), ["tasks-config.json", "todo-config.json"]);
+});
+
+test("a malformed pre-rename file falls back to defaults and does not block saving the new one", (t) => {
+	const f = fixture(t);
+	writeFileSync(join(f.agent, "tasks-config.json"), "{ not json\n");
+	assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
+	saveGlobalTasksConfig({ showAll: true }, f.agent);
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { showAll: true });
 });

@@ -73,7 +73,7 @@ export async function openTaskManager(
 	hookValue: TaskManagerHooks | (() => void) = () => {},
 ): Promise<void> {
 	if (ctx.mode !== "tui") {
-		ctx.ui.notify("/tasks requires TUI mode; task tracking remains available through the todo tool.", "error");
+		ctx.ui.notify("/todo requires TUI mode; task tracking remains available through the todo tool.", "error");
 		return;
 	}
 	const hooks = hooksFrom(hookValue);

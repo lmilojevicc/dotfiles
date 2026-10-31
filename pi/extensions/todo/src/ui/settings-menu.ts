@@ -19,7 +19,7 @@ export const DISPLAY_SETTING_ITEMS = [
 	},
 	{
 		id: "sortOrder", label: "Widget sort order",
-		description: '"active" groups by in-progress → pending → completed; "status" is the reverse. "id" sorts by creation order. A custom sort spec in tasks-config.json shows as "custom" and can only be changed there.',
+		description: '"active" groups by in-progress → pending → completed; "status" is the reverse. "id" sorts by creation order. A custom sort spec in todo-config.json shows as "custom" and can only be changed there.',
 	},
 	{
 		id: "hiddenAt", label: "Hidden tasks position",

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import tasksExtension from "../index.ts";
+import todoExtension from "../index.ts";
 import { registerTodoTool } from "../src/tool/register.ts";
 
 test("registers exactly one todo tool, management commands, inspection-first board, and collapse shortcut", () => {
@@ -14,11 +14,11 @@ test("registers exactly one todo tool, management commands, inspection-first boa
 		registerShortcut(name: string) { shortcuts.push(name); },
 		on(name: string) { events.push(name); },
 	} as any;
-	tasksExtension(pi);
+	todoExtension(pi);
 	assert.equal(tools.length, 1);
 	assert.equal(tools[0].name, "todo");
-	assert.deepEqual(commands.map(({ name }) => name), ["tasks", "todos", "tasks-board"]);
-	assert.equal(commands[2]?.options.description, "Inspect tasks and confirm deletions in a live board");
+	assert.deepEqual(commands.map(({ name }) => name), ["todo", "todo-board"]);
+	assert.equal(commands[1]?.options.description, "Inspect todos and confirm deletions in a live board");
 	assert.deepEqual(shortcuts, ["ctrl+shift+t"]);
 	assert.deepEqual(events, ["session_start", "session_tree", "session_compact", "session_shutdown", "before_agent_start", "tool_execution_end", "turn_end"]);
 	assert.equal("renderCall" in tools[0], false);

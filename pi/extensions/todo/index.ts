@@ -5,7 +5,7 @@ import { openTaskManager } from "./src/ui/controller.js";
 import { disposeTasksBoard, openTasksBoard } from "./src/ui/tasks-board.js";
 import { TaskWidget } from "./src/ui/widget.js";
 
-export default function tasksExtension(pi: ExtensionAPI): void {
+export default function todoExtension(pi: ExtensionAPI): void {
 	const widget = new TaskWidget();
 	registerTodoTool(pi);
 	const handler = async (_args: string, ctx: Parameters<typeof openTaskManager>[1]) => openTaskManager(pi, ctx, {
@@ -13,14 +13,13 @@ export default function tasksExtension(pi: ExtensionAPI): void {
 		getConfig: () => widget.getConfig(),
 		setConfig: (config) => widget.setConfig(config),
 	});
-	pi.registerCommand("tasks", { description: "Manage tasks — view, create, clear completed", handler });
-	pi.registerCommand("todos", { description: "Manage tasks — view, create, clear completed (alias for /tasks)", handler });
-	pi.registerCommand("tasks-board", {
-		description: "Inspect tasks and confirm deletions in a live board",
+	pi.registerCommand("todo", { description: "Manage todos — view, create, clear completed", handler });
+	pi.registerCommand("todo-board", {
+		description: "Inspect todos and confirm deletions in a live board",
 		handler: async (_args, ctx) => openTasksBoard(pi, ctx, () => widget.getConfig(), () => widget.refresh()),
 	});
 	pi.registerShortcut("ctrl+shift+t", {
-		description: "Toggle the Tasks widget between compact and expanded",
+		description: "Toggle the todo widget between compact and expanded",
 		handler: () => widget.toggle(),
 	});
 	registerLifecycle(pi, {

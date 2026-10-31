@@ -24,7 +24,7 @@
 | [prefix-keybinds](extensions/prefix-keybinds/README.md) | Configurable prefix-key command layer | Configured prefix then mapped key; `/prefix-keybinds` | — | `npm test` |
 | [session-auto-rename](extensions/session-auto-rename/README.md) | Name a genuinely new session from its first prompt | Automatic on the first prompt; `/session-auto-rename` selects the model | — | `npm test` |
 | [session-to-pane](extensions/session-to-pane/README.md) | Open independent session copies in tmux or Herdr while leaving the source pane and session unchanged | `/fork-to-pane`, `/tree-to-pane`, `/clone-to-pane` | — | `npm test` |
-| [tasks](extensions/tasks/README.md) | Session-branch-native task tracking with atomic batches, management menus, and a read-only board | `todo`; `/tasks`, `/todos`, or `/tasks-board`; `Ctrl+Shift+T` | — | `npm test` |
+| [todo](extensions/todo/README.md) | Session-branch-native todo list for the agent with atomic batches, management menus, and a read-only board | `todo` tool; `/todo` or `/todo-board`; `Ctrl+Shift+T` | — | `npm test` |
 | [terminal-focus-cursor](extensions/terminal-focus-cursor/README.md) | Hide Pi's editor cursor while its terminal pane is unfocused | TUI under Herdr (`HERDR_ENV=1`) or tmux (`TMUX`) | — | `npm test` |
 | [usage](extensions/usage/README.md) | Per-provider quota as used percentages in one tabbed panel, plus a `usage` footer status | `/usage` (interactive TUI only) | — | `npm test` |
 

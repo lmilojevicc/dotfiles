@@ -1,23 +1,23 @@
-# Tasks for Pi
+# Todo for Pi
 
 Private Pi 0.84.4 extension for session-branch-native task tracking.
 
 - One model tool: `todo` (`create`, `update`, `batch`, `list`, `get`, `delete`, `clear`)
-- Human commands: `/tasks` and `/todos` (alias), using Pi-native task and settings menus
-- `/tasks-board`: open a live floating inspector; search/filter locally, inspect task details, and delete the selected task after confirmation
+- Human command: `/todo`, using Pi-native task and settings menus
+- `/todo-board`: open a live floating inspector; search/filter locally, inspect task details, and delete the selected task after confirmation
 - `Ctrl+Shift+T`: toggle the above-editor widget between its configured limit and show-all; it also expands the widget again after a header click collapsed it
-- Global Task Settings shared across projects in `<agent-dir>/tasks-config.json`
+- Global Task Settings shared across projects in `<agent-dir>/todo-config.json`
 - Stable numeric IDs, optimistic revisions, one active task, validated dependency DAG, and atomic batches
 - Tool-result snapshots for model changes and custom session entries for interactive changes
 - Legacy `@juicesharp/rpiv-todo` snapshot replay; a repair notice is appended to the branch once, so reloading or resuming does not repeat it
 
-The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `Tab` between wide panes, `/` search, `f` filter, `c` local completed visibility, lowercase `d` for confirmed deletion, page keys for detail scrolling, and `Esc`/`q` to close. Search editing treats `d` as ordinary query text. It adapts from split panes at 96+ columns to compact one-pane layouts at 36+ columns. The board remains inspection-first; `/tasks` provides all other human task management.
+The board supports arrows or `j`/`k`, `Enter` for details on one-pane layouts, `Tab` between wide panes, `/` search, `f` filter, `c` local completed visibility, lowercase `d` for confirmed deletion, page keys for detail scrolling, and `Esc`/`q` to close. Search editing treats `d` as ordinary query text. It adapts from split panes at 96+ columns to compact one-pane layouts at 36+ columns. The board remains inspection-first; `/todo` provides all other human task management.
 
 The above-editor widget leaves one blank row after nonempty Tasks content so adjacent telemetry remains visually separate. The sole `in_progress` task uses the upstream 11-frame spinner at 150 ms. Its elapsed time and `↑`/`↓` counters are ephemeral, session-scoped presentation data. The counters are the parent assistant turn's full input/output usage attributed while that task is active; they are not execution or subagent telemetry. Activity starts fresh after reload, session/branch changes, or a different task starts, and is preserved across compaction only while the same task remains active.
 
 ### Global Task Settings
 
-`/tasks` → Settings saves each choice immediately for all projects in `<getAgentDir()>/tasks-config.json` (normally `~/.pi/agent/tasks-config.json`; respects `PI_CODING_AGENT_DIR`). Display settings keep the existing JSON format: `collapseCompleted`, `showAll`, `maxVisible`, `sortOrder`, `hiddenAt`, and JSON-only `glyphs`. Defaults are completed tasks expanded, show-all off, 10 visible tasks, ID sort, hidden tasks at the bottom, and built-in glyphs. Unknown global keys are retained.
+`/todo` → Settings saves each choice immediately for all projects in `<getAgentDir()>/todo-config.json` (normally `~/.pi/agent/todo-config.json`; respects `PI_CODING_AGENT_DIR`). While that file does not exist, settings are read from `tasks-config.json`, the name before the extension became `todo`; the first save writes `todo-config.json` with those settings and leaves the old file untouched. Display settings keep the existing JSON format: `collapseCompleted`, `showAll`, `maxVisible`, `sortOrder`, `hiddenAt`, and JSON-only `glyphs`. Defaults are completed tasks expanded, show-all off, 10 visible tasks, ID sort, hidden tasks at the bottom, and built-in glyphs. Unknown global keys are retained.
 
 Legacy project `.pi/tasks-config.json` files are ignored, left untouched, and not automatically imported. A symlinked agent directory is supported, but the config file itself must be a regular file, not a symlink. Missing or invalid global settings fall back to defaults; saving refuses malformed, unreadable, or unsafe existing files rather than overwriting them.
 

@@ -447,7 +447,7 @@ function listPage(
 
 function bodyEmpty(projection: BoardProjection, state: TasksBoardState, theme: Theme): string[] {
 	if (projection.visible.length) return [];
-	if (!projection.all.length) return [theme.bold("No tasks in this session."), theme.fg("dim", "Use /tasks to create and manage tasks.")];
+	if (!projection.all.length) return [theme.bold("No tasks in this session."), theme.fg("dim", "Use /todo to create and manage tasks.")];
 	if (matchingQuery(state.query)) return [theme.bold(`No tasks match \"${sanitizeSearchInput(state.query)}\".`), theme.fg("dim", "Esc clears search.")];
 	if (state.filter !== "All") return [theme.bold(`No tasks match Filter: ${state.filter}.`), theme.fg("dim", "Press f to change the filter.")];
 	if (projection.completed.length === projection.all.length && state.collapseCompleted) {
@@ -498,7 +498,7 @@ function footerLines(width: number, state: TasksBoardState, keybindings: Keybind
 	const pgDown = keyLabel(keybindings, "tui.select.pageDown", "PgDn");
 	const hasQuery = Boolean(state.query);
 	if (state.error) return packFooter(hasQuery ? [`${cancel} clear search`, "r retry", "q close"] : ["r retry", `${cancel} close`], width);
-	if (empty) return packFooter(hasQuery ? [`${cancel} clear search`, "/tasks manages tasks", "q close"] : [`${cancel} close`, "/tasks manages tasks"], width);
+	if (empty) return packFooter(hasQuery ? [`${cancel} clear search`, "/todo manages tasks", "q close"] : [`${cancel} close`, "/todo manages tasks"], width);
 	if (state.searching) return packFooter(["Type to filter", `${submit} keep`, "Backspace delete", `${cancel} clear search`], width);
 	if (state.pane === "detail" && width < 92) {
 		return packFooter([...(hasQuery ? [`${cancel} clear search`] : []), `${up}${down}/jk scroll`, `${pgUp}/${pgDown} page`, "d delete", "←/Backspace list", ...(hasQuery ? [] : [`${cancel} list`])], width);
@@ -923,7 +923,7 @@ export async function openTasksBoard(
 	refresh: () => void = () => {},
 ): Promise<void> {
 	if (ctx.mode !== "tui") {
-		ctx.ui.notify("/tasks-board requires TUI mode; task data remains available through the todo tool.", "warning");
+		ctx.ui.notify("/todo-board requires TUI mode; task data remains available through the todo tool.", "warning");
 		return;
 	}
 	if (boardOpen) {
