@@ -15,13 +15,8 @@ export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
-# Pi config files all live in ~/.pi/agent (dotty links them from dotfiles/pi).
-# Pin each lookup there, so a run with another PI_CODING_AGENT_DIR reads the same files.
-# pi-lens has no agent-dir lookup at all, so its variable is required.
+# pi-lens has no agent-dir lookup; point it at the dotty-linked ~/.pi/agent file.
 export PI_LENS_CONFIG_PATH="$HOME/.pi/agent/pi-lens.json"
-export PI_AGENT_POLICY_CONFIG="$HOME/.pi/agent/agent-policy.json"
-export PI_MODEL_INSTRUCTIONS_CONFIG="$HOME/.pi/agent/model-instructions.json"
-export PI_PREFIX_KEYBINDS_CONFIG="$HOME/.pi/agent/prefix-keybinds.json"
 export PI_LENS_HOME="$XDG_DATA_HOME/pi-lens"
 export PI_WEB_ACCESS_CACHE_ROOT="$XDG_CACHE_HOME/pi"
 export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
