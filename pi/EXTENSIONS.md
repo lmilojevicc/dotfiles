@@ -15,7 +15,6 @@
 | [codex-enhanced](extensions/codex-enhanced/README.md) | Current-account Codex subscription quota, banked resets, Fast processing, and optional OpenAI Responses server compaction | `/codex-enhanced` | — | `npm test` |
 | [context](extensions/context/README.md) | Estimated context-window usage breakdown, with per-category previews | `/context` (TUI only) | — | `npm test` |
 | [extension-manager](extensions/extension-manager/README.md) | Enable or disable extensions in the running agent dir's settings without deleting or uninstalling them | `/extensions-manager` | — | `npm test` |
-| [herdr-pane-namesmith](extensions/herdr-pane-namesmith/docs/usage.md) | Keeps the current Pi pane's Herdr label equal to its Pi session name, following `/name` and `pi.setSessionName()` | Automatic in TUI under Herdr (`HERDR_ENV=1`, pane id and socket) | — | `npm test` |
 | [message-jump](extensions/message-jump/docs/usage.md) | Searchable picker of the active branch's real user messages that scrolls the existing fullscreen transcript | `/jump` in interactive fullscreen | — | `npm test` |
 | [model-blacklist](extensions/model-blacklist/README.md) | Hide configured model IDs on configured providers from in-session model surfaces | Automatic on `session_start`; `/model-blacklist` reapplies | yes | `npm test` |
 | [model-instructions](extensions/model-instructions/README.md) | JSON-configured instructions for the active model, as one owned `model_instructions` prompt section | Automatic; edit `instructions.json` beside the extension | yes | `npm test` |
