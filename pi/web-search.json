@@ -1,0 +1,32 @@
+{
+  "workflow": "none",
+  "allowBrowserCookies": true,
+  "browserCookies": {
+    "browser": "helium",
+    "profile": "Profile 4"
+  },
+  "searchRouting": {
+    "providers": [
+      "openai",
+      "xai",
+      "exa",
+      "duckduckgo"
+    ],
+    "fallbackOn": [
+      "transient",
+      "quota",
+      "network"
+    ]
+  },
+  "firecrawlBaseUrl": "https://api.firecrawl.dev",
+  "firecrawlApiKey": "$FIRECRAWL_API_KEY",
+  "firecrawlFreshScrape": true,
+  "fetchRouting": {
+    "providers": [
+      "firecrawl",
+      "http",
+      "jina"
+    ],
+    "allowRemoteHostedProviders": false
+  }
+}

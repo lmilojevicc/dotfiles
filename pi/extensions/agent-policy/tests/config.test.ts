@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { composeSources, readConfigSnapshot } from "../config.ts";
+import { resolvePolicyConfigPath } from "../config-path.ts";
 
 function fixture(t: any) {
 	const root = mkdtempSync(join(tmpdir(), "agent-policy-config-"));
@@ -174,9 +175,13 @@ test("path-resolution failure warns and skips instead of aborting the snapshot",
 });
 
 test("deployed config smoke keeps its shape and loads the user-editable prompt files", () => {
+	// The config file lives at the dotfiles pi/ root (unified config location); the policy
+	// (extension asset) directory still resolves its relative entries.
 	const directory = fileURLToPath(new URL("../", import.meta.url));
-	assert.deepEqual(JSON.parse(readFileSync(join(directory, "config.json"), "utf8")), { common: [], child: [], main: ["./prompts/main.md"], mainBb: ["./prompts/main-bb.md"], agents: { worker: ["~/.agents/skills/chadineer/SKILL.md"], reviewer: ["~/.agents/skills/chadineer/SKILL.md"] } });
-	const s = readConfigSnapshot(directory);
+	const configPath = fileURLToPath(new URL("../../../agent-policy.json", import.meta.url));
+	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), { common: [], child: [], main: ["./prompts/main.md"], mainBb: ["./prompts/main-bb.md"], agents: { worker: ["~/.agents/skills/chadineer/SKILL.md"], reviewer: ["~/.agents/skills/chadineer/SKILL.md"] } });
+	assert.equal(resolvePolicyConfigPath(undefined, join(dirname(directory), ".virtual-agent-dir"), directory), join(directory, "config.json"), "resolver falls back to the legacy bundled location");
+	const s = readConfigSnapshot(directory, configPath);
 	assert.equal(s.main.length, 1, "shipped main prompt must load");
 	assert.equal(s.mainBb.length, 1, "shipped BB main prompt must load");
 	// Prompts are user-editable: only existence and a non-empty load are contractual.
@@ -191,4 +196,31 @@ test("deployed config smoke keeps its shape and loads the user-editable prompt f
 		assert.equal(s.agents.get("worker")!.length, 0);
 		assert.match(s.warnings.join("\n"), /chadineer.*ENOENT/);
 	}
+});
+
+test("explicit configPath override keeps relative sources anchored to the policy directory", (t) => {
+	const f = fixture(t);
+	writeFileSync(join(f.root, "external.json"), JSON.stringify({ main: ["../SKILL.md"] }));
+	const snapshot = readConfigSnapshot(f.directory, join(f.root, "external.json"));
+	assert.deepEqual(snapshot.warnings, [], "override path reads its JSON, relative entries stay bundled");
+	const text = `## Policy source: ${f.skill}\nResolve this source's relative file references against ${dirname(f.skill)}.\n\nbody\n`;
+	assert.equal(composeSources(snapshot.main), text);
+});
+
+test("policy config path resolution: env override, unified agent-dir location, legacy fallback", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "agent-policy-config-path-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const unifiedAgentDir = join(root, "agent");
+	mkdirSync(unifiedAgentDir);
+	writeFileSync(join(unifiedAgentDir, "agent-policy.json"), "{}");
+	const emptyAgentDir = join(root, "empty-agent");
+	mkdirSync(emptyAgentDir);
+	const legacyDir = join(root, "legacy");
+	assert.equal(resolvePolicyConfigPath(undefined, unifiedAgentDir, legacyDir), join(unifiedAgentDir, "agent-policy.json"), "unified location wins when present");
+	assert.equal(resolvePolicyConfigPath(undefined, emptyAgentDir, legacyDir), join(legacyDir, "config.json"), "legacy fallback without a unified file");
+	assert.equal(resolvePolicyConfigPath(join(legacyDir, "custom.json"), unifiedAgentDir, legacyDir), join(legacyDir, "custom.json"), "env override always wins");
+	assert.equal(resolvePolicyConfigPath("~/custom/policy.json", unifiedAgentDir, legacyDir), resolve(os.homedir(), "custom/policy.json"), "env home path expands");
+	assert.equal(resolvePolicyConfigPath("relative.json", unifiedAgentDir, legacyDir), resolve("relative.json"), "env relative path resolves against cwd");
+	assert.equal(resolvePolicyConfigPath("", unifiedAgentDir, legacyDir), join(unifiedAgentDir, "agent-policy.json"), "blank env value counts as unset");
+	assert.equal(resolvePolicyConfigPath("", emptyAgentDir, legacyDir), join(legacyDir, "config.json"), "blank env value falls through");
 });

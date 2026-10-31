@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type ModelInstructions = Map<string, string[]>;
 
@@ -39,9 +41,33 @@ export function instructionsFor(models: ModelInstructions, model: { provider: st
 	return models.get(`${model.provider}/${model.id}`) ?? models.get(model.id) ?? [];
 }
 
+export const CONFIG_ENV_VAR = "PI_MODEL_INSTRUCTIONS_CONFIG";
+
+/**
+ * Config file lookup, in order:
+ *   1. `PI_MODEL_INSTRUCTIONS_CONFIG` env var (expanded: `~/` → home, otherwise relative to cwd);
+ *   2. `<agentDir>/model-instructions.json` — the unified location every extension config shares;
+ *   3. `<extensionDir>/instructions.json` — legacy pre-unification location, kept so a
+ *      checkout that has not been migrated yet keeps working. Remove after all machines migrated.
+ */
+export function resolveDefaultConfigPath(
+	value: string | undefined = process.env[CONFIG_ENV_VAR],
+	agentDir = getAgentDir(),
+	legacyPath = new URL("./instructions.json", import.meta.url),
+): string | URL {
+	if (value) return value.startsWith("~/") ? resolve(homedir(), value.slice(2)) : resolve(value);
+	const unified = join(agentDir, "model-instructions.json");
+	if (existsSync(unified)) return unified;
+	return legacyPath;
+}
+
+function configLabel(configPath: string | URL): string {
+	return typeof configPath === "string" ? configPath : configPath.pathname;
+}
+
 export default function modelInstructionsExtension(
 	pi: ExtensionAPI,
-	configPath = new URL("./instructions.json", import.meta.url),
+	configPath: string | URL = resolveDefaultConfigPath(),
 ): void {
 	let lastError: string | undefined;
 
@@ -58,7 +84,7 @@ export default function modelInstructionsExtension(
 				return;
 			}
 			const reason = error instanceof Error ? error.message : String(error);
-			const message = `Model instructions skipped (${configPath.pathname}): ${reason}`;
+			const message = `Model instructions skipped (${configLabel(configPath)}): ${reason}`;
 			if (message !== lastError) {
 				warn(ctx, message);
 				lastError = message;

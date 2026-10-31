@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import modelInstructionsExtension, { instructionsFor, PROMPT_SECTION, parseConfig } from "../index.ts";
+import modelInstructionsExtension, { instructionsFor, PROMPT_SECTION, parseConfig, resolveDefaultConfigPath } from "../index.ts";
 
 type Handler = (...args: any[]) => any;
 
@@ -172,10 +172,42 @@ test("warnings reach a non-terminal host on stderr, a TUI through notify only, a
 });
 
 test("bundled Astra rules target UI copy without removing essential information", () => {
-	const config = parseConfig(JSON.parse(readFileSync(new URL("../instructions.json", import.meta.url), "utf8")));
+	// The shipped config now lives at the unified dotfiles pi/ root.
+	const config = parseConfig(JSON.parse(readFileSync(new URL("../../../model-instructions.json", import.meta.url), "utf8")));
 	const rules = instructionsFor(config, { provider: "openai-codex", id: "gpt-6-astra" }).join("\n");
 	for (const text of ["UI/TUI", "redundant subtitles", "validation errors", "accessible names", "explicitly requested"]) {
 		assert.ok(rules.includes(text), text);
 	}
 	assert.deepEqual(instructionsFor(config, { provider: "anthropic", id: "claude-sonnet-4-6" }), []);
+});
+
+test("default config path: env override, unified agent-dir location, legacy fallback", (t) => {
+	const root = mkdtempSync(join(tmpdir(), "model-instructions-path-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const legacy = pathToFileURL(join(root, "instructions.json"));
+	const emptyAgentDir = join(root, "empty-agent");
+	mkdirSync(emptyAgentDir);
+	const unifiedAgentDir = join(root, "agent");
+	mkdirSync(unifiedAgentDir);
+	writeFileSync(join(unifiedAgentDir, "model-instructions.json"), "{}");
+	assert.equal(resolveDefaultConfigPath(undefined, unifiedAgentDir, legacy), join(unifiedAgentDir, "model-instructions.json"), "unified location wins when present");
+	assert.equal(resolveDefaultConfigPath(undefined, emptyAgentDir, legacy), legacy, "legacy fallback without a unified file");
+	assert.equal(resolveDefaultConfigPath(join(root, "custom.json"), unifiedAgentDir, legacy), join(root, "custom.json"), "env override always wins");
+	assert.deepEqual(resolveDefaultConfigPath("~/rules.json", emptyAgentDir, legacy), resolve(homedir(), "rules.json"), "env home path expands");
+});
+
+test("string configPath behaves like the URL variant and failure messages report it verbatim", (t) => {
+	const dir = mkdtempSync(join(tmpdir(), "model-instructions-string-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "instructions.json");
+	writeFileSync(path, "not json");
+	const handlers = new Map<string, Handler>();
+	const notifications: Array<{ message: string; level: string }> = [];
+	modelInstructionsExtension({ on: (name: string, handler: Handler) => handlers.set(name, handler) } as any, path);
+	const before = handlers.get("before_agent_start")!;
+	before({ systemPromptOptions: { sections: {} } }, {
+		model: undefined as any, hasUI: true, mode: "rpc",
+		ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+	});
+	assert.match(notifications[0].message, new RegExp(`^Model instructions skipped \\(${path}\\): `), "string paths are reported as-is");
 });

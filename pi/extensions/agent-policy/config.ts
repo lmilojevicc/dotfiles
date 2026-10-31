@@ -30,8 +30,7 @@ function markdownBody(text: string): string {
 }
 
 /** Eager, fail-open file inputs, including mappings unused by the current session. */
-export function readConfigSnapshot(policyDir: string): ConfigSnapshot {
-	const configPath = join(policyDir, "config.json");
+export function readConfigSnapshot(policyDir: string, configPath: string = join(policyDir, "config.json")): ConfigSnapshot {
 	const snapshot: ConfigSnapshot = { common: [], child: [], main: [], mainBb: [], agents: new Map(), warnings: [] };
 	function warn(context: string, message: string): void {
 		snapshot.warnings.push(`agent-policy: ${configPath}: ${context}: ${message}; skipping affected input.`);
@@ -65,11 +64,13 @@ export function readConfigSnapshot(policyDir: string): ConfigSnapshot {
 				warn(context, "expected a nonblank file-path string without NUL characters");
 				continue;
 			}
+			// Relative entries anchor to the policy (extension asset) directory, so the config file
+			// keeps working wherever it lives — bundled prompts travel with the extension.
 			// Resolution is a fail-open input too: a throwing homedir()/resolve must warn, not abort init.
 			let path: string | undefined;
 			let source: PolicySource | string;
 			try {
-				path = input.startsWith("~/") ? resolve(homedir(), input.slice(2)) : resolve(dirname(configPath), input);
+				path = input.startsWith("~/") ? resolve(homedir(), input.slice(2)) : resolve(policyDir, input);
 				if (!sources.has(path)) {
 					try {
 						const body = markdownBody(readFileSync(path, "utf8"));

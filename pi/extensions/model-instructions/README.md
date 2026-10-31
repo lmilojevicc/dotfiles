@@ -8,9 +8,12 @@ survive.
 
 ## Configuration
 
-Edit [`instructions.json`](instructions.json) beside this extension. In these
-dotfiles that is `pi/extensions/model-instructions/instructions.json`, also
-reachable through `~/.pi/agent/extensions/model-instructions/instructions.json`.
+Edit the unified config file `~/.pi/agent/model-instructions.json` (a dotty
+symlink to `pi/model-instructions.json` in these dotfiles). Lookup order:
+`PI_MODEL_INSTRUCTIONS_CONFIG` env var → `<agentDir>/model-instructions.json`
+→ the legacy bundled `instructions.json` beside this extension. Relative entry
+paths resolve against this extension directory; undoing that ordering rule is
+not supported.
 
 ```json
 {

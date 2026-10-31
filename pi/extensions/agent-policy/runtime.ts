@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { registerRequiredChildExtensions, RequiredChildExtensionRegistration } from "pi-subagents/required-child-extensions";
+import { join } from "node:path";
 import { POLICY_SECTION, policySection, type PolicyProfile, selectAgentName, selectProfile, stripOwnedBlocks } from "./child-profile.ts";
 import { composeSources, readConfigSnapshot } from "./config.ts";
 import type { BBPolicySignal } from "./bb-profile.ts";
@@ -7,6 +8,8 @@ import type { BBPolicySignal } from "./bb-profile.ts";
 export const POLICY_ID = "dotfiles.agent-policy";
 export type PolicyRuntimeOptions = {
 	policyDir: string;
+	/** Resolved by the caller (env → unified agent-dir location → legacy bundled file). */
+	configPath?: string;
 	extensionPath: string;
 	register: typeof registerRequiredChildExtensions;
 	backgroundChild: boolean;
@@ -16,7 +19,7 @@ export type PolicyRuntimeOptions = {
 
 export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptions): void {
 	// Like native APPEND_SYSTEM.md, snapshot at runtime creation, not first use.
-	const config = readConfigSnapshot(options.policyDir);
+	const config = readConfigSnapshot(options.policyDir, options.configPath ?? join(options.policyDir, "config.json"));
 	const bbWorkflowWorker = options.bbSignal?.workflowWorker ?? false;
 	const bbOrigin = options.bbOrigin ?? false;
 	const bbDiagnostic = options.bbSignal?.diagnostic;
