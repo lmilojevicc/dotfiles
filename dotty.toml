@@ -53,6 +53,7 @@ version = 1
     { source = "model-picker.json", target = "~/.pi/agent/model-picker.json" },
     { source = "model-blacklist.json", target = "~/.pi/agent/model-blacklist.json" },
     { source = "zentui-status-bridge.json", target = "~/.pi/agent/zentui-status-bridge.json" },
+    { source = "zentui.json", target = "~/.pi/agent/zentui.json" },
     { source = "pi-lens.json", target = "~/.config/pi/pi-lens.json" },
     { source = "subagent.json", target = "~/.config/pi/subagent.json" },
     { source = "themes", target = "~/.pi/agent/themes" },
