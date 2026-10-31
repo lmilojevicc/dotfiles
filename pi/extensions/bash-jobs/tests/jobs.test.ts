@@ -43,11 +43,6 @@ function options(command: string, extra: Partial<RunOptions> = {}): RunOptions &
 	};
 }
 
-/** Like `options`, but run the way the extension runs commands: with the job-control functions defined. */
-function controlled(jobs: JobTable, command: string, extra: Partial<RunOptions> = {}): ReturnType<typeof options> {
-	return options(jobs.withJobControl(command), { label: command, ...extra });
-}
-
 function hasCommand(name: string): boolean {
 	try {
 		execFileSync("bash", ["-c", `command -v ${name}`], { stdio: "ignore" });
@@ -195,67 +190,26 @@ test("jobs that end while no runtime is bound are delivered when one binds", asy
 	assert.deepEqual(delivered, [job]);
 });
 
-test("%N anywhere in a command reaches the background jobs of earlier commands", async () => {
+test("unread output starts after what the foreground call showed and moves on with each read", async () => {
 	const { table: jobs } = table();
-	const first = await runCommand(jobs, controlled(jobs, "sleep 0.8; echo built; exit 4", { waitMs: 200 }));
-	const job = (first as { job: Job }).job;
-	const run = controlled(jobs, "set -eu; jobs; wait %1 || echo status=$?");
-	assert.deepEqual(await runCommand(jobs, run), { kind: "exited", exitCode: 0 });
-	assert.equal(run.output(), `[%1]  Running  sleep 0.8; echo built; exit 4  (pid ${job.pid})\nstatus=4\n`);
-	assert.ok(job.reported);
+	const run = options("echo first; sleep 0.4; echo second; sleep 0.4; echo third; sleep 30", { waitMs: 200 });
+	const job = ((await runCommand(jobs, run)) as { job: Job }).job;
+	assert.equal(run.output(), "first\n");
+	await until(() => job.tail().includes("second"));
+	assert.deepEqual(job.unread(), { text: "second\n", skipped: 0 });
+	assert.deepEqual(job.unread(), { text: "", skipped: 0 });
+	await until(() => job.tail().includes("third"));
+	assert.deepEqual(job.unread(), { text: "third\n", skipped: 0 });
 });
 
-test("kill %N stops a background job from inside a larger command", async () => {
+test("unread output keeps the newest part when too much arrived", async () => {
 	const { table: jobs } = table();
-	const first = await runCommand(jobs, controlled(jobs, "sleep 30", { waitMs: 200 }));
-	const job = (first as { job: Job }).job;
-	const run = controlled(jobs, "kill %1 && echo stopped");
-	assert.deepEqual(await runCommand(jobs, run), { kind: "exited", exitCode: 0 });
-	assert.equal(run.output(), "stopped\n");
-	await job.ended;
-	assert.equal(job.exitSignal, "SIGTERM");
-	assert.ok(job.reported);
-	// The job is gone, so %1 no longer reaches a process group that could be reused.
-	const again = controlled(jobs, "kill %1");
-	assert.deepEqual(await runCommand(jobs, again), { kind: "exited", exitCode: 1 });
-	assert.match(again.output(), /no such job/);
-});
-
-test("a wait whose shell was killed still lets the job's end be reported", async () => {
-	const { table: jobs, ended } = table();
-	const first = await runCommand(jobs, controlled(jobs, "sleep 1", { waitMs: 100 }));
-	const job = (first as { job: Job }).job;
-	const controller = new AbortController();
-	const waiting = runCommand(jobs, controlled(jobs, "wait %1", { signal: controller.signal }));
-	// The job is still running and the shell has announced that it waits for it.
-	await until(() => existsSync(join(jobs.dir, "job-1.waiting")));
-	controller.abort();
-	await assert.rejects(waiting, /^Error: aborted$/);
-	await job.ended;
-	// The result never reached anyone: the wait was killed before the job ended.
-	assert.equal(job.reported, false);
-	assert.deepEqual(ended, [job]);
-});
-
-test("kill -0 %N only asks whether a job is up, so its end is still reported", async () => {
-	const { table: jobs, ended } = table();
-	const first = await runCommand(jobs, controlled(jobs, "sleep 0.5", { waitMs: 100 }));
-	const job = (first as { job: Job }).job;
-	const run = controlled(jobs, "kill -0 %1 && echo alive");
-	assert.deepEqual(await runCommand(jobs, run), { kind: "exited", exitCode: 0 });
-	assert.equal(run.output(), "alive\n");
-	await job.ended;
-	assert.equal(job.reported, false);
-	assert.deepEqual(ended, [job]);
-});
-
-test("a command's own jobs keep bash's meaning of %N", async () => {
-	const { table: jobs } = table();
-	await runCommand(jobs, controlled(jobs, "sleep 30", { waitMs: 200 }));
-	const run = controlled(jobs, "sleep 5 & kill %1; wait %1; echo own=$?");
-	assert.deepEqual(await runCommand(jobs, run), { kind: "exited", exitCode: 0 });
-	assert.equal(run.output(), "own=143\n");
-	assert.ok(jobs.get(1)?.running);
+	const job = ((await runCommand(jobs, options("seq 1 2000; sleep 30", { waitMs: 300 }))) as { job: Job }).job;
+	job.readOffset = 0;
+	const { text, skipped } = job.unread(100);
+	assert.ok(skipped > 0);
+	assert.ok(text.endsWith("2000\n"));
+	assert.match(text, /^\d+\n/, "starts at a line boundary");
 });
 
 test("job directories of dead Pi processes are removed, others are kept", () => {

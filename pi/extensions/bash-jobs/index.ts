@@ -1,11 +1,13 @@
 /**
  * bash-jobs: Pi's bash tool, except that no command can hold the agent for long. A command still
  * running after a short wait keeps running in the background as a job; the model gets its output so
- * far, a message when it exits, and `jobs` / `wait %N` / `kill %N` across bash calls.
+ * far, keeps working, and gets a message when the job exits. The `jobs` tool lists jobs, shows a
+ * job's new output, waits for one or stops it.
  */
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	type AgentToolResult,
 	type BashOperations,
@@ -24,15 +26,12 @@ import {
 	endReport,
 	endSummary,
 	failed,
-	formatDuration,
-	type JobControl,
+	leadingSleepSeconds,
 	listJobs,
-	parseJobControl,
+	MIN_REFUSED_SLEEP_SECONDS,
+	progressReport,
 	quote,
-	runningJobsSection,
-	runningReport,
-	stoppedJobsReport,
-} from "./control.ts";
+} from "./format.ts";
 import { type Job, JobTable, removeStaleTables, runCommand } from "./jobs.ts";
 
 function secondsFromEnv(name: string, fallback: number): number {
@@ -41,9 +40,10 @@ function secondsFromEnv(name: string, fallback: number): number {
 }
 
 /** How long a command may hold the agent before it moves to the background. */
-const WAIT_SECONDS = secondsFromEnv("PI_BASH_WAIT_SECONDS", 30);
-/** Longest `wait %N` a timeout can ask for. */
-const MAX_WAIT_SECONDS = 600;
+const WAIT_SECONDS = secondsFromEnv("PI_BASH_WAIT_SECONDS", 10);
+/** How long `jobs wait` waits by default, and the most a timeout can ask for. */
+const DEFAULT_JOB_WAIT_SECONDS = 30;
+const MAX_JOB_WAIT_SECONDS = 600;
 /** `background: true` still waits this long, so a command that fails at once reports it inline. */
 const START_CHECK_MS = 1000;
 
@@ -60,8 +60,6 @@ const NON_INTERACTIVE_ENV = {
 };
 
 const MESSAGE_TYPE = "bash-job";
-const PROMPT_SECTION = "background_jobs";
-const STOP_SIGNALS = new Set<NodeJS.Signals>(["SIGTERM", "SIGKILL", "SIGINT", "SIGQUIT"]);
 const TABLES = Symbol.for("pi.bash-jobs.tables");
 
 /** Job tables by session id, kept on globalThis so running jobs survive /reload. */
@@ -83,15 +81,6 @@ interface JobDetails {
 	signal: string | null;
 }
 
-/** The jobs that died with the Pi process, listed in one message instead of one each. */
-interface StoppedJobsDetails {
-	stopped: JobDetails[];
-	/** Their results are lost, so the message reads as a failure. */
-	failed: true;
-}
-
-type MessageDetails = JobDetails | StoppedJobsDetails;
-
 function jobDetails(job: Job): JobDetails {
 	return {
 		id: job.id,
@@ -106,38 +95,15 @@ function jobDetails(job: Job): JobDetails {
 	};
 }
 
-/** Job numbers a stored `bash-job` message names, so a restarted Pi never reuses one the model has seen. */
-function messageJobIds(details: { id?: number; stopped?: Array<{ id?: number }> } | undefined): number[] {
-	const ids: number[] = [];
-	if (typeof details?.id === "number") ids.push(details.id);
-	for (const job of details?.stopped ?? []) if (typeof job.id === "number") ids.push(job.id);
-	return ids;
-}
-
-/** The highest job number used earlier in this session, so new jobs never reuse a number the model has seen. */
-function highestJobId(ctx: ExtensionContext): number {
-	let highest = 0;
-	for (const entry of ctx.sessionManager.getEntries() as Array<Record<string, any>>) {
-		// A bash result carries the job it moved to; other tools' details are none of our business.
-		const ids =
-			entry.type === "custom_message"
-				? entry.customType === MESSAGE_TYPE
-					? messageJobIds(entry.details)
-					: []
-				: typeof entry.message?.details?.job?.id === "number"
-					? [entry.message.details.job.id]
-					: [];
-		for (const id of ids) if (id > highest) highest = id;
-	}
-	return highest;
-}
-
 function textResult(text: string, isError = false): AgentToolResult<undefined> {
+	return { content: [{ type: "text", text }], details: undefined, isError };
+}
+
+/** A bash call that ran nothing, with the structured fields the bash tool's output schema promises. */
+function refusal(text: string): AgentToolResult<undefined> {
 	return {
-		content: [{ type: "text", text }],
-		details: undefined,
-		isError,
-		structuredContent: { output: text, truncated: false, exit_code: isError ? 1 : 0, wall_time_seconds: 0 },
+		...textResult(text, true),
+		structuredContent: { output: text, truncated: false, exit_code: 1, wall_time_seconds: 0 },
 	};
 }
 
@@ -149,21 +115,35 @@ export default function bashJobs(pi: ExtensionAPI): void {
 	if (process.platform === "win32") return;
 
 	const base = createBashToolDefinition(process.cwd());
-	const parameters = Type.Object({
+	const bashParameters = Type.Object({
 		command: Type.String({ description: "Bash command to execute" }),
 		timeout: Type.Optional(
 			Type.Number({
-				description: `Kill the command after this many seconds, even after it moves to the background (optional, no default; leave it unset for servers). With \`wait %N\`: how long to wait (default ${WAIT_SECONDS}).`,
+				description:
+					"Kill the command after this many seconds, even after it moves to the background (optional, no default; leave it unset for servers).",
 			}),
 		),
 		background: Type.Optional(
 			Type.Boolean({
-				description:
-					`Run the command in the background and return after about 1s, with any startup error, instead of waiting ${WAIT_SECONDS}s first; for servers, watchers and long builds. You get a message when it exits.`,
+				description: `Run the command in the background and return after about 1s, with any startup error, instead of waiting ${WAIT_SECONDS}s first; for servers, watchers and long builds. You get a message when it exits.`,
 			}),
 		),
 	});
-	type Params = Static<typeof parameters>;
+	type BashParams = Static<typeof bashParameters>;
+
+	const jobsParameters = Type.Object({
+		action: StringEnum(["list", "output", "wait", "kill"] as const, {
+			description:
+				"list: every job and its state. output: what a job printed since you last looked. wait: wait for a job (or, without id, every running job) to exit. kill: stop a job.",
+		}),
+		id: Type.Optional(Type.Number({ description: "Job number; needed for output and kill" })),
+		timeout: Type.Optional(
+			Type.Number({
+				description: `For wait: give up after this many seconds (default ${DEFAULT_JOB_WAIT_SECONDS}, at most ${MAX_JOB_WAIT_SECONDS}); the job keeps running.`,
+			}),
+		),
+	});
+	type JobsParams = Static<typeof jobsParameters>;
 
 	interface State {
 		id: string;
@@ -186,7 +166,6 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			const root = join(tmpdir(), "pi-bash-jobs");
 			removeStaleTables(root);
 			table = new JobTable(join(root, `${id.replace(/[^\w.-]/g, "_")}-${process.pid}`));
-			table.nextId = highestJobId(ctx) + 1;
 			tables().set(id, table);
 		}
 		let settings: SettingsManager | undefined;
@@ -206,6 +185,7 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		return state;
 	}
 
+	/** A job ended that the model did not wait for or stop: tell it, steering a running turn or starting one. */
 	function notify(job: Job): void {
 		if (job.reported) return;
 		job.reported = true;
@@ -224,15 +204,12 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		state.ctx.ui.setStatus("bash-jobs", count ? `${count} background job${count === 1 ? "" : "s"}` : undefined);
 	}
 
-	/**
-	 * Text for the user rather than for the model, such as the `/jobs` answer: shown in the transcript
-	 * and no triggerTurn, so an idle session stays idle and a running turn is not steered.
-	 */
+	/** Text for the user, such as the `/jobs` answer: shown in the transcript without waking the agent. */
 	function showToUser(text: string, details?: JobDetails): void {
 		pi.sendMessage({ customType: MESSAGE_TYPE, content: text, display: true, details }, { triggerTurn: false });
 	}
 
-	function withNotice(result: AgentToolResult<unknown>, job: Job, mode: string): AgentToolResult<unknown> {
+	function withNotice<T>(result: AgentToolResult<T>, job: Job, mode: string): AgentToolResult<T> {
 		const text = result.content.find((part) => part.type === "text")?.text ?? "";
 		const output = text === "(no output)" ? "" : text.trimEnd();
 		const notice = backgroundNotice(job, WAIT_SECONDS, mode === "print" || mode === "json");
@@ -240,10 +217,10 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		return {
 			...result,
 			content: [{ type: "text", text: output ? `${output}\n\n${notice}` : notice }],
-			details: { ...(result.details as object | undefined), job: jobDetails(job) },
+			details: { ...(result.details as object | undefined), job: jobDetails(job) } as T,
 			structuredContent:
 				structured && typeof structured === "object" && !Array.isArray(structured)
-					? { ...structured, job: `%${job.id}`, running: true }
+					? { ...structured, job: job.id, running: true }
 					: structured,
 		};
 	}
@@ -254,7 +231,7 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		signal: AbortSignal | undefined,
 		onUpdate: ((partial: AgentToolResult<undefined>) => void) | undefined,
 	): Promise<AgentToolResult<undefined>> {
-		const limit = Math.min(seconds(timeout) ?? WAIT_SECONDS, MAX_WAIT_SECONDS);
+		const limit = Math.min(seconds(timeout) ?? DEFAULT_JOB_WAIT_SECONDS, MAX_JOB_WAIT_SECONDS);
 		for (const job of jobs) job.watchers++;
 		let shown = "";
 		const progress =
@@ -289,74 +266,43 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			for (const job of jobs) job.watchers--;
 		}
 		const reports = jobs.map((job) => {
-			if (job.running) return runningReport(job);
+			if (job.running) return progressReport(job);
 			job.reported = true;
 			return endReport(job);
 		});
-		const stillRunning = jobs.filter((job) => job.running).length;
-		if (stillRunning > 0) reports.unshift(`Waited ${limit}s.`);
+		if (jobs.some((job) => job.running)) reports.unshift(`Waited ${limit}s; you still get a message when it exits.`);
 		return textResult(reports.join("\n\n"), jobs.some(failed));
 	}
 
-	async function stop(jobs: Job[], signal: NodeJS.Signals): Promise<AgentToolResult<undefined>> {
-		const lines = await Promise.all(
-			jobs.map(async (job) => {
-				if (!job.running) return `Job %${job.id} ${quote(job.label)} already ${endSummary(job)}.`;
-				if (!STOP_SIGNALS.has(signal)) {
-					job.signal(signal);
-					return `Sent ${signal} to job %${job.id} ${quote(job.label)}.`;
-				}
-				job.watchers++;
-				try {
-					await job.stop("stopped", signal);
-				} finally {
-					job.watchers--;
-				}
-				return `Stopped job %${job.id} ${quote(job.label)}.`;
-			}),
-		);
-		return textResult(lines.join("\n"));
-	}
-
-	async function control(
-		table: JobTable,
-		request: JobControl,
-		timeout: number | undefined,
-		signal: AbortSignal | undefined,
-		onUpdate: ((partial: AgentToolResult<undefined>) => void) | undefined,
-	): Promise<AgentToolResult<undefined>> {
-		if (request.kind === "jobs") return textResult(listJobs([...table.jobs.values()]));
-		const ids = request.ids === "all" ? table.running().map((job) => job.id) : request.ids;
-		const missing = ids.filter((id) => !table.get(id));
-		if (missing.length > 0) {
-			const list = listJobs([...table.jobs.values()]);
-			return textResult(`${request.kind}: ${missing.map((id) => `%${id}`).join(", ")}: no such job.\n${list}`, true);
+	async function stop(job: Job): Promise<string> {
+		if (!job.running) return `Job ${job.id} ${quote(job.label)} already ${endSummary(job)}.`;
+		job.watchers++;
+		try {
+			await job.stop("stopped");
+		} finally {
+			job.watchers--;
 		}
-		const jobs = ids.map((id) => table.get(id) as Job);
-		if (request.kind === "kill") return stop(jobs, request.signal);
-		if (jobs.length === 0) return textResult("No background jobs are running.");
-		return waitFor(jobs, timeout, signal, onUpdate);
+		return `Stopped job ${job.id} ${quote(job.label)}.`;
 	}
 
 	pi.registerTool({
 		...base,
-		description: `${base.description.replace(/\s*Optionally provide a timeout in seconds\.\s*$/, "")} A command still running after ${WAIT_SECONDS}s keeps running in the background as a job and you get its output so far. background: true returns after about 1s instead; use it for servers, watchers and long builds. Optionally provide a timeout in seconds to kill the command, even after it moves to the background.`,
+		description: `${base.description.replace(/\s*Optionally provide a timeout in seconds\.\s*$/, "")} A command still running after ${WAIT_SECONDS}s keeps running in the background as a job: you get its output so far, keep working, and get a message when it exits. background: true returns after about 1s instead; use it for servers, watchers and long builds. Optionally provide a timeout in seconds to kill the command, even after it moves to the background.`,
 		promptGuidelines: [
-			`A bash command still running after ${WAIT_SECONDS}s keeps running in the background as a job (%1, %2, ...) and you get its output so far; when it exits you get a message with its result. Start servers, watchers and long builds with background: true; otherwise you wait ${WAIT_SECONDS}s before you get control back.`,
-			"Don't sleep or poll to wait for a job to finish; keep working meanwhile. If your answer depends on a job's result, run `wait %N` before you answer. End your turn with jobs still running only when they should outlive it, like a server the user wants left up.",
+			`A bash command still running after ${WAIT_SECONDS}s keeps running in the background as a numbered job and you get its output so far; when it exits you get a message with its result. Start servers, watchers and long builds with background: true.`,
+			"Don't sleep or poll to wait for a job; keep working on something else, and the exit message comes on its own. Use the jobs tool to see a job's new output (output), wait for it when your next step needs its result (wait), stop it (kill) or see every job (list). End your turn with jobs still running only when they should outlive it, like a server the user wants left up.",
 			"To check that a server you started is ready, use one bounded check, such as `timeout 30 sh -c 'until curl -sf localhost:3000 >/dev/null; do sleep 1; done'`.",
-			`Bash job control reaches the background jobs of earlier calls: \`jobs\` lists them, \`wait %N\` waits for one, \`kill %N\` stops it. Run on its own, \`wait %N\` waits up to ${WAIT_SECONDS}s (or timeout seconds) and returns the job's last output.`,
 			...(base.promptGuidelines ?? []),
 		],
-		parameters,
+		parameters: bashParameters,
 		outputSchema: Type.Object({
 			...(base.outputSchema as ReturnType<typeof Type.Object>).properties,
-			job: Type.Optional(Type.String({ description: "Background job (`%N`) the command now runs as" })),
+			job: Type.Optional(Type.Number({ description: "Background job number the command now runs as" })),
 			running: Type.Optional(Type.Boolean({ description: "The command is still running in the background" })),
 		}),
 		// Models trained on other agents name the flag differently or send strings.
-		prepareArguments(args: unknown): Params {
-			if (!args || typeof args !== "object") return args as Params;
+		prepareArguments(args: unknown): BashParams {
+			if (!args || typeof args !== "object") return args as BashParams;
 			const input = { ...(args as Record<string, unknown>) };
 			if (typeof input.command !== "string" && typeof input.cmd === "string") input.command = input.cmd;
 			delete input.cmd;
@@ -370,20 +316,22 @@ export default function bashJobs(pi: ExtensionAPI): void {
 				input.timeout = Number(input.timeout);
 			}
 			if (input.timeout === null) delete input.timeout;
-			return input as Params;
+			return input as BashParams;
 		},
-		async execute(toolCallId, params: Params, signal, onUpdate, ctx) {
+		async execute(toolCallId, params: BashParams, signal, onUpdate, ctx) {
 			const current = attach(ctx);
-			const request = parseJobControl(params.command);
-			if (request) return control(current.table, request, params.timeout, signal, onUpdate);
-
 			const label = params.command.trim();
-			const duplicate = current.table.findRunning(label, ctx.cwd);
-			if (duplicate) {
-				// Nothing ran, so this is a failed call like `wait %7` for a missing job, not a successful one.
-				return textResult(
-					`Not run: ${quote(label)} is already running as job %${duplicate.id} (for ${formatDuration(Date.now() - duplicate.startedAt)}). Its output goes to ${duplicate.logPath}. Run \`kill %${duplicate.id}\` first to start it again.`,
-					true,
+
+			const slept = params.background ? undefined : leadingSleepSeconds(label);
+			if (slept !== undefined && slept >= MIN_REFUSED_SLEEP_SECONDS) {
+				const running = current.table.running();
+				return refusal(
+					[
+						`Not run: \`sleep ${slept}\` would only hold you up. Background jobs send you a message when they exit, so keep working instead of waiting.`,
+						running.length > 0
+							? `To block until one is done, use the jobs tool's wait action; to see its progress, output. Running: ${running.map((job) => `${job.id} ${quote(job.label, 40)}`).join(", ")}.`
+							: "No background jobs are running. If you are waiting on something outside them, use one bounded check such as `timeout 60 sh -c 'until <check>; do sleep 1; done'`.",
+					].join("\n"),
 				);
 			}
 
@@ -393,7 +341,7 @@ export default function bashJobs(pi: ExtensionAPI): void {
 					if (!existsSync(cwd)) throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
 					const shell = getShellConfig(current.shellPath);
 					const result = await runCommand(current.table, {
-						command: current.table.withJobControl(command),
+						command,
 						label,
 						cwd,
 						env: { ...env, ...NON_INTERACTIVE_ENV },
@@ -427,7 +375,48 @@ export default function bashJobs(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerMessageRenderer<MessageDetails>(MESSAGE_TYPE, (message, { expanded, outputPad }, theme) => {
+	pi.registerTool({
+		name: "jobs",
+		label: "Jobs",
+		description:
+			"Manage background jobs from bash: list them, read a job's new output since you last looked, wait for one to exit, or stop one. Jobs report their exit with a message on their own, so use wait only when your next step needs the result.",
+		promptSnippet: "List, read, wait for and stop background bash jobs",
+		parameters: jobsParameters,
+		prepareArguments(args: unknown): JobsParams {
+			if (!args || typeof args !== "object") return args as JobsParams;
+			const input = { ...(args as Record<string, unknown>) };
+			for (const key of ["id", "timeout"]) {
+				const value = input[key];
+				if (typeof value === "string") {
+					const number = Number(value.trim().replace(/^%/, ""));
+					if (value.trim() !== "" && Number.isFinite(number)) input[key] = number;
+				}
+				if (input[key] === null) delete input[key];
+			}
+			return input as JobsParams;
+		},
+		async execute(_toolCallId, params: JobsParams, signal, onUpdate, ctx) {
+			const { table } = attach(ctx);
+			if (params.action === "list") return textResult(listJobs([...table.jobs.values()]));
+
+			if (params.id === undefined) {
+				if (params.action !== "wait") return textResult(`${params.action} needs the job's id.\n${listJobs([...table.jobs.values()])}`, true);
+				const running = table.running();
+				if (running.length === 0) return textResult("No background jobs are running.");
+				return waitFor(running, params.timeout, signal, onUpdate);
+			}
+			const job = table.get(params.id);
+			if (!job) return textResult(`No job ${params.id}.\n${listJobs([...table.jobs.values()])}`, true);
+
+			if (params.action === "kill") return textResult(await stop(job));
+			if (params.action === "wait") return waitFor([job], params.timeout, signal, onUpdate);
+			if (job.running) return textResult(progressReport(job));
+			job.reported = true;
+			return textResult(endReport(job), failed(job));
+		},
+	});
+
+	pi.registerMessageRenderer<JobDetails>(MESSAGE_TYPE, (message, { expanded, outputPad }, theme) => {
 		const text =
 			typeof message.content === "string"
 				? message.content
@@ -446,46 +435,28 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			const [verb, target] = args.trim().split(/\s+/);
 			// BB runs Pi over RPC and drops notifications, so outside the TUI the answer goes into the transcript.
 			const tui = ctx.mode === "tui";
-			if (verb !== "kill" && verb !== "stop") {
-				const listing = listJobs([...current.table.jobs.values()]);
-				if (tui) ctx.ui.notify(listing, "info");
-				else showToUser(listing);
-				return;
-			}
+			const answer = (text: string, level: "info" | "warning" = "info") =>
+				tui ? ctx.ui.notify(text, level) : showToUser(text);
+			if (verb !== "kill" && verb !== "stop") return answer(listJobs([...current.table.jobs.values()]));
 			const job = current.table.get(Number(target?.replace(/^%/, "")));
-			if (!job?.running) {
-				const text = `No running job ${target ?? ""}`.trim();
-				if (tui) ctx.ui.notify(text, "warning");
-				else showToUser(text);
-				return;
-			}
-			job.watchers++;
-			try {
-				await job.stop("stopped");
-			} finally {
-				job.watchers--;
-			}
-			const stopped = `The user stopped background job %${job.id} ${quote(job.label)}.`;
-			const details = jobDetails(job);
+			if (!job?.running) return answer(`No running job ${target ?? ""}`.trim(), "warning");
+			await stop(job);
+			const stopped = `The user stopped background job ${job.id} ${quote(job.label)}.`;
 			if (tui) {
 				// The model learns about it on its next turn without being woken for it.
-				pi.sendMessage({ customType: MESSAGE_TYPE, content: stopped, display: true, details }, { deliverAs: "nextTurn" });
-				ctx.ui.notify(`Stopped job %${job.id}`, "info");
+				pi.sendMessage(
+					{ customType: MESSAGE_TYPE, content: stopped, display: true, details: jobDetails(job) },
+					{ deliverAs: "nextTurn" },
+				);
+				ctx.ui.notify(`Stopped job ${job.id}`, "info");
 			} else {
-				showToUser(stopped, details);
+				showToUser(stopped, jobDetails(job));
 			}
 		},
 	});
 
 	pi.on("session_start", (_event, ctx) => {
 		attach(ctx);
-	});
-
-	// A named section, so Pi sends the model only the change when jobs start or end, and drops it when none run.
-	pi.on("before_agent_start", (event, ctx) => {
-		const section = runningJobsSection(attach(ctx).table.running());
-		if (section) event.systemPromptOptions.sections[PROMPT_SECTION] = section;
-		else delete event.systemPromptOptions.sections[PROMPT_SECTION];
 	});
 
 	pi.on("session_shutdown", async (event) => {
@@ -496,20 +467,6 @@ export default function bashJobs(pi: ExtensionAPI): void {
 			// The next runtime binds the same table on its session_start; jobs that end meanwhile are queued.
 			current.table.bind(undefined);
 			return;
-		}
-		const running = current.table.running();
-		if (running.length > 0) {
-			// These jobs die with this process, and the next process on this session file (BB restarts Pi
-			// for a new model, thinking level or environment) would otherwise believe they are still up.
-			pi.sendMessage(
-				{
-					customType: MESSAGE_TYPE,
-					content: stoppedJobsReport(running),
-					display: true,
-					details: { stopped: running.map(jobDetails), failed: true },
-				},
-				{ triggerTurn: false },
-			);
 		}
 		tables().delete(current.id);
 		await current.table.stopAll();

@@ -10,7 +10,7 @@
 | Package | Purpose | Primary activation | In BB | Test (from package directory) |
 | --- | --- | --- | --- | --- |
 | [agent-policy](extensions/agent-policy/README.md) | Explicitly configured Markdown policy and full skill bodies as one owned `agent_policy` prompt section; `common`/`child`/`main`/`mainBb`/`agents.<native name>` layers, missing or invalid sources warn and skip instead of falling back | Automatic on every run; edit `config.json`, then `/reload` | yes | `npm test` |
-| [bash-jobs](extensions/bash-jobs/README.md) | Pi's `bash`, except that a command still running after 30 s continues as a background job, with `jobs`/`wait %N`/`kill %N` and a message when it exits | Replaces `bash` (Pi and BB); `/jobs` | yes | `npm test` |
+| [bash-jobs](extensions/bash-jobs/README.md) | Pi's `bash`, made asynchronous: a command still running after 10 s continues as a background job and messages the agent when it exits; a `jobs` tool lists, reads new output from, waits for and kills jobs; foreground `sleep` polling is refused | Replaces `bash` and adds `jobs` (Pi and BB); `/jobs` | yes | `npm test` |
 | [broadcast-reload](extensions/broadcast-reload/README.md) | Safely reload all active `pi` sessions on the machine from one command, deferring busy sessions and never injecting into working panes | `/broadcast-reload` | — | `npm test` |
 | [codex-enhanced](extensions/codex-enhanced/README.md) | Current-account Codex subscription quota, banked resets, Fast processing, and optional OpenAI Responses server compaction | `/codex-enhanced` | — | `npm test` |
 | [context](extensions/context/README.md) | Estimated context-window usage breakdown, with per-category previews | `/context` (TUI only) | — | `npm test` |

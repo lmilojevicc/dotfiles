@@ -4,7 +4,7 @@ Adds model-specific instructions to Pi's system prompt as one owned
 `model_instructions` section, alongside the shared `APPEND_SYSTEM.md`. No tools,
 commands, banners, or persistent chat messages. Because it sets a named section
 instead of returning `systemPrompt`, sections other extensions add to the same run
-(bash-jobs' `background_jobs`, for example) survive.
+survive.
 
 ## Configuration
 
@@ -65,6 +65,5 @@ npm test
 
 Tests cover validation, matching/overrides, section composition and removal, model
 switching, live config edits, missing/invalid files, and quiet/TUI/RPC/headless
-diagnostics. A cross-extension session test in `pi/extensions/bash-jobs/tests` proves
-the section survives alongside a later extension's section. They do not
+diagnostics. They do not
 assert that a live model will comply with the instructions.
