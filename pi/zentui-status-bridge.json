@@ -1,0 +1,12 @@
+{
+	"include": ["pi-lens-lsp"],
+	"exclude": [],
+	"keyPrefix": "",
+	"suppressHostStatus": true,
+	"maxTextLength": 256,
+	"_examples": {
+		"include": ["pi-lens-lsp", "usage"],
+		"keyPrefix": "status/",
+		"suppressHostStatus": false
+	}
+}
