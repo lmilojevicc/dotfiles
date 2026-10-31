@@ -66,9 +66,11 @@
   symbol = " "
 
 [hostname]
-  # The custom module below labels every machine except the home one,
-  # so keep the built-in off to avoid a doubled host in ssh sessions.
-  disabled = true
+  # Show the stock hostname module on every machine except the home one.
+  # .zshrc exports STARSHIP_REMOTE_HOST on non-home machines, so ssh_only
+  # isn't needed (herdr remote panes carry no SSH_* env).
+  ssh_only = false
+  detect_env_vars = ["STARSHIP_REMOTE_HOST"]
   ssh_symbol = " "
 
 [java]
@@ -183,13 +185,3 @@
 
 [gradle]
   symbol = " "
-
-# Label every machine except the home one, regardless of how the shell was
-# opened (herdr remote panes carry no SSH_* env, so ssh_only never fires there).
-[custom.remote_host]
-  style = "bold"
-  command = "hostname -s"
-  when = '''
-    h="$(hostname -s)"
-    [ -n "$h" ] && [ "$h" != "lychee" ]
-  '''

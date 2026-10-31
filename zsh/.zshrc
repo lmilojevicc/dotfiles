@@ -7,6 +7,10 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 
+# Machines other than the home one label themselves in the starship prompt
+# (starship reads [hostname] detect_env_vars = STARSHIP_REMOTE_HOST).
+[[ "$(hostname -s)" != "lychee" ]] && export STARSHIP_REMOTE_HOST=1
+
 export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
