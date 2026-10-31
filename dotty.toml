@@ -53,7 +53,8 @@ version = 1
     { source = "model-picker.json", target = "~/.pi/agent/model-picker.json" },
     { source = "model-blacklist.json", target = "~/.pi/agent/model-blacklist.json" },
     { source = "zentui-status-bridge.json", target = "~/.pi/agent/zentui-status-bridge.json" },
-    { source = "pi-lens/config.json", target = "~/.config/pi-lens/config.json" },
+    { source = "pi-lens.json", target = "~/.config/pi/pi-lens.json" },
+    { source = "subagent.json", target = "~/.config/pi/subagent.json" },
     { source = "themes", target = "~/.pi/agent/themes" },
     { source = "extensions", target = "~/.pi/agent/extensions" },
     # BB runs Pi with PI_CODING_AGENT_DIR=~/.pi/agent-bb (set on bb.service).

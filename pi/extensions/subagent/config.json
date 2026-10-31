@@ -1,6 +1,1 @@
-{
-  "toolDescriptionMode": "compact",
-  "waitTool": false,
-  "asyncByDefault": true,
-  "artifactDir": "session"
-}
+../../subagent.json

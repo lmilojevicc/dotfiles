@@ -11,7 +11,9 @@ export WEZTERM_CONFIG_FILE="$XDG_CONFIG_HOME/wezterm/wezterm.lua"
 export TMUX_CONFIG_DIR="$HOME/.config/tmux"
 export STARSHIP_CONFIG="$XDG_CONFIG_HOME/starship/starship.toml"
 export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
-export PI_LENS_CONFIG_PATH="$XDG_CONFIG_HOME/pi-lens/config.json"
+export PI_LENS_CONFIG_PATH="$XDG_CONFIG_HOME/pi/pi-lens.json"
+export PI_LENS_HOME="$XDG_DATA_HOME/pi-lens"
+export PI_WEB_ACCESS_CACHE_ROOT="$XDG_CACHE_HOME/pi"
 export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 # Must precede zinit's bun/uv snippets, which run mise shims at source time.
