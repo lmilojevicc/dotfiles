@@ -11,7 +11,13 @@ This session runs inside BB. Use BB's own surfaces instead of trying to restore 
 
 ## CLI Tools
 
-jq, yq, fff, ast-grep (AST search/rewrite), ripgrep-all (doc search), duckdb, anydoc (docs to Markdown), wt (worktree management), git-filter-repo.
+Installed: jq, yq, fff, ast-grep (AST search/rewrite), ripgrep-all (doc search), duckdb, anydoc (docs to Markdown), wt (worktree management), git-filter-repo.
+
+Run other tools ad hoc instead of installing them: the repo's own first, then `npx`/`uvx`/`go run <pkg>@<version>`, then `mise x <tool>@<version> -- <cmd>` (see `mise registry`), then `nix shell nixpkgs#<pkg>` on NixOS.
+
+- Never add tools to the repo or change its tool config unless asked.
+- Linters and formatters: use the repo's pinned version. If none is pinned, you may run one to find problems.
+- Read-only checks may use `@latest`, e.g. `mise x osv-scanner@latest -- osv-scanner scan -r .`, `mise x gitleaks@latest -- gitleaks dir .`, `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`.
 
 ## Orchestration
 
@@ -43,7 +49,8 @@ task → explore & reproduce (scout / web research)
 
 ## Installing packages
 
-- Use temp environments for pip/uv or npm installs; install globally only when the user explicitly asks.
+- Throwaway scripts (research, one-off checks) must not touch the global environment or the project's dependencies. Run them isolated: `uv run --no-project --with <pkg> script.py`, `npx`, or a `mktemp -d` env.
+- Install globally only when the user explicitly asks.
 
 ## Docs & README
 
