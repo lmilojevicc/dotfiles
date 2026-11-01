@@ -78,9 +78,9 @@ vim.opt.mouse = "a" -- Enable mouse in all modes
 -- macOS/Windows, or any host with a real display server, uses the native provider.
 -- A headless Linux box (agent-pc over SSH/herdr) has no clipboard tool at all, so
 -- fall back to OSC 52: the multiplexer forwards the escape sequence to the outer
--- terminal, which owns the real clipboard — the local Mac's. Copy-only on purpose:
--- an OSC 52 read needs a terminal reply that multiplexers do not relay, so paste
--- registers stay empty instead of hanging.
+-- terminal, which owns the real clipboard — the local Mac's. Herdr refuses OSC 52
+-- reads, so paste returns the last yank made here: with unnamedplus every `p`
+-- reads through the provider, and an empty reply fails with E353.
 local native_clipboard = vim.fn.has("mac") == 1
   or vim.fn.has("win32") == 1
   or (vim.env.DISPLAY or "") ~= ""
@@ -88,13 +88,23 @@ local native_clipboard = vim.fn.has("mac") == 1
 
 if not native_clipboard and vim.fn.has("nvim-0.10") == 1 then
   local osc52 = require("vim.ui.clipboard.osc52")
-  local no_paste = function()
-    return {}
+  local yanked = {}
+  local copy = function(reg)
+    local send = osc52.copy(reg)
+    return function(lines, regtype)
+      yanked[reg] = { vim.list_extend({}, lines), regtype }
+      send(lines)
+    end
+  end
+  local paste = function(reg)
+    return function()
+      return yanked[reg] or {}
+    end
   end
   vim.g.clipboard = {
     name = "osc52",
-    copy = { ["+"] = osc52.copy("+"), ["*"] = osc52.copy("*") },
-    paste = { ["+"] = no_paste, ["*"] = no_paste },
+    copy = { ["+"] = copy("+"), ["*"] = copy("*") },
+    paste = { ["+"] = paste("+"), ["*"] = paste("*") },
   }
 end
 
