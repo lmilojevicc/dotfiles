@@ -81,30 +81,6 @@ if [[ -f "/opt/homebrew/bin/brew" ]]; then
     fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
 fi
 
-# Restart Rift after upgrades replace its Homebrew executable.
-brew() {
-    if [[ "$1" != "upgrade" ]]; then
-        command brew "$@"
-        return $?
-    fi
-
-    local rift_bin="${HOMEBREW_PREFIX:-/opt/homebrew}/bin/rift"
-    local before="" after="" result
-    [[ -x "$rift_bin" ]] && before=$(command readlink "$rift_bin" 2>/dev/null)
-
-    command brew "$@"
-    result=$?
-
-    if [[ -n "$before" && -x "$rift_bin" ]]; then
-        after=$(command readlink "$rift_bin" 2>/dev/null)
-        if [[ -n "$after" && "$before" != "$after" ]]; then
-            print "Rift upgraded; restarting..."
-            "$rift_bin" service restart || print -u2 "Warning: Rift restart failed."
-        fi
-    fi
-
-    return "$result"
-}
 
 # Custom completions
 fpath=("$HOME/.zsh/completions" $fpath)
