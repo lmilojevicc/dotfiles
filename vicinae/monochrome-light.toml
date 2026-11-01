@@ -1,0 +1,98 @@
+# Monochrome Glass Light — the same Tinycast-style ramp with the ink inverted:
+# black-alpha ink over the same native glass, at matched stops.
+#
+# Source: Tinycast Theme.Colors.ramp(dark:light:) light branch
+#         + bb-ui monochrome.css light ladder
+
+[meta]
+name = "Monochrome Glass Light"
+description = "Monochrome ink ramp on native Liquid Glass — Tinycast-style, from bb-ui."
+variant = "light"
+inherits = "vicinae-light"
+icon = "icons/monochrome.svg"
+
+[colors.core]
+background = "#FFFBFBFA"          # near-white: the scrim comes from launcher_window.opacity
+foreground = "#FF000000"          # ink = black; drives the glass rim, hover wash, grid outlines
+secondary_background = "#FFF4F4F1" # status bar / opaque surfaces: RGB must stay light
+border = "#D8D8D4"                # RGB: Settings draws dividers with this at alpha 1.0
+                                  # (divider = border.lighter(), so ~#E4E4DF, not pure black)
+accent = "#EB000000"
+accent_foreground = "#FFFFFFFF"
+
+[colors.accents]
+blue = "#4A4A45"
+green = "#4A6B4F"
+magenta = "#5B5273"
+orange = "#8A6A16"
+red = "#A4342C"
+yellow = "#A08A4A"
+cyan = "#4A6461"
+purple = "#7D768F"
+
+[colors.text]
+default = "#FF000000"
+muted = "#99000000"               # 0.60
+danger = "#A4342C"
+success = "#4A6B4F"
+placeholder = "#66000000"         # 0.42
+
+[colors.text.links]
+default = "#4A4A45"
+visited = "#5B5273"
+
+[colors.text.selection]
+background = "#1F000000"
+foreground = "#FF000000"
+
+[colors.input]
+background = "#FFEDEDEA"          # RGB only: drawn at surfaceOpacity over the glass
+border = "#D8D8D4"                # field outline: alpha is replaced, so this is the visible line
+border_focus = "#EB000000"
+border_error = "#A4342C"
+
+[colors.button.primary]
+background = "#EB000000"
+foreground = "#FFFFFFFF"
+hover = { background = "#FF000000", foreground = "#FFFFFFFF" }
+focus = { outline = "#EB000000" }
+
+[colors.list.item.hover]
+background = "#FFE2E2DE"          # RGB only (macOS overrides hover with ink @3.5%)
+foreground = "#FF000000"
+secondary_foreground = "#99000000"
+
+[colors.list.item.selection]
+background = "#FFCFCFC9"          # RGB only: drawn at ~0.62 alpha -> light band, black text
+foreground = "#FF000000"
+secondary_background = "#FFCFCFC9"
+secondary_foreground = "#99000000"
+
+[colors.grid.item]
+background = "#FFE9E9E5"          # RGB only: tinted with ink @2%
+hover = { outline = "#38000000" }      # 22%
+selection = { outline = "#80000000" }  # 50%
+
+[colors.scrollbars]
+background = "#40000000"
+secondary_background = "#26000000"
+
+[colors.tooltip]
+background = "#FFF7F7F4"
+foreground = "#FF000000"
+border = "#40000000"
+
+[colors.shortcut]
+border = "#2E000000"
+
+[colors.main_window]
+border = "#1F000000"              # matches the 12% macOS rim
+outer_border = "#1A000000"
+footer = { background = "#0D000000" }
+
+[colors.settings_window]
+border = "#2E000000"
+
+[colors.loading]
+bar = "#EB000000"
+spinner = "#FF000000"

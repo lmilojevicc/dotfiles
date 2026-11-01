@@ -1,0 +1,119 @@
+# Monochrome Glass — a neutral, typography-first palette on native Liquid Glass.
+#
+# Two design systems are combined here:
+#   * palette   — one grey ramp, one near-white "ink" accent, desaturated semantics
+#                 (from bb-ui: plugins/bb-ui/themes/palettes/monochrome.css)
+#   * surface   — Tinycast's white-alpha ink ramp over native glass: no grey chrome,
+#                 no opaque fills, depth comes from the desktop showing through
+#                 (Tinycast/DesignSystem/Theme.swift -> Theme.Colors.ramp)
+#
+# How the glass actually works in vicinae (macOS):
+#   * the window scrim alpha IS `launcher_window.opacity` — the theme's background
+#     colour only picks its hue (MaterialColorsMacOS.tint counters the material wash)
+#   * the window rim is derived from `core.foreground` at 16% (dark) / 12% (light),
+#     so a pure-white ink gives the glass its edge glow for free
+#   * row hover is derived from `core.foreground` at 5.5%, grid outlines at 72%/28%
+#
+# !! Fills are NOT alpha-blended with the values written here.
+# `Config.withAlpha(color, a)` in the QML REPLACES the alpha and keeps the RGB:
+#   selectionFill  = withAlpha(list.item.selection.background, surfaceOpacity ~0.62)
+#   gridFill       = withAlpha(grid.item.background,              surfaceOpacity)
+#   inputFill      = withAlpha(input.background,                  surfaceOpacity)
+#   statusBarFill  = withAlpha(secondary_background,              0.78 * windowOpacity)
+#   hoverFill      = withAlpha(list.item.hover.background,        surfaceOpacity)
+# So those five keys must carry the OPAQUE RGB you want to see; their alpha is
+# ignored, and a white RGB turns into a white 62% band. Everything else
+# (borders, dividers, text, accents) keeps its alpha.
+
+[meta]
+name = "Monochrome Glass Dark"
+description = "Monochrome ink ramp on native Liquid Glass — Tinycast-style, from bb-ui."
+variant = "dark"
+inherits = "vicinae-dark"
+icon = "icons/monochrome.svg"
+
+[colors.core]
+background = "#FF0B0B0C"          # near-black: the scrim comes from launcher_window.opacity
+foreground = "#FFFFFFFF"          # ink = white; drives the glass rim, hover wash, grid outlines
+secondary_background = "#FF101013" # status bar / opaque surfaces: RGB must stay dark
+border = "#222228"                # RGB: Settings draws dividers with this at alpha 1.0
+                                  # (divider = border.lighter(), so ~#33333C, not pure white)
+accent = "#EBFFFFFF"              # 92% composerSend
+accent_foreground = "#FF000000"
+
+[colors.accents]
+blue = "#C3C3CA"
+green = "#A6C4AC"
+magenta = "#B9ADCD"
+orange = "#E2CA92"
+red = "#E39C96"
+yellow = "#E2CA92"
+cyan = "#A3C2BF"
+purple = "#B9ADCD"
+
+[colors.text]
+default = "#FFFFFFFF"             # textPrimary 1.0
+muted = "#99FFFFFF"               # textSecondary 0.60
+danger = "#E39C96"
+success = "#A6C4AC"
+placeholder = "#66FFFFFF"         # textTertiary 0.40
+
+[colors.text.links]
+default = "#C3C3CA"
+visited = "#B9ADCD"
+
+[colors.text.selection]
+background = "#1AFFFFFF"
+foreground = "#FFFFFFFF"
+
+[colors.input]
+background = "#FF1E1E22"          # RGB only: drawn at surfaceOpacity over the glass
+border = "#4A4A54"                # field outline: alpha is replaced, so this is the visible line
+border_focus = "#EBFFFFFF"
+border_error = "#E39C96"
+
+[colors.button.primary]
+background = "#EBFFFFFF"
+foreground = "#FF000000"
+hover = { background = "#FFFFFFFF", foreground = "#FF000000" }
+focus = { outline = "#EBFFFFFF" }
+
+[colors.list.item.hover]
+background = "#FF232327"          # RGB only (macOS overrides hover with ink @5.5%)
+foreground = "#FFFFFFFF"
+secondary_foreground = "#99FFFFFF"
+
+[colors.list.item.selection]
+background = "#FF45454F"          # RGB only: drawn at ~0.62 alpha -> dark band, white text
+foreground = "#FFFFFFFF"
+secondary_background = "#FF45454F"
+secondary_foreground = "#99FFFFFF"
+
+[colors.grid.item]
+background = "#FF2A2A30"          # RGB only: tinted with ink @7%
+hover = { outline = "#47FFFFFF" }      # 28%
+selection = { outline = "#B8FFFFFF" }  # 72%
+
+[colors.scrollbars]
+background = "#40FFFFFF"          # 25%
+secondary_background = "#26FFFFFF" # 15%
+
+[colors.tooltip]
+background = "#F2101013"
+foreground = "#FFFFFFFF"
+border = "#40FFFFFF"
+
+[colors.shortcut]
+border = "#33FFFFFF"
+
+[colors.main_window]
+border = "#29FFFFFF"              # matches the 16% macOS rim
+outer_border = "#1AFFFFFF"        # faint outer halo
+footer = { background = "#0DFFFFFF" }
+
+[colors.settings_window]
+border = "#33FFFFFF"
+
+[colors.loading]
+bar = "#EBFFFFFF"
+spinner = "#FFFFFFFF"

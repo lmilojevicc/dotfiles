@@ -1,0 +1,110 @@
+# Catppuccin Mocha Crust — the ghostty config's surface exactly: crust #11111b
+# under the brighter ANSI palette overrides. Sibling: catppuccin-mocha-dark.toml,
+# which uses the Mocha base surface and is meant for the default 0.45 opacity.
+#
+# !! REQUIRES launcher_window.opacity ~0.7 (Settings -> Window opacity).
+# At 0.45 the material wash (0.20 * (1 - opacity) = 0.11) is brighter than crust,
+# MaterialColorsMacOS.tint clamps it to 0, and the surface renders flat neutral
+# grey #1C1C1C instead of #11111b. At 0.7 the wash is 0.06 and crust survives.
+# Opacity is global, so this also makes the other themes less transparent.
+#
+# Glass notes (same rules as monochrome-*.toml):
+#   * window scrim alpha = `launcher_window.opacity`. MaterialColorsMacOS.tint
+#     subtracts the material wash (0.20 * (1 - opacity)) from the background RGB
+#     and clamps at 0, so at opacity 0.45 anything darker than ~#1C1C1C collapses
+#     to neutral grey — which is why crust cannot be used at this opacity.
+#     Here the surface is crust, so opacity must be raised past that floor.
+#   * fills used through Config.withAlpha() keep their RGB and lose their alpha:
+#     selection / hover / grid / input / secondary_background are opaque RGB
+
+[meta]
+name = "Catppuccin Mocha Crust"
+description = "Catppuccin Mocha on crust, ghostty's exact surface. Needs opacity ~0.7."
+variant = "dark"
+inherits = "catppuccin-mocha"
+icon = "icons/catppuccin-mocha.svg"
+
+[colors.core]
+background = "#11111B"            # crust: only reads as crust at opacity >= ~0.7 (see note)
+foreground = "#CDD6F4"            # text
+secondary_background = "#181825"  # mantle — status bar, opaque surfaces
+border = "#45475A"                # surface1
+accent = "#89B4FA"                # blue
+accent_foreground = "#11111B"     # crust
+
+[colors.accents]
+blue = "#74A8FC"                  # ghostty palette 12
+green = "#89D88B"                 # ghostty palette 10
+magenta = "#F2AEDE"               # ghostty palette 13
+orange = "#FAB387"                # peach
+red = "#F37799"                   # ghostty palette 9
+yellow = "#EBD391"                # ghostty palette 11
+cyan = "#6BD7CA"                  # ghostty palette 14
+purple = "#CBA6F7"                # mauve
+
+[colors.text]
+default = "#CDD6F4"               # text
+muted = "#A6ADC8"                 # subtext0
+danger = "#F38BA8"                # red
+success = "#A6E3A1"               # green
+placeholder = "#6C7086"           # overlay0
+
+[colors.text.links]
+default = "#74A8FC"
+visited = "#CBA6F7"
+
+[colors.text.selection]
+background = "#6645475A"          # surface1 @ 40%
+foreground = "#CDD6F4"
+
+[colors.input]
+background = "#1E1E2E"            # RGB only: drawn at surfaceOpacity
+border = "#585B70"                # surface2
+border_focus = "#89B4FA"
+border_error = "#F38BA8"
+
+[colors.button.primary]
+background = "#89B4FA"
+foreground = "#11111B"
+hover = { background = "#B4BEFE", foreground = "#11111B" }
+focus = { outline = "#89B4FA" }
+
+[colors.list.item.hover]
+background = "#1E1E2E"            # RGB only (macOS overrides hover with ink @5.5%)
+foreground = "#CDD6F4"
+secondary_foreground = "#A6ADC8"
+
+[colors.list.item.selection]
+background = "#3B3D52"            # RGB only: drawn at ~0.62 alpha -> #2b2d3d band
+foreground = "#CDD6F4"
+secondary_background = "#3B3D52"
+secondary_foreground = "#A6ADC8"
+
+[colors.grid.item]
+background = "#1E1E2E"            # RGB only: tinted with ink @7%
+hover = { outline = "#585B70" }
+selection = { outline = "#89B4FA" }
+
+[colors.scrollbars]
+background = "#3DCDD6F4"
+secondary_background = "#26CDD6F4"
+
+[colors.tooltip]
+background = "#FA1E1E2E"
+foreground = "#CDD6F4"
+border = "#313244"
+
+[colors.shortcut]
+border = "#45475A"
+
+[colors.main_window]
+border = "#313244"                # surface0
+outer_border = "#66000000"
+footer = { background = "#181825" }  # mantle
+
+[colors.settings_window]
+border = "#313244"
+
+[colors.loading]
+bar = "#89B4FA"
+spinner = "#CDD6F4"
