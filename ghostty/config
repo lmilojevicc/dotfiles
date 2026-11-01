@@ -1,6 +1,7 @@
 # Font
 font-family = Maple Mono NL
 font-family = IBM Plex Mono
+font-codepoint-map = U+E1A0-U+E1B7=Herdr Agent Icons Max
 font-size = 16
 font-feature = -calt,-liga,-dlig
 font-thicken = true
@@ -11,6 +12,12 @@ alpha-blending = linear-corrected
 theme = Catppuccin Mocha
 background = #11111b
 split-divider-color = #313244
+palette = 9=#f37799
+palette = 10=#89d88b
+palette = 11=#ebd391
+palette = 12=#74a8fc
+palette = 13=#f2aede
+palette = 14=#6bd7ca
 
 # Cursor settings
 cursor-style = block
