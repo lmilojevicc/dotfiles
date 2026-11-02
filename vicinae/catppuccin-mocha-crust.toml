@@ -75,9 +75,9 @@ foreground = "#CDD6F4"
 secondary_foreground = "#A6ADC8"
 
 [colors.list.item.selection]
-background = "#3B3D52"            # RGB only: drawn at ~0.62 alpha -> #2b2d3d band
+background = "#2F2F3F"            # RGB only: drawn at ~0.62 alpha -> #232333, a faint step above the bg
 foreground = "#CDD6F4"
-secondary_background = "#3B3D52"
+secondary_background = "#2F2F3F"
 secondary_foreground = "#A6ADC8"
 
 [colors.grid.item]

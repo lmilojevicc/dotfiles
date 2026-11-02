@@ -84,9 +84,9 @@ foreground = "#FFFFFFFF"
 secondary_foreground = "#99FFFFFF"
 
 [colors.list.item.selection]
-background = "#FF45454F"          # RGB only: drawn at ~0.62 alpha -> dark band, white text
+background = "#FF2E2E36"          # RGB only: drawn at ~0.62 alpha -> #23232A, a faint step above the bg
 foreground = "#FFFFFFFF"
-secondary_background = "#FF45454F"
+secondary_background = "#FF2E2E36"
 secondary_foreground = "#99FFFFFF"
 
 [colors.grid.item]

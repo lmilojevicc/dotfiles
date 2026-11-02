@@ -23,19 +23,21 @@
 
 # Theme palette
 # See https://github.com/y3owk1n/neru/blob/main/docs/reference/configuration.md#theme
+# Quiet glass, matching the vicinae monochrome themes.
+# Theme base colors must be solid; translucency lives on the component colors.
 [theme.light]
-  surface = "#EEF2FF"
-  accent = "#465FBC"
-  accent_alt = "#0B2377"
-  on_accent_alt = "#F8FAFF"
-  text = "#17327A"
+  surface = "#FCFCFE"       # panel and marker fill
+  accent = "#E6E6E6"        # borders and lines, black at 10% over the surface
+  accent_alt = "#16161A"    # active fill
+  on_accent_alt = "#FFFFFF"
+  text = "#16161A"
 
 [theme.dark]
-  surface = "#0A1338"
-  accent = "#6E82D6"
-  accent_alt = "#8FA2F0"
-  on_accent_alt = "#081022"
-  text = "#E8EEFF"
+  surface = "#121214"       # panel and marker fill
+  accent = "#2A2A2E"        # borders and lines, white at 9% over the surface
+  accent_alt = "#F2F2F4"    # active fill
+  on_accent_alt = "#121214"
+  text = "#F2F2F4"
 
 # Hotkeys
 # See https://github.com/y3owk1n/neru/blob/main/docs/reference/configuration.md#hotkeys
@@ -165,25 +167,32 @@
     "Right" = "action move_mouse_relative --dx=10 --dy=0"
 
   [hints.ui]
-    font_size = 10
-    font_family = ""     # Empty = platform sans
-    border_radius = -1   # -1 = auto pill
-    padding_x = -1       # -1 = auto
-    padding_y = -1       # -1 = auto
+    font_size = 11
+    font_family = "Maple Mono NL"
+    border_radius = 4
+    padding_x = 5
+    padding_y = 2
     border_width = 1
-    placement = "bottom" # top, center, bottom
+    placement = "bottom"           # top, center, bottom
+    background_color = "#D1121214" # rgba(18,18,20,.82)
+    text_color = "#FFF2F2F4"
+    matched_text_color = "#6D6D70" # ink at 42%
+    border_color = "#29FFFFFF"     # white at 16%
 
   [hints.search_input_ui]
-    font_size = 10
-    font_family = ""           # Empty = platform sans
-    border_radius = -1         # -1 = auto pill
-    padding_x = -1             # -1 = auto
-    padding_y = -1             # -1 = auto
+    font_size = 11
+    font_family = "Maple Mono NL"
+    border_radius = -1             # -1 = auto pill
+    padding_x = -1                 # -1 = auto
+    padding_y = -1                 # -1 = auto
     border_width = 1
-    position = "bottom_center" # top_left, top_center, top_right, center, bottom_left, bottom_center, bottom_right
+    position = "bottom_center"     # top_left, top_center, top_right, center, bottom_left, bottom_center, bottom_right
     x_offset = 0
     y_offset = 24
-    width = 320                # px
+    width = 320                    # px
+    background_color = "#D1121214"
+    text_color = "#FFF2F2F4"
+    border_color = "#29FFFFFF"
 
   [hints.boundary_highlight]
     enabled = false
