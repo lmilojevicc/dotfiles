@@ -183,6 +183,9 @@
       "builtinRendererOverrides": {
         "bash": true
       },
+      "compatibleToolSources": {
+        "bash": ["bash-improved"]
+      },
       "customToolOverrides": {},
       "readOutputMode": "hidden",
       "searchOutputMode": "hidden",
