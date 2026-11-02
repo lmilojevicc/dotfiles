@@ -1,8 +1,8 @@
 /**
- * Process supervision for bash-jobs: run a shell command, stop waiting for it after a budget while it
- * keeps running, and track it as a background job until its whole process group is gone.
+ * Process supervision for bash-improved: run a shell command, stop waiting for it after a budget
+ * while it keeps running, and track it as a background task until its whole process group is gone.
  *
- * Every command runs in its own process group (spawned detached, like Pi's bash tool), so a job is
+ * Every command runs in its own process group (spawned detached, like Pi's bash tool), so a task is
  * "running" while any process in that group lives, including ones the command started with `&`.
  */
 import { type ChildProcess, spawn } from "node:child_process";
@@ -21,7 +21,7 @@ import {
 import { constants as osConstants } from "node:os";
 import { dirname, join } from "node:path";
 
-/** After the shell exits, how long processes it left behind may linger before they count as a background job. */
+/** After the shell exits, how long processes it left behind may linger before they count as a background task. */
 const LINGER_MS = 500;
 /** Once the group is gone, pipes that stay quiet this long count as drained. */
 const IDLE_MS = 200;
@@ -29,11 +29,11 @@ const IDLE_MS = 200;
 const DRAIN_MS = 1000;
 const MAX_LOG_BYTES = 64 * 1024 * 1024;
 const MAX_TIMER_MS = 2 ** 31 - 1;
-/** Ended jobs kept for `jobs` and `wait`. */
+/** Ended tasks kept for `tasks` and `wait`. */
 const KEEP_ENDED = 20;
 
-/** Why a job ended: on its own, its timeout, a stop request, or session shutdown. */
-export type JobEnd = "exit" | "timeout" | "stopped" | "shutdown";
+/** Why a task ended: on its own, its timeout, a stop request, or session shutdown. */
+export type TaskEnd = "exit" | "timeout" | "stopped" | "shutdown";
 
 /**
  * Why a command moved to the background: it outlived the wait, the model asked for it, or it exited
@@ -41,11 +41,13 @@ export type JobEnd = "exit" | "timeout" | "stopped" | "shutdown";
  */
 export type BackgroundReason = "waited" | "requested" | "leftover";
 
-export interface JobSpec {
+export interface TaskSpec {
 	/** Text passed to the shell (may include Pi's command prefix). */
 	command: string;
 	/** The command as the model wrote it, used in messages. */
 	label: string;
+	/** What the command does, in a few words, for the user; the model's `description`, if it gave one. */
+	description?: string;
 	cwd: string;
 	env: NodeJS.ProcessEnv;
 	shell: string;
@@ -76,10 +78,11 @@ function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> 
 	});
 }
 
-export class Job {
-	/** Job number (`%N`), assigned when the job moves to the background; 0 while in the foreground. */
+export class Task {
+	/** Task ID, assigned when the task moves to the background; 0 while in the foreground. */
 	id = 0;
 	readonly label: string;
+	readonly description: string | undefined;
 	readonly cwd: string;
 	readonly pid: number | undefined;
 	readonly startedAt = Date.now();
@@ -91,23 +94,23 @@ export class Job {
 	shellExitedAt: number | undefined;
 	exitCode: number | null = null;
 	exitSignal: NodeJS.Signals | null = null;
-	end: JobEnd | undefined;
+	end: TaskEnd | undefined;
 	spawnError: Error | undefined;
-	/** The model already has this job's final result, so it gets no message when the job ends. */
+	/** The model already has this task's final result, so it gets no message when the task ends. */
 	reported = false;
-	/** Tool calls waiting on this job. A job that ends while watched counts as reported. */
+	/** Tool calls waiting on this task. A task that ends while watched counts as reported. */
 	watchers = 0;
-	/** Log offset up to which the model has read the output (`jobs output`). */
+	/** Log offset up to which the model has read the output (`tasks output`). */
 	readOffset = 0;
 	readonly ended: Promise<void>;
 
 	/** Receives output while a tool call waits in the foreground. */
 	sink: ((chunk: Buffer) => void) | undefined;
-	/** Foreground hooks, cleared when the job moves to the background. */
+	/** Foreground hooks, cleared when the task moves to the background. */
 	onLinger: (() => void) | undefined;
 	onDeadline: (() => void) | undefined;
 	/** Set by the table. */
-	onEnd: ((job: Job) => void) | undefined;
+	onEnd: ((task: Task) => void) | undefined;
 
 	private readonly child: ChildProcess;
 	private fd: number | undefined;
@@ -120,8 +123,9 @@ export class Job {
 	private deadline: NodeJS.Timeout | undefined;
 	private resolveEnded!: () => void;
 
-	constructor(spec: JobSpec, logPath: string) {
+	constructor(spec: TaskSpec, logPath: string) {
 		this.label = spec.label;
+		this.description = spec.description;
 		this.cwd = spec.cwd;
 		this.logPath = logPath;
 		this.timeoutSeconds = spec.timeoutSeconds;
@@ -191,7 +195,7 @@ export class Job {
 	}
 
 	/** Signal the process group and wait for it to end, escalating to SIGKILL after the grace period. */
-	async stop(end: JobEnd, signal: NodeJS.Signals = "SIGTERM", graceMs = 2000): Promise<void> {
+	async stop(end: TaskEnd, signal: NodeJS.Signals = "SIGTERM", graceMs = 2000): Promise<void> {
 		if (!this.running) return;
 		this.end ??= end;
 		this.signal(signal);
@@ -290,7 +294,7 @@ export class Job {
 		this.fd = undefined;
 	}
 
-	/** Called whenever the shell exits or a pipe closes, then polled until the job has ended. */
+	/** Called whenever the shell exits or a pipe closes, then polled until the task has ended. */
 	private check = (): void => {
 		clearTimeout(this.timer);
 		this.timer = undefined;
@@ -328,15 +332,15 @@ export class Job {
 	}
 }
 
-export interface JobEvents {
-	/** A background job ended for any reason other than session shutdown. */
-	ended(job: Job): void;
-	/** A job moved to the background or a background job ended. */
+export interface TaskEvents {
+	/** A background task ended for any reason other than session shutdown. */
+	ended(task: Task): void;
+	/** A task moved to the background or a background task ended. */
 	changed(): void;
 }
 
 /**
- * Remove job directories (`<name>-<pid>`) of Pi processes that are gone without cleaning up, for
+ * Remove task directories (`<name>-<pid>`) of Pi processes that are gone without cleaning up, for
  * example after `kill -9`. A directory whose process still runs, or might, is left alone.
  */
 export function removeStaleTables(root: string): void {
@@ -357,15 +361,15 @@ export function removeStaleTables(root: string): void {
 	}
 }
 
-/** All commands of one session: the ones still running in the foreground and the background jobs. */
-export class JobTable {
+/** All commands of one session: the ones still running in the foreground and the background tasks. */
+export class TaskTable {
 	nextId = 1;
 	readonly dir: string;
-	readonly jobs = new Map<number, Job>();
-	private readonly live = new Set<Job>();
+	readonly tasks = new Map<number, Task>();
+	private readonly live = new Set<Task>();
 	private seq = 0;
-	private events: JobEvents | undefined;
-	private queued: Job[] = [];
+	private events: TaskEvents | undefined;
+	private queued: Task[] = [];
 
 	constructor(dir: string) {
 		this.dir = dir;
@@ -373,18 +377,18 @@ export class JobTable {
 		process.on("exit", this.onProcessExit);
 	}
 
-	/** Deliver events to a new runtime, including any job that ended while none was bound (during a reload). */
-	bind(events: JobEvents | undefined): void {
+	/** Deliver events to a new runtime, including any task that ended while none was bound (during a reload). */
+	bind(events: TaskEvents | undefined): void {
 		this.events = events;
 		if (!events) return;
-		for (const job of this.queued.splice(0)) events.ended(job);
+		for (const task of this.queued.splice(0)) events.ended(task);
 		events.changed();
 	}
 
-	start(spec: JobSpec): Job {
-		const job = new Job(spec, join(this.dir, `run-${++this.seq}.log`));
-		this.live.add(job);
-		job.onEnd = (ended) => {
+	start(spec: TaskSpec): Task {
+		const task = new Task(spec, join(this.dir, `run-${++this.seq}.log`));
+		this.live.add(task);
+		task.onEnd = (ended) => {
 			this.live.delete(ended);
 			if (!ended.id) return;
 			if (ended.end !== "shutdown") {
@@ -393,36 +397,36 @@ export class JobTable {
 			}
 			this.events?.changed();
 		};
-		return job;
+		return task;
 	}
 
-	background(job: Job, reason: BackgroundReason): void {
-		job.id = this.nextId++;
-		job.reason = reason;
-		job.backgroundedAt = Date.now();
-		job.sink = undefined;
-		job.onLinger = undefined;
-		job.onDeadline = undefined;
-		job.moveLog(join(dirname(job.logPath), `job-${job.id}.log`));
-		// The model saw the output so far in the bash result; `jobs output` starts after it.
-		job.markRead();
-		this.jobs.set(job.id, job);
-		const ended = [...this.jobs.values()].filter((other) => !other.running);
-		for (const old of ended.slice(0, Math.max(0, ended.length - KEEP_ENDED))) this.jobs.delete(old.id);
+	background(task: Task, reason: BackgroundReason): void {
+		task.id = this.nextId++;
+		task.reason = reason;
+		task.backgroundedAt = Date.now();
+		task.sink = undefined;
+		task.onLinger = undefined;
+		task.onDeadline = undefined;
+		task.moveLog(join(dirname(task.logPath), `task-${task.id}.log`));
+		// The model saw the output so far in the bash result; `tasks output` starts after it.
+		task.markRead();
+		this.tasks.set(task.id, task);
+		const ended = [...this.tasks.values()].filter((other) => !other.running);
+		for (const old of ended.slice(0, Math.max(0, ended.length - KEEP_ENDED))) this.tasks.delete(old.id);
 		this.events?.changed();
 	}
 
-	get(id: number): Job | undefined {
-		return this.jobs.get(id);
+	get(id: number): Task | undefined {
+		return this.tasks.get(id);
 	}
 
-	running(): Job[] {
-		return [...this.jobs.values()].filter((job) => job.running);
+	running(): Task[] {
+		return [...this.tasks.values()].filter((task) => task.running);
 	}
 
 	/** Stop every command, foreground or background, without reporting them as ended. */
 	async stopAll(): Promise<void> {
-		await Promise.all([...this.live].map((job) => job.stop("shutdown", "SIGTERM", 1000)));
+		await Promise.all([...this.live].map((task) => task.stop("shutdown", "SIGTERM", 1000)));
 	}
 
 	dispose(): void {
@@ -432,37 +436,37 @@ export class JobTable {
 
 	/** Pi is exiting without a session shutdown (killed by a signal, or BB stopped it): leave nothing behind. */
 	private onProcessExit = (): void => {
-		for (const job of this.live) job.signal("SIGKILL");
+		for (const task of this.live) task.signal("SIGKILL");
 		rmSync(this.dir, { recursive: true, force: true });
 	};
 }
 
-export interface RunOptions extends JobSpec {
+export interface RunOptions extends TaskSpec {
 	/** How long to wait for the command before it moves to the background. */
 	waitMs: number;
-	/** Recorded on the job when it moves to the background after `waitMs`. */
+	/** Recorded on the task when it moves to the background after `waitMs`. */
 	reason: "waited" | "requested";
 	signal?: AbortSignal;
 	onData(chunk: Buffer): void;
 }
 
-export type RunResult = { kind: "exited"; exitCode: number } | { kind: "background"; job: Job };
+export type RunResult = { kind: "exited"; exitCode: number } | { kind: "background"; task: Task };
 
 /**
  * Run a command and wait for it in the foreground for at most `waitMs`. A command still running then,
- * or one that exited but left processes in its group, keeps running as a background job.
+ * or one that exited but left processes in its group, keeps running as a background task.
  * Abort and the timeout kill it while it is in the foreground and reject like Pi's bash operations
- * (`aborted`, `timeout:<seconds>`); after that the timeout stops the background job.
+ * (`aborted`, `timeout:<seconds>`); after that the timeout stops the background task.
  */
-export function runCommand(table: JobTable, options: RunOptions): Promise<RunResult> {
+export function runCommand(table: TaskTable, options: RunOptions): Promise<RunResult> {
 	return new Promise((resolve, reject) => {
 		if (options.signal?.aborted) {
 			reject(new Error("aborted"));
 			return;
 		}
-		let job: Job;
+		let task: Task;
 		try {
-			job = table.start(options);
+			task = table.start(options);
 		} catch (error) {
 			reject(error);
 			return;
@@ -472,36 +476,36 @@ export function runCommand(table: JobTable, options: RunOptions): Promise<RunRes
 			waiting = false;
 			clearTimeout(timer);
 			options.signal?.removeEventListener("abort", onAbort);
-			job.sink = undefined;
-			job.onLinger = undefined;
-			job.onDeadline = undefined;
+			task.sink = undefined;
+			task.onLinger = undefined;
+			task.onDeadline = undefined;
 		};
 		const toBackground = (reason: BackgroundReason) => {
 			if (!waiting) return;
 			release();
-			table.background(job, reason);
-			resolve({ kind: "background", job });
+			table.background(task, reason);
+			resolve({ kind: "background", task });
 		};
-		const kill = (end: JobEnd, error: Error) => {
+		const kill = (end: TaskEnd, error: Error) => {
 			if (!waiting) return;
 			release();
-			void job.stop(end, "SIGKILL").then(() => {
-				job.discardLog();
+			void task.stop(end, "SIGKILL").then(() => {
+				task.discardLog();
 				reject(error);
 			});
 		};
 		const onAbort = () => kill("stopped", new Error("aborted"));
-		job.sink = options.onData;
-		job.onLinger = () => toBackground("leftover");
-		job.onDeadline = () => kill("timeout", new Error(`timeout:${options.timeoutSeconds}`));
+		task.sink = options.onData;
+		task.onLinger = () => toBackground("leftover");
+		task.onDeadline = () => kill("timeout", new Error(`timeout:${options.timeoutSeconds}`));
 		options.signal?.addEventListener("abort", onAbort, { once: true });
 		const timer = setTimeout(() => toBackground(options.reason), options.waitMs);
-		void job.ended.then(() => {
+		void task.ended.then(() => {
 			if (!waiting) return;
 			release();
-			job.discardLog();
-			if (job.spawnError) reject(job.spawnError);
-			else resolve({ kind: "exited", exitCode: job.exitStatus() });
+			task.discardLog();
+			if (task.spawnError) reject(task.spawnError);
+			else resolve({ kind: "exited", exitCode: task.exitStatus() });
 		});
 	});
 }
