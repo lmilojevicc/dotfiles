@@ -482,6 +482,8 @@ test("state.json tells other programs about the tasks, and a stop-<id> file stop
 	const h = await harness([
 		bash({ command: "sleep 30", description: "Hold the port", run_in_background: true }),
 		fauxAssistantMessage("Started."),
+		tasks("wait 1 --timeout 20"),
+		fauxAssistantMessage("Stopped."),
 	]);
 	try {
 		await h.session.prompt("start it");
@@ -496,12 +498,18 @@ test("state.json tells other programs about the tasks, and a stop-<id> file stop
 			[[1, "Hold the port", "running"]],
 		);
 		const calls = h.calls();
+		const waiting = h.session.prompt("wait for it");
+		await until(() => h.calls() === calls + 1);
 		writeFileSync(join(dir, "stop-1"), "");
 		await until(() => read().tasks[0].status === "killed");
 		assert.ok(!existsSync(join(dir, "stop-1")), "the request is consumed");
+		await waiting;
+		// A wait on a task the user stopped is not an error.
+		const waited = toolResults(h.session).at(-1);
+		assert.equal(waited?.isError, false);
+		assert.match(text(waited as never), /^Background task 1 Hold the port was stopped after \d+s\./);
 		await until(() => notices(h.session).length === 1);
 		assert.match(notices(h.session)[0], /^The user stopped background task 1 Hold the port\./);
-		assert.equal(h.calls(), calls, "stopping does not wake the agent");
 	} finally {
 		if (previous === undefined) delete process.env.BB_THREAD_ID;
 		else process.env.BB_THREAD_ID = previous;

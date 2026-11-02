@@ -74,8 +74,10 @@ export function endSummary(task: Task): string {
 
 export function failed(task: Task): boolean {
 	if (task.running) return false;
+	// Stopping a task on purpose (SIGTERM, so exit 143) is not a failure.
+	if (task.end === "stopped") return false;
 	if (task.end === "timeout" || task.spawnError || task.exitSignal) return true;
-	return task.reason !== "leftover" && task.end !== "stopped" && task.exitStatus() !== 0;
+	return task.reason !== "leftover" && task.exitStatus() !== 0;
 }
 
 /** The final result of a task: how it ended, its last output and where the rest is. */
