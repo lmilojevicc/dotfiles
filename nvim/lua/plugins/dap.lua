@@ -1,3 +1,18 @@
+-- Prompt for program arguments, starting from the configuration's own.
+local function get_args(config)
+  local args = type(config.args) == "function" and (config.args() or {}) or config.args or {}
+  local args_str = type(args) == "table" and table.concat(args, " ") or args
+  config = vim.deepcopy(config)
+  config.args = function()
+    local new_args = vim.fn.expand(vim.fn.input("Run with args: ", args_str))
+    if config.type == "java" then
+      return new_args
+    end
+    return require("dap.utils").splitstr(new_args)
+  end
+  return config
+end
+
 return {
   {
     "rcarriga/nvim-dap-ui",
@@ -24,6 +39,8 @@ return {
   {
     "mfussenegger/nvim-dap",
     dependencies = {
+      -- Loads with nvim-dap so its auto-open listener exists for the first session.
+      "rcarriga/nvim-dap-ui",
       { "leolUz/nvim-dap-go", ft = "go" },
       { "mfussenegger/nvim-dap-python", ft = "python" },
       { "theHamsta/nvim-dap-virtual-text", opts = {} },
@@ -47,7 +64,7 @@ return {
       -- Icons
       local signs = {
         breakpoint = { text = " ", hl = "DapBreakpoint" },
-        condition = { " ", hl = "DapBreakpointCondition" },
+        condition = { text = " ", hl = "DapBreakpointCondition" },
         log_point = { text = ".>", hl = "DapLogPoint" },
         stopped = { text = " ", hl = "DapStopped" },
         rejected = { text = " ", hl = "DapBreakpointRejected" },

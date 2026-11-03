@@ -1,5 +1,7 @@
 return {
   "stevearc/oil.nvim",
+  -- Oil has to load at startup to replace netrw (`nvim .`, `:e dir/`).
+  lazy = false,
   dependencies = {
     "nvim-tree/nvim-web-devicons",
     "malewicz1337/oil-git.nvim",
@@ -42,6 +44,7 @@ return {
     })
 
     local oil_winid = nil
+    local preview_winid = nil
 
     -- Function to update oil border colors
     local function update_oil_border()

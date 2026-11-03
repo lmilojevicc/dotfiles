@@ -4,13 +4,13 @@ return {
   event = "VeryLazy",
   dependencies = { "nvim-tree/nvim-web-devicons" },
   opts = function(_, opts)
+    -- Top-level, not under options: bufferline reads opts.highlights.
+    opts.highlights = require("catppuccin.special.bufferline").get_theme()
     opts.options = {
       -- stylua: ignore
       close_command = function(n) Snacks.bufdelete(n) end,
       -- stylua: ignore
       middle_mouse_command = function(n) Snacks.bufdelete(n) end,
-
-      highlights = require("catppuccin.special.bufferline").get_theme(),
 
       always_show_bufferline = true,
 

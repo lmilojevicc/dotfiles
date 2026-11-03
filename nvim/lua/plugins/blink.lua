@@ -5,18 +5,11 @@ return {
     require("blink.cmp").build():pwait()
   end,
   opts_extend = {
-    "sources.completion.enabled_providers",
-    "sources.compat",
     "sources.default",
   },
   dependencies = {
     "kristijanhusak/vim-dadbod-completion",
     "ribru17/blink-cmp-spell",
-    {
-      "saghen/blink.compat",
-      event = { "InsertEnter", "CmdlineEnter" },
-      opts = {},
-    },
     {
       "L3MON4D3/LuaSnip",
       build = "make install_jsregexp",
@@ -50,9 +43,6 @@ return {
       completion = { menu = { auto_show = true } },
     },
     appearance = { nerd_font_variant = "mono" },
-    signature = {
-      window = { border = "none" },
-    },
     completion = {
       accept = {
         auto_brackets = { enabled = true },
@@ -83,7 +73,10 @@ return {
       preset = "luasnip",
     },
     sources = {
-      default = { "lsp", "lazydev", "dadbod", "snippets", "path", "buffer", "spell" },
+      default = { "lsp", "lazydev", "snippets", "path", "buffer", "spell" },
+      per_filetype = {
+        sql = { inherit_defaults = true, "dadbod" },
+      },
       providers = {
         lsp = {
           name = "lsp",

@@ -1,22 +1,13 @@
 local map = vim.keymap.set
 
-map("n", "<Esc>", ":noh<CR><Esc>", { noremap = true, silent = true })
+map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = " Clear search highlight" })
 
 map("n", "<leader>qq", "<cmd>qa<cr>", { desc = " Quit All" })
 map("t", "<Esc><Esc>", "<C-\\><C-n>", { desc = " Exit terminal mode" })
 
--- Vim native file navigation
-map("n", "<leader>ee", ":Explore<CR>", { desc = " Open file explorer" })
-map("n", "<leader>ff", ":find ", { desc = " Find file" })
-
 -- Keep selection after indent
 map("v", "<", "<gv", { desc = " Indent left and keep selection" })
 map("v", ">", ">gv", { desc = " Indent right and keep selection" })
-
--- Buffers
-map("n", "]b", "<cmd>bnext<CR>", { desc = " Go to next buffer" })
-map("n", "[b", "<cmd>bprevious<CR>", { desc = " Go to previous buffer" })
-map("n", "<leader>bd", ":bd<CR>", { desc = " Delete buffer", remap = true })
 
 local diagnostic_goto = function(next, severity)
   local count = next and 1 or -1

@@ -4,8 +4,9 @@ return {
   event = { "BufReadPre", "BufNewFile" },
   build = ":TSUpdate",
   dependencies = {
-    { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main",             event = "BufReadPre", },
-    { "bezhermoso/tree-sitter-ghostty",              build = "make nvim_install", event = "BufReadPre", },
+    -- Only for its textobjects queries; mini.ai (mini-ai.lua) does the selecting.
+    { "nvim-treesitter/nvim-treesitter-textobjects", branch = "main", event = "BufReadPre" },
+    { "bezhermoso/tree-sitter-ghostty", build = "make nvim_install", event = "BufReadPre" },
   },
   config = function()
     local languages = {
@@ -53,29 +54,10 @@ return {
       "zsh",
     }
     local ts = require("nvim-treesitter")
-    local ts_textobjects = require("nvim-treesitter-textobjects")
-    local ts_select = require("nvim-treesitter-textobjects.select")
     local available_languages = {}
     for _, lang in ipairs(ts.get_available()) do
       available_languages[lang] = true
     end
-
-    ts_textobjects.setup({
-      select = {
-        lookahead = true,
-        selection_modes = {
-          ["@function.outer"] = "V",
-        },
-      },
-    })
-
-    vim.keymap.set({ "x", "o" }, "af", function()
-      ts_select.select_textobject("@function.outer", "textobjects")
-    end, { desc = "TreeSitter around function" })
-
-    vim.keymap.set({ "x", "o" }, "if", function()
-      ts_select.select_textobject("@function.inner", "textobjects")
-    end, { desc = "TreeSitter inside function" })
 
     local treesitter_indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
     local prior_indentexpr = {}

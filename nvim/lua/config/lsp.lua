@@ -1,26 +1,37 @@
--- Keymaps
-vim.lsp.config("*", {
-  capabilities = vim.lsp.protocol.make_client_capabilities(),
-  on_attach = function(client, bufnr)
-    local map = vim.keymap.set
-
-    local has_snacks = pcall(require, "snacks")
-    local has_fzf = pcall(require, "fzf-lua")
-
-    if not has_snacks and not has_fzf then
-      map("n", "gd", vim.lsp.buf.definition, { desc = " LSP Go to definition" })
-      map("n", "gD", vim.lsp.buf.declaration, { desc = " LSP Go to declaration" })
-      map("n", "gr", vim.lsp.buf.references, { desc = " LSP Show references" })
-      map("n", "gi", vim.lsp.buf.implementation, { desc = "  LSP Go to implementation" })
-      map("n", "gy", vim.lsp.buf.type_definition, { desc = " LSP Go to type definition" })
-      map("n", "gs", vim.lsp.buf.document_symbol, { desc = " LSP Document symbols" })
-      map("n", "gS", vim.lsp.buf.workspace_symbol, { desc = " LSP Workspace symbols" })
+-- Buffer-local, and set on LspAttach rather than on_attach: servers that ship
+-- their own on_attach (clangd, rust_analyzer, eslint, …) would replace ours.
+-- The native gr* keys are re-set only to add a desc for which-key.
+vim.api.nvim_create_autocmd("LspAttach", {
+  group = vim.api.nvim_create_augroup("user_lsp_keymaps", { clear = true }),
+  callback = function(event)
+    local function map(mode, lhs, rhs, desc)
+      vim.keymap.set(mode, lhs, rhs, { buffer = event.buf, desc = desc })
     end
 
-    map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, { desc = " LSP Code actions" })
-    map("n", "<leader>rn", vim.lsp.buf.rename, { desc = " LSP Rename" })
-    map("n", "gh", vim.lsp.buf.hover, { desc = " LSP Hover" })
-    map("n", "K", vim.lsp.buf.signature_help, { desc = "󰊕 LSP Signature help" })
+    --- The Snacks picker `name` when Snacks is loaded, otherwise `fallback`.
+    local function pick(name, fallback)
+      return function()
+        if package.loaded.snacks then
+          Snacks.picker[name]()
+        else
+          fallback()
+        end
+      end
+    end
+
+    map("n", "gd", pick("lsp_definitions", vim.lsp.buf.definition), " LSP Go to definition")
+    map("n", "gD", pick("lsp_declarations", vim.lsp.buf.declaration), " LSP Go to declaration")
+    map("n", "grr", pick("lsp_references", vim.lsp.buf.references), " LSP References")
+    map("n", "gri", pick("lsp_implementations", vim.lsp.buf.implementation), " LSP Implementations")
+    map("n", "grt", pick("lsp_type_definitions", vim.lsp.buf.type_definition), " LSP Type definition")
+    map("n", "gO", pick("lsp_symbols", vim.lsp.buf.document_symbol), " LSP Document symbols")
+    map("n", "gS", pick("lsp_workspace_symbols", vim.lsp.buf.workspace_symbol), " LSP Workspace symbols")
+
+    map("n", "grn", vim.lsp.buf.rename, " LSP Rename")
+    map({ "n", "x" }, "gra", vim.lsp.buf.code_action, " LSP Code action")
+    map("n", "grx", vim.lsp.codelens.run, " LSP Run code lens")
+    map("n", "K", vim.lsp.buf.hover, " LSP Hover")
+    map("i", "<C-s>", vim.lsp.buf.signature_help, "󰊕 LSP Signature help")
   end,
 })
 

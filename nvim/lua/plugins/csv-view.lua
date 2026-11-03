@@ -21,14 +21,23 @@ return {
     },
   },
 
-  config = function(opts)
+  config = function(_, opts)
     require("csvview").setup(opts)
-    vim.api.nvim_create_autocmd("BufReadPost", {
-      pattern = "*.csv",
-      callback = function()
-        vim.cmd("CsvViewEnable")
+    local function enable(buf)
+      if not require("csvview").is_enabled(buf) then
+        require("csvview").enable(buf)
+      end
+    end
+    vim.api.nvim_create_autocmd("FileType", {
+      group = vim.api.nvim_create_augroup("user_csvview", { clear = true }),
+      pattern = "csv",
+      callback = function(event)
+        enable(event.buf)
       end,
       desc = "Auto-enable CSV view for CSV files",
     })
+    if vim.bo.filetype == "csv" then
+      enable(vim.api.nvim_get_current_buf())
+    end
   end,
 }

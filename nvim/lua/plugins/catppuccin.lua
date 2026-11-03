@@ -1,7 +1,8 @@
 return {
   "catppuccin/nvim",
   build = ":CatppuccinCompile",
-  event = "UIEnter",
+  lazy = false,
+  priority = 1000,
   config = function()
     require("catppuccin").setup({
       compile_path = vim.fn.stdpath("cache") .. "/catppuccin",
@@ -34,16 +35,15 @@ return {
 
       default_integrations = true,
       auto_integrations = true,
-      integrations = {
-        native_lsp = {
-          enabled = true,
-          underlines = {
-            errors = { "undercurl" },
-            hints = { "undercurl" },
-            warnings = { "undercurl" },
-            information = { "undercurl" },
-          },
+      lsp_styles = {
+        underlines = {
+          errors = { "undercurl" },
+          hints = { "undercurl" },
+          warnings = { "undercurl" },
+          information = { "undercurl" },
         },
+      },
+      integrations = {
         lualine = {
           all = function(colors)
             return {

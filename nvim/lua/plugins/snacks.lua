@@ -307,14 +307,7 @@ return {
       desc = " Search keymaps",
     },
 
-    -- LSP
-    { "gr", function() Snacks.picker.lsp_references() end, desc = " Show LSP references", },
-    { "gD", function() Snacks.picker.lsp_declarations() end, desc = " Go to declaration", },
-    { "gd", function() Snacks.picker.lsp_definitions() end, desc = " Show LSP definitions", },
-    { "gi", function() Snacks.picker.lsp_implementations() end, desc = " Show LSP implementations", },
-    { "gy", function() Snacks.picker.lsp_type_definitions() end, desc = " Show LSP type definitions", },
-    { "gs", function() Snacks.picker.lsp_symbols({ layout = "left" }) end, desc = " Show document symbols in floating picker", },
-    { "gS", function() Snacks.picker.lsp_workspace_symbols() end, desc = " Show workspace symbols", },
+    -- LSP keys are buffer-local, in config/lsp.lua.
 
     -- Search
     { "<leader>ff", function() Snacks.picker.fff_files() end, desc = " Find files", },
@@ -444,22 +437,5 @@ return {
         vim.b.disable_autoformat = not state
       end,
     }):map("<leader>uF")
-  end,
-
-  init = function()
-    local function disable_animate_for(key)
-      vim.keymap.set("n", key, function()
-        local prev_animate = vim.g.snacks_animate
-        vim.g.snacks_animate = false
-        vim.cmd("normal! " .. key)
-        vim.schedule(function()
-          vim.g.snacks_animate = prev_animate
-        end)
-      end, { noremap = true })
-    end
-
-    for _, key in ipairs({ "G", "gg", "n", "N" }) do
-      disable_animate_for(key)
-    end
   end,
 }

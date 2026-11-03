@@ -7,7 +7,6 @@ return {
       "snacks_dashboard",
       "man",
       "help",
-      "man",
       "qf",
       "NvimTree",
       "neo-tree",

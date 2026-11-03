@@ -45,6 +45,5 @@ return {
     map("v", "<C-x>", dial_map.dec_visual(), { noremap = true })
     map("v", "g<C-a>", dial_map.inc_gvisual(), { noremap = true })
     map("v", "g<C-x>", dial_map.dec_gvisual(), { noremap = true })
-    vim.keymap.set("v", "g<C-x>", dial_map.dec_gvisual(), { noremap = true })
   end,
 }

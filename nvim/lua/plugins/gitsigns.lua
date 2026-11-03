@@ -25,8 +25,12 @@ return {
       end
 
       -- Navigation
-      map("n", "]h", gs.next_hunk, " Git Next Hunk")
-      map("n", "[h", gs.prev_hunk, " Git Prev Hunk")
+      map("n", "]h", function()
+        gs.nav_hunk("next")
+      end, " Git Next Hunk")
+      map("n", "[h", function()
+        gs.nav_hunk("prev")
+      end, " Git Prev Hunk")
 
       -- Actions
       map("n", "<leader>hs", gs.stage_hunk, " Git Stage hunk")

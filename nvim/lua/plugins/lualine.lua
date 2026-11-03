@@ -7,6 +7,40 @@ return {
   event = "BufReadPre",
   opts = function()
     local c = require("catppuccin.palettes").get_palette()
+
+    -- git runs in the background at most every 5 s per repo; the statusline reads the cache.
+    local git_counts = {}
+    local function ahead_behind(branch)
+      if branch == "" then
+        return branch
+      end
+      local dir = vim.fn.expand("%:p:h")
+      if dir == "" or vim.bo.buftype ~= "" then
+        dir = vim.fn.getcwd()
+      end
+      local root = vim.fs.root(dir, ".git")
+      if not root then
+        return branch
+      end
+      local entry = git_counts[root] or { ahead = 0, behind = 0, time = 0 }
+      git_counts[root] = entry
+      local now = vim.uv.now()
+      if not entry.running and now - entry.time > 5000 then
+        entry.running, entry.time = true, now
+        vim.system(
+          { "git", "rev-list", "--left-right", "--count", "HEAD...@{upstream}" },
+          { cwd = root, text = true },
+          function(result)
+            entry.running = false
+            local ahead, behind = (result.stdout or ""):match("(%d+)%s+(%d+)")
+            entry.ahead, entry.behind = tonumber(ahead) or 0, tonumber(behind) or 0
+          end
+        )
+      end
+      local indicators = (entry.ahead > 0 and "↑" .. entry.ahead or "")
+        .. (entry.behind > 0 and "↓" .. entry.behind or "")
+      return branch .. (indicators ~= "" and " " .. indicators or "")
+    end
     return {
       options = {
         theme = "catppuccin-nvim",
@@ -53,59 +87,7 @@ return {
             "branch",
             icon = "󰘬",
             color = { fg = c.peach },
-            fmt = function(str)
-              if str == "" then
-                return str
-              end
-
-              -- Cache results to avoid frequent git calls
-              local cache_key = vim.fn.getcwd() .. "_" .. str
-              local cache = vim.g.lualine_git_cache or {}
-              local cache_time = cache[cache_key] and cache[cache_key].time or 0
-              local current_time = os.time()
-
-              -- Update cache every 5 seconds to balance performance and accuracy
-              if current_time - cache_time > 5 then
-                local ahead = 0
-                local behind = 0
-
-                -- Check for unpushed commits (ahead)
-                local ahead_cmd = "git log @{upstream}.. --oneline 2>/dev/null | wc -l"
-                local ahead_result = vim.fn.system(ahead_cmd)
-                if vim.v.shell_error == 0 then
-                  ahead = tonumber(ahead_result) or 0
-                end
-
-                -- Check for unpulled commits (behind)
-                local behind_cmd = "git log ..@{upstream} --oneline 2>/dev/null | wc -l"
-                local behind_result = vim.fn.system(behind_cmd)
-                if vim.v.shell_error == 0 then
-                  behind = tonumber(behind_result) or 0
-                end
-
-                cache[cache_key] = {
-                  ahead = ahead,
-                  behind = behind,
-                  time = current_time,
-                }
-                vim.g.lualine_git_cache = cache
-              end
-
-              local git_status = cache[cache_key]
-              if not git_status then
-                return str
-              end
-
-              local indicators = ""
-              if git_status.ahead > 0 then
-                indicators = indicators .. "↑" .. git_status.ahead
-              end
-              if git_status.behind > 0 then
-                indicators = indicators .. "↓" .. git_status.behind
-              end
-
-              return str .. (indicators ~= "" and " " .. indicators or "")
-            end,
+            fmt = ahead_behind,
           },
           {
             "diff",
@@ -184,25 +166,6 @@ return {
               return ""
             end,
             color = { fg = c.rosewater },
-            padding = 1,
-          },
-          {
-            function()
-              local filetype = vim.bo.filetype
-              local lint_success, lint = pcall(require, "lint")
-
-              if not lint_success then
-                return ""
-              end
-
-              local linters = lint.linters_by_ft[filetype]
-              if not linters or #linters == 0 then
-                return ""
-              end
-
-              return " " .. table.concat(linters, ", ")
-            end,
-            color = { fg = c.flamingo },
             padding = 1,
           },
           {

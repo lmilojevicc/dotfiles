@@ -20,7 +20,6 @@ vim.opt.expandtab = true -- Use spaces instead of tabs
 vim.opt.tabstop = 2 -- Number of spaces per Tab
 vim.opt.shiftwidth = 2 -- Spaces to use for autoindent
 vim.opt.softtabstop = 2 -- Spaces per Tab while editing
-vim.opt.autoindent = true -- Copy indent from current line
 vim.opt.smartindent = true -- C-style smart indenting
 vim.opt.shiftround = true -- Round indent to multiple of shiftwidth
 vim.opt.breakindent = true -- Preserve indent in wrapped lines
@@ -29,25 +28,20 @@ vim.g.editorconfig = true -- Honor .editorconfig files
 -- Search behavior
 vim.opt.ignorecase = true -- Case-insensitive search…
 vim.opt.smartcase = true -- …unless uppercase used
-vim.opt.incsearch = true -- Show search matches as you type
 vim.opt.hlsearch = true -- Persist search highlights
 
 -- Visual enhancements
 vim.opt.termguicolors = true -- Enable true-color support
 vim.opt.showmatch = true -- Briefly jump to matching bracket
 vim.opt.matchpairs:append("<:>") -- Treat `<` and `>` as a matching pair
-vim.opt.cmdheight = 1 -- Height of command-line area
 vim.opt.showmode = false -- Don’t show “-- INSERT --” etc.
 vim.opt.completeopt = "menu,menuone,noselect" -- Better completion UI
-vim.opt.wildmenu = true -- Enhanced command-line completion
 vim.opt.wildmode = "longest:full,full"
 vim.opt.pumheight = 10 -- Max items in popup-menu
 vim.opt.pumblend = 0 -- Popup transparency (0–100)
 vim.opt.winblend = 0 -- Floating window transparency
-if vim.fn.has("nvim-0.10") == 1 then
-  vim.opt.smoothscroll = true
-  vim.opt.cmdheight = 0
-end
+vim.opt.smoothscroll = true
+vim.opt.cmdheight = 0
 
 -- File handling & backups
 vim.opt.backup = false -- Don’t keep backup files
@@ -60,16 +54,12 @@ vim.opt.updatetime = 200 -- Faster CursorHold, LSP updates
 vim.opt.autoread = true -- Auto-reload changed files
 vim.opt.autowrite = true -- Auto-save before commands
 vim.opt.fileencoding = "utf-8" -- File encoding
-vim.opt.ttyfast = true -- Faster terminal redraws
 
 -- Performance & timing
 vim.opt.timeoutlen = 300 -- Time to wait for mapped sequence
 vim.opt.ttimeoutlen = 0 -- Time to wait for key code sequence
 
 -- Behavior & editing
-vim.opt.hidden = true -- Allow background buffers
-vim.opt.backspace = "indent,eol,start" -- More powerful backspace
-vim.opt.errorbells = false -- Disable error bells
 vim.opt.autochdir = false -- Don’t change CWD on buffer open
 vim.opt.path:append("**") -- Search in subdirectories
 vim.opt.mouse = "a" -- Enable mouse in all modes
@@ -86,7 +76,7 @@ local native_clipboard = vim.fn.has("mac") == 1
   or (vim.env.DISPLAY or "") ~= ""
   or (vim.env.WAYLAND_DISPLAY or "") ~= ""
 
-if not native_clipboard and vim.fn.has("nvim-0.10") == 1 then
+if not native_clipboard then
   local osc52 = require("vim.ui.clipboard.osc52")
   local yanked = {}
   local copy = function(reg)

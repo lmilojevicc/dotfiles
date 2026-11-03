@@ -1,8 +1,9 @@
 -- Toggle Relative and Absolute Line Numbers
-vim.api.nvim_create_augroup("numbertoggle", { clear = true })
+local augroup = vim.api.nvim_create_augroup("user_autocmds", { clear = true })
+local numbertoggle = vim.api.nvim_create_augroup("numbertoggle", { clear = true })
 
 vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "InsertLeave", "WinEnter" }, {
-  group = "numbertoggle",
+  group = numbertoggle,
   callback = function()
     if vim.wo.number and vim.fn.mode() ~= "i" then
       vim.wo.relativenumber = true
@@ -11,7 +12,7 @@ vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "InsertLeave", "WinEnte
 })
 
 vim.api.nvim_create_autocmd({ "BufLeave", "FocusLost", "InsertEnter", "WinLeave" }, {
-  group = "numbertoggle",
+  group = numbertoggle,
   callback = function()
     if vim.wo.number then
       vim.wo.relativenumber = false
@@ -21,6 +22,7 @@ vim.api.nvim_create_autocmd({ "BufLeave", "FocusLost", "InsertEnter", "WinLeave"
 
 -- Check if we need to reload the file when it changed
 vim.api.nvim_create_autocmd({ "FocusGained", "TermClose", "TermLeave" }, {
+  group = augroup,
   callback = function()
     if vim.o.buftype ~= "nofile" then
       vim.cmd("checktime")
@@ -30,6 +32,7 @@ vim.api.nvim_create_autocmd({ "FocusGained", "TermClose", "TermLeave" }, {
 
 -- Resize splits if window got resized
 vim.api.nvim_create_autocmd({ "VimResized" }, {
+  group = augroup,
   callback = function()
     local current_tab = vim.fn.tabpagenr()
     vim.cmd("tabdo wincmd =")
@@ -39,6 +42,7 @@ vim.api.nvim_create_autocmd({ "VimResized" }, {
 
 -- Go to last loc when opening a buffer
 vim.api.nvim_create_autocmd("BufReadPost", {
+  group = augroup,
   callback = function(event)
     local exclude = { "gitcommit" }
     local buf = event.buf
@@ -56,6 +60,7 @@ vim.api.nvim_create_autocmd("BufReadPost", {
 
 -- Close some filetypes with <q>
 vim.api.nvim_create_autocmd("FileType", {
+  group = augroup,
   pattern = {
     "PlenaryTestPopup",
     "checkhealth",
