@@ -26,6 +26,7 @@ return {
     event = "VeryLazy",
     dependencies = {
       "mason-org/mason.nvim",
+      -- Load blink's plugin/ file first so its capabilities are in vim.lsp.config("*") before servers start.
       "saghen/blink.cmp",
     },
     opts = {
@@ -37,14 +38,15 @@ return {
         "cssls",
         "docker_language_server",
         "emmet_language_server",
+        "eslint",
         "gopls",
         "html",
         "jsonls",
         "lemminx",
         "lua_ls",
         "markdown_oxide",
-        "marksman",
         "neocmake",
+        "oxlint",
         "postgres_lsp",
         "ruff",
         "rumdl",
@@ -58,6 +60,10 @@ return {
 
       automatic_enable = {
         exclude = {
+          -- Its .NET build needs libicu, which this host does not have.
+          "marksman",
+          -- Formatting goes through conform (config/project-tooling.lua).
+          "oxfmt",
           "rumdl",
           "stylua",
         },
@@ -68,6 +74,12 @@ return {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
     dependencies = { "mason-org/mason.nvim" },
     event = "VeryLazy",
+    -- Its own VimEnter check has already fired by the time VeryLazy loads it.
+    config = function(_, opts)
+      local installer = require("mason-tool-installer")
+      installer.setup(opts)
+      installer.check_install()
+    end,
     opts = {
       ensure_installed = {
         "actionlint",
@@ -91,7 +103,7 @@ return {
         "js-debug-adapter",
         "json2go",
         "markdown-oxide",
-        "marksman",
+        "oxfmt",
         "prettierd",
         "rumdl",
         "shellcheck",

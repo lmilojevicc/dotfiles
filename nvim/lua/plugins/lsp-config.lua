@@ -65,6 +65,12 @@ return {
         },
       },
     }
+    -- basedpyright answers hover; ruff's would duplicate it.
+    lsp["ruff"] = {
+      on_attach = function(client)
+        client.server_capabilities.hoverProvider = false
+      end,
+    }
     lsp["bashls"] = {
       filetypes = { "sh", "bash", "zsh" },
     }
@@ -287,6 +293,17 @@ return {
         "templ",
       },
     }
+    -- Linters follow the project: ESLint and Biome attach only where they are
+    -- configured (their lspconfig defaults); oxlint attaches where it is
+    -- configured, and also in projects that configure no linter at all.
     lsp["biome"] = {}
+    lsp["oxlint"] = {
+      root_dir = function(bufnr, on_dir)
+        local root = require("config.project-tooling").oxlint_root(bufnr)
+        if root then
+          on_dir(root)
+        end
+      end,
+    }
   end,
 }
