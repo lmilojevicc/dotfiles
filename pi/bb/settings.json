@@ -10,7 +10,6 @@
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
     "npm:pi-commandcode-provider",
-    "npm:pi-claude-bridge",
     "npm:pi-lens"
   ],
   "skills": [
