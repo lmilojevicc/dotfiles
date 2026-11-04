@@ -35,7 +35,7 @@ default = "#FF000000"
 muted = "#99000000"               # 0.60
 danger = "#A4342C"
 success = "#4A6B4F"
-placeholder = "#66000000"         # 0.42
+placeholder = "#9E000000"         # 0.62 — placeholder text needs 4.5:1
 
 [colors.text.links]
 default = "#4A4A45"
@@ -47,7 +47,7 @@ foreground = "#FF000000"
 
 [colors.input]
 background = "#FFEDEDEA"          # RGB only: drawn at surfaceOpacity over the glass
-border = "#D8D8D4"                # field outline: alpha is replaced, so this is the visible line
+border = "#8A8A85"                # field outline: ~3:1 on the input fill
 border_focus = "#EB000000"
 border_error = "#A4342C"
 

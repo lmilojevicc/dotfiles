@@ -176,7 +176,7 @@
     placement = "bottom"           # top, center, bottom
     background_color = "#D1121214" # rgba(18,18,20,.82)
     text_color = "#FFF2F2F4"
-    matched_text_color = "#6D6D70" # ink at 42%
+    matched_text_color = "#9A9A9E" # ink at 60%, 6.7:1 on the panel
     border_color = "#29FFFFFF"     # white at 16%
 
   [hints.search_input_ui]
