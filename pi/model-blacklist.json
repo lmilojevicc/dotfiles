@@ -2,7 +2,7 @@
 	"providers": {
 		"openai-codex": ["*"],
 		"claude-bridge": ["!claude-{opus,sonnet,haiku}->=5.5*", "!claude-{fable,mythos}-*"],
-		"commandcode": ["claude-*", "gpt-*", "*gemini-*"],
+		"commandcode": ["claude-*", "gpt-*", "*gemini-<4*"],
 		"opencode-go": ["claude-*", "gpt-*"]
 	},
 	"global": [
