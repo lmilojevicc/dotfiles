@@ -101,6 +101,8 @@ export function selectAgentName(systemPrompt: string, profile: PolicyProfile): s
 
 /** Owned Pi prompt section: Pi wraps its text in a `<agent_policy>` tag of the same name. */
 export const POLICY_SECTION = "agent_policy";
+/** Pi's own section for appended instructions (`appendSystemPrompt`), a head section like any other. */
+export const ADDENDUM_SECTION = "addendum";
 export const POLICY_OPEN = `<${POLICY_SECTION}>`;
 export const POLICY_CLOSE = `</${POLICY_SECTION}>`;
 export const CHILD_POLICY_MARKER = "<!-- agent-policy:v1:subagent -->";

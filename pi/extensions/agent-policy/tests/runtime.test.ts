@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
-import { CHILD_POLICY_MARKER, CHILD_PREFIXES, LEGACY_END, LEGACY_START, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, POLICY_SECTION, policySection, selectAgentName, selectProfile, stripOwnedBlocks, type PolicyProfile } from "../child-profile.ts";
-import { installAgentPolicy, POLICY_ID } from "../runtime.ts";
+import { ADDENDUM_SECTION, CHILD_POLICY_MARKER, CHILD_PREFIXES, LEGACY_END, LEGACY_START, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, POLICY_SECTION, policySection, selectAgentName, selectProfile, stripOwnedBlocks, type PolicyProfile } from "../child-profile.ts";
+import { installAgentPolicy, POLICY_ID, readInheritedPrompt } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 import { loadSystemPromptBuilder } from "./pi-package.ts";
 
@@ -50,6 +50,9 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	let disposed = 0;
 	let sessionFile: string | undefined = "/sessions/parent.jsonl";
 	let sessionId = "uuid-parent";
+	// A branched session's own record: the header with its parent link, and the inherited prompt state.
+	let header: any = null;
+	let projection: any = { messages: [] };
 	const api = {
 		on(event: string, handler: Handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
 		registerCommand() {}, appendEntry() {},
@@ -62,6 +65,8 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 		sessionManager: {
 			getSessionFile: () => sessionFile, getSessionId: () => sessionId,
 			getBranch: () => [],
+			getHeader: () => header,
+			buildSessionProjection: () => projection,
 		},
 	};
 	function install() {
@@ -87,8 +92,8 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	}
 	function emit(event: string, input: any = {}) { for (const fn of handlers.get(event) ?? []) fn(input, ctx); }
 	/** One run: Pi starts from fresh base options, so only this run's mutations are observed. */
-	function before(prompt = "root role") {
-		const options: any = { cwd, customPrompt: prompt, selectedTools: [], sections: {} };
+	function before(prompt = "root role", extra: Record<string, any> = {}) {
+		const options: any = { cwd, customPrompt: prompt, selectedTools: [], sections: {}, ...extra };
 		const returns: any[] = [];
 		for (const fn of handlers.get("before_agent_start") ?? []) {
 			// Like Pi: each handler sees the prompt rendered from the options earlier handlers mutated.
@@ -114,6 +119,18 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 			emit("session_start", { reason: "reload" });
 		},
 		identity(file: string | undefined, uuid: string) { sessionFile = file; sessionId = uuid; },
+		/** A session branched from another one: the parent's prompt records, older than the fork. */
+		branched(uuid: string, inherited: { sections?: Record<string, string | null>; tools?: string[]; forkedAt?: number } = {}) {
+			sessionId = uuid;
+			header = { id: uuid, timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/sessions/parent.jsonl" };
+			projection = { messages: [{ role: "system", content: "", sections: inherited.sections ?? {}, toolsAdded: (inherited.tools ?? []).map((name) => ({ name })), timestamp: inherited.forkedAt ?? Date.parse("2024-01-01T00:00:01.000Z") }] };
+		},
+		/** A parent link with nothing inherited: a session branched before its parent recorded a prompt. */
+		parentLinkOnly(uuid: string) {
+			sessionId = uuid;
+			header = { id: uuid, timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/sessions/parent.jsonl" };
+			projection = { messages: [] };
+		},
 		before,
 		section(prompt = "root role") { return before(prompt).sections[POLICY_SECTION]; },
 	};
@@ -200,6 +217,73 @@ test("fork drops only owned parent policy blocks, retaining deliberate role/lega
 	const marked = `${inherited}\n${LEGACY_START}\nlegacy peer block\n${LEGACY_END}`;
 	assert.doesNotMatch(stripOwnedBlocks(marked, "subagent"), /legacy peer block/);
 	assert.match(stripOwnedBlocks(marked, "main"), /legacy peer block/, "a main layer keeps the peer's block");
+});
+
+test("inherited prompt replay keeps the last value per section, including removal", () => {
+	const header = { id: "fork", timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/parent.jsonl" };
+	const inherited = Date.parse("2024-01-01T00:00:01.000Z");
+	const manager = (messages: any[], value: any = header) => ({ getHeader: () => value, buildSessionProjection: () => ({ messages }) });
+	const system = (sections: any, timestamp = inherited) => ({ role: "system", content: "", sections, timestamp });
+	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: "B" })])), { inherited: true, sections: { [POLICY_SECTION]: "B" }, tools: [] });
+	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: null })])), { inherited: true, sections: { [POLICY_SECTION]: null }, tools: [] });
+	// Declared tools are part of the inherited prefix; a removal after the head applies in order.
+	const declared = (toolsAdded: any, toolsRemoved: any = undefined) => ({ role: "system", content: "", toolsAdded, toolsRemoved, timestamp: inherited });
+	assert.deepEqual(readInheritedPrompt(manager([
+		declared([{ name: "read" }, { name: "check_ui" }]),
+		{ role: "system", content: "", toolsRemoved: [{ name: "check_ui" }], toolsAdded: [{ name: "bash" }], timestamp: inherited + 1 },
+	])), { inherited: true, sections: {}, tools: ["read", "bash"] });
+	// The child's own records are not inherited, and neither is a session without a parent link.
+	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }, inherited + 1000)])), { inherited: false });
+	assert.deepEqual(readInheritedPrompt(manager([], null)), { inherited: false });
+	assert.deepEqual(readInheritedPrompt(manager([system({})], { id: "fork", timestamp: "not-a-date", parentSession: "/parent.jsonl" })), { inherited: false }, "a header without a usable timestamp is not a fork");
+	assert.deepEqual(readInheritedPrompt({ getHeader: () => header }), { inherited: false }, "an older SDK without a projection is not a fork");
+	assert.deepEqual(readInheritedPrompt({ getHeader: () => header, buildSessionProjection: () => { throw new Error("projection"); } }), { inherited: false });
+});
+
+test("a branched session reproduces the inherited section byte for byte instead of composing a child layer", (t) => {
+	const runtime = harness(t);
+	runtime.emit("session_start");
+	const inheritedSection = policySection("main-bb", "PARENT policy draft");
+	// What the parent's session recorded: Pi's rendered section, wrapper included.
+	const stored = `<${POLICY_SECTION}>\n${inheritedSection}\n</${POLICY_SECTION}>`;
+	runtime.branched("uuid-fork", { sections: { [POLICY_SECTION]: stored, addendum: `<${ADDENDUM_SECTION}>\nINHERITED ADDENDUM\n</${ADDENDUM_SECTION}>` }, tools: ["read", "check_ui"] });
+	runtime.identity("/sessions/fork.jsonl", "uuid-fork");
+	const role = `${CHILD_PREFIXES[0]}\nworker role\n\n${LEGACY_START}\nlegacy peer block\n${LEGACY_END}`;
+	const run = runtime.before(role, { appendSystemPrompt: "CHILD ADDENDUM", selectedTools: ["read"] });
+	assert.equal(run.options.appendSystemPrompt, "INHERITED ADDENDUM", "the parent's appended instructions are reproduced");
+	assert.ok(run.systemPrompt.includes("INHERITED ADDENDUM"));
+	assert.deepEqual(run.options.selectedTools, ["read", "check_ui"], "the parent's tool declarations are reproduced");
+	assert.ok(!run.systemPrompt.includes("CHILD ADDENDUM"), "a fork does not insert its own appended text before the fork point");
+	assert.equal(run.sections[POLICY_SECTION], inheritedSection, "the inherited text is reproduced, not recomposed");
+	assert.equal(blocks(run.systemPrompt), 1, "the stored wrapper is not applied twice");
+	assert.ok(run.systemPrompt.includes(inheritedSection), "the request carries the parent's section unchanged");
+	assert.doesNotMatch(run.systemPrompt, /CHILD draft|MAIN BB draft/, "no layer is composed for a fork");
+	assert.ok(run.systemPrompt.includes("legacy peer block"), "inherited text is never stripped for a fork");
+	assert.deepEqual(run.returns, [], "a fork never forces a system prompt");
+	// Decided once per session: a later run reuses the same inherited state.
+	runtime.parentLinkOnly("uuid-fork");
+	assert.equal(runtime.section(role), inheritedSection);
+});
+
+test("a fork never adds the parent's section back when the parent had none", (t) => {
+	const runtime = harness(t);
+	runtime.emit("session_start");
+	runtime.branched("uuid-fork", { sections: { cwd: "inherited cwd" } });
+	const run = runtime.before(`${CHILD_PREFIXES[0]}\nworker role`, { appendSystemPrompt: "CHILD ADDENDUM", selectedTools: ["read"] });
+	assert.equal(run.sections[POLICY_SECTION], undefined);
+	assert.equal(run.options.appendSystemPrompt, "", "a head the parent recorded without appended text stays without it");
+	assert.deepEqual(run.options.selectedTools, ["read"], "a head that recorded no tools keeps this session's selection");
+	assert.doesNotMatch(run.systemPrompt, /CHILD draft|CHILD ADDENDUM/);
+});
+
+test("a parent link with nothing inherited still composes the child layer", (t) => {
+	const runtime = harness(t);
+	runtime.emit("session_start");
+	runtime.parentLinkOnly("uuid-fork");
+	const run = runtime.before(`${CHILD_PREFIXES[0]}\nworker role`);
+	assert.equal(run.sections[POLICY_SECTION], runtime.expectedSection("subagent", "COMMON draft\n\nCHILD draft"));
+	assert.match(run.systemPrompt, /CHILD draft/);
+	assert.doesNotMatch(run.systemPrompt, /MAIN draft/);
 });
 
 for (const legacyFirst of [true, false]) {
@@ -465,8 +549,12 @@ test("all own marker states preserve native named sources, while roots follow th
 		const bbSignal = parseBBPolicySignal(env);
 		for (const bbOrigin of [false, true]) {
 			const root = harness(t, { bbSignal, bbOrigin });
-			const layer = bbSignal.workflowWorker ? "subagent" : bbOrigin ? "main-bb" : "main";
-			const body = bbSignal.workflowWorker ? "CHILD draft" : bbOrigin ? "MAIN BB draft" : "MAIN draft";
+			let layer: PolicyProfile = bbOrigin ? "main-bb" : "main";
+			let body = bbOrigin ? "MAIN BB draft" : "MAIN draft";
+			if (bbSignal.workflowWorker) {
+				layer = "subagent";
+				body = "CHILD draft";
+			}
 			assert.equal(root.before().systemPrompt, root.expected("root role", layer, `COMMON draft\n\n${body}`));
 			for (const backgroundChild of [true, false]) {
 				const native = harness(t, { backgroundChild, bbSignal, bbOrigin });
