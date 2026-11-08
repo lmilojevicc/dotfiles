@@ -34,5 +34,6 @@
     "~/.pi/agent/extensions/model-instructions",
     "~/.pi/agent/extensions/opencode-free",
     "-builtin:mcp"
-  ]
+  ],
+  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
 }
