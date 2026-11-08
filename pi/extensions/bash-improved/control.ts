@@ -65,6 +65,15 @@ export function parseControl(command: string): Control | undefined {
 	return { verb, id, timeout: Math.min(timeout ?? DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS) };
 }
 
+/**
+ * A command that starts with `tasks` but goes on (`tasks stop 1; sleep 1; ss -ltn`): the `tasks` part
+ * would only reach the stand-in and do nothing while the rest runs, so the whole command is refused.
+ */
+export function startsWithCompoundTasks(command: string): boolean {
+	const line = command.trim().replace(/^cd\s+[^\s;&|]+\s*&&\s*/, "");
+	return /^tasks(\s|$)/.test(line) && COMPOUND.test(line);
+}
+
 /** A task id as models write it: `3`, `%3`, `#3` or `task-3`. */
 export function taskId(value: unknown): number | undefined {
 	if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : undefined;

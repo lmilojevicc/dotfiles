@@ -107,14 +107,16 @@ export function progressReport(task: Task): string {
 }
 
 /** Appended to a bash result whose command now runs in the background. */
-export function backgroundNotice(task: Task, waitSeconds: number, oneShot: boolean): string {
+export function backgroundNotice(task: Task, waitSeconds: number, oneShot: boolean, interrupted = false): string {
 	const id = task.id;
 	const lines = [
 		task.reason === "leftover"
 			? `The command exited, but processes it started are still running, as background task ${id} (process group ${task.pid}).`
-			: task.reason === "requested"
-				? `Command running in the background as task ${id} (pid ${task.pid}).`
-				: `Still running after ${waitSeconds}s, so it continues in the background as task ${id} (pid ${task.pid}).`,
+			: interrupted
+				? `Moved to the background early, as task ${id} (pid ${task.pid}), to handle an incoming message; the command keeps running.`
+				: task.reason === "requested"
+					? `Command running in the background as task ${id} (pid ${task.pid}).`
+					: `Still running after ${waitSeconds}s, so it continues in the background as task ${id} (pid ${task.pid}).`,
 		`You get a message when it exits; keep working meanwhile. \`tasks output ${id}\` shows its new output, \`tasks wait ${id}\` waits for it, \`tasks stop ${id}\` stops it. Full output: ${task.logPath}`,
 	];
 	if (oneShot) lines.push(`This run ends when you finish and stops tasks still running then: run \`tasks wait ${id}\` if you need its result.`);
@@ -129,4 +131,14 @@ export function listTasks(tasks: Task[]): string {
 			return `${task.id}  ${title(task, 60)}  ${state}  (pid ${task.pid}, output ${task.logPath})`;
 		})
 		.join("\n");
+}
+
+/** Several tasks that ended close together, in one message. */
+export function batchReport(tasks: Task[]): string {
+	if (tasks.length === 1) return endReport(tasks[0]);
+	const failures = tasks.filter(failed).length;
+	return [
+		`${tasks.length} background tasks ended${failures > 0 ? ` (${failures} failed)` : ""}.`,
+		...tasks.map(endReport),
+	].join("\n\n");
 }

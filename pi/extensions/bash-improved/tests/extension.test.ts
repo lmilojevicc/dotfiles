@@ -184,6 +184,7 @@ test("run_in_background returns at once; `tasks` lists, reads, waits and stops, 
 			tasks("stop 1"),
 			tasks("bogus"),
 			bash({ command: "tasks | head -1" }),
+			bash({ command: "echo first; tasks" }),
 			fauxAssistantMessage("Done."),
 		],
 		{ structuredResults: structured },
@@ -204,10 +205,13 @@ test("run_in_background returns at once; `tasks` lists, reads, waits and stops, 
 		assert.equal(toolResults(h.session)[6].isError, true);
 		assert.match(results[7], /^Task 1 Start the dev server already was stopped after \d+s\.\n$/);
 		assert.match(results[8], /^tasks: unknown command bogus\nusage: tasks /);
-		assert.match(results[9], /tasks: run it as a bash command of its own/);
+		// Starting with `tasks` and going on is refused before anything runs; `tasks` later on reaches the stand-in.
+		assert.match(results[9], /^Not run: `tasks` works only as a bash command of its own/);
+		assert.equal(toolResults(h.session)[9].isError, true);
+		assert.match(results[10], /^first\ntasks: run it as a bash command of its own/);
 		assert.ok(Date.now() - started < 6000);
 		await sleep(500);
-		assert.equal(h.calls(), 11);
+		assert.equal(h.calls(), 12);
 		assert.deepEqual(notices(h.session), []);
 	} finally {
 		await h.close();
@@ -321,11 +325,14 @@ test("the tool text says when a command moves to the background, what the flag s
 		assert.match(run_in_background?.description ?? "", /right away \(returning after about 1s, with any startup error\) instead of after 1s/);
 		assert.match(timeout?.description ?? "", /also once it runs in the background .*leave it unset for servers/);
 		assert.match(description?.description ?? "", /5-10 words/);
-		assert.deepEqual(Object.keys(bashTool?.parameters?.properties ?? {}), ["command", "timeout", "run_in_background", "description"]);
+		assert.deepEqual(Object.keys(bashTool?.parameters?.properties ?? {}), ["command", "timeout", "run_in_background", "description", "cwd", "ready"]);
+		assert.deepEqual(Object.keys(bashTool?.parameters?.properties?.ready?.properties ?? {}), ["port", "host", "log", "timeout"]);
 		assert.deepEqual(tools.map((tool) => tool.name).filter((name) => name !== "bash" && /task/.test(name)), [], "no extra tools");
 		assert.match(bashTool?.description ?? "", /`tasks` lists them, `tasks output <id>` shows new output, `tasks wait <id> \[--timeout <secs>\]` waits for one to exit, `tasks stop <id>` stops one/);
 		assert.match(prompt, /Don't sleep or poll to wait for a background task/);
-		assert.match(prompt, /To check that a server you started is ready, use one bounded check, such as `timeout 30 sh -c 'until curl/);
+		assert.match(prompt, /Start a server with `ready`, such as `ready: \{port: 3000\}`.*so you need no curl loop/);
+		assert.match(prompt, /Use `cwd` to run a command in another directory/);
+		assert.match(prompt, /don't append `; echo \$\?`, `\|\| true`/);
 	} finally {
 		await h.close();
 	}
@@ -352,13 +359,19 @@ test("a failed task wakes the agent and reads as a failure", async () => {
 
 test("commands run without editors, pagers, credential prompts or stdin that need a terminal", async () => {
 	const h = await harness([
-		bash({ command: "echo $GIT_EDITOR $GIT_SEQUENCE_EDITOR $EDITOR $PAGER $GIT_PAGER $GIT_TERMINAL_PROMPT; read line || echo no-stdin" }),
+		bash({
+			command:
+				'echo $GIT_EDITOR $GIT_SEQUENCE_EDITOR $EDITOR $PAGER $GIT_PAGER $GIT_TERMINAL_PROMPT; echo $MANPAGER $GH_PAGER "[$AWS_PAGER]" $GCM_INTERACTIVE $SSH_ASKPASS $DEBIAN_FRONTEND $PIP_NO_INPUT $npm_config_fund; echo "${CI-unset}"; read line || echo no-stdin',
+		}),
 		fauxAssistantMessage("Done."),
 	]);
+	const ci = process.env.CI;
+	delete process.env.CI;
 	try {
 		await h.session.prompt("check");
-		assert.equal(text(toolResults(h.session)[0]), "true true true cat cat 0\nno-stdin\n");
+		assert.equal(text(toolResults(h.session)[0]), "true true true cat cat 0\ncat cat [] never false noninteractive 1 false\nunset\nno-stdin\n");
 	} finally {
+		if (ci !== undefined) process.env.CI = ci;
 		await h.close();
 	}
 });
@@ -513,6 +526,166 @@ test("state.json tells other programs about the tasks, and a stop-<id> file stop
 	} finally {
 		if (previous === undefined) delete process.env.BB_THREAD_ID;
 		else process.env.BB_THREAD_ID = previous;
+		await h.close();
+	}
+});
+
+/** A TCP port nothing listens on right now. */
+async function freePort(): Promise<number> {
+	const { createServer } = await import("node:net");
+	return new Promise((resolve) => {
+		const server = createServer();
+		server.listen(0, "127.0.0.1", () => {
+			const { port } = server.address() as { port: number };
+			server.close(() => resolve(port));
+		});
+	});
+}
+
+test("a message from the user ends a foreground wait and a `tasks wait` early; the commands keep running", async () => {
+	const h = await harness([
+		// A timeout this short keeps the command in the foreground, so only the message can end the wait.
+		bash({ command: "sleep 3; echo slow", timeout: 6 }),
+		fauxAssistantMessage("Reading your message."),
+		bash({ command: "sleep 3; echo later", run_in_background: true }),
+		tasks("wait 2 --timeout 20"),
+		fauxAssistantMessage("Reading your second message."),
+		fauxAssistantMessage("Both ended."),
+	]);
+	try {
+		let started = Date.now();
+		const turn = h.session.prompt("go");
+		await sleep(1500);
+		await h.session.steer("one thing first");
+		await turn;
+		const first = toolResults(h.session)[0];
+		assert.ok(Date.now() - started < 2800, `the first call took ${Date.now() - started}ms`);
+		assert.match(text(first), /^Moved to the background early, as task 1 \(pid \d+\), to handle an incoming message; the command keeps running\./);
+		assert.equal(first.details.backgroundTask.status, "running");
+
+		started = Date.now();
+		const second = h.session.prompt("and now");
+		await until(() => toolResults(h.session).length === 2);
+		await sleep(300);
+		await h.session.steer("another thing");
+		await second;
+		const waited = toolResults(h.session)[2];
+		assert.ok(Date.now() - started < 2800, `the wait took ${Date.now() - started}ms`);
+		assert.match(text(waited), /^Stopped waiting to handle an incoming message; task 2 keeps running and you get a message when it exits\./);
+		await until(() => notices(h.session).length > 0 && h.session.isStreaming === false);
+	} finally {
+		await h.close();
+	}
+});
+
+test("a command whose short timeout comes soon after the wait stays in the foreground", async () => {
+	const h = await harness([bash({ command: "sleep 1.5; echo done", timeout: 4 }), fauxAssistantMessage("Done.")]);
+	try {
+		await h.session.prompt("go");
+		const [result] = toolResults(h.session);
+		assert.equal(text(result), "done\n");
+		assert.equal(result.details?.backgroundTask, undefined);
+	} finally {
+		await h.close();
+	}
+});
+
+test("ready waits until a port accepts connections, and the server keeps running", async () => {
+	const port = await freePort();
+	const structured: unknown[] = [];
+	const server = `setTimeout(() => require("net").createServer().listen(${port}, "127.0.0.1", () => console.log("up")), 1500)`;
+	const h = await harness([bash({ command: `node -e '${server}'`, ready: { port } }), fauxAssistantMessage("Up.")], {
+		structuredResults: structured,
+	});
+	try {
+		const started = Date.now();
+		await h.session.prompt("start it");
+		const [result] = toolResults(h.session);
+		assert.ok(Date.now() - started >= 1400, "it waited for the port");
+		assert.match(text(result), new RegExp(`^up\\n\\nReady: port ${port}\\.\\nCommand running in the background as task 1 `));
+		assert.equal(result.details.ready, "ready");
+		assert.equal((structured[0] as { ready?: boolean }).ready, true);
+		assert.equal(result.details.backgroundTask.status, "running");
+	} finally {
+		await h.close();
+	}
+});
+
+test("ready waits for a log line; it says when the server never got ready or exited first", async () => {
+	const port = await freePort();
+	const h = await harness([
+		bash({ command: 'echo booting; sleep 1.5; printf "\\033[32mListening on 1234\\033[0m\\n"; sleep 30', ready: '{"log": "Listening on \\\\d+"}' }),
+		bash({ command: "echo starting; sleep 30", ready: { log: "never", timeout: 1.5 }, description: "Start the silent server" }),
+		bash({ command: "echo bye", ready: { port } }),
+		bash({ command: "sleep 1.5; echo crashed >&2; exit 4", ready: { port, timeout: 10 } }),
+		bash({ command: "true", ready: { port: 70000 } }),
+		bash({ command: "echo string port", ready: { port: String(port), timeout: "1" } }),
+		fauxAssistantMessage("Done."),
+	]);
+	try {
+		await h.session.prompt("start them");
+		const results = toolResults(h.session);
+		assert.match(text(results[0]), /^booting\n.*Listening on 1234.*\n\nReady: the log matching \/Listening on \\d\+\/\.\n/);
+		assert.match(text(results[1]), /^starting\n\nNOT ready after 1\.5s: no output line matches \/never\/\. It keeps running\.\nCommand running in the background as task 2/);
+		assert.equal(results[1].isError, false);
+		assert.match(text(results[2]), new RegExp(`^bye\\n\\nNot ready: it exited before port ${port}\\.$`));
+		assert.equal(results[2].isError, true);
+		assert.match(text(results[3]), new RegExp(`^crashed\\n\\nNot ready: it exited with code 4 after 2s before port ${port}\\.\\n\\nCommand exited with code 4$`));
+		assert.equal(results[3].isError, true);
+		assert.match(text(results[4]), /^Not run: ready\.port must be a TCP port, not 70000\.$/);
+		assert.match(text(results[5]), new RegExp(`^string port\\n\\nNot ready: it exited before port ${port}\\.$`));
+		await sleep(700);
+		assert.deepEqual(notices(h.session), [], "a task that exited while the call waited for it sends no message");
+	} finally {
+		await h.close();
+	}
+});
+
+test("cwd runs the command in another directory; workdir is accepted too", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "session-"));
+	const { mkdirSync } = await import("node:fs");
+	mkdirSync(join(dir, "sub"));
+	writeFileSync(join(dir, "file"), "");
+	const h = await harness(
+		[
+			bash({ command: "pwd", cwd: "sub" }),
+			bash({ command: "pwd", workdir: join(dir, "sub") }),
+			bash({ command: "pwd", cwd: "missing" }),
+			bash({ command: "pwd", cwd: "file" }),
+			fauxAssistantMessage("Done."),
+		],
+		{ dir },
+	);
+	try {
+		await h.session.prompt("where");
+		const results = toolResults(h.session).map(text);
+		assert.equal(results[0], `${join(dir, "sub")}\n`);
+		assert.equal(results[1], `${join(dir, "sub")}\n`);
+		assert.equal(results[2], `Not run: the directory ${join(dir, "missing")} does not exist.`);
+		assert.equal(results[3], `Not run: ${join(dir, "file")} is not a directory.`);
+	} finally {
+		await h.close();
+	}
+});
+
+test("tasks that end close together are reported in one message", async () => {
+	const h = await harness([
+		// The second starts about a second after the first (run_in_background waits that long), so both end near 2.3s.
+		bash({ command: "sleep 2.2; echo one", run_in_background: true }),
+		bash({ command: "sleep 1.3; echo two >&2; exit 1", run_in_background: true }),
+		fauxAssistantMessage("Both started."),
+		fauxAssistantMessage("Read both."),
+	]);
+	try {
+		await h.session.prompt("start both");
+		await until(() => h.calls() === 4 && h.session.isStreaming === false);
+		const all = notices(h.session);
+		assert.equal(all.length, 1);
+		assert.match(all[0], /^2 background tasks ended \(1 failed\)\.\n\nBackground task 1 `sleep 2\.2; echo one` exited with code 0[\s\S]*\n\nBackground task 2 `sleep 1\.3; echo two >&2; exit 1` exited with code 1/);
+		const message = h.session.messages.find((m) => m.role === "custom") as { details?: { failed?: boolean; tasks?: unknown[] } };
+		assert.equal(message.details?.failed, true);
+		assert.equal(message.details?.tasks?.length, 2);
+	} finally {
 		await h.close();
 	}
 });

@@ -245,6 +245,23 @@ export class Task {
 		}
 	}
 
+	/** Log bytes from `offset` on, at most `maxBytes`, and the offset reading stopped at. */
+	readFrom(offset: number, maxBytes = 1024 * 1024): { text: string; end: number } {
+		let fd: number | undefined;
+		try {
+			fd = openSync(this.logPath, "r");
+			const size = fstatSync(fd).size;
+			const start = Math.max(offset, size - maxBytes);
+			const buffer = Buffer.alloc(Math.max(0, size - start));
+			readSync(fd, buffer, 0, buffer.length, start);
+			return { text: buffer.toString("utf8"), end: size };
+		} catch {
+			return { text: "", end: offset };
+		} finally {
+			if (fd !== undefined) closeSync(fd);
+		}
+	}
+
 	markRead(): void {
 		this.readOffset = this.logBytes;
 	}
@@ -385,6 +402,11 @@ export class TaskTable {
 		events.changed();
 	}
 
+	/** Hand ended tasks back to be delivered when the next runtime binds (a reload with deliveries pending). */
+	requeue(tasks: Task[]): void {
+		this.queued.push(...tasks);
+	}
+
 	start(spec: TaskSpec): Task {
 		const task = new Task(spec, join(this.dir, `run-${++this.seq}.log`));
 		this.live.add(task);
@@ -447,10 +469,20 @@ export interface RunOptions extends TaskSpec {
 	/** Recorded on the task when it moves to the background after `waitMs`. */
 	reason: "waited" | "requested";
 	signal?: AbortSignal;
+	/**
+	 * Polled while the call waits: true moves the command to the background at once (the user sent a
+	 * message that should not wait for it). Not checked before `interruptAfterMs`, so a command that
+	 * fails straight away still reports inline.
+	 */
+	interrupt?: () => boolean;
+	interruptAfterMs?: number;
 	onData(chunk: Buffer): void;
 }
 
-export type RunResult = { kind: "exited"; exitCode: number } | { kind: "background"; task: Task };
+/** How often `interrupt` is polled. */
+export const INTERRUPT_POLL_MS = 250;
+
+export type RunResult = { kind: "exited"; exitCode: number } | { kind: "background"; task: Task; interrupted: boolean };
 
 /**
  * Run a command and wait for it in the foreground for at most `waitMs`. A command still running then,
@@ -472,19 +504,21 @@ export function runCommand(table: TaskTable, options: RunOptions): Promise<RunRe
 			return;
 		}
 		let waiting = true;
+		let poll: NodeJS.Timeout | undefined;
 		const release = () => {
 			waiting = false;
 			clearTimeout(timer);
+			clearInterval(poll);
 			options.signal?.removeEventListener("abort", onAbort);
 			task.sink = undefined;
 			task.onLinger = undefined;
 			task.onDeadline = undefined;
 		};
-		const toBackground = (reason: BackgroundReason) => {
+		const toBackground = (reason: BackgroundReason, interrupted = false) => {
 			if (!waiting) return;
 			release();
 			table.background(task, reason);
-			resolve({ kind: "background", task });
+			resolve({ kind: "background", task, interrupted });
 		};
 		const kill = (end: TaskEnd, error: Error) => {
 			if (!waiting) return;
@@ -499,7 +533,14 @@ export function runCommand(table: TaskTable, options: RunOptions): Promise<RunRe
 		task.onLinger = () => toBackground("leftover");
 		task.onDeadline = () => kill("timeout", new Error(`timeout:${options.timeoutSeconds}`));
 		options.signal?.addEventListener("abort", onAbort, { once: true });
-		const timer = setTimeout(() => toBackground(options.reason), options.waitMs);
+		const timer = setTimeout(() => toBackground(options.reason), Math.min(options.waitMs, MAX_TIMER_MS));
+		const { interrupt } = options;
+		if (interrupt) {
+			const after = task.startedAt + (options.interruptAfterMs ?? 0);
+			poll = setInterval(() => {
+				if (Date.now() >= after && interrupt()) toBackground(options.reason, true);
+			}, INTERRUPT_POLL_MS);
+		}
 		void task.ended.then(() => {
 			if (!waiting) return;
 			release();

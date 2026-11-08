@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseControl, taskId } from "../control.ts";
+import { parseControl, startsWithCompoundTasks, taskId } from "../control.ts";
 
 test("tasks commands parse, with a leading cd and the usual id spellings", () => {
 	assert.deepEqual(parseControl("tasks"), { verb: "list" });
@@ -25,6 +25,14 @@ test("mistakes get the usage", () => {
 	assert.deepEqual(parseControl("tasks output 1 --timeout 5"), { verb: "usage", error: "tasks output: bad option --timeout 5" });
 	assert.deepEqual(parseControl("tasks wait 1 2"), { verb: "usage", error: "tasks wait: unexpected 2" });
 	assert.deepEqual(parseControl("tasks help"), { verb: "usage" });
+});
+
+test("a command that starts with tasks and goes on is caught, other uses of the word are not", () => {
+	assert.equal(startsWithCompoundTasks("tasks stop 1; sleep 1; ss -ltn"), true);
+	assert.equal(startsWithCompoundTasks("cd /tmp && tasks | head -1"), true);
+	assert.equal(startsWithCompoundTasks("tasks stop 1"), false);
+	assert.equal(startsWithCompoundTasks("echo tasks; ls"), false);
+	assert.equal(startsWithCompoundTasks("tasksel --list; ls"), false);
 });
 
 test("task ids", () => {
