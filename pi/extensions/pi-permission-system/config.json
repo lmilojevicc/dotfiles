@@ -1,4 +1,6 @@
 {
+  "permissionReviewLog": false,
+  "debugLog": false,
   "permission": {
     "*": "allow",
     "external_directory": "allow",
