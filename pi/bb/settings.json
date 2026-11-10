@@ -40,5 +40,10 @@
     "~/.pi/agent/extensions/opencode-free",
     "-builtin:mcp"
   ],
-  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
+  "defaultTools": [
+    "+codemode",
+    "+find",
+    "+grep",
+    "+tool_search"
+  ]
 }
