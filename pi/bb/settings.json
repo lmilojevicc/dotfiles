@@ -10,7 +10,9 @@
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
     "npm:pi-commandcode-provider",
-    "npm:pi-lens"
+    "npm:pi-lens",
+    "npm:@gotgenes/pi-permission-system",
+    "npm:@k3_2o/pi-secrets"
   ],
   "skills": [
     ".claude/skills",
@@ -19,6 +21,9 @@
   ],
   "doubleEscapeAction": "tree",
   "quietStartup": true,
+  "secrets": {
+    "enabled": true
+  },
   "enableInstallTelemetry": false,
   "collapseChangelog": true,
   "showHardwareCursor": false,
