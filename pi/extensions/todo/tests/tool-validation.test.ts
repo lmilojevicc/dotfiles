@@ -107,7 +107,7 @@ test("compact advertised batch grammar supports a dependent create/update/delete
 		'{op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}',
 		'{op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}',
 		'{op:"delete",target}',
-		"Task fields follow top-level types/limits; create strings cannot be null",
+		"Todo fields follow top-level types/limits; create strings cannot be null",
 		"ref is a nonempty string",
 		'target and dependency array entries are IDs or {ref:"name"} naming preceding creates',
 		"No other fields",

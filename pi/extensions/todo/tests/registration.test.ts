@@ -60,12 +60,12 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"get/delete require id",
 		"batch requires operations",
 		"list optionally filters status (includeDeleted to show deleted)",
-		"clear removes all tasks",
+		"clear removes all todos",
 	])
 		assert.ok(tool.description.includes(mapping), mapping);
 	assert.match(tool.description, /not execution or agent launches/);
 	assert.match(tool.description, /owner\/metadata are inert/);
-	assert.equal(tool.promptSnippet, "Track session tasks");
+	assert.equal(tool.promptSnippet, "Track session todos");
 	assert.match(
 		tool.parameters.properties.expectedRevision.description,
 		/Mutations only; must match current revision/,
@@ -77,7 +77,7 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"concise imperative subjects",
 		"optional activeForm is present-continuous",
 		"in_progress before work, completed only after verification",
-		"At most one in_progress task, with all dependencies completed",
+		"At most one in_progress todo, with all dependencies completed",
 		"existing IDs without cycles",
 		"blockedBy on create, addBlockedBy/removeBlockedBy on update",
 		"Updates preserve omitted fields; null clears description/activeForm/owner",
@@ -85,7 +85,7 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"atomic but validates each operation in order",
 		"refs name preceding creates",
 		"todo create has no status field; status changes require update",
-		"use the returned task ID",
+		"use the returned todo ID",
 	])
 		assert.ok(guidance.includes(rule), rule);
 

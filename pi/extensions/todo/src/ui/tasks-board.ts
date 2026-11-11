@@ -151,7 +151,7 @@ function sides(left: string, right: string, width: number): string {
 }
 
 function counts(tasks: readonly Task[]): string {
-	if (!tasks.length) return "0 tasks";
+	if (!tasks.length) return "0 todos";
 	const done = tasks.filter((task) => task.status === "completed").length;
 	const active = tasks.filter((task) => task.status === "in_progress").length;
 	const open = tasks.filter((task) => task.status === "pending").length;
@@ -160,7 +160,7 @@ function counts(tasks: readonly Task[]): string {
 		active ? `${active} in progress` : "",
 		open ? `${open} open` : "",
 	].filter(Boolean);
-	return `${tasks.length} tasks (${groups.join(", ")})`;
+	return `${tasks.length} todos (${groups.join(", ")})`;
 }
 
 function matchingQuery(value: string): string {
@@ -617,23 +617,23 @@ function bodyEmpty(projection: BoardProjection, state: TasksBoardState, theme: T
 	if (projection.visible.length) return [];
 	if (!projection.all.length)
 		return [
-			theme.bold("No tasks in this session."),
-			theme.fg("dim", "Use /todo to create and manage tasks."),
+			theme.bold("No todos in this session."),
+			theme.fg("dim", "Use /todo to create and manage todos."),
 		];
 	if (matchingQuery(state.query))
 		return [
-			theme.bold(`No tasks match \"${sanitizeSearchInput(state.query)}\".`),
+			theme.bold(`No todos match \"${sanitizeSearchInput(state.query)}\".`),
 			theme.fg("dim", "Esc clears search."),
 		];
 	if (state.filter !== "All")
 		return [
-			theme.bold(`No tasks match Filter: ${state.filter}.`),
+			theme.bold(`No todos match Filter: ${state.filter}.`),
 			theme.fg("dim", "Press f to change the filter."),
 		];
 	if (projection.completed.length === projection.all.length && state.collapseCompleted) {
 		return [
-			theme.bold(`All ${projection.completed.length} tasks are completed.`),
-			theme.fg("dim", "Press c to show completed tasks."),
+			theme.bold(`All ${projection.completed.length} todos are completed.`),
+			theme.fg("dim", "Press c to show completed todos."),
 		];
 	}
 	return [];
@@ -722,8 +722,8 @@ function footerLines(
 	if (empty)
 		return packFooter(
 			hasQuery
-				? [`${cancel} clear search`, "/todo manages tasks", "q close"]
-				: [`${cancel} close`, "/todo manages tasks"],
+				? [`${cancel} clear search`, "/todo manages todos", "q close"]
+				: [`${cancel} close`, "/todo manages todos"],
 			width,
 		);
 	if (state.searching)
@@ -744,7 +744,7 @@ function footerLines(
 			width,
 		);
 	}
-	const items = [...(hasQuery ? [`${cancel} clear search`] : []), `${up}${down}/jk task`];
+	const items = [...(hasQuery ? [`${cancel} clear search`] : []), `${up}${down}/jk todo`];
 	if (width >= 92) items.push("Tab pane");
 	else items.push(`${select} details`);
 	items.push("/ search", "c completed", "f filter", "d delete");
@@ -804,11 +804,11 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 	const { snapshot, activity, config, state, theme, keybindings } = options;
 	const width = Math.max(1, options.width);
 	if (width < MIN_WIDTH)
-		return wrapTextWithAnsi("Tasks board needs at least 36 columns. Esc closes.", width).map(
+		return wrapTextWithAnsi("Todos board needs at least 36 columns. Esc closes.", width).map(
 			(line) => clip(line, width),
 		);
 	if (options.terminalRows < MIN_ROWS)
-		return wrapTextWithAnsi("Tasks board needs at least 14 rows. Esc closes.", width).map((line) =>
+		return wrapTextWithAnsi("Todos board needs at least 14 rows. Esc closes.", width).map((line) =>
 			clip(line, width),
 		);
 	const now = options.now ?? Date.now();
@@ -829,10 +829,10 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 	const lines: string[] = [];
 	lines.push(theme.fg("border", `╭${"─".repeat(inner)}╮`));
 	const title = small
-		? `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "inspect")}`
-		: `${theme.fg("accent", "●")} ${theme.bold("Tasks")} · ${theme.fg("muted", "live inspection")}`;
+		? `${theme.fg("accent", "●")} ${theme.bold("Todos")} · ${theme.fg("muted", "inspect")}`
+		: `${theme.fg("accent", "●")} ${theme.bold("Todos")} · ${theme.fg("muted", "live inspection")}`;
 	const right = small
-		? `${projection.all.length} ${projection.all.length === 1 ? "task" : "tasks"}`
+		? `${projection.all.length} ${projection.all.length === 1 ? "todo" : "todos"}`
 		: counts(projection.all);
 	lines.push(bordered(` ${sides(title, theme.fg("muted", right), inner - 2)} `, width, theme));
 	lines.push(
@@ -845,7 +845,7 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 
 	const errorBody = state.error
 		? [
-				theme.fg("error", "Tasks could not be displayed."),
+				theme.fg("error", "Todos could not be displayed."),
 				theme.fg("error", sanitizeTerminalText(state.error)),
 			]
 		: bodyEmpty(projection, state, theme);
@@ -866,8 +866,8 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 			now,
 		);
 		const listHeading = projection.visible.length
-			? `Tasks  ${Math.max(1, projection.visible.findIndex((task) => task.id === selected?.id) + 1)}/${projection.visible.length}${page.firstTask && (page.firstTask > 1 || page.lastTask < projection.visible.length) ? ` · rows ${page.firstTask}–${page.lastTask}` : ""}`
-			: "Tasks  0/0";
+			? `Todos  ${Math.max(1, projection.visible.findIndex((task) => task.id === selected?.id) + 1)}/${projection.visible.length}${page.firstTask && (page.firstTask > 1 || page.lastTask < projection.visible.length) ? ` · rows ${page.firstTask}–${page.lastTask}` : ""}`
+			: "Todos  0/0";
 		const detail = selected
 			? detailLines(
 					selected,
@@ -947,8 +947,8 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 				now,
 			);
 			heading = projection.visible.length
-				? `Tasks  ${Math.max(1, projection.visible.findIndex((task) => task.id === selected?.id) + 1)}/${projection.visible.length}${page.firstTask && (page.firstTask > 1 || page.lastTask < projection.visible.length) ? ` · rows ${page.firstTask}–${page.lastTask}` : ""}`
-				: "Tasks  0/0";
+				? `Todos  ${Math.max(1, projection.visible.findIndex((task) => task.id === selected?.id) + 1)}/${projection.visible.length}${page.firstTask && (page.firstTask > 1 || page.lastTask < projection.visible.length) ? ` · rows ${page.firstTask}–${page.lastTask}` : ""}`
+				: "Todos  0/0";
 			body = errorBody.length ? errorBody : page.rows;
 		}
 		if (geometry.showPaneHeading)
@@ -964,7 +964,7 @@ export function renderTasksBoard(options: RenderTasksBoardOptions): string[] {
 			lines.length - 1,
 			0,
 			bordered(
-				` ${theme.fg("warning", "Could not refresh tasks; showing the last valid snapshot.")} `,
+				` ${theme.fg("warning", "Could not refresh todos; showing the last valid snapshot.")} `,
 				width,
 				theme,
 			),
@@ -1413,13 +1413,13 @@ export async function openTasksBoard(
 ): Promise<void> {
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify(
-			"/todo-board requires TUI mode; task data remains available through the todo tool.",
+			"/todo-board requires TUI mode; todo data remains available through the todo tool.",
 			"warning",
 		);
 		return;
 	}
 	if (boardOpen) {
-		ctx.ui.notify("Tasks board is already open.", "info");
+		ctx.ui.notify("Todos board is already open.", "info");
 		return;
 	}
 	boardOpen = true;
@@ -1452,7 +1452,7 @@ export async function openTasksBoard(
 
 			initialState = result.viewState;
 			const confirmed = await ctx.ui.confirm(
-				"Delete task",
+				"Delete todo",
 				`Delete #${result.id} ${result.subject}?`,
 				{ signal: run.signal },
 			);
@@ -1467,7 +1467,7 @@ export async function openTasksBoard(
 			if (mutation.error) {
 				if (mutation.error.startsWith("expected revision ")) {
 					ctx.ui.notify(
-						`Tasks changed while delete confirmation was open; #${result.id} was not deleted. Review the current tasks and try again.`,
+						`Todos changed while delete confirmation was open; #${result.id} was not deleted. Review the current todos and try again.`,
 						"warning",
 					);
 				} else {
@@ -1479,7 +1479,7 @@ export async function openTasksBoard(
 				continue;
 			}
 			if (!mutation.changed) {
-				ctx.ui.notify(`Task #${result.id} is no longer available to delete.`, "warning");
+				ctx.ui.notify(`Todo #${result.id} is no longer available to delete.`, "warning");
 				continue;
 			}
 			refresh();
@@ -1494,7 +1494,7 @@ export async function openTasksBoard(
 	} catch (error) {
 		if (!run.signal.aborted)
 			ctx.ui.notify(
-				`Could not open Tasks board: ${sanitizeTerminalText(error instanceof Error ? error.message : error)}`,
+				`Could not open Todo board: ${sanitizeTerminalText(error instanceof Error ? error.message : error)}`,
 				"error",
 			);
 	} finally {

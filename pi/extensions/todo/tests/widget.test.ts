@@ -19,14 +19,18 @@ test.beforeEach(() => {
 });
 
 // Golden rows retain af28aa8 content and styles, without obsolete row indentation.
-// Only the tree prefix is removed; the header and spacer are untouched.
+// Only the tree prefix and the one-column left padding are removed; the header and
+// spacer are returned unindented.
+const INDENT = " ";
+
 function stripTree(lines: string[], styled = false): string[] {
 	return lines.map((line, index) => {
-		if (index === 0 || index === lines.length - 1) return line;
+		const indented = line.startsWith(INDENT) ? line.slice(INDENT.length) : line;
+		if (index === 0 || index === lines.length - 1) return indented;
 		const branch = index === lines.length - 2 ? "└─" : "├─";
 		const prefix = styled ? `<dim>${branch}</dim> ` : `${branch} `;
-		assert.ok(line.startsWith(prefix), `expected ${prefix} in ${line}`);
-		return line.slice(prefix.length);
+		assert.ok(indented.startsWith(prefix), `expected ${prefix} in ${indented}`);
+		return indented.slice(prefix.length);
 	});
 }
 
@@ -67,7 +71,7 @@ test("renders exact upstream header grammar, source order, rows, and blocker suf
 		metrics: { startedAt: 0, inputTokens: 4100, outputTokens: 1200 },
 	};
 	assert.deepEqual(render(state, {}, activity, 0, 169_000), [
-		"● 3 tasks (1 done, 1 in progress, 1 open)",
+		"● 3 todos (1 done, 1 in progress, 1 open)",
 		"✔ ~#1 Done~",
 		"✳ #2 Working… (2m 49s · ↑ 4.1k ↓ 1.2k)",
 		"◻ #3 Open › blocked by #2",
@@ -96,7 +100,7 @@ test("stripping dim tree prefixes preserves original sentinel theme roles", () =
 	);
 	assert.equal(
 		lines[0],
-		"<accent>●</accent> <accent>3 tasks (1 done, 1 in progress, 1 open)</accent>",
+		"<accent>●</accent> <accent>3 todos (1 done, 1 in progress, 1 open)</accent>",
 	);
 	assert.equal(lines[1], "<success>✔</success> <dim><strike>#1 Done</strike></dim>");
 	assert.equal(
@@ -206,16 +210,16 @@ test("150ms timer advances spinner and elapsed time, including single-frame glyp
 	widget.bind(harness.ui);
 	widget.refresh();
 	assert.equal(set.mock.callCount(), 1);
-	assert.equal(harness.component.render(120)[1], "└─ ✳ #1 Task 1… (1s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], " └─ ✳ #1 Task 1… (1s · ↑ 4.1k ↓ 1.2k)");
 	now = 2000;
 	callback();
 	assert.deepEqual(harness.requests, [undefined]);
-	assert.equal(harness.component.render(120)[1], "└─ ✴ #1 Task 1… (2s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], " └─ ✴ #1 Task 1… (2s · ↑ 4.1k ↓ 1.2k)");
 	widget.setConfig({ ...DEFAULT_TASKS_CONFIG, glyphs: { spinner: ["x"] } });
 	assert.equal(clear.mock.callCount(), 0);
 	now = 3000;
 	callback();
-	assert.equal(harness.component.render(120)[1], "└─ x #1 Task 1… (3s · ↑ 4.1k ↓ 1.2k)");
+	assert.equal(harness.component.render(120)[1], " └─ x #1 Task 1… (3s · ↑ 4.1k ↓ 1.2k)");
 	assert.equal(set.mock.callCount(), 1);
 	commitSnapshot("s", snapshot([task(1, "completed")], 1));
 	widget.refresh();
@@ -391,7 +395,7 @@ test("stripped custom-glyph rows preserve original text and styles, including su
 		activeTaskId: 2,
 		metrics: { startedAt: 0, inputTokens: 4100, outputTokens: 1200 },
 	};
-	const header = "<accent>H</accent> <accent>3 tasks (1 done, 1 in progress, 1 open)</accent>";
+	const header = "<accent>H</accent> <accent>3 todos (1 done, 1 in progress, 1 open)</accent>";
 	const done = "<success>C</success> <dim><strike>#1 Task 1</strike></dim>";
 	const active =
 		"<accent>b</accent> <dim>#2</dim> <accent>Working...</accent> <dim>(2m 49s | IN 4.1k OUT 1.2k)</dim>";
@@ -424,7 +428,7 @@ test("stripped custom-glyph rows preserve original text and styles, including su
 	assert.deepEqual(render(snapshot([task(1, "deleted")])), []);
 	assert.deepEqual(
 		render(snapshot([task(1, "completed"), task(2, "completed")]), { collapseCompleted: true }),
-		["● 2 tasks (2 done)", "✔ 2 completed", ""],
+		["● 2 todos (2 done)", "✔ 2 completed", ""],
 	);
 });
 
@@ -473,15 +477,15 @@ test("component keeps toggles local and renders current width and theme", () => 
 	widget.bind(harness.ui);
 	widget.refresh();
 	const limited = harness.component.render(120);
-	assert.equal(limited.at(-2), "└─ … and 2 more");
+	assert.equal(limited.at(-2), " └─ … and 2 more");
 	widget.toggle();
-	assert.equal(harness.component.render(120).at(-2), "└─ ◻ #3 Task 3");
+	assert.equal(harness.component.render(120).at(-2), " └─ ◻ #3 Task 3");
 	widget.refresh(true);
 	assert.deepEqual(harness.component.render(120), limited);
 	assert.ok(harness.component.render(5).every((line: string) => visibleWidth(line) <= 5));
 	assert.deepEqual(harness.component.render(120), limited);
 	harness.ui.theme = sentinelTheme;
-	assert.match(harness.component.render(1000)[1], /^<dim>├─<\/dim> ◻ <dim>#1<\/dim>/);
+	assert.match(harness.component.render(1000)[1], /^ <dim>├─<\/dim> ◻ <dim>#1<\/dim>/);
 	widget.toggle();
 	const other = widgetHarness();
 	widget.bind(other.ui);

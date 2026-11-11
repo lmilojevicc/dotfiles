@@ -102,7 +102,7 @@ export const TodoParameters = Type.Object(
 					{
 						additionalProperties: true,
 						description:
-							'Batch shapes (? = optional): {op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}; {op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}; {op:"delete",target}. Task fields follow top-level types/limits; create strings cannot be null. ref is a nonempty string. target and dependency array entries are IDs or {ref:"name"} naming preceding creates. No other fields.',
+							'Batch shapes (? = optional): {op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}; {op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}; {op:"delete",target}. Todo fields follow top-level types/limits; create strings cannot be null. ref is a nonempty string. target and dependency array entries are IDs or {ref:"name"} naming preceding creates. No other fields.',
 					},
 				),
 				{ minItems: 1, maxItems: 50 },

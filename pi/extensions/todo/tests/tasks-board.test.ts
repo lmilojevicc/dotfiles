@@ -44,7 +44,7 @@ function boardSnapshot(): TaskSnapshot {
 			updatedAt: Date.UTC(2026, 0, 4),
 		},
 		{
-			...task(3, "pending", [2], "Add Tasks board"),
+			...task(3, "pending", [2], "Add Todos board"),
 			owner: "milo",
 			createdAt: Date.UTC(2026, 0, 5),
 			updatedAt: Date.UTC(2026, 0, 6),
@@ -103,8 +103,8 @@ test("wide, medium, small, tiny, and short layouts obey geometry and exact fallb
 	assert.ok(!medium.some((line) => line.includes("┬")));
 	assert.ok(!small.some((line) => line.includes("┬")));
 	assert.ok(small.some((line) => line.includes("parent ↑ 9k ↓ 4.7k")));
-	assert.deepEqual(render(20), ["Tasks board needs at", "least 36 columns.", "Esc closes."]);
-	assert.deepEqual(render(50, 10), ["Tasks board needs at least 14 rows. Esc closes."]);
+	assert.deepEqual(render(20), ["Todos board needs at", "least 36 columns.", "Esc closes."]);
+	assert.deepEqual(render(50, 10), ["Todos board needs at least 14 rows. Esc closes."]);
 	for (const width of [120, 96, 80, 60, 50, 36, 20, 5, 1]) {
 		const lines = render(width);
 		assert.ok(
@@ -123,7 +123,7 @@ test("headers, controls, footers, detail order, telemetry attribution, and spinn
 	const wide = stripped(render(120));
 	assert.equal(
 		wide[1],
-		"│ ● Tasks · live inspection                                                    4 tasks (1 done, 1 in progress, 2 open) │",
+		"│ ● Todos · live inspection                                                    4 todos (1 done, 1 in progress, 2 open) │",
 	);
 	assert.equal(
 		wide[2],
@@ -133,7 +133,7 @@ test("headers, controls, footers, detail order, telemetry attribution, and spinn
 		wide
 			.slice(-3)
 			.some((line) =>
-				line.includes("↑↓/jk task · Tab pane · / search · c completed · f filter · d delete"),
+				line.includes("↑↓/jk todo · Tab pane · / search · c completed · f filter · d delete"),
 			),
 	);
 	assert.ok(wide.at(-2)?.includes("PgUp/PgDn scroll · Esc close"));
@@ -312,7 +312,7 @@ test("lowercase d yields a typed delete action from list and detail while upperc
 			{
 				action: "delete",
 				id: 3,
-				subject: "Add Tasks board",
+				subject: "Add Todos board",
 				expectedRevision: 0,
 				fallbackId: 4,
 				viewState: {
@@ -416,7 +416,7 @@ test("wide Tab switches pane focus with a non-color marker and only the approved
 	const harness = makeComponent();
 	const initial = harness.component.render(120).join("\n");
 	assert.equal(harness.component.state.pane, "list");
-	assert.match(initial, /› Tasks/);
+	assert.match(initial, /› Todos/);
 	harness.component.handleInput("\t");
 	const detailFocused = harness.component.render(120).join("\n");
 	assert.equal(harness.component.state.pane, "detail");
@@ -619,7 +619,7 @@ test("strict search edit keeps the filtered selection, body row, count, and publ
 	const plain = stripTerminalSequences(output.join("\n"));
 	assert.match(plain, /1 matches · Completed: shown in search/);
 	assert.match(plain, /›[^\n]*#1[^\n]*foo baXr target/);
-	assert.doesNotMatch(plain, /No tasks match/);
+	assert.doesNotMatch(plain, /No todos match/);
 	const searchLine = output.find((line) => line.includes("Search >"))!;
 	const marker = searchLine.indexOf(CURSOR_MARKER);
 	assert.ok(marker >= 0);
@@ -640,7 +640,7 @@ test("projection changes reconcile large physical offsets, no-match recovery, fi
 	assert.equal(large.component.state.listOffset, 0);
 	let output = stripTerminalSequences(large.component.render(50).join("\n"));
 	assert.match(output, /›[^\n]*#1(?:\D|$)/);
-	assert.doesNotMatch(output, /No tasks match/);
+	assert.doesNotMatch(output, /No todos match/);
 	large.component.dispose();
 
 	const recovering = makeComponent(
@@ -655,7 +655,7 @@ test("projection changes reconcile large physical offsets, no-match recovery, fi
 	for (const key of "recover targetz") recovering.component.handleInput(key);
 	assert.match(
 		stripTerminalSequences(recovering.component.render(80).join("\n")),
-		/0 matches[\s\S]*No tasks match/,
+		/0 matches[\s\S]*No todos match/,
 	);
 	recovering.component.handleInput("\x7f");
 	output = stripTerminalSequences(recovering.component.render(80).join("\n"));
@@ -717,7 +717,7 @@ test("split bracketed paste markers sanitize buffered control and line attempts 
 	harness.component.handleInput("\x1b[88u");
 	assert.equal(harness.component.state.query, "foo  ba XrX");
 	output = stripTerminalSequences(harness.component.render(80).join("\n"));
-	assert.match(output, /0 matches[\s\S]*No tasks match/);
+	assert.match(output, /0 matches[\s\S]*No todos match/);
 	harness.component.dispose();
 });
 
@@ -840,7 +840,7 @@ test("wide, medium, and small measured footers preserve every essential list act
 		const lines = render(width);
 		const output = stripTerminalSequences(lines.join("\n"));
 		for (const meaning of [
-			"task",
+			"todo",
 			width >= 92 ? "pane" : "details",
 			"search",
 			"filter",
@@ -914,9 +914,9 @@ test("empty and no-result states use actionable inspection-first copy", () => {
 		width: 80,
 		terminalRows: 28,
 	});
-	assert.match(empty.join("\n"), /No tasks in this session\./);
-	assert.match(empty.join("\n"), /Use \/todo to create and manage tasks\./);
-	assert.match(render(80, 28, { query: "missing" }).join("\n"), /No tasks match "missing"\./);
+	assert.match(empty.join("\n"), /No todos in this session\./);
+	assert.match(empty.join("\n"), /Use \/todo to create and manage todos\./);
+	assert.match(render(80, 28, { query: "missing" }).join("\n"), /No todos match "missing"\./);
 	assert.match(
 		render(80, 28, { filter: "Completed", collapseCompleted: false, query: "impossible" }).join(
 			"\n",
@@ -933,7 +933,7 @@ test("empty and no-result states use actionable inspection-first copy", () => {
 		width: 80,
 		terminalRows: 28,
 	});
-	assert.match(hidden.join("\n"), /All 2 tasks are completed\./);
+	assert.match(hidden.join("\n"), /All 2 todos are completed\./);
 });
 
 test("live spinner timer uses 150 ms, unrefs, invalidates, and is cleared exactly once", () => {
@@ -1080,7 +1080,7 @@ test("cancelled board deletion reopens with stable selection and preserved seria
 	assert.equal(getSnapshot("tasks-board-session").revision, 9);
 	assert.equal(scenario.entries.length, 0);
 	assert.equal(scenario.refreshes, 0);
-	assert.deepEqual(scenario.confirmCalls[0]?.slice(0, 2), ["Delete task", "Delete #2 Task 2?"]);
+	assert.deepEqual(scenario.confirmCalls[0]?.slice(0, 2), ["Delete todo", "Delete #2 Task 2?"]);
 	assert.equal(scenario.confirmCalls[0]?.[2]?.signal instanceof AbortSignal, true);
 });
 
@@ -1184,7 +1184,7 @@ test("confirmation rejects selected-task changes and unrelated revision advances
 		assert.equal(scenario.refreshes, 0, `${change.name}: rejected delete does not refresh`);
 		assert.match(
 			scenario.notices[0]?.[0] ?? "",
-			/Tasks changed while delete confirmation was open; #1 was not deleted/,
+			/Todos changed while delete confirmation was open; #1 was not deleted/,
 			change.name,
 		);
 		assert.equal(scenario.notices[0]?.[1], "warning", change.name);
@@ -1269,7 +1269,7 @@ test("deleting the only query match keeps clear-search precedence in the no-resu
 			},
 			(component) => {
 				const output = stripTerminalSequences(component.render(50).join("\n"));
-				assert.match(output, /No tasks match "needle"\./);
+				assert.match(output, /No todos match "needle"\./);
 				assert.match(output, /Esc clear search/);
 				assert.ok(output.indexOf("Esc clear search") < output.indexOf("q close"));
 				component.close();
@@ -1290,7 +1290,7 @@ test("deleting the only visible task reopens the board empty without hard-deleti
 			},
 			(component) => {
 				assert.equal(component.state.selectedId, undefined);
-				assert.match(component.render(80).join("\n"), /No tasks in this session\./);
+				assert.match(component.render(80).join("\n"), /No todos in this session\./);
 				component.close();
 			},
 		],
@@ -1391,7 +1391,7 @@ test("command uses public overlay options, single-open guard, and non-TUI fallba
 	const first = openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG);
 	await Promise.resolve();
 	await openTasksBoard(pi, ctx, () => DEFAULT_TASKS_CONFIG);
-	assert.deepEqual(notices, [["Tasks board is already open.", "info"]]);
+	assert.deepEqual(notices, [["Todos board is already open.", "info"]]);
 	release?.();
 	await first;
 	let customCalled = false;
@@ -1410,7 +1410,7 @@ test("command uses public overlay options, single-open guard, and non-TUI fallba
 	);
 	assert.equal(customCalled, false);
 	assert.deepEqual(notices.at(-1), [
-		"/todo-board requires TUI mode; task data remains available through the todo tool.",
+		"/todo-board requires TUI mode; todo data remains available through the todo tool.",
 		"warning",
 	]);
 });

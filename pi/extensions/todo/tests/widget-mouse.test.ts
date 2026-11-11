@@ -87,9 +87,9 @@ function mountedWidget() {
 test("headline click folds the whole list and expands back to the existing view without changing task truth", () => {
 	const { h, widget, state } = mountedWidget();
 	const expanded = h.component.render(120);
-	assert.equal(expanded.at(-2), "└─ … and 2 more");
+	assert.equal(expanded.at(-2), " └─ … and 2 more");
 	assert.deepEqual(h.component.handleMouse?.(mouse()), { handled: true });
-	assert.deepEqual(h.component.render(120), ["● 3 tasks (1 done, 2 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 3 todos (1 done, 2 open)", ""]);
 	assert.deepEqual(h.requests, [true]);
 	for (const width of [80, 40, 20, 5, 1]) {
 		const lines = h.component.render(width);
@@ -147,7 +147,7 @@ test("collapsed state survives updates and preferences; the toggle shortcut expa
 	);
 	widget.refresh();
 	widget.setConfig({ ...DEFAULT_TASKS_CONFIG, collapseCompleted: true, maxVisible: 1 });
-	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 4 todos (2 done, 1 in progress, 1 open)", ""]);
 	widget.toggle();
 	assert.equal(
 		h.component.render(120).length,
@@ -155,7 +155,7 @@ test("collapsed state survives updates and preferences; the toggle shortcut expa
 		"the collapse shortcut expands a collapsed widget",
 	);
 	h.component.handleMouse?.(mouse());
-	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 4 todos (2 done, 1 in progress, 1 open)", ""]);
 	const removed = h.component;
 	commitSnapshot("s", snapshot());
 	widget.refresh();
@@ -163,7 +163,7 @@ test("collapsed state survives updates and preferences; the toggle shortcut expa
 	assert.equal(removed.handleMouse?.(mouse()), undefined);
 	commitSnapshot("s", snapshot([task(5), task(6)]));
 	widget.refresh();
-	assert.deepEqual(h.component.render(120), ["● 2 tasks (2 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 2 todos (2 open)", ""]);
 	widget.refresh(true);
 	assert.equal(h.component.render(120).length, 4);
 	h.component.handleMouse?.(mouse());
@@ -199,7 +199,7 @@ test("the toggle shortcut expands a collapsed widget instead of silently inverti
 	widget.toggle();
 	assert.equal(
 		h.component.render(120).at(-2),
-		"└─ ◻ #3 Task 3",
+		" └─ ◻ #3 Task 3",
 		"a second press flips show-all as before",
 	);
 	widget.dispose();
@@ -225,9 +225,9 @@ test("session compaction preserves collapse while tree/start reset it; backgroun
 	await handlers.get("session_start")!({}, ctx);
 	h.component.handleMouse?.(mouse());
 	await handlers.get("session_compact")!({}, ctx);
-	assert.deepEqual(h.component.render(120), ["● 1 tasks (1 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 1 todos (1 open)", ""]);
 	await handlers.get("session_shutdown")!({}, context("background"));
-	assert.deepEqual(h.component.render(120), ["● 1 tasks (1 open)", ""]);
+	assert.deepEqual(h.component.render(120), [" ● 1 todos (1 open)", ""]);
 	await handlers.get("session_tree")!({}, ctx);
 	assert.equal(h.component.render(120).length, 3);
 	h.component.handleMouse?.(mouse());

@@ -115,7 +115,7 @@ export async function openTaskManager(
 ): Promise<void> {
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify(
-			"/todo requires TUI mode; task tracking remains available through the todo tool.",
+			"/todo requires TUI mode; todo tracking remains available through the todo tool.",
 			"error",
 		);
 		return;
@@ -130,9 +130,9 @@ export async function openTaskManager(
 	};
 
 	const createTask = async (): Promise<void> => {
-		const subject = await ctx.ui.input("Task subject");
+		const subject = await ctx.ui.input("Todo subject");
 		if (!subject) return;
-		const description = await ctx.ui.input("Task description");
+		const description = await ctx.ui.input("Todo description");
 		if (!description) return;
 		mutate({ action: "create", subject, description });
 	};
@@ -140,7 +140,7 @@ export async function openTaskManager(
 	const detail = async (id: number): Promise<void> => {
 		const task = taskById(ctx, id);
 		if (!task) {
-			ctx.ui.notify(`Task #${id} no longer exists.`, "warning");
+			ctx.ui.notify(`Todo #${id} no longer exists.`, "warning");
 			return;
 		}
 		const actions =
@@ -155,7 +155,7 @@ export async function openTaskManager(
 		else if (action === "✓ Complete") mutate({ action: "update", id, status: "completed" });
 		else if (action === "✗ Delete") {
 			if (
-				await ctx.ui.confirm("Delete task", `Delete #${id} ${sanitizeTerminalText(task.subject)}?`)
+				await ctx.ui.confirm("Delete todo", `Delete #${id} ${sanitizeTerminalText(task.subject)}?`)
 			)
 				mutate({ action: "delete", id });
 		}
@@ -167,7 +167,7 @@ export async function openTaskManager(
 				.tasks.filter((task) => task.status !== "deleted")
 				.sort((a, b) => a.id - b.id);
 			if (!tasks.length) {
-				await ctx.ui.select("No tasks", ["← Back"]);
+				await ctx.ui.select("No todos", ["← Back"]);
 				return;
 			}
 			const glyphs = resolveTaskGlyphs(config.glyphs);
@@ -176,7 +176,7 @@ export async function openTaskManager(
 				label: `${task.status === "completed" ? glyphs.completed : task.status === "in_progress" ? glyphs.inProgress : glyphs.pending} #${task.id} [${task.status}] ${sanitizeTerminalText(task.subject)}`,
 			}));
 			const back = "← Back";
-			const selected = await ctx.ui.select("Tasks", [
+			const selected = await ctx.ui.select("Todos", [
 				...records.map((record) => record.label),
 				back,
 			]);
@@ -189,14 +189,14 @@ export async function openTaskManager(
 	while (true) {
 		const tasks = getSnapshot(sessionId(ctx)).tasks.filter((task) => task.status !== "deleted");
 		const completed = tasks.filter((task) => task.status === "completed").length;
-		const choices = [`View all tasks (${tasks.length})`, "Create task"];
+		const choices = [`View all todos (${tasks.length})`, "Create todo"];
 		if (completed) choices.push(`Clear completed (${completed})`);
 		if (tasks.length) choices.push(`Clear all (${tasks.length})`);
 		choices.push("Settings");
-		const choice = await ctx.ui.select("Tasks", choices);
+		const choice = await ctx.ui.select("Todos", choices);
 		if (!choice) return;
 		if (choice === choices[0]) await viewTasks();
-		else if (choice === "Create task") await createTask();
+		else if (choice === "Create todo") await createTask();
 		else if (choice.startsWith("Clear completed")) {
 			const result = commitControllerResult(
 				pi,
@@ -206,7 +206,7 @@ export async function openTaskManager(
 			if (result.error) ctx.ui.notify(result.error, "error");
 			if (result.changed) hooks.refresh();
 		} else if (choice.startsWith("Clear all")) {
-			if (await ctx.ui.confirm("Clear all tasks", `Delete all ${tasks.length} tasks?`))
+			if (await ctx.ui.confirm("Clear all todos", `Delete all ${tasks.length} todos?`))
 				mutate({ action: "clear" });
 		} else if (choice === "Settings") {
 			await openSettingsMenu(ctx.ui, config, (updated) => {

@@ -21,11 +21,11 @@ test("settings exposes only the five approved display rows with upstream copy", 
 	assert.deepEqual(
 		DISPLAY_SETTING_ITEMS.map((item) => item.label),
 		[
-			"Collapse completed tasks",
-			"Show all tasks in widget",
-			"Max visible tasks in widget",
+			"Collapse completed todos",
+			"Show all todos in widget",
+			"Max visible todos in widget",
 			"Widget sort order",
-			"Hidden tasks position",
+			"Hidden todos position",
 		],
 	);
 	assert.match(DISPLAY_SETTING_ITEMS[0].description, /single 'N completed' line/);
@@ -47,10 +47,10 @@ test("SettingsList renders global scope, fits narrow widths, cycles all five row
 				done = true;
 			});
 			const wide = component.render(100).join("\n");
-			assert.match(wide, /⚙  Global Task Settings/);
+			assert.match(wide, /⚙  Global Todo Settings/);
 			assert.match(wide, /Saved immediately for all projects/);
 			assert.match(wide, /Other sessions pick up changes on start or \/reload/);
-			assert.match(wide, /Collapse completed tasks/);
+			assert.match(wide, /Collapse completed todos/);
 			for (const width of [80, 40, 20])
 				assert.ok(component.render(width).every((line: string) => visibleWidth(line) <= width));
 			for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {
@@ -111,7 +111,7 @@ for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {
 		assert.equal(notifications[0].level, "error");
 		assert.match(
 			notifications[0].message,
-			/Could not save task settings: Error: Existing task config .* malformed JSON/,
+			/Could not save todo settings: Error: Existing task config .* malformed JSON/,
 		);
 	});
 }

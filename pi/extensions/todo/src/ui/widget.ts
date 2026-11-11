@@ -114,13 +114,20 @@ export function renderWidget(
 			inProgress.length ? `${inProgress.length} in progress` : "",
 			pending.length ? `${pending.length} open` : "",
 		].filter(Boolean);
-		const clip = (line: string) => truncateToWidth(line, width, glyphs.truncation);
+		// One column of left padding so the tree glyphs do not sit flush against the
+		// terminal edge; the clip width is reduced to match.
+		// A one-column terminal refuses the padding entirely rather than clipping
+		// the header away.
+		const indent = width > 1 ? " " : "";
+		const pad = (line: string) => (line ? indent + line : line);
+		const clip = (line: string) =>
+			truncateToWidth(line, Math.max(1, width - indent.length), glyphs.truncation);
 		const lines = [
 			clip(
-				`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} tasks (${groups.join(", ")})`)}`,
+				`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} todos (${groups.join(", ")})`)}`,
 			),
 		];
-		if (collapsed) return [...lines, ""];
+		if (collapsed) return [...lines.map(pad), ""];
 		const listed = config.collapseCompleted
 			? tasks.filter((task) => task.status !== "completed")
 			: tasks;
@@ -149,9 +156,9 @@ export function renderWidget(
 			lines.push(clip(`${theme.fg("dim", index === rows.length - 1 ? "└─" : "├─")} ${row}`));
 		}
 		// A single quiet spacer keeps adjacent above-editor telemetry from reading as
-		// part of the Tasks hierarchy. It is presentation-only, not a visible row.
+		// part of the Todos hierarchy. It is presentation-only, not a visible row.
 		lines.push("");
-		return lines;
+		return lines.map(pad);
 	} catch {
 		return [];
 	}
@@ -177,7 +184,9 @@ export class TaskWidget {
 		if (this.registered && this.ui) {
 			try {
 				this.ui.setWidget(WIDGET_KEY, undefined);
-			} catch {}
+			} catch {
+				// Best-effort teardown: the previous UI context may already be gone.
+			}
 		}
 		this.ui = ui;
 		this.tui = undefined;

@@ -60,14 +60,14 @@ test("main menu uses exact dynamic upstream order", async () => {
 	applyHumanMutation(pi, ctx, { action: "update", id: 2, status: "completed" });
 	await openTaskManager(pi, ctx);
 	assert.deepEqual(calls.select[0], [
-		"Tasks",
-		["View all tasks (2)", "Create task", "Clear completed (1)", "Clear all (2)", "Settings"],
+		"Todos",
+		["View all todos (2)", "Create todo", "Clear completed (1)", "Clear all (2)", "Settings"],
 	]);
 });
 
 test("list and detail flows have exact rows, titles, and status actions", async () => {
 	const { ctx, calls, pi } = harness([
-		"View all tasks (3)",
+		"View all todos (3)",
 		"◻ #1 [pending] Pending",
 		"← Back",
 		undefined,
@@ -80,7 +80,7 @@ test("list and detail flows have exact rows, titles, and status actions", async 
 	applyHumanMutation(pi, ctx, { action: "update", id: 3, status: "completed" });
 	await openTaskManager(pi, ctx);
 	assert.deepEqual(calls.select[1], [
-		"Tasks",
+		"Todos",
 		["◻ #1 [pending] Pending", "✔ #2 [completed] Running", "✔ #3 [completed] Done", "← Back"],
 	]);
 	assert.deepEqual(calls.select[2], [
@@ -90,18 +90,18 @@ test("list and detail flows have exact rows, titles, and status actions", async 
 });
 
 test("empty view and create cancellation/empty description persist nothing", async () => {
-	const empty = harness(["View all tasks (0)", "← Back", undefined]);
+	const empty = harness(["View all todos (0)", "← Back", undefined]);
 	await openTaskManager(empty.pi, empty.ctx);
-	assert.deepEqual(empty.calls.select[1], ["No tasks", ["← Back"]]);
-	const create = harness(["Create task", "Subject", "", undefined]);
+	assert.deepEqual(empty.calls.select[1], ["No todos", ["← Back"]]);
+	const create = harness(["Create todo", "Subject", "", undefined]);
 	await openTaskManager(create.pi, create.ctx);
-	assert.deepEqual(create.calls.input, ["Task subject", "Task description"]);
+	assert.deepEqual(create.calls.input, ["Todo subject", "Todo description"]);
 	assert.equal(getSnapshot("session").tasks.length, 0);
 });
 
 test("delete and clear-all retain confirmations", async () => {
 	const remove = harness([
-		"View all tasks (1)",
+		"View all todos (1)",
 		"◻ #1 [pending] Keep",
 		"✗ Delete",
 		undefined,
@@ -109,20 +109,20 @@ test("delete and clear-all retain confirmations", async () => {
 	]);
 	applyHumanMutation(remove.pi, remove.ctx, { action: "create", subject: "Keep" });
 	await openTaskManager(remove.pi, remove.ctx);
-	assert.deepEqual(remove.calls.confirm[0], ["Delete task", "Delete #1 Keep?"]);
+	assert.deepEqual(remove.calls.confirm[0], ["Delete todo", "Delete #1 Keep?"]);
 	assert.equal(getSnapshot("session").tasks[0]?.status, "pending");
 
 	resetStore();
 	const clear = harness(["Clear all (1)", "yes", undefined]);
 	applyHumanMutation(clear.pi, clear.ctx, { action: "create", subject: "Gone" });
 	await openTaskManager(clear.pi, clear.ctx);
-	assert.deepEqual(clear.calls.confirm[0], ["Clear all tasks", "Delete all 1 tasks?"]);
+	assert.deepEqual(clear.calls.confirm[0], ["Clear all todos", "Delete all 1 todos?"]);
 	assert.equal(getSnapshot("session").tasks.length, 0);
 });
 
 test("starting a second task surfaces the one-active reducer error", async () => {
 	const h = harness([
-		"View all tasks (2)",
+		"View all todos (2)",
 		"◻ #2 [pending] Two",
 		"▸ Start (in_progress)",
 		"← Back",

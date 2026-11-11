@@ -7,21 +7,21 @@ import { BUILT_IN_SORT_ORDERS } from "./task-sort.js";
 export const DISPLAY_SETTING_ITEMS = [
 	{
 		id: "collapseCompleted",
-		label: "Collapse completed tasks",
+		label: "Collapse completed todos",
 		description:
-			"When ON, completed tasks are replaced by a single 'N completed' line and the visible limit applies only to the tasks left. When OFF, they are listed individually.",
+			"When ON, completed todos are replaced by a single 'N completed' line and the visible limit applies only to the todos left. When OFF, they are listed individually.",
 	},
 	{
 		id: "showAll",
-		label: "Show all tasks in widget",
+		label: "Show all todos in widget",
 		description:
-			"When ON, every listed task is shown regardless of the visible limit. When OFF, the list is capped by 'Max visible tasks'.",
+			"When ON, every listed todo is shown regardless of the visible limit. When OFF, the list is capped by 'Max visible todos'.",
 	},
 	{
 		id: "maxVisible",
-		label: "Max visible tasks in widget",
+		label: "Max visible todos in widget",
 		description:
-			"Only applies when 'Show all tasks' is OFF. Caps how many task lines the widget shows.",
+			"Only applies when 'Show all todos' is OFF. Caps how many todo lines the widget shows.",
 	},
 	{
 		id: "sortOrder",
@@ -31,9 +31,9 @@ export const DISPLAY_SETTING_ITEMS = [
 	},
 	{
 		id: "hiddenAt",
-		label: "Hidden tasks position",
+		label: "Hidden todos position",
 		description:
-			'"bottom" hides tasks from the end of the list. "top" hides tasks from the start (useful with status sort to collapse completed tasks).',
+			'"bottom" hides todos from the end of the list. "top" hides todos from the start (useful with status sort to collapse completed todos).',
 	},
 ] as const;
 
@@ -103,7 +103,7 @@ export async function openSettingsMenu(
 											: config.sortOrder
 										: config.hiddenAt;
 					list.updateValue(id, restored);
-					ui.notify(`Could not save task settings: ${String(error)}`, "error");
+					ui.notify(`Could not save todo settings: ${String(error)}`, "error");
 				}
 			},
 			() => done(undefined),
@@ -116,7 +116,7 @@ export async function openSettingsMenu(
 			}
 		}
 		const panel = new SettingsPanel();
-		panel.addChild(new Text(theme.bold(theme.fg("accent", "⚙  Global Task Settings")), 0, 0));
+		panel.addChild(new Text(theme.bold(theme.fg("accent", "⚙  Global Todo Settings")), 0, 0));
 		panel.addChild(
 			new Text(
 				theme.fg(
