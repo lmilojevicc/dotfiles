@@ -1,0 +1,9 @@
+# Root stylua config for the whole repo (git hooks, `mise run fmt`).
+# nvim keeps its own copy at nvim/.stylua.toml because Neovim's cwd is
+# ~/.config/nvim, a symlink whose path stylua's parent search does not follow
+# back into this repo. Keep the two files identical.
+column_width = 120
+line_endings = "Unix"
+indent_type = "Spaces"
+indent_width = 2
+quote_style = "AutoPreferDouble"

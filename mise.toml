@@ -1,0 +1,29 @@
+# Project-level tool pinning for this dotfiles repo itself (not a host config:
+# the host layers live in mise/config.<host>.toml and are linked to
+# ~/.config/mise). Versions are exact so nvim (conform), the git hooks, and any
+# agent all run the same binaries -- run `mise install` after changing them.
+[tools]
+"aqua:oxc-project/oxc/oxfmt" = "0.77.0"
+"aqua:oxc-project/oxc/oxlint" = "1.92.0"
+stylua = "2.6.0"
+shfmt = "3.14.1"
+
+[tasks.hooks]
+description = "Point this clone's git hooks at the committed .githooks directory"
+run = "git config core.hooksPath .githooks && echo 'core.hooksPath -> .githooks'"
+
+[tasks.fmt]
+description = "Format every tracked file (same tools the pre-commit hook uses)"
+run = "bash .githooks/format-all"
+
+[tasks.check]
+description = "Check formatting repo-wide and lint (no writes); exits non-zero on drift"
+run = "bash .githooks/check"
+
+[tasks.lint]
+description = "Lint the repo with oxlint"
+run = "oxlint ."
+
+[tasks."lint:fix"]
+description = "Apply oxlint's safe autofixes"
+run = "oxlint --fix ."

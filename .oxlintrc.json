@@ -1,0 +1,22 @@
+{
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-control-regex": "off",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ]
+  },
+  "ignorePatterns": ["pi/extensions/herdr-agent-state.ts", "pi/extensions/seshagy-agent-state.ts"],
+  "env": {
+    "builtin": true,
+    "node": true,
+    "es2024": true
+  }
+}

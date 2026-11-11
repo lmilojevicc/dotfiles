@@ -1,0 +1,24 @@
+# Read by shfmt (git hooks + nvim conform) and by feedback plugins that honor
+# EditorConfig. Keeps shell indentation at 2 spaces in both places instead of
+# shfmt's tab default.
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.sh]
+indent_style = space
+indent_size = 2
+
+[{*.ts,*.tsx,*.js,*.jsx,*.mjs,*.cjs}]
+indent_style = tab
+
+[*.{json,jsonc,yaml,yml,toml,css,md}]
+indent_style = space
+indent_size = 2
+
+[*.lua]
+indent_style = space
+indent_size = 2

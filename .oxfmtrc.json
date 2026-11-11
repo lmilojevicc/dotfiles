@@ -1,0 +1,13 @@
+{
+  "useTabs": true,
+  "printWidth": 100,
+  "overrides": [
+    {
+      "files": ["**/*.json", "**/*.jsonc"],
+      "options": {
+        "useTabs": false
+      }
+    }
+  ],
+  "ignorePatterns": ["pi/extensions/herdr-agent-state.ts", "pi/extensions/seshagy-agent-state.ts"]
+}

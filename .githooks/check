@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Verify the repo matches what the pre-commit hook would produce: no writes, exit
+# non-zero on any drift. Used by `mise run check`.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+# shellcheck source=.githooks/_format.sh
+source .githooks/_format.sh
+
+rc=0
+
+oxfmt --check || rc=1
+stylua --check . || rc=1
+
+shell=()
+while IFS= read -r -d '' f; do
+  case "$f" in
+  *.sh) shell+=("$f") ;;
+  *.lua) ;;
+  *) dotfiles_is_shell "$f" && shell+=("$f") ;;
+  esac
+done < <(git ls-files -z)
+shfmt --diff --indent 2 -- "${shell[@]}" || rc=1
+
+# Lint is reported but does not fail the run while pre-existing findings remain.
+oxlint . || echo "check: oxlint findings above are advisory for now." >&2
+
+exit $rc

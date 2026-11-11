@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Pre-commit: format exactly the files staged for this commit, then lint them.
+# Same tools and versions nvim's conform uses, so an agent's commit and your
+# editor save produce identical bytes.
+#
+# Applies to every `git commit` in this clone. Bypass with `git commit --no-verify`
+# (or DOTFILES_SKIP_HOOKS=1) only when you know what you are skipping.
+set -euo pipefail
+
+[[ ${DOTFILES_SKIP_HOOKS:-0} == 1 ]] && exit 0
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+# shellcheck source=.githooks/_format.sh
+source .githooks/_format.sh
+
+staged=()
+while IFS= read -r -d '' f; do staged+=("$f"); done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+((${#staged[@]})) || exit 0
+
+for tool in oxfmt oxlint stylua shfmt; do dotfiles_require "$tool" || exit 1; done
+
+# Remember which files already had unstaged edits: reformatting those re-stages
+# the whole file, so partial staging cannot survive and we must say so.
+declare -A partly_staged=()
+for f in "${staged[@]}"; do
+  if ! git diff --quiet -- "$f" 2>/dev/null; then partly_staged[$f]=1; fi
+done
+
+declare -A before=()
+for f in "${staged[@]}"; do
+  [[ -f $f ]] && before[$f]=$(git hash-object -- "$f")
+done
+
+dotfiles_format "${staged[@]}"
+
+changed=()
+for f in "${staged[@]}"; do
+  [[ -f $f ]] || continue
+  if [[ ${before[$f]:-} != "$(git hash-object -- "$f")" ]]; then changed+=("$f"); fi
+done
+
+if ((${#changed[@]})); then
+  git add -- "${changed[@]}"
+  echo "pre-commit: formatted ${#changed[@]} file(s):"
+  printf '  %s\n' "${changed[@]}"
+  for f in "${changed[@]}"; do
+    [[ ${partly_staged[$f]:-0} == 1 ]] &&
+      echo "  note: $f had unstaged edits; the formatted file was staged in full." >&2
+  done
+fi
+
+# Lint is advisory, not a gate: the repo still carries pre-existing findings, so a
+# hard failure here would block unrelated commits. Formatting above is enforced.
+lintable=()
+for f in "${staged[@]}"; do
+  case "$f" in *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs) [[ -f $f ]] && lintable+=("$f") ;; esac
+done
+if ((${#lintable[@]})); then
+  if ! oxlint -- "${lintable[@]}"; then
+    echo "pre-commit: oxlint findings above (advisory, commit allowed)." >&2
+  fi
+fi
+
+exit 0

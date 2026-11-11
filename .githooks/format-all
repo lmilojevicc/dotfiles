@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Format every tracked file in the repository. Used by `mise run fmt` and for the
+# one-time baseline reformat; the pre-commit hook only touches staged files.
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+# shellcheck source=.githooks/_format.sh
+source .githooks/_format.sh
+
+files=()
+while IFS= read -r -d '' f; do files+=("$f"); done < <(git ls-files -z)
+
+dotfiles_format "${files[@]}"
+echo "Formatted ${#files[@]} tracked files."
