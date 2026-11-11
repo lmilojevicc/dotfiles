@@ -1,6 +1,7 @@
 {
   "permissionReviewLog": false,
   "debugLog": false,
+  "yoloMode": true,
   "permission": {
     "*": "allow",
     "external_directory": "allow",
@@ -105,7 +106,7 @@
       "/etc/sudoers.d/*": "deny",
       "/etc/ssh/ssh_host_*_key": "deny",
       "/etc/ssl/private/*": "deny",
-      "/proc/*/environ": "ask",
+      "/proc/*/environ": "deny",
       "~/.bash_history": "deny",
       "~/.zsh_history": "deny",
       "~/.local/share/fish/fish_history": "deny",
