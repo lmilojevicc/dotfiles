@@ -27,7 +27,7 @@ import {
 	type UsageRow,
 	ProviderStateError,
 } from "../core.ts";
-import { fetchBoundedJson, requestSignal } from "../network.ts";
+import { fetchBoundedJson } from "../network.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -37,12 +37,6 @@ const CREDENTIALS_ENV = "PI_USAGE_CLAUDE_CREDENTIALS";
 const TOKEN_ENV = "PI_USAGE_CLAUDE_TOKEN";
 /** Header prefix documented by pi-claude-bridge; the built-in provider uses the same names. */
 const HEADER_PREFIX = "anthropic-ratelimit-unified-";
-/** Claude Code's window names, and the abbreviations it uses in those headers. */
-const WINDOW_ABBREVIATIONS: Readonly<Record<string, string>> = {
-	five_hour: "5h",
-	seven_day: "7d",
-	seven_day_overage_included: "7d_oi",
-};
 /** Window shorthands for the live-header path, keyed by the abbreviation in the header name. */
 const HEADER_WINDOWS: Readonly<Record<string, string>> = {
 	"5h": "5h",

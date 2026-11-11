@@ -151,7 +151,6 @@ test("renders the snapshot in the shared table, used percentages only", () => {
 });
 
 test("sections that fail or stop parsing become unavailable notes, not zero rows", () => {
-	const timeout = new DOMException("timed out", "TimeoutError");
 	const snapshot = parseCommandCodeSnapshot(
 		{
 			account: parseWhoami(WHOAMI)!,

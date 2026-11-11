@@ -278,7 +278,8 @@ test("server compaction persists opaque replay details and sends a v2 trigger", 
 	let requestBody: Record<string, unknown> | undefined;
 	let requestHeaders: Headers | undefined;
 	globalThis.fetch = async (_input, init) => {
-		requestBody = JSON.parse(String(init?.body));
+		// The extension sends a JSON string; anything else is a fixture mistake worth failing on.
+		requestBody = JSON.parse(typeof init?.body === "string" ? init.body : "");
 		requestHeaders = new Headers(init?.headers);
 		const sse = [
 			`data: ${JSON.stringify({ type: "response.output_item.done", item: compactionItem })}`,
@@ -334,7 +335,7 @@ test("server compaction persists opaque replay details and sends a v2 trigger", 
 		assert.equal(result?.summary, "portable summary");
 		assert.equal(result?.firstKeptEntryId, "kept");
 		assert.equal(
-			(requestBody?.input as Array<{ type?: unknown }>).at(-1)?.type,
+			(requestBody?.input as Array<{ type?: unknown }> | undefined)?.at(-1)?.type,
 			"compaction_trigger",
 		);
 		assert.deepEqual(requestBody?.tools, [{ type: "function", name: "read" }]);

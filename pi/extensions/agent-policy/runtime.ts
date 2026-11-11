@@ -32,6 +32,9 @@ type SessionPromptSource = {
 	buildSessionProjection?: () => { messages?: readonly unknown[] } | undefined;
 };
 
+/** Both members present, once `promptSource` has proven them callable. */
+type DecodedPromptSource = Required<SessionPromptSource>;
+
 /** One recorded prompt state: a head, or a later patch to named sections and tool declarations. */
 type PromptRecord = {
 	role?: string;
@@ -47,7 +50,7 @@ type PromptRecord = {
  * cache, so this is the state agent-policy reproduces instead of composing a child layer.
  */
 /** Decode the session-manager surface this extension reads; an older host may not provide it. */
-function promptSource(manager: unknown): SessionPromptSource | undefined {
+function promptSource(manager: unknown): DecodedPromptSource | undefined {
 	if (typeof manager !== "object" || manager === null) return undefined;
 	const candidate = manager as Partial<SessionPromptSource>;
 	const { getHeader, buildSessionProjection } = candidate;

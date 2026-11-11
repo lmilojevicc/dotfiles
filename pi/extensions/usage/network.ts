@@ -1,4 +1,6 @@
 // Adapted from codex-enhanced; see the MIT notice in index.ts.
+import type { ReadableStreamReadResult } from "node:stream/web";
+
 export const RESPONSE_LIMIT_BYTES = 1024 * 1024;
 export const REQUEST_TIMEOUT_MS = 10_000;
 const ERROR_BODY_LIMIT_BYTES = 4096;

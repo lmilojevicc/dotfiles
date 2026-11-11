@@ -286,7 +286,10 @@ test("reset-lock atomic first creation: concurrent auto/manual processes share a
 	const exits = [once(a, "exit"), once(b, "exit")];
 	const messages = await Promise.all([once(a, "message"), once(b, "message")]);
 	await Promise.all(exits);
-	assert.deepEqual(messages.map(([message]) => message).sort(), ["blocked", "posted"]);
+	assert.deepEqual(
+		messages.map(([message]) => message).sort((a: string, b: string) => a.localeCompare(b)),
+		["blocked", "posted"],
+	);
 	assert.equal(readResetJournal(dir, key)?.phase, "reset");
 });
 

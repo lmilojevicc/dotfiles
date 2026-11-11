@@ -318,7 +318,7 @@ function snapshotFor(id: string, used: number): ProviderSnapshot {
 	};
 }
 
-test("/usage builds tabs from credential presence, keeps not-ready logins as auth-refresh tabs, cycles and refreshes", async (t) => {
+test("/usage builds tabs from credential presence, keeps not-ready logins as auth-refresh tabs, cycles and refreshes", async () => {
 	__testing.clearSnapshotCache();
 	const zen = {
 		usage: {

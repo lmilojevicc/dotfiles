@@ -31,6 +31,16 @@ export interface HandoffRejectionData {
 
 export type HandoffAcknowledgement = HandoffReadyData | HandoffRejectionData;
 
+/** What a child wrote, before either shape is trusted: every field below is validated by hand. */
+type HandoffAcknowledgementFields = {
+	version?: unknown;
+	ok?: unknown;
+	sessionPath?: unknown;
+	sessionId?: unknown;
+	nonce?: unknown;
+	reason?: unknown;
+};
+
 const MAX_REJECTION_REASON_LENGTH = 512;
 
 export function getHandoffReadyPath(handoffPath: string): string {
@@ -60,9 +70,7 @@ function readProtectedReady(readyPath: string): HandoffAcknowledgement {
 	if (fileStat.size <= 0 || fileStat.size > 16 * 1024) {
 		throw new Error("Invalid readiness acknowledgement size");
 	}
-	const parsed = JSON.parse(readFileSync(readyPath, "utf8")) as Partial<
-		HandoffReadyData & HandoffRejectionData
-	>;
+	const parsed = JSON.parse(readFileSync(readyPath, "utf8")) as HandoffAcknowledgementFields;
 	if (parsed.version !== 1) throw new Error("Invalid readiness acknowledgement");
 	if (parsed.ok === false) {
 		if (
