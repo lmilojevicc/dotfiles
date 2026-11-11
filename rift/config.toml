@@ -58,6 +58,12 @@ app_rules = [
 	{ app_id = "net.imput.helium", workspace = 1, floating = false },
 	{ app_id = "app.zen-browser.zen", workspace = 1, floating = false },
 	{ app_id = "com.brave.Browser", workspace = 1, floating = false },
+	# Ardia's Settings is a separate window rather than a tab, so keep it floating.
+	# This rule is more specific than both the main Ardia rule and the generic
+	# settings rule below, so it wins for that window. Anchored so it does not
+	# duplicate the generic rule's pattern.
+	{ app_id = "com.ardia.browser", title_regex = "^(settings|preferences)$", floating = true, workspace = 1 },
+	{ app_id = "com.ardia.browser", workspace = 1, floating = false },
 	{ app_id = "md.obsidian", workspace = 3 },
 	# Mail clients share workspace index 2 (label "3").
 	{ app_id = "com.mailspring.mailspring", workspace = 2 },
@@ -91,6 +97,10 @@ app_rules = [
 "Alt + Shift + T" = "toggle_window_floating"
 "Alt + Shift + C" = { toggle_window_floating = { center = true, size = { w = 2048, h = 1152 } } }
 "Alt + Shift + M" = { toggle_window_floating = { center = true, size = { w = 1024, h = 576 } } }
+# Toggle focus between the tiled selection and the last-focused floating window,
+# which sits outside the tiling tree and is unreachable via move_focus.
+# Press again to return to the tiled window you came from.
+"Alt + F" = "toggle_focus_floating"
 # Select a workspace layout; orientation toggles separately, not on repeated layout selection.
 "Alt + Comma" = { set_workspace_layout = { mode = "bsp" } }
 "Alt + Period" = { set_workspace_layout = { mode = "stack" } }
