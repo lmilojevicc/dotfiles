@@ -98,8 +98,6 @@
       "~/.omp/agent/auth-broker.token": "deny",
       "~/.local/share/omp/agent.db*": "deny",
       "~/.config/omp/auth-broker.token": "deny",
-      "~/.cli-proxy-api": "deny",
-      "~/.cli-proxy-api/*": "deny",
       "*@gmail.com.json": "deny",
 
       "/etc/shadow": "deny",
