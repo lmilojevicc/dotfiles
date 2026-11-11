@@ -16,3 +16,6 @@ mise/.mise/
 
 # Pi web-search config: per machine (API keys, browser profile).
 pi/web-search.json
+
+# Symlinks created by `mise run pi-types` (Pi's installed packages, for tsc/oxlint).
+/node_modules/

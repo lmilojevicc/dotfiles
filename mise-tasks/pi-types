@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Link Pi's installed packages into a repo-local node_modules/ so `tsc` and
+# `oxlint --type-aware` resolve real @earendil-works/* types without installing
+# anything. Nothing is downloaded: the links point at Pi's managed install
+# (~/.pi/agent/install/releases/<current-version>/node_modules), the same one
+# pi/extensions/_test-support/register-loader.mjs uses at runtime.
+#
+# Idempotent; re-run after Pi upgrades. `node_modules/` is gitignored.
+# shellcheck disable=SC2016
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+quiet=0
+[[ ${1:-} == --quiet ]] && quiet=1
+
+realpath_py() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
+
+pi_bin=${PI_BIN:-pi}
+launcher=$(command -v "$pi_bin" 2>/dev/null || true)
+if [[ -z $launcher ]]; then
+  echo "pi-types: 'pi' not on PATH; set PI_BIN to the launcher path." >&2
+  exit 1
+fi
+
+launcher=$(realpath_py "$launcher")
+install=$(dirname "$(dirname "$launcher")")/install
+version=$(cat "$install/current-version" 2>/dev/null || true)
+pkgs="$install/releases/$version/node_modules"
+agent_pkgs=$(realpath_py "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}")/npm/node_modules
+
+if [[ ! -d $pkgs/@earendil-works ]]; then
+  echo "pi-types: expected Pi packages under $pkgs" >&2
+  exit 1
+fi
+
+link() {
+  local dest="node_modules/$1" target=$2
+  mkdir -p "$(dirname "$dest")"
+  if [[ -L $dest && $(readlink "$dest") == "$target" ]]; then
+    return 0
+  fi
+  rm -rf "$dest"
+  ln -s "$target" "$dest"
+  ((quiet)) || echo "  node_modules/$1 -> $target"
+}
+
+mkdir -p node_modules/@earendil-works
+for pkg in "$pkgs"/@earendil-works/*; do
+  link "@earendil-works/$(basename "$pkg")" "$pkg"
+done
+# Node ambient types (tsc `types: ["node"]`) and the one third-party runtime
+# import the extensions declare.
+[[ -d $pkgs/@types ]] && link @types "$pkgs/@types"
+[[ -d $pkgs/typebox ]] && link typebox "$pkgs/typebox"
+# Extensions such as agent-policy import from the user-installed packages.
+[[ -d $agent_pkgs/pi-subagents ]] && link pi-subagents "$agent_pkgs/pi-subagents"
+
+((quiet)) || echo "pi-types: linked Pi $version packages for type checking."

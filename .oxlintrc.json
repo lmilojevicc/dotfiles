@@ -5,6 +5,7 @@
   },
   "rules": {
     "no-control-regex": "off",
+    "typescript/no-floating-promises": "off",
     "no-unused-vars": [
       "warn",
       {

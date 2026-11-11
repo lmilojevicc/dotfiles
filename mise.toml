@@ -2,9 +2,18 @@
 # the host layers live in mise/config.<host>.toml and are linked to
 # ~/.config/mise). Versions are exact so nvim (conform), the git hooks, and any
 # agent all run the same binaries -- run `mise install` after changing them.
+#
+# Type-aware linting is on (oxlint-tsgolint) plus `tsc` over the extension
+# sources, both resolving @earendil-works/* from Pi's own managed install via
+# `mise run pi-types` (symlinks into a gitignored node_modules/, nothing is
+# downloaded beyond the two npm tools above). `typescript/no-floating-promises`
+# stays off: TUI/event handlers fire ~1000 promises deliberately; opt in per run
+# with `oxlint --type-aware -W no-floating-promises`.
 [tools]
 "aqua:oxc-project/oxc/oxfmt" = "0.77.0"
 "aqua:oxc-project/oxc/oxlint" = "1.92.0"
+"npm:oxlint-tsgolint" = "7.0.2006"
+"npm:typescript" = "5.9.3"
 stylua = "2.6.0"
 shfmt = "3.14.1"
 
@@ -20,13 +29,21 @@ description = "Format every tracked file (same tools the pre-commit hook uses)"
 run = "bash .githooks/format-all"
 
 [tasks.check]
-description = "Check formatting repo-wide and lint (no writes); exits non-zero on drift"
+description = "Check formatting, lint with types, and typecheck sources (no writes)"
 run = "bash .githooks/check"
 
 [tasks.lint]
-description = "Lint the repo with oxlint"
-run = "oxlint ."
+description = "Lint with oxlint, including rules that need type information"
+run = "bash mise-tasks/pi-types --quiet && oxlint --type-aware ."
 
 [tasks."lint:fix"]
 description = "Apply oxlint's safe autofixes"
-run = "oxlint --fix ."
+run = "bash mise-tasks/pi-types --quiet && oxlint --type-aware --fix ."
+
+[tasks.typecheck]
+description = "Typecheck extension sources against the installed Pi API (gating)"
+run = "bash mise-tasks/pi-types --quiet && tsc -p tsconfig.json"
+
+[tasks."typecheck:tests"]
+description = "Typecheck everything, tests included (advisory: known debt)"
+run = "bash mise-tasks/pi-types --quiet && tsc -p tsconfig.tests.json"
