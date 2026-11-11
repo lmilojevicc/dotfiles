@@ -59,7 +59,7 @@ function createMockContext(overrides: Partial<ExtensionContext> = {}): Extension
 
 test("idle session reloads immediately upon receiving reload request", async () => {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-life-test-"));
-	const { pi, commands, sentUserMessages, emit } = createMockPi();
+	const { pi, sentUserMessages, emit } = createMockPi();
 
 	createBroadcastReloadExtension(pi, { socketDir: tmpDir, herdr: null, discovery: null });
 

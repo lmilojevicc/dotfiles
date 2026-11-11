@@ -137,7 +137,7 @@ export function sendSocketMessage(
 					const parsed = JSON.parse(buffer.slice(0, newlineIndex));
 					resolve(parsed as SessionResponse);
 				} catch (err) {
-					reject(new Error(`Invalid JSON response from ${socketPath}: ${err}`));
+					reject(new Error(`Invalid JSON response from ${socketPath}: ${String(err)}`));
 				}
 			}
 		});

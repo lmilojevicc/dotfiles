@@ -503,9 +503,10 @@ export default function bashImproved(pi: ExtensionAPI): void {
 				...(task ? { backgroundTask: taskDetails(task) } : {}),
 				...(ready ? { ready: ready.outcome.kind } : {}),
 			} as T,
+			// The guard above admits only non-array JSON objects, so the spread never walks an array.
 			structuredContent:
 				structured && typeof structured === "object" && !Array.isArray(structured)
-					? { ...structured, ...extra }
+					? { ...(structured as Record<string, unknown>), ...extra }
 					: structured,
 		};
 	}

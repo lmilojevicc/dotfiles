@@ -49,7 +49,7 @@ test("herdr prepends raw ingress, consumes UI reports, and removes both listener
 	const calls: string[] = [];
 	stdin.on("data", () => calls.push("fullscreen"));
 	const recorder = focusRecorder();
-	const originalSetFocused = recorder.focus.setFocused;
+	const originalSetFocused = recorder.focus.setFocused.bind(recorder.focus);
 	recorder.focus.setFocused = (focused) => {
 		calls.push(`focus:${focused}`);
 		originalSetFocused(focused);
@@ -76,7 +76,7 @@ test("tmux observes raw focus before fullscreen and balances DEC mode writes", (
 	const calls: string[] = [];
 	stdin.on("data", () => calls.push("fullscreen-consumed"));
 	const recorder = focusRecorder();
-	const originalSetFocused = recorder.focus.setFocused;
+	const originalSetFocused = recorder.focus.setFocused.bind(recorder.focus);
 	recorder.focus.setFocused = (focused) => {
 		calls.push(`focus:${focused}`);
 		originalSetFocused(focused);

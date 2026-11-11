@@ -40,18 +40,15 @@ test("createSessionServer and sendSocketMessage exchange messages", async () => 
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-br-test-"));
 	const socketPath = path.join(tmpDir, `${process.pid}.sock`);
 
-	const { server, cleanup } = createSessionServer(
-		socketPath,
-		(msg: RequestMessage): SessionResponse => {
-			if (msg.type === "ping") {
-				return { ok: true, pid: process.pid, status: "idle" };
-			}
-			if (msg.type === "reload") {
-				return { ok: true, pid: process.pid, status: "reloading" };
-			}
-			return { ok: false, pid: process.pid, status: "error", reason: "Unknown" };
-		},
-	);
+	const { cleanup } = createSessionServer(socketPath, (msg: RequestMessage): SessionResponse => {
+		if (msg.type === "ping") {
+			return { ok: true, pid: process.pid, status: "idle" };
+		}
+		if (msg.type === "reload") {
+			return { ok: true, pid: process.pid, status: "reloading" };
+		}
+		return { ok: false, pid: process.pid, status: "error", reason: "Unknown" };
+	});
 
 	try {
 		const pingRes = await sendSocketMessage(socketPath, { type: "ping" });

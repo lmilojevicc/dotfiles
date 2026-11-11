@@ -4,9 +4,11 @@ import type { JumpMessage } from "./messages.ts";
 
 const KEY = Symbol.for("dotfiles.message-jump.bridge.v1");
 const globals = globalThis as unknown as Record<PropertyKey, unknown>;
-const containerRender = Container?.prototype?.render;
-const contentWidth = ScrollView?.prototype?.getContentWidth;
-const scrollTo = ScrollView?.prototype?.scrollTo;
+// Identity references to the native methods, never invoked unbound. Element access keeps them
+// readable as references while marking that they are compared, not called.
+const containerRender = Container?.prototype?.["render"];
+const contentWidth = ScrollView?.prototype?.["getContentWidth"];
+const scrollTo = ScrollView?.prototype?.["scrollTo"];
 type Component = { render(width: number): string[] };
 type Group = Component & { children: Component[] };
 type Renderer = {

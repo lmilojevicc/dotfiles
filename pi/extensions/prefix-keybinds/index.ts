@@ -14,7 +14,6 @@ import { homedir } from "node:os";
 import {
 	CustomEditor,
 	type AppKeybinding,
-	type EditorFactory,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionUIContext,
@@ -28,6 +27,7 @@ import {
 	type Component,
 	type EditorComponent,
 	type EditorTheme,
+	type KeyId,
 	type TUI,
 } from "@earendil-works/pi-tui";
 
@@ -221,6 +221,16 @@ type PrefixEditor = EditorComponent & {
 	[RESET]?: () => void;
 };
 
+/**
+ * Mirrors Pi's `EditorFactory` from `core/extensions/types.ts`. The package root exports
+ * `ctx.ui.setEditorComponent` and `ctx.ui.getEditorComponent` but not the type of their argument.
+ */
+type EditorFactory = (
+	tui: TUI,
+	theme: EditorTheme,
+	keybindings: KeybindingsManager,
+) => EditorComponent;
+
 type EditorLayerBuilder = (baseFactory: EditorFactory | undefined) => EditorFactory;
 type EditorLayerMetadata = {
 	version: 1;
@@ -275,7 +285,7 @@ let prefixPaletteOpen = false;
 const liveEditors = new Set<PrefixEditor>();
 
 function resetLiveEditors(): void {
-	for (const editor of [...liveEditors]) editor[RESET]?.();
+	for (const editor of liveEditors) editor[RESET]?.();
 	liveEditors.clear();
 }
 
@@ -292,10 +302,6 @@ function acquireVstackModalLock(): () => void {
 		released = true;
 		lock.depth = Math.max(0, lock.depth - 1);
 	};
-}
-
-function isNativeAction(action: string): action is AppKeybinding {
-	return Object.prototype.hasOwnProperty.call(NATIVE_ACTIONS, action);
 }
 
 function isPrefixAction(action: string): action is PrefixAction {
@@ -368,9 +374,9 @@ function keyIdProblem(key: string): string | undefined {
 	if (!rest) return `"${key}" has modifiers but no key`;
 	if (rest.includes("+") && rest !== "+") return `"${key}" is not a key Pi can report`;
 
-	const characters = [...rest];
-	if (characters.length === 1) {
-		const codePoint = characters[0]?.codePointAt(0) ?? 0;
+	const codePoint = rest.codePointAt(0) ?? 0;
+	// A single code point is 1 UTF-16 unit in the BMP and 2 units outside of it.
+	if (rest.length === (codePoint > 0xffff ? 2 : 1)) {
 		if (codePoint >= 0x20 && codePoint !== 0x7f) return undefined;
 		return `"${key}" is a control character, not a key id`;
 	}
@@ -1200,7 +1206,7 @@ function clearPrefixActiveState(ui: ExtensionUIContext) {
 }
 
 function matchesConfiguredKey(data: string, key: string): boolean {
-	if (data === key || matchesKey(data, key)) return true;
+	if (data === key || matchesKey(data, key as KeyId)) return true;
 	// Letter bindings: terminals usually send a bare character ("p"), while configs
 	// sometimes use "P" or users press Shift. Compare case-insensitively for single letters.
 	const normalizedKey = key.trim();
@@ -1260,7 +1266,7 @@ function patchWithPrefix(
 			}
 
 			if (slash.notify) ui.notify(slash.notify, "info");
-			void submit(slash.command);
+			submit(slash.command);
 			return;
 		}
 

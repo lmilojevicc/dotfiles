@@ -45,7 +45,7 @@ export type BatchOperation =
 			addBlockedBy?: BatchTarget[];
 			removeBlockedBy?: BatchTarget[];
 			owner?: string | null;
-			metadata?: Record<string, unknown | null>;
+			metadata?: Record<string, unknown>;
 	  }
 	| { op: "delete"; target: BatchTarget };
 
@@ -61,7 +61,7 @@ export interface TodoInput {
 	addBlockedBy?: number[];
 	removeBlockedBy?: number[];
 	owner?: string | null;
-	metadata?: Record<string, unknown | null>;
+	metadata?: Record<string, unknown>;
 	includeDeleted?: boolean;
 	operations?: BatchOperation[];
 }
