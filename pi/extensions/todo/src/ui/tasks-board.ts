@@ -622,7 +622,7 @@ function bodyEmpty(projection: BoardProjection, state: TasksBoardState, theme: T
 		];
 	if (matchingQuery(state.query))
 		return [
-			theme.bold(`No tasks match \"${sanitizeSearchInput(state.query)}\".`),
+			theme.bold(`No tasks match "${sanitizeSearchInput(state.query)}".`),
 			theme.fg("dim", "Esc clears search."),
 		];
 	if (state.filter !== "All")
@@ -1340,18 +1340,25 @@ export class TasksBoardComponent implements Component, Focusable {
 		const detailFocused = this.state.pane === "detail";
 		const projection = this.read();
 		const page = projection ? Math.max(1, this.geometry(projection).viewportRows - 1) : 1;
-		if (this.keybindings.matches(data, "tui.select.up") || data === "k")
-			detailFocused ? this.scrollDetail(-1) : this.moveSelection(-1);
-		else if (this.keybindings.matches(data, "tui.select.down") || data === "j")
-			detailFocused ? this.scrollDetail(1) : this.moveSelection(1);
-		else if (this.keybindings.matches(data, "tui.select.pageUp"))
-			detailFocused ? this.scrollDetail(-page) : this.moveSelectionPage(-1);
-		else if (this.keybindings.matches(data, "tui.select.pageDown"))
-			detailFocused ? this.scrollDetail(page) : this.moveSelectionPage(1);
-		else if (matchesKey(data, Key.home))
-			detailFocused ? this.scrollDetail(-Number.MAX_SAFE_INTEGER) : this.moveSelection(0, "first");
-		else if (matchesKey(data, Key.end))
-			detailFocused ? this.scrollDetail(Number.MAX_SAFE_INTEGER) : this.moveSelection(0, "last");
+		if (this.keybindings.matches(data, "tui.select.up") || data === "k") {
+			if (detailFocused) this.scrollDetail(-1);
+			else this.moveSelection(-1);
+		} else if (this.keybindings.matches(data, "tui.select.down") || data === "j") {
+			if (detailFocused) this.scrollDetail(1);
+			else this.moveSelection(1);
+		} else if (this.keybindings.matches(data, "tui.select.pageUp")) {
+			if (detailFocused) this.scrollDetail(-page);
+			else this.moveSelectionPage(-1);
+		} else if (this.keybindings.matches(data, "tui.select.pageDown")) {
+			if (detailFocused) this.scrollDetail(page);
+			else this.moveSelectionPage(1);
+		} else if (matchesKey(data, Key.home)) {
+			if (detailFocused) this.scrollDetail(-Number.MAX_SAFE_INTEGER);
+			else this.moveSelection(0, "first");
+		} else if (matchesKey(data, Key.end)) {
+			if (detailFocused) this.scrollDetail(Number.MAX_SAFE_INTEGER);
+			else this.moveSelection(0, "last");
+		}
 	}
 
 	render(width: number): string[] {

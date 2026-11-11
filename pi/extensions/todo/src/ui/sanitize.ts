@@ -6,6 +6,9 @@ const ESCAPE_SEQUENCE = /\u001b[ -/]*[0-~]/g;
 const BIDI_CONTROL = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function stripTerminalControls(value: unknown): string {
+	// Arbitrary field values reach this sanitizer, and `String()` is the coercion the board relies
+	// on; object inputs keep their existing `[object Object]` rendering.
+	// oxlint-disable-next-line typescript/no-base-to-string -- accepts unknown by contract and coerces it with String()
 	return String(value ?? "")
 		.replace(TERMINAL_STRING, "")
 		.replace(CSI, "")

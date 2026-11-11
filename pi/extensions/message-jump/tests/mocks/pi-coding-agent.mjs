@@ -10,7 +10,7 @@ export async function copyToClipboard() {
 	throw new Error("Unexpected system clipboard access in test");
 }
 export class InteractiveMode {
-	mountInteractiveTui(tui, components) {
+	mountInteractiveTui(_tui, _components) {
 		this.mountCalls = (this.mountCalls || 0) + 1;
 	}
 	addMessageToChat(message, options) {

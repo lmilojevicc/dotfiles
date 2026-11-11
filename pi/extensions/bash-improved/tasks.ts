@@ -485,7 +485,7 @@ export interface RunOptions extends TaskSpec {
 	 */
 	interrupt?: () => boolean;
 	interruptAfterMs?: number;
-	onData(chunk: Buffer): void;
+	onData: (chunk: Buffer) => void;
 }
 
 /** How often `interrupt` is polled. */

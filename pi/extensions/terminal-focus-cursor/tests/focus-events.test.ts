@@ -34,7 +34,7 @@ test("ignores focus-looking data inside bracketed paste at every chunk boundary"
 	}
 
 	const scanner = new FocusEventScanner();
-	const changes = [...stream].flatMap((character) => scanner.scan(character));
+	const changes = Array.from(stream).flatMap((character) => scanner.scan(character));
 	assert.deepEqual(changes, [false]);
 });
 

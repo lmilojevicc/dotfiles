@@ -33,7 +33,9 @@ function manualScheduler() {
 	return {
 		scheduler,
 		runAll() {
-			for (const [id, callback] of [...pending]) {
+			// Drain a snapshot: a callback that arms a new timer must stay pending for the next
+			// runAll(), the way real timers only fire after the current drain.
+			for (const [id, callback] of Array.from(pending)) {
 				pending.delete(id);
 				callback();
 			}

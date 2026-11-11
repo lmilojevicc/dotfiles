@@ -598,7 +598,7 @@ function patchOptions(options?: StreamOptions | SimpleStreamOptions) {
 	return {
 		...options,
 		headers: {
-			...(options?.headers ?? {}),
+			...options?.headers,
 			"User-Agent": userAgent(),
 			"x-opencode-client": "cli",
 			"x-opencode-project": project,
@@ -1027,7 +1027,7 @@ export function mergeFreeModels(input: {
 	if (input.liveIds && input.knownIds) {
 		for (const id of input.liveIds) {
 			if (byId.has(id) || input.knownIds.has(id)) continue;
-			if (!/-free$/.test(id)) continue;
+			if (!id.endsWith("-free")) continue;
 			const model = synthesizeFreeModel(id, templates, input.meta?.[id]);
 			if (SUPPORTED_APIS.has(model.api))
 				byId.set(id, applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[id]));
@@ -1043,7 +1043,7 @@ export function mergeFreeModels(input: {
 		);
 	}
 	if (input.liveIds) {
-		for (const id of [...byId.keys()]) {
+		for (const id of byId.keys()) {
 			if (!input.liveIds.has(id)) byId.delete(id);
 		}
 	}
@@ -1200,7 +1200,7 @@ async function loadModelsDevMeta(
 	const cache = readCache();
 	const cached = cache.modelsDev;
 	const needed = liveIds
-		? [...liveIds].some((id) => /-free$/.test(id) && !catalog?.knownIds.has(id) && !cached?.[id])
+		? [...liveIds].some((id) => id.endsWith("-free") && !catalog?.knownIds.has(id) && !cached?.[id])
 		: false;
 	if (!needed) return cached;
 	if (Date.now() - (cache.modelsDevCheckedAt ?? 0) < MODELS_DEV_TTL_MS) return cached;

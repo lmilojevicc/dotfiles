@@ -226,7 +226,7 @@ test("bridge: default/rest arity preserves this, every argument, result and exce
 	const addCalls: any[] = [];
 	const result = {};
 	const failure = new Error("original failure");
-	prototype.mountInteractiveTui = function (tui: any, components = [], ...extra: any[]) {
+	prototype.mountInteractiveTui = function (tui: any, components = [], ..._extra: any[]) {
 		mountCalls.push({ receiver: this, args: [...arguments] });
 		if (tui === failure) throw failure;
 		mount.call(this, tui, components);
@@ -330,7 +330,7 @@ test("bridge: missing or altered container/width/scroll/renderer/root capabiliti
 		["root entries", (h) => (h.fullscreenLayoutRoot.entries = {}), /terminal-wide stretch VStack/],
 		[
 			"sparse root entries",
-			(h) => (h.fullscreenLayoutRoot.entries = new Array(2)),
+			(h) => (h.fullscreenLayoutRoot.entries = Array.from({ length: 2 })),
 			/terminal-wide stretch VStack/,
 		],
 		[
@@ -783,7 +783,7 @@ test("command: only active branch, inline cancellation preserves draft/scroll/co
 					{ terminal: { rows: 20 }, requestRender() {} },
 					theme,
 					new KeybindingsManager(TUI_KEYBINDINGS),
-					(id: any) => {},
+					(_id: any) => {},
 				);
 				picker.dispose();
 				return choose?.();

@@ -148,7 +148,7 @@ export default function (pi: ExtensionAPI) {
 						warning = s;
 					},
 				};
-				const originalCustom = ctx.ui.custom;
+				const originalCustom = ctx.ui.custom.bind(ctx.ui);
 				ui.custom = (factory: any, options: any) => {
 					assert.equal(options, undefined, "public inline custom UI, never an overlay");
 					return originalCustom(async (...args: any[]) => {
