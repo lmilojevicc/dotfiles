@@ -197,11 +197,11 @@ export function messageToResponseItems(message: Record<string, unknown>): Respon
 		}
 		if (block.type === "toolCall") {
 			flushText();
-			const callId = String(block.id ?? "").split("|", 1)[0];
+			const callId = stringValue(block.id)?.split("|", 1)[0];
 			if (callId) {
 				items.push({
 					type: "function_call",
-					name: String(block.name ?? ""),
+					name: stringValue(block.name) ?? "",
 					call_id: callId,
 					arguments: JSON.stringify(block.arguments ?? {}),
 				});
@@ -369,7 +369,7 @@ function messageText(message: Record<string, unknown>): string {
 			if (typeof part.text === "string") return part.text;
 			if (typeof part.thinking === "string") return `[reasoning]\n${part.thinking}`;
 			if (part.type === "toolCall") {
-				return `[tool call: ${String(part.name ?? "unknown")}]\n${JSON.stringify(part.arguments ?? {})}`;
+				return `[tool call: ${stringValue(part.name) ?? "unknown"}]\n${JSON.stringify(part.arguments ?? {})}`;
 			}
 			if (part.type === "image") return "[image attachment]";
 			return "";
@@ -385,7 +385,10 @@ async function generatePortableSummary(
 	messages: Record<string, unknown>[],
 ): Promise<{ summary: string; usage?: unknown }> {
 	const conversation = messages
-		.map((message) => `${String(message.role ?? "message").toUpperCase()}: ${messageText(message)}`)
+		.map(
+			(message) =>
+				`${(stringValue(message.role) ?? "message").toUpperCase()}: ${messageText(message)}`,
+		)
 		.filter((line) => !line.endsWith(": "))
 		.join("\n\n");
 	const extra = event.customInstructions

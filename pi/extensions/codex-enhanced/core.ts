@@ -103,6 +103,7 @@ function writeConfigValue(
 	const temporaryPath = `${configPath}.${process.pid}.${Date.now()}.${globalThis.crypto.randomUUID()}.tmp`;
 	const lockPath = `${configPath}.lock`;
 	let owned = false;
+	let result: ConfigWriteResult;
 	try {
 		mkdirSync(dirname(configPath), { recursive: true });
 		mkdirSync(lockPath, { mode: 0o700 });
@@ -119,35 +120,37 @@ function writeConfigValue(
 			mode: 0o600,
 		});
 		renameSync(temporaryPath, configPath);
-		return { ok: true };
+		result = { ok: true };
 	} catch (error) {
+		const writeError = error instanceof Error ? error.message : String(error);
+		result = { ok: false, error: writeError };
 		try {
 			unlinkSync(temporaryPath);
 		} catch (cleanupError) {
 			if (!isRecord(cleanupError) || cleanupError.code !== "ENOENT") {
-				const writeError = error instanceof Error ? error.message : String(error);
 				const cleanupMessage =
 					cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-				return {
+				result = {
 					ok: false,
 					error: `${writeError}; temporary file cleanup also failed: ${cleanupMessage}`,
 				};
 			}
 		}
-		return { ok: false, error: error instanceof Error ? error.message : String(error) };
-	} finally {
-		if (owned) {
-			try {
-				rmdirSync(lockPath);
-			} catch {
-				return {
-					ok: false,
-					error:
-						"Settings lock cleanup failed; verify no writer is operating before removing the orphan lock.",
-				};
-			}
+	}
+	// The lock is released on the way out, not in a `finally`, so a cleanup failure is reported
+	// instead of a `return` in the `finally` swallowing the outcome computed above.
+	if (owned) {
+		try {
+			rmdirSync(lockPath);
+		} catch {
+			return {
+				ok: false,
+				error:
+					"Settings lock cleanup failed; verify no writer is operating before removing the orphan lock.",
+			};
 		}
 	}
+	return result;
 }
 
 export function readAutoResetPreference(

@@ -299,7 +299,7 @@ async function fetchSection(
 ): Promise<SectionResult> {
 	const query = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
-	const suffix = query.size ? `?${query}` : "";
+	const suffix = query.size ? `?${query.toString()}` : "";
 	try {
 		const value = await fetchBoundedJson(
 			`${url}${suffix}`,
@@ -398,9 +398,11 @@ export const commandcodeAdapter: ProviderAdapter = {
 		}
 		return parseCommandCodeSnapshot({
 			account,
-			...(parsed.credits !== null ? { credits: credits.value } : {}),
-			...(parsed.subscription !== null ? { subscription: subscription.value } : {}),
-			...(parsed.summary !== null ? { summary: summary.value } : {}),
+			...(parsed.credits !== null && credits.ok ? { credits: credits.value } : {}),
+			...(parsed.subscription !== null && subscription.ok
+				? { subscription: subscription.value }
+				: {}),
+			...(parsed.summary !== null && summary.ok ? { summary: summary.value } : {}),
 			...(Object.keys(unavailable).length ? { unavailable } : {}),
 		});
 	},

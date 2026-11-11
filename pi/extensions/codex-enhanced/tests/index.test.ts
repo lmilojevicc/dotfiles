@@ -242,7 +242,8 @@ test("reset redemption sends the current account, credit, and idempotency ids", 
 	const originalFetch = globalThis.fetch;
 	let body: unknown;
 	globalThis.fetch = async (_input, init) => {
-		body = JSON.parse(String(init?.body));
+		// The extension sends a JSON string; anything else is a fixture mistake worth failing on.
+		body = JSON.parse(typeof init?.body === "string" ? init.body : "");
 		return new Response(JSON.stringify({ code: "reset", windows_reset: 2 }), { status: 200 });
 	};
 	try {

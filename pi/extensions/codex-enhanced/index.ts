@@ -1655,7 +1655,7 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 		stopAuto();
 		shutdownController.abort();
 		await autoCheck;
-		await Promise.allSettled([...manualOperations]);
+		await Promise.allSettled(manualOperations);
 		requestShapeBySession.delete(ctx.sessionManager.getSessionId());
 		clearStatus(ctx);
 		if (lastContext && lastContext !== ctx) setStatus(lastContext);

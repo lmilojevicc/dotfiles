@@ -69,7 +69,9 @@ export function resolvePiLauncher(
 		let target = script;
 		try {
 			target = realpath(script);
-		} catch {}
+		} catch {
+			/* A dangling link keeps the unresolved path, which the pattern below then rejects. */
+		}
 		if (SCRIPT_PATH.test(target)) return { command: execPath, prefixArgs: [target] };
 	}
 	// A compiled Pi binary is its own launcher; a bare interpreter alone identifies nothing.
@@ -81,7 +83,7 @@ export function resolvePiLauncher(
 
 /** POSIX shell quoting for the command text accepted by terminal host launch commands. */
 export function quoteShellArg(value: string): string {
-	return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+	return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 export function buildPiCommand(

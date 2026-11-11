@@ -1,3 +1,5 @@
+import type { ReadableStreamReadResult } from "node:stream/web";
+
 export const CODEX_RESPONSE_LIMIT_BYTES = 1024 * 1024;
 export const CODEX_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -109,7 +111,7 @@ export async function fetchBoundedJson(
 	options: RequestInit,
 	dependencies: FetchJsonDependencies = {},
 ): Promise<unknown> {
-	const signal = requestSignal(options.signal, dependencies.timeoutMs);
+	const signal = requestSignal(options.signal ?? undefined, dependencies.timeoutMs);
 	const fetch = dependencies.fetch ?? globalThis.fetch;
 	const response = await withAbort(fetch(url, { ...options, signal }), signal);
 	if (!response.ok) {

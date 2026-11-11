@@ -32,7 +32,9 @@ import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 import { loadSystemPromptBuilder } from "./pi-package.ts";
 
 // Render prompts with the installed Pi, so a forced prompt and a structured section cannot be confused.
-const { buildSystemPrompt } = await loadSystemPromptBuilder();
+const promptBuilder = await loadSystemPromptBuilder();
+const buildSystemPrompt = (input: Record<string, unknown>) =>
+	promptBuilder.buildSystemPrompt(input);
 const blocks = (prompt: string) => prompt.split("<agent_policy>").length - 1;
 
 // Stand-in for the removed legacy Chadineer hook: an enabled peer appending a legacy-marked block.
@@ -404,7 +406,7 @@ test("inherited prompt replay keeps the last value per section, including remova
 		{ inherited: true, sections: { [POLICY_SECTION]: null }, tools: [] },
 	);
 	// Declared tools are part of the inherited prefix; a removal after the head applies in order.
-	const declared = (toolsAdded: any, toolsRemoved: any = undefined) => ({
+	const declared = (toolsAdded: any, toolsRemoved?: any) => ({
 		role: "system",
 		content: "",
 		toolsAdded,

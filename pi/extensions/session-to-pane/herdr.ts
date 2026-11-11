@@ -57,7 +57,7 @@ function nonemptyString(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function parseJson(stdout: string): any | undefined {
+function parseJson(stdout: string): any {
 	try {
 		return JSON.parse(stdout);
 	} catch {
@@ -170,7 +170,8 @@ export function createHerdrAdapter(
 		let paneId: string | undefined;
 		let createdTabId: string | undefined;
 		const closeCreatedTarget = (error: string): HostLaunchResult => {
-			const closeArgs = createdTabId ? ["tab", "close", createdTabId] : ["pane", "close", paneId];
+			// Callers close only a target Herdr proved, so a pane id is set whenever no tab id was.
+			const closeArgs = createdTabId ? ["tab", "close", createdTabId] : ["pane", "close", paneId!];
 			const close = exec(closeArgs, 5000);
 			return {
 				ok: false,

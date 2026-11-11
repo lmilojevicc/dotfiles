@@ -353,8 +353,8 @@ async function openUsage(
 				else if (matchesAnyKey(data, "down", "j")) scroll(1);
 				// Terminal multiplexers (herdr among them) swallow PgUp/PgDn/Home/End before they reach
 				// the app, so the same moves are also bound to letter keys that do arrive.
-				else if (matchesAnyKey(data, "pageup", "shift+k")) scroll(-bandView.bandSize);
-				else if (matchesAnyKey(data, "pagedown", "shift+j")) scroll(bandView.bandSize);
+				else if (matchesAnyKey(data, "pageUp", "shift+k")) scroll(-bandView.bandSize);
+				else if (matchesAnyKey(data, "pageDown", "shift+j")) scroll(bandView.bandSize);
 				else if (matchesAnyKey(data, "home", "g")) scrollTo(0);
 				else if (matchesAnyKey(data, "end", "shift+g")) scrollTo(Number.POSITIVE_INFINITY);
 			},

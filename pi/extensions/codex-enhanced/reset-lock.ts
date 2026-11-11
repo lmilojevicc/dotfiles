@@ -235,7 +235,7 @@ export function probeResetLock(
 				resolve("storage");
 			};
 			signal?.addEventListener("abort", abort, { once: true });
-			void Promise.all([...activity.operations]).then(() => {
+			void Promise.all(activity.operations).then(() => {
 				signal?.removeEventListener("abort", abort);
 				resolve(signal?.aborted ? "storage" : probeResetLock(directory, path, signal));
 			});

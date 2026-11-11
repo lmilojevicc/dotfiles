@@ -36,7 +36,7 @@ export function fakeFetch(route: (request: RecordedRequest) => Response | Promis
 	const requests: RecordedRequest[] = [];
 	const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
 		const request: RecordedRequest = {
-			url: String(input),
+			url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
 			method: init?.method ?? "GET",
 			headers: new Headers(init?.headers),
 			...(init?.redirect ? { redirect: init.redirect } : {}),
