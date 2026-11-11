@@ -50,16 +50,21 @@ if ((${#changed[@]})); then
   done
 fi
 
-# Lint is advisory, not a gate: the repo still carries pre-existing findings, so a
-# hard failure here would block unrelated commits. Formatting above is enforced.
+# Lint gates the commit. `tsc` is deliberately not here (12s); `mise run check`
+# covers it before handing work off.
 lintable=()
 for f in "${staged[@]}"; do
   case "$f" in *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs) [[ -f $f ]] && lintable+=("$f") ;; esac
 done
 if ((${#lintable[@]})); then
-  if ! oxlint -- "${lintable[@]}"; then
-    echo "pre-commit: oxlint findings above (advisory, commit allowed)." >&2
-  fi
+  bash mise-tasks/pi-types --quiet >/dev/null 2>&1 || {
+    echo "pre-commit: could not link Pi types for type-aware lint (run 'mise run pi-types')." >&2
+    exit 1
+  }
+  oxlint --type-aware --deny-warnings -- "${lintable[@]}" || {
+    echo "pre-commit: oxlint reported problems in staged files; fix them or use --no-verify." >&2
+    exit 1
+  }
 fi
 
 exit 0

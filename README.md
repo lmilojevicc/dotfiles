@@ -62,10 +62,14 @@ Configs are managed with [Dotty](https://github.com/lmilojevicc/dotty); see `dot
 `oxfmt` (TS/JS/JSON/CSS/Markdown/YAML/TOML), `stylua` (Lua) and `shfmt` (shell, 2-space via `.editorconfig`) are pinned in `mise.toml` and configured at the repo root, so Neovim (conform) and any agent format with the same tools and the same settings.
 
 ```bash
-mise install    # pinned formatter/linter binaries
-mise run hooks  # git config core.hooksPath .githooks (once per clone)
-mise run fmt    # format every tracked file
-mise run check  # verify formatting + lint, non-zero on drift
+mise install         # pinned formatter/linter/type-checker binaries
+mise run hooks       # git config core.hooksPath .githooks (once per clone)
+mise run pi-types     # link Pi's installed .d.ts into a gitignored node_modules/
+mise run fmt         # format every tracked file
+mise run typecheck   # tsc over extension sources against the real Pi API
+mise run check       # formatting + type-aware lint + typecheck, non-zero on drift
 ```
 
-`.githooks/pre-commit` formats only the files staged for the commit, re-stages them, and reports `oxlint` findings as advisory. Every `git commit` runs it, so agent commits land formatted as well; `git commit --no-verify` bypasses it. The one-time repo-wide reformat is listed in `.git-blame-ignore-revs`.
+`.githooks/pre-commit` formats only the files staged for the commit, re-stages them, then fails the commit if `oxlint --type-aware` reports anything. Every `git commit` runs it, so agent commits land formatted and lint-clean; `git commit --no-verify` bypasses it. `tsc` is left out of the hook (12 s) and covered by `mise run check` instead.
+
+Type checking and type-aware linting resolve `@earendil-works/*` from Pi's own managed install, so extension code is checked against the API it actually runs on — no `node_modules` install, no duplicated type copies. `mise run pi-types` re-links after a Pi upgrade (`tsconfig.tests.json` / `mise run typecheck:tests` covers test files, which still carry pre-existing type debt). The one-time repo-wide reformat is listed in `.git-blame-ignore-revs`.

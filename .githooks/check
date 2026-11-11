@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verify the repo matches what the pre-commit hook would produce: no writes, exit
-# non-zero on any drift. Used by `mise run check`.
+# non-zero on any drift, plus the two gates the hook skips for speed (type check).
+# Used by `mise run check`.
 set -euo pipefail
 
 root=$(git rev-parse --show-toplevel)
@@ -23,7 +24,10 @@ while IFS= read -r -d '' f; do
 done < <(git ls-files -z)
 shfmt --diff --indent 2 -- "${shell[@]}" || rc=1
 
-# Lint is reported but does not fail the run while pre-existing findings remain.
-oxlint . || echo "check: oxlint findings above are advisory for now." >&2
+# Type-aware lint and a real type check need Pi's installed .d.ts, linked into a
+# gitignored node_modules/ (no downloads: the links point at Pi's managed install).
+bash mise-tasks/pi-types --quiet
+oxlint --type-aware --deny-warnings . || rc=1
+tsc -p tsconfig.json || rc=1
 
 exit $rc
