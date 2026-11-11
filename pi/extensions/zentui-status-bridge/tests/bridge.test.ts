@@ -122,7 +122,9 @@ test("keys outside include, inside exclude, or invalid pass through without a pr
 
 test("keyPrefix renames the published key and drops the previous one when it changes", () => {
 	const bus = fakeBus("all");
-	const { bridge, setConfig } = bridgeWith(bus);
+	const created = bridgeWith(bus);
+	const bridge = created.bridge;
+	const setConfig = created["setConfig"];
 	bridge.handle("pi-lens-lsp", "LSP Inactive");
 	setConfig({ keyPrefix: "status/" });
 	assert.equal(bridge.handle("pi-lens-lsp", "LSP Inactive"), undefined);

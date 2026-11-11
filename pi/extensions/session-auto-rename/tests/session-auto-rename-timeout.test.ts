@@ -23,7 +23,7 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 	// adapter that ignores `timeoutMs` (local OpenAI-compatible servers, Google, Bedrock) hangs forever
 	// without this bound, which is why it must exist outside the adapter.
 	const requestedDelays: number[] = [];
-	const originalTimeout = AbortSignal.timeout;
+	const originalTimeout = AbortSignal["timeout"];
 	AbortSignal.timeout = (delay: number) => {
 		requestedDelays.push(delay);
 		return originalTimeout.call(AbortSignal, Math.min(delay, 20));

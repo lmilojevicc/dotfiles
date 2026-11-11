@@ -891,7 +891,7 @@ test("a persistence lock failure is surfaced and suppresses reload", async () =>
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
 	writeFileSync(settingsPath, "{}");
-	const originalSetExtensionPaths = SettingsManager.prototype.setExtensionPaths;
+	const originalSetExtensionPaths = SettingsManager.prototype["setExtensionPaths"];
 
 	const result = await (async () => {
 		try {

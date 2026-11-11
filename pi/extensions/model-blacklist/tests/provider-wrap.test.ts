@@ -46,17 +46,17 @@ test("delegation keeps provider identity, auth, streaming, and discovery", () =>
 	assert.equal(wrapper.id, base.id);
 	assert.equal(wrapper.name, base.name);
 	assert.equal(wrapper.auth, base.auth);
-	assert.equal(wrapper.streamSimple, base.streamSimple);
-	assert.equal(wrapper.refreshModels, base.refreshModels);
+	assert.equal(wrapper["streamSimple"], base["streamSimple"]);
+	assert.equal(wrapper["refreshModels"], base["refreshModels"]);
 	assert.deepEqual(ids(wrapper.getModels()), ["a"]);
 });
 
 test("getAllModels is only overridden when the base provides it", () => {
 	const base = fakeProvider("test", ["a"], { withGetAllModels: false });
 	const wrapper = wrapProvider(base, () => false);
-	assert.equal(wrapper.getAllModels, undefined);
+	assert.equal(wrapper["getAllModels"], undefined);
 	const withAll = wrapProvider(fakeProvider("test", ["a"]), () => false);
-	assert.ok(withAll.getAllModels);
+	assert.ok(withAll["getAllModels"]);
 });
 
 test("unwrap returns the original provider and the marker stays non-enumerable", () => {

@@ -104,13 +104,13 @@ test("a tap that ends up inside a foreign wrapper is re-installed outside and br
 
 	// Simulate Zentui installing its wrapper afterwards (hiding this key by
 	// forwarding `undefined`, which is what its visibility policy does).
-	const tap = ui.setStatus;
+	const tap = ui["setStatus"];
 	const hiding = {
 		setStatus(key: string, text: string | undefined) {
 			tap(key, key === "hidden-key" ? undefined : text);
 		},
 	};
-	ui.setStatus = hiding.setStatus;
+	ui["setStatus"] = hiding["setStatus"];
 	assert.equal(hasStatusTap(ui), false);
 	assert.equal(installStatusTap(ui, bridge), "installed");
 	assert.equal(hasStatusTap(ui), true);
