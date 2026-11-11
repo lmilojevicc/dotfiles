@@ -14,11 +14,7 @@
     "npm:@gotgenes/pi-permission-system",
     "npm:@k3_2o/pi-secrets"
   ],
-  "skills": [
-    ".claude/skills",
-    ".codex/skills",
-    ".opencode/skills"
-  ],
+  "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
   "doubleEscapeAction": "tree",
   "quietStartup": true,
   "secrets": {
@@ -40,10 +36,5 @@
     "~/.pi/agent/extensions/opencode-free",
     "-builtin:mcp"
   ],
-  "defaultTools": [
-    "+codemode",
-    "+find",
-    "+grep",
-    "+tool_search"
-  ]
+  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
 }

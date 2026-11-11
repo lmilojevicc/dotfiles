@@ -20,11 +20,7 @@
     "npm:@gotgenes/pi-permission-system",
     "npm:@k3_2o/pi-secrets"
   ],
-  "skills": [
-    ".claude/skills",
-    ".codex/skills",
-    ".opencode/skills"
-  ],
+  "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
   "doubleEscapeAction": "tree",
   "quietStartup": true,
   "secrets": {
@@ -38,9 +34,7 @@
   "defaultProjectTrust": "ask",
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
-  "extensions": [
-    "-builtin:mcp"
-  ],
+  "extensions": ["-builtin:mcp"],
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.46.0",
     "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.84.0",
@@ -49,10 +43,5 @@
     "{\"source\":\"npm:pi-commandcode-provider\",\"scope\":\"user\"}": "0.7.11",
     "{\"source\":\"npm:pi-lens\",\"scope\":\"user\"}": "4.4.8"
   },
-  "defaultTools": [
-    "+codemode",
-    "+find",
-    "+grep",
-    "+tool_search"
-  ]
+  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
 }

@@ -9,13 +9,13 @@ injects that fingerprint and keeps the parts that rotate up to date on its own.
 Verified on 2026-10-16 by capturing real `opencode` v2.0.26 requests and
 bisecting the differences against direct HTTP requests:
 
-| Requirement | Detail |
-| --- | --- |
-| `User-Agent` | `opencode/<channel>/<version>/<client>`, e.g. `opencode/latest/2.0.31/cli`. Too old a version returns `426`. |
+| Requirement          | Detail                                                                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `User-Agent`         | `opencode/<channel>/<version>/<client>`, e.g. `opencode/latest/2.0.31/cli`. Too old a version returns `426`.                                                                                                                                                                              |
 | `x-opencode-session` | Required, plus the `x-opencode-session-id` / `x-session-affinity` / `x-session-id` aliases. Must decode as an OpenCode `Identifier.descending()` id: `ses_` + 12 hex of `~(unix_ms * 4096 + counter)` + 14 base62 characters. A well-formed id with an implausible timestamp is rejected. |
-| Tools | The tool array must contain a tool named `read`. A shell tool is not required, and neither the description nor the schema is inspected. Requests with no tools at all are only accepted when the system prompt matches OpenCode's own no-tool prompts (title generation). |
-| Streaming | The request must stream. |
-| Auth | `Authorization: Bearer public` selects the anonymous zero-cost lane. Paid model ids fail with `insufficient balance`. |
+| Tools                | The tool array must contain a tool named `read`. A shell tool is not required, and neither the description nor the schema is inspected. Requests with no tools at all are only accepted when the system prompt matches OpenCode's own no-tool prompts (title generation).                 |
+| Streaming            | The request must stream.                                                                                                                                                                                                                                                                  |
+| Auth                 | `Authorization: Bearer public` selects the anonymous zero-cost lane. Paid model ids fail with `insufficient balance`.                                                                                                                                                                     |
 
 `x-opencode-project` is present in real requests but not enforced. The gateway
 answers violations with `403 FreeTierError`.
@@ -50,13 +50,13 @@ answers violations with `403 FreeTierError`.
   probing the live gateway on 2026-10-16 (all free models, `Bearer public`)
   showed:
 
-  | probe | result |
-  | --- | --- |
-  | `glm-5.3-flash-free`, 299,157 tokens, codeword at the end | recalled it |
-  | `glm-5.3-flash-free`, 1,495,567 tokens | `400 context_length_exceeded`: *"This model's maximum context length is 1048576 tokens"* |
-  | `deepseek-v4.1-flash-free`, 299,172 tokens, codeword at the end | recalled it |
-  | `deepseek-v4.1-flash-free`, 997,077 tokens | accepted, codeword at the end recalled |
-  | `deepseek-v4.1-flash-free`, 1.1M tokens | rejected |
+  | probe                                                           | result                                                                                   |
+  | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+  | `glm-5.3-flash-free`, 299,157 tokens, codeword at the end       | recalled it                                                                              |
+  | `glm-5.3-flash-free`, 1,495,567 tokens                          | `400 context_length_exceeded`: _"This model's maximum context length is 1048576 tokens"_ |
+  | `deepseek-v4.1-flash-free`, 299,172 tokens, codeword at the end | recalled it                                                                              |
+  | `deepseek-v4.1-flash-free`, 997,077 tokens                      | accepted, codeword at the end recalled                                                   |
+  | `deepseek-v4.1-flash-free`, 1.1M tokens                         | rejected                                                                                 |
 
   `x-opencode-upstream-model-id` shows why: the free lane routes to the paid
   model (`perplexity/glm-5.3-flash`, `deepseek/deepseek-v4.1-flash`,
@@ -73,6 +73,7 @@ answers violations with `403 FreeTierError`.
   `models.json` `modelOverrides`) and only hides ids that came from this
   extension's own discovery and that the live endpoint no longer serves.
   Unknown entries such as `models.json` additions always stay.
+
 - **Caching**: results land in `~/.pi/agent/opencode-free.json` with a 15 minute
   freshness window, so print-mode runs and headless subagent processes do not
   re-fetch on every start. Every Pi process on the machine (one per BB thread)
@@ -110,15 +111,15 @@ fingerprint, rerun the bisection against a real client:
 
 ## Environment overrides
 
-| Variable | Effect |
-| --- | --- |
-| `OPENCODE_FREE_UA` | Full `User-Agent` override |
-| `OPENCODE_FREE_VERSION` | OpenCode version used to build the `User-Agent` |
-| `OPENCODE_FREE_BASE_URL` | Inference base URL for every model |
-| `OPENCODE_FREE_MODELS_URL` | Live model list endpoint |
-| `OPENCODE_FREE_CATALOG_URL` | Pi catalog endpoint for the `opencode` provider |
-| `OPENCODE_FREE_VERSION_URL` | Endpoint reporting the latest OpenCode version |
-| `OPENCODE_FREE_OFFLINE=1` | Skip all discovery requests (use cache/baseline) |
+| Variable                    | Effect                                           |
+| --------------------------- | ------------------------------------------------ |
+| `OPENCODE_FREE_UA`          | Full `User-Agent` override                       |
+| `OPENCODE_FREE_VERSION`     | OpenCode version used to build the `User-Agent`  |
+| `OPENCODE_FREE_BASE_URL`    | Inference base URL for every model               |
+| `OPENCODE_FREE_MODELS_URL`  | Live model list endpoint                         |
+| `OPENCODE_FREE_CATALOG_URL` | Pi catalog endpoint for the `opencode` provider  |
+| `OPENCODE_FREE_VERSION_URL` | Endpoint reporting the latest OpenCode version   |
+| `OPENCODE_FREE_OFFLINE=1`   | Skip all discovery requests (use cache/baseline) |
 
 `PI_OFFLINE` and Pi's `--offline` flag disable the same requests. The check
 matches Pi's own `--offline` handling, so `PI_OFFLINE=0` is not offline.
@@ -132,14 +133,14 @@ npm --prefix pi/extensions/opencode-free test
 Node's test runner with the managed Pi install as the module host and a
 temporary agent dir, so nothing touches the real config. Coverage:
 
-| File | Covers |
-| --- | --- |
-| [`tests/models.test.ts`](tests/models.test.ts) | Gateway identifier, fingerprint tool injection, free-model merging, models.dev precedence, the availability filter, error rewriting |
-| [`tests/factory.test.ts`](tests/factory.test.ts) | The factory registers the cached catalogue with no network or process work; `fetchModels` refreshes version and catalogue; `models.json` additions and overrides survive the availability filter |
-| [`tests/background.test.ts`](tests/background.test.ts) | `session_start` refreshes in the background and `session_shutdown` aborts it without publishing |
-| [`tests/session-refresh.test.ts`](tests/session-refresh.test.ts) | The background refresh publishes the live ids the availability filter needs |
-| [`tests/offline.test.ts`](tests/offline.test.ts) | In child processes: `OPENCODE_FREE_OFFLINE=1` and `PI_OFFLINE=1` make no requests, `PI_OFFLINE=0` still refreshes |
-| [`tests/cache.test.ts`](tests/cache.test.ts) | Atomic cache writes: no temporary files left behind, an unparseable or unwritable file tolerated, and concurrent writer processes never expose a truncated document |
+| File                                                             | Covers                                                                                                                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`tests/models.test.ts`](tests/models.test.ts)                   | Gateway identifier, fingerprint tool injection, free-model merging, models.dev precedence, the availability filter, error rewriting                                                              |
+| [`tests/factory.test.ts`](tests/factory.test.ts)                 | The factory registers the cached catalogue with no network or process work; `fetchModels` refreshes version and catalogue; `models.json` additions and overrides survive the availability filter |
+| [`tests/background.test.ts`](tests/background.test.ts)           | `session_start` refreshes in the background and `session_shutdown` aborts it without publishing                                                                                                  |
+| [`tests/session-refresh.test.ts`](tests/session-refresh.test.ts) | The background refresh publishes the live ids the availability filter needs                                                                                                                      |
+| [`tests/offline.test.ts`](tests/offline.test.ts)                 | In child processes: `OPENCODE_FREE_OFFLINE=1` and `PI_OFFLINE=1` make no requests, `PI_OFFLINE=0` still refreshes                                                                                |
+| [`tests/cache.test.ts`](tests/cache.test.ts)                     | Atomic cache writes: no temporary files left behind, an unparseable or unwritable file tolerated, and concurrent writer processes never expose a truncated document                              |
 
 Network access is stubbed; live gate behaviour is verified by running a prompt:
 

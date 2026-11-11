@@ -27,7 +27,10 @@ const HASHED_SECRET = /^\$(2[aby]|argon2)/;
 const BAN_BODY = /IP banned due to too many failed attempts/i;
 const HANDSHAKE_PATHS = ["/v0/management/config", "/v8/management/credentials"];
 const CREDENTIAL_PATHS = ["/v0/management/auth-files", "/v8/management/credentials"];
-const TRAFFIC_PATHS = ["/v0/management/api-key-usage", "/v8/management/observability/usage/api-keys"];
+const TRAFFIC_PATHS = [
+	"/v0/management/api-key-usage",
+	"/v8/management/observability/usage/api-keys",
+];
 /** Token refresh for stale credential files; one call per snapshot, `{all: true}` covers every stale file. */
 const REFRESH_PATHS = ["/v0/management/auth-files/refresh", "/v8/management/credentials/refresh"];
 /** A token expiring within this window is refreshed before the provider is called. */
@@ -42,12 +45,14 @@ const ANTIGRAVITY_DAILY_BASE = "https://daily-cloudcode-pa.sandbox.googleapis.co
 const ANTIGRAVITY_FALLBACK_BASE = "https://cloudcode-pa.googleapis.com";
 const ANTIGRAVITY_QUOTA_PATH = "/v1internal:retrieveUserQuotaSummary";
 /** Mirrors the Antigravity CLI client so the RPC answers the same way it answers the CLI. */
-const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.2.4 (aidev_client; os_type=linux; arch=amd64; cl=982146307; auth_method=consumer)";
+const ANTIGRAVITY_USER_AGENT =
+	"antigravity/cli/1.2.4 (aidev_client; os_type=linux; arch=amd64; cl=982146307; auth_method=consumer)";
 // The OpenCode usage endpoint sits behind a Cloudflare bot gate; these client fingerprint headers are required.
 const OPENCODE_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const OPENCODE_USER_AGENT = "opencode/latest/2.0.18/cli";
 const SESSION_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const MANAGEMENT_OFF = "Management API is off · set remote-management.secret-key in the CLIProxyAPI config";
+const MANAGEMENT_OFF =
+	"Management API is off · set remote-management.secret-key in the CLIProxyAPI config";
 
 type KeyCandidate = { source: string; key: string };
 type SessionKey = KeyCandidate & { notes: string[] };
@@ -78,7 +83,11 @@ function readJsonFile(path: string): Record<string, unknown> {
 }
 
 function readTextFile(path: string): string | undefined {
-	try { return readFileSync(path, "utf8"); } catch { return undefined; }
+	try {
+		return readFileSync(path, "utf8");
+	} catch {
+		return undefined;
+	}
 }
 
 function providerConfig(ctx: AdapterContext): Record<string, unknown> {
@@ -112,19 +121,30 @@ export function parseSecretKeyLine(yaml: string): string | undefined {
 }
 
 /** Candidates in discovery order: explicit, tool-written, then heuristic. Hashed config values are never candidates. */
-export function managementKeyCandidates(ctx: AdapterContext): { candidates: KeyCandidate[]; notes: string[] } {
+export function managementKeyCandidates(ctx: AdapterContext): {
+	candidates: KeyCandidate[];
+	notes: string[];
+} {
 	const notes: string[] = [];
 	const found: KeyCandidate[] = [];
 	const add = (source: string, key: string | undefined) => {
 		const trimmed = key?.trim();
-		if (trimmed && !found.some((candidate) => candidate.key === trimmed)) found.push({ source, key: trimmed });
+		if (trimmed && !found.some((candidate) => candidate.key === trimmed))
+			found.push({ source, key: trimmed });
 	};
 	add(MANAGEMENT_KEY_ENV, stringValue(ctx.env[MANAGEMENT_KEY_ENV]));
-	add("pi-cliproxyapi-provider/config.json managementKey", stringValue(providerConfig(ctx).managementKey));
-	add("~/.cli-proxy-api/.management-password", readTextFile(join(ctx.homeDir, ".cli-proxy-api", ".management-password"))?.split(/\r?\n/)[0]);
+	add(
+		"pi-cliproxyapi-provider/config.json managementKey",
+		stringValue(providerConfig(ctx).managementKey),
+	);
+	add(
+		"~/.cli-proxy-api/.management-password",
+		readTextFile(join(ctx.homeDir, ".cli-proxy-api", ".management-password"))?.split(/\r?\n/)[0],
+	);
 	const yaml = readTextFile(join(ctx.homeDir, ".cli-proxy-api", "config.yaml"));
 	const secretKey = yaml === undefined ? undefined : parseSecretKeyLine(yaml);
-	if (secretKey && HASHED_SECRET.test(secretKey)) notes.push("Skipped the hashed secret-key in ~/.cli-proxy-api/config.yaml.");
+	if (secretKey && HASHED_SECRET.test(secretKey))
+		notes.push("Skipped the hashed secret-key in ~/.cli-proxy-api/config.yaml.");
 	else add("~/.cli-proxy-api/config.yaml secret-key", secretKey);
 	return { candidates: found, notes };
 }
@@ -139,30 +159,48 @@ export function blockedState(error: unknown): ProviderStateError | undefined {
 	if (!(error instanceof HttpError)) return undefined;
 	const duration = retryDuration(error.body);
 	if (error.status === 403 && BAN_BODY.test(error.body)) {
-		return new ProviderStateError("blocked", duration ? `Proxy banned this host's IP · retry in ${duration}` : "Proxy temporarily banned this host's IP");
+		return new ProviderStateError(
+			"blocked",
+			duration
+				? `Proxy banned this host's IP · retry in ${duration}`
+				: "Proxy temporarily banned this host's IP",
+		);
 	}
 	if (error.status === 429) {
-		return new ProviderStateError("blocked", duration ? `Proxy is rate limiting this host · retry in ${duration}` : "Proxy is rate limiting this host · retry later");
+		return new ProviderStateError(
+			"blocked",
+			duration
+				? `Proxy is rate limiting this host · retry in ${duration}`
+				: "Proxy is rate limiting this host · retry later",
+		);
 	}
 	return undefined;
 }
 
 async function managementRequest(
-	ctx: AdapterContext, origin: string, paths: readonly string[], key: string,
-	init: { method?: string; body?: unknown }, signal?: AbortSignal,
+	ctx: AdapterContext,
+	origin: string,
+	paths: readonly string[],
+	key: string,
+	init: { method?: string; body?: unknown },
+	signal?: AbortSignal,
 ): Promise<unknown> {
 	for (const [index, path] of paths.entries()) {
 		try {
-			return await fetchBoundedJson(`${origin}${path}`, {
-				method: init.method ?? "GET",
-				headers: {
-					accept: "application/json",
-					"X-Management-Key": key,
-					...(init.body === undefined ? {} : { "content-type": "application/json" }),
+			return await fetchBoundedJson(
+				`${origin}${path}`,
+				{
+					method: init.method ?? "GET",
+					headers: {
+						accept: "application/json",
+						"X-Management-Key": key,
+						...(init.body === undefined ? {} : { "content-type": "application/json" }),
+					},
+					...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+					signal,
 				},
-				...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-				signal,
-			}, { fetch: ctx.fetch, label: LABEL });
+				{ fetch: ctx.fetch, label: LABEL },
+			);
 		} catch (error) {
 			// Older/newer proxies expose the same route under another API version.
 			if (error instanceof HttpError && error.status === 404 && index < paths.length - 1) continue;
@@ -181,17 +219,27 @@ function managementOff(error: unknown): boolean {
  * Tries at most one not-yet-rejected candidate per call, so a refresh adds at most one failed
  * attempt to CLIProxyAPI's ban counter. A ban or other failure stops without rejecting the key.
  */
-export async function verifiedManagementKey(ctx: AdapterContext, origin: string, signal?: AbortSignal): Promise<SessionKey> {
+export async function verifiedManagementKey(
+	ctx: AdapterContext,
+	origin: string,
+	signal?: AbortSignal,
+): Promise<SessionKey> {
 	const { candidates, notes } = managementKeyCandidates(ctx);
 	const cached = verifiedKeys.get(origin);
 	if (cached) return { ...cached, notes };
 	if (!candidates.length) {
-		throw new ProviderStateError("setup", `No management key · set ${MANAGEMENT_KEY_ENV}${notes.length ? " (config.yaml secret-key is hashed)" : ""}`);
+		throw new ProviderStateError(
+			"setup",
+			`No management key · set ${MANAGEMENT_KEY_ENV}${notes.length ? " (config.yaml secret-key is hashed)" : ""}`,
+		);
 	}
 	const rejected = rejectedFor(origin);
 	const noneVerified = () => {
 		const count = candidates.filter((entry) => rejected.has(entry.key)).length;
-		return new ProviderStateError("setup", `No verified management key · ${count} candidate${count === 1 ? "" : "s"} rejected`);
+		return new ProviderStateError(
+			"setup",
+			`No verified management key · ${count} candidate${count === 1 ? "" : "s"} rejected`,
+		);
 	};
 	const candidate = candidates.find((entry) => !rejected.has(entry.key));
 	if (!candidate) throw noneVerified();
@@ -204,7 +252,10 @@ export async function verifiedManagementKey(ctx: AdapterContext, origin: string,
 		if (!(error instanceof HttpError) || error.status !== 401) throw error;
 		rejected.add(candidate.key);
 		if (candidates.every((entry) => rejected.has(entry.key))) throw noneVerified();
-		throw new ProviderStateError("setup", `Management key from ${candidate.source} rejected · retry to try the next candidate`);
+		throw new ProviderStateError(
+			"setup",
+			`Management key from ${candidate.source} rejected · retry to try the next candidate`,
+		);
 	}
 	verifiedKeys.set(origin, candidate);
 	return { ...candidate, notes };
@@ -249,42 +300,61 @@ function credentialFileName(value: unknown, apiKey: string | undefined): string 
  */
 export function parseCredentials(payload: unknown): CpaCredential[] {
 	const root = isRecord(payload) ? payload : {};
-	const list = Array.isArray(payload) ? payload : [root.files, root.credentials, root.items, root.data].find(Array.isArray) ?? [];
-	return list.filter(isRecord).map((file) => {
-		const quota = isRecord(file.quota) ? file.quota : {};
-		// For api_key credentials `account` is the plaintext upstream key: never display it, nor any field equal to it.
-		const apiKey = file.account_type === "oauth" ? undefined : stringValue(file.account)?.trim();
-		const safe = (value: unknown, maxLength?: number) => {
-			const text = displayText(value, maxLength);
-			return text && apiKey && (text.includes(apiKey) || stringValue(value)?.includes(apiKey)) ? undefined : text;
-		};
-		const name = safe(file.name)?.replace(/\.json$/i, "");
-		const fileName = credentialFileName(file.name, apiKey);
-		const authIndex = file.auth_index ?? file.index;
-		const status = safe(file.status, 24)?.toLowerCase();
-		const reason = safe(file.status_message, 60) ?? safe(quota.reason, 60);
-		const recoverAt = epochSeconds(file.next_retry_after) ?? epochSeconds(quota.next_recover_at);
-		const failed = integerLike(file.failed);
-		return {
-			...(typeof authIndex === "string" || typeof authIndex === "number" ? { authIndex } : {}),
-			provider: safe(file.provider, 32) ?? safe(file.type, 32) ?? "unknown",
-			account: safe(file.email) ?? (apiKey ? undefined : safe(file.account)) ?? safe(file.label) ?? name ?? safe(file.id) ?? "credential",
-			disabled: file.disabled === true || status === "disabled",
-			unavailable: file.unavailable === true,
-			exceeded: quota.exceeded === true,
-			...(status && !QUIET_STATUSES.has(status) ? { status } : {}),
-			...(reason ? { reason } : {}),
-			...(recoverAt !== undefined ? { recoverAt } : {}),
-			...(failed !== undefined && failed > 0 ? { failed } : {}),
-			...(integerLike(file.priority) !== undefined ? { priority: integerLike(file.priority) } : {}),
-			...(fileName ? { fileName } : {}),
-		};
-	}).sort((left, right) => left.provider.localeCompare(right.provider) || left.account.localeCompare(right.account));
+	const list = Array.isArray(payload)
+		? payload
+		: ([root.files, root.credentials, root.items, root.data].find(Array.isArray) ?? []);
+	return list
+		.filter(isRecord)
+		.map((file) => {
+			const quota = isRecord(file.quota) ? file.quota : {};
+			// For api_key credentials `account` is the plaintext upstream key: never display it, nor any field equal to it.
+			const apiKey = file.account_type === "oauth" ? undefined : stringValue(file.account)?.trim();
+			const safe = (value: unknown, maxLength?: number) => {
+				const text = displayText(value, maxLength);
+				return text && apiKey && (text.includes(apiKey) || stringValue(value)?.includes(apiKey))
+					? undefined
+					: text;
+			};
+			const name = safe(file.name)?.replace(/\.json$/i, "");
+			const fileName = credentialFileName(file.name, apiKey);
+			const authIndex = file.auth_index ?? file.index;
+			const status = safe(file.status, 24)?.toLowerCase();
+			const reason = safe(file.status_message, 60) ?? safe(quota.reason, 60);
+			const recoverAt = epochSeconds(file.next_retry_after) ?? epochSeconds(quota.next_recover_at);
+			const failed = integerLike(file.failed);
+			return {
+				...(typeof authIndex === "string" || typeof authIndex === "number" ? { authIndex } : {}),
+				provider: safe(file.provider, 32) ?? safe(file.type, 32) ?? "unknown",
+				account:
+					safe(file.email) ??
+					(apiKey ? undefined : safe(file.account)) ??
+					safe(file.label) ??
+					name ??
+					safe(file.id) ??
+					"credential",
+				disabled: file.disabled === true || status === "disabled",
+				unavailable: file.unavailable === true,
+				exceeded: quota.exceeded === true,
+				...(status && !QUIET_STATUSES.has(status) ? { status } : {}),
+				...(reason ? { reason } : {}),
+				...(recoverAt !== undefined ? { recoverAt } : {}),
+				...(failed !== undefined && failed > 0 ? { failed } : {}),
+				...(integerLike(file.priority) !== undefined
+					? { priority: integerLike(file.priority) }
+					: {}),
+				...(fileName ? { fileName } : {}),
+			};
+		})
+		.sort(
+			(left, right) =>
+				left.provider.localeCompare(right.provider) || left.account.localeCompare(right.account),
+		);
 }
 
 export function credentialState(credential: CpaCredential, now = Date.now()): string {
 	if (credential.disabled) return "disabled";
-	if (credential.recoverAt !== undefined && credential.recoverAt * 1000 > now) return `cooling down until ${formatClock(credential.recoverAt, now)}`;
+	if (credential.recoverAt !== undefined && credential.recoverAt * 1000 > now)
+		return `cooling down until ${formatClock(credential.recoverAt, now)}`;
 	if (credential.exceeded) return "exceeded";
 	if (credential.unavailable) return "unavailable";
 	return credential.status ?? "ok";
@@ -315,7 +385,9 @@ export function parseTraffic(payload: unknown): TrafficSummary[] {
 			summary.success += count(stats.success);
 			summary.failed += count(stats.failed);
 			// Buckets run oldest to newest and every key shares the same bucket window, so the last ones add up.
-			const newest = Array.isArray(stats.recent_requests) ? stats.recent_requests.at(-1) : undefined;
+			const newest = Array.isArray(stats.recent_requests)
+				? stats.recent_requests.at(-1)
+				: undefined;
 			if (!isRecord(newest)) continue;
 			const label = displayText(newest.time, 16) ?? summary.recent?.label;
 			summary.recent = {
@@ -331,14 +403,28 @@ export function parseTraffic(payload: unknown): TrafficSummary[] {
 
 export function trafficRow(summary: TrafficSummary): UsageRow {
 	const recent = summary.recent;
-	const latest = recent ? ` · latest${recent.label ? ` ${recent.label}` : ""} ${recent.success}/${recent.failed}` : "";
-	return { group: "Traffic", label: summary.provider, windows: [], state: `${summary.success} ok · ${summary.failed} failed${latest}` };
+	const latest = recent
+		? ` · latest${recent.label ? ` ${recent.label}` : ""} ${recent.success}/${recent.failed}`
+		: "";
+	return {
+		group: "Traffic",
+		label: summary.provider,
+		windows: [],
+		state: `${summary.success} ok · ${summary.failed} failed${latest}`,
+	};
 }
 
 /** Provider ids served by a quota plugin; empty when none is installed. */
 export function parseQuotaProviders(payload: unknown): { ids: string[]; count: number } {
 	const list = isRecord(payload) && Array.isArray(payload.providers) ? payload.providers : [];
-	const ids = list.map((item) => typeof item === "string" ? stringValue(item) : isRecord(item) ? stringValue(item.id ?? item.provider ?? item.name) : undefined)
+	const ids = list
+		.map((item) =>
+			typeof item === "string"
+				? stringValue(item)
+				: isRecord(item)
+					? stringValue(item.id ?? item.provider ?? item.name)
+					: undefined,
+		)
 		.filter((id): id is string => id !== undefined);
 	return { ids, count: list.length };
 }
@@ -351,7 +437,8 @@ export function parseQuotaBuckets(payload: unknown): UsageWindow[] {
 		const groupLabel = displayText(group.displayName ?? group.display_name, 24);
 		const buckets = Array.isArray(group.buckets) ? group.buckets.filter(isRecord) : [];
 		return buckets.map((bucket) => {
-			const fraction = numberValue(bucket.remainingFraction) ?? numberValue(bucket.remaining_fraction);
+			const fraction =
+				numberValue(bucket.remainingFraction) ?? numberValue(bucket.remaining_fraction);
 			const resetsAt = epochSeconds(bucket.resetTime ?? bucket.reset_time);
 			const note = displayText(bucket.description, 40);
 			return {
@@ -372,55 +459,81 @@ export type AntigravityQuotaGroup = { group: string; windows: UsageWindow[] };
  * comes from `window`, falling back to the bucket `displayName`, then `bucketId`. An
  * unrecognized payload degrades to one `?%` window with a short note; never a throw.
  */
-export function parseAntigravityQuota(payload: unknown, fallbackGroup = "Antigravity"): AntigravityQuotaGroup[] {
+export function parseAntigravityQuota(
+	payload: unknown,
+	fallbackGroup = "Antigravity",
+): AntigravityQuotaGroup[] {
 	const root = isRecord(payload) ? payload : {};
 	const groups = Array.isArray(root.groups) ? root.groups.filter(isRecord) : [];
 	const parsed = groups.flatMap((group) => {
 		const heading = displayText(group.displayName ?? group.display_name, 32) ?? fallbackGroup;
 		const buckets = Array.isArray(group.buckets) ? group.buckets.filter(isRecord) : [];
 		if (!buckets.length) return [];
-		return [{
-			group: heading,
-			windows: buckets.map((bucket) => {
-				const label = displayText(bucket.window, 16)
-					?? displayText(bucket.displayName ?? bucket.display_name, 32)
-					?? displayText(bucket.bucketId ?? bucket.bucket_id, 32)
-					?? "quota";
-				const fraction = numberValue(bucket.remainingFraction) ?? numberValue(bucket.remaining_fraction);
-				const resetsAt = epochSeconds(bucket.resetTime ?? bucket.reset_time);
-				return {
-					label,
-					...(fraction !== undefined ? { usedPercent: (1 - fraction) * 100 } : {}),
-					...(resetsAt !== undefined ? { resetsAt } : {}),
-					...(fraction === undefined ? { note: "unrecognized" } : {}),
-				};
-			}),
-		}];
+		return [
+			{
+				group: heading,
+				windows: buckets.map((bucket) => {
+					const label =
+						displayText(bucket.window, 16) ??
+						displayText(bucket.displayName ?? bucket.display_name, 32) ??
+						displayText(bucket.bucketId ?? bucket.bucket_id, 32) ??
+						"quota";
+					const fraction =
+						numberValue(bucket.remainingFraction) ?? numberValue(bucket.remaining_fraction);
+					const resetsAt = epochSeconds(bucket.resetTime ?? bucket.reset_time);
+					return {
+						label,
+						...(fraction !== undefined ? { usedPercent: (1 - fraction) * 100 } : {}),
+						...(resetsAt !== undefined ? { resetsAt } : {}),
+						...(fraction === undefined ? { note: "unrecognized" } : {}),
+					};
+				}),
+			},
+		];
 	});
-	return parsed.length ? parsed : [{ group: fallbackGroup, windows: [{ label: "quota", note: "unrecognized response" }] }];
+	return parsed.length
+		? parsed
+		: [{ group: fallbackGroup, windows: [{ label: "quota", note: "unrecognized response" }] }];
 }
 
-async function antigravityQuotaRequest(ctx: AdapterContext, baseUrl: string, accessToken: string, signal?: AbortSignal): Promise<unknown> {
-	return fetchBoundedJson(`${baseUrl}${ANTIGRAVITY_QUOTA_PATH}`, {
-		method: "POST",
-		headers: {
-			accept: "application/json",
-			authorization: `Bearer ${accessToken}`,
-			"content-type": "application/json",
-			"user-agent": ANTIGRAVITY_USER_AGENT,
+async function antigravityQuotaRequest(
+	ctx: AdapterContext,
+	baseUrl: string,
+	accessToken: string,
+	signal?: AbortSignal,
+): Promise<unknown> {
+	return fetchBoundedJson(
+		`${baseUrl}${ANTIGRAVITY_QUOTA_PATH}`,
+		{
+			method: "POST",
+			headers: {
+				accept: "application/json",
+				authorization: `Bearer ${accessToken}`,
+				"content-type": "application/json",
+				"user-agent": ANTIGRAVITY_USER_AGENT,
+			},
+			body: "{}",
+			signal,
 		},
-		body: "{}",
-		signal,
-	}, { fetch: ctx.fetch, label: "Antigravity" });
+		{ fetch: ctx.fetch, label: "Antigravity" },
+	);
 }
 
 /** Daily sandbox first; only a network failure or a 5xx falls back to the production endpoint. */
-async function fetchAntigravityQuotaGroups(ctx: AdapterContext, accessToken: string, signal?: AbortSignal): Promise<AntigravityQuotaGroup[]> {
+async function fetchAntigravityQuotaGroups(
+	ctx: AdapterContext,
+	accessToken: string,
+	signal?: AbortSignal,
+): Promise<AntigravityQuotaGroup[]> {
 	try {
-		return parseAntigravityQuota(await antigravityQuotaRequest(ctx, ANTIGRAVITY_DAILY_BASE, accessToken, signal));
+		return parseAntigravityQuota(
+			await antigravityQuotaRequest(ctx, ANTIGRAVITY_DAILY_BASE, accessToken, signal),
+		);
 	} catch (error) {
 		if (error instanceof HttpError && error.status < 500) throw error;
-		return parseAntigravityQuota(await antigravityQuotaRequest(ctx, ANTIGRAVITY_FALLBACK_BASE, accessToken, signal));
+		return parseAntigravityQuota(
+			await antigravityQuotaRequest(ctx, ANTIGRAVITY_FALLBACK_BASE, accessToken, signal),
+		);
 	}
 }
 
@@ -434,18 +547,26 @@ function openCodeSessionId(): string {
 }
 
 /** OpenCode Zen Go usage for one credential; `percent` is already a used percentage and is kept as-is. */
-async function fetchOpencodeQuotaWindows(ctx: AdapterContext, apiKey: string, signal?: AbortSignal): Promise<UsageWindow[]> {
-	const payload = await fetchBoundedJson(OPENCODE_USAGE_URL, {
-		method: "GET",
-		headers: {
-			accept: "application/json",
-			authorization: `Bearer ${apiKey}`,
-			"user-agent": OPENCODE_USER_AGENT,
-			"x-opencode-client": "cli",
-			"x-opencode-session": openCodeSessionId(),
+async function fetchOpencodeQuotaWindows(
+	ctx: AdapterContext,
+	apiKey: string,
+	signal?: AbortSignal,
+): Promise<UsageWindow[]> {
+	const payload = await fetchBoundedJson(
+		OPENCODE_USAGE_URL,
+		{
+			method: "GET",
+			headers: {
+				accept: "application/json",
+				authorization: `Bearer ${apiKey}`,
+				"user-agent": OPENCODE_USER_AGENT,
+				"x-opencode-client": "cli",
+				"x-opencode-session": openCodeSessionId(),
+			},
+			signal,
 		},
-		signal,
-	}, { fetch: ctx.fetch, label: "OpenCode" });
+		{ fetch: ctx.fetch, label: "OpenCode" },
+	);
 	return parseOpencodeGoPayload(payload).rows[0]?.windows ?? [];
 }
 
@@ -461,27 +582,56 @@ export function credentialStateText(credential: CpaCredential, now = Date.now())
 		credential.reason,
 		credential.failed !== undefined ? `${credential.failed} failed` : undefined,
 		credential.priority !== undefined ? `priority ${credential.priority}` : undefined,
-	].filter(Boolean).join(" · ");
+	]
+		.filter(Boolean)
+		.join(" · ");
 }
 
-export function credentialRow(credential: CpaCredential, windows: UsageWindow[], now = Date.now()): UsageRow {
-	return { group: credential.provider, label: credential.account, windows, state: credentialStateText(credential, now) };
+export function credentialRow(
+	credential: CpaCredential,
+	windows: UsageWindow[],
+	now = Date.now(),
+): UsageRow {
+	return {
+		group: credential.provider,
+		label: credential.account,
+		windows,
+		state: credentialStateText(credential, now),
+	};
 }
 
-type ManagementSession = { ctx: AdapterContext; origin: string; key: SessionKey; rekeyed?: Promise<SessionKey>; signal?: AbortSignal };
+type ManagementSession = {
+	ctx: AdapterContext;
+	origin: string;
+	key: SessionKey;
+	rekeyed?: Promise<SessionKey>;
+	signal?: AbortSignal;
+};
 
 /**
  * Each request retries once after a 401/403. Concurrent failures share one re-resolution per
  * snapshot; only a 401 invalidates the cached key and marks it rejected.
  */
-async function sessionRequest(session: ManagementSession, paths: readonly string[], init: { method?: string; body?: unknown } = {}): Promise<unknown> {
+async function sessionRequest(
+	session: ManagementSession,
+	paths: readonly string[],
+	init: { method?: string; body?: unknown } = {},
+): Promise<unknown> {
 	const used = session.key;
 	try {
-		return await managementRequest(session.ctx, session.origin, paths, used.key, init, session.signal);
+		return await managementRequest(
+			session.ctx,
+			session.origin,
+			paths,
+			used.key,
+			init,
+			session.signal,
+		);
 	} catch (error) {
 		const blocked = blockedState(error);
 		if (blocked) throw blocked;
-		if (!(error instanceof HttpError) || (error.status !== 401 && error.status !== 403)) throw error;
+		if (!(error instanceof HttpError) || (error.status !== 401 && error.status !== 403))
+			throw error;
 		const status = error.status;
 		session.rekeyed ??= (async () => {
 			if (status === 401) {
@@ -492,12 +642,23 @@ async function sessionRequest(session: ManagementSession, paths: readonly string
 			return session.key;
 		})();
 		const key = await session.rekeyed;
-		return await managementRequest(session.ctx, session.origin, paths, key.key, init, session.signal);
+		return await managementRequest(
+			session.ctx,
+			session.origin,
+			paths,
+			key.key,
+			init,
+			session.signal,
+		);
 	}
 }
 
 /** Runs `task` over `items` with at most `limit` in flight; the first rejection stops new work. */
-async function forEachLimited<T>(items: readonly T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
+async function forEachLimited<T>(
+	items: readonly T[],
+	limit: number,
+	task: (item: T) => Promise<void>,
+): Promise<void> {
 	let next = 0;
 	let stopped = false;
 	const worker = async () => {
@@ -514,7 +675,11 @@ async function forEachLimited<T>(items: readonly T[], limit: number, task: (item
 	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
-export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortSignal, now = Date.now()): Promise<ProviderSnapshot> {
+export async function fetchCliproxySnapshot(
+	ctx: AdapterContext,
+	signal?: AbortSignal,
+	now = Date.now(),
+): Promise<ProviderSnapshot> {
 	const origin = resolveOrigin(ctx);
 	if (!origin) throw new ProviderStateError("setup", `No proxy base URL · set ${BASE_URL_ENV}`);
 	const key = await verifiedManagementKey(ctx, origin, signal);
@@ -548,12 +713,16 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 	const windowsByCredential = new Map<CpaCredential, UsageWindow[]>();
 	if (plugin.count > 0) {
 		let failures = 0;
-		const served = credentials.filter((credential) =>
-			credential.authIndex !== undefined && (plugin.ids.length === 0 || plugin.ids.includes(credential.provider)));
+		const served = credentials.filter(
+			(credential) =>
+				credential.authIndex !== undefined &&
+				(plugin.ids.length === 0 || plugin.ids.includes(credential.provider)),
+		);
 		await forEachLimited(served, QUOTA_FETCH_CONCURRENCY, async (credential) => {
 			try {
 				const payload = await sessionRequest(session, QUOTA_FETCH_PATHS, {
-					method: "POST", body: { auth_index: credential.authIndex, provider: credential.provider },
+					method: "POST",
+					body: { auth_index: credential.authIndex, provider: credential.provider },
 				});
 				windowsByCredential.set(credential, parseQuotaBuckets(payload));
 			} catch (error) {
@@ -561,7 +730,10 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 				failures += 1;
 			}
 		});
-		if (failures) notes.push(`Quota plugin fetch failed for ${failures} credential${failures === 1 ? "" : "s"}.`);
+		if (failures)
+			notes.push(
+				`Quota plugin fetch failed for ${failures} credential${failures === 1 ? "" : "s"}.`,
+			);
 	} else {
 		notes.push("Normalized quota needs a CLIProxyAPI quota plugin.");
 	}
@@ -570,7 +742,11 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 	const upstreamRows = new Map<CpaCredential, UsageRow[]>();
 	const tokenExpired = new Set<CpaCredential>();
 	const stale: CpaCredential[] = [];
-	type UpstreamCredential = { credential: CpaCredential; file: Record<string, unknown>; provider: "antigravity" | "opencode-go" };
+	type UpstreamCredential = {
+		credential: CpaCredential;
+		file: Record<string, unknown>;
+		provider: "antigravity" | "opencode-go";
+	};
 	const upstream: UpstreamCredential[] = [];
 	for (const credential of credentials) {
 		if (credential.disabled || !credential.fileName) continue;
@@ -593,7 +769,11 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 		}
 		for (const credential of stale) {
 			const file = readJsonFile(join(ctx.homeDir, CREDENTIAL_DIR, credential.fileName!));
-			if (stringValue(file.type) === "antigravity" && stringValue(file.access_token) && !tokenIsStale(file, now)) {
+			if (
+				stringValue(file.type) === "antigravity" &&
+				stringValue(file.access_token) &&
+				!tokenIsStale(file, now)
+			) {
 				upstream.push({ credential, file, provider: "antigravity" });
 			} else tokenExpired.add(credential);
 		}
@@ -602,16 +782,27 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 	await forEachLimited(upstream, QUOTA_FETCH_CONCURRENCY, async (task) => {
 		try {
 			if (task.provider === "antigravity") {
-				const groups = await fetchAntigravityQuotaGroups(ctx, stringValue(task.file.access_token)!, signal);
+				const groups = await fetchAntigravityQuotaGroups(
+					ctx,
+					stringValue(task.file.access_token)!,
+					signal,
+				);
 				const state = credentialStateText(task.credential, now);
-				upstreamRows.set(task.credential, groups.map((group, index) => ({
-					group: group.group,
-					label: task.credential.account,
-					windows: group.windows,
-					...(index === 0 ? { state } : {}),
-				})));
+				upstreamRows.set(
+					task.credential,
+					groups.map((group, index) => ({
+						group: group.group,
+						label: task.credential.account,
+						windows: group.windows,
+						...(index === 0 ? { state } : {}),
+					})),
+				);
 			} else {
-				const windows = await fetchOpencodeQuotaWindows(ctx, stringValue(task.file.api_key)!, signal);
+				const windows = await fetchOpencodeQuotaWindows(
+					ctx,
+					stringValue(task.file.api_key)!,
+					signal,
+				);
 				upstreamRows.set(task.credential, [credentialRow(task.credential, windows, now)]);
 			}
 		} catch (error) {
@@ -619,14 +810,27 @@ export async function fetchCliproxySnapshot(ctx: AdapterContext, signal?: AbortS
 			upstreamFailures += 1;
 		}
 	});
-	if (upstreamFailures) notes.push(`Upstream quota failed for ${upstreamFailures} credential${upstreamFailures === 1 ? "" : "s"}.`);
+	if (upstreamFailures)
+		notes.push(
+			`Upstream quota failed for ${upstreamFailures} credential${upstreamFailures === 1 ? "" : "s"}.`,
+		);
 
-	rows.push(...credentials.flatMap((credential) => {
-		const upstream = upstreamRows.get(credential);
-		if (upstream?.length) return upstream;
-		if (tokenExpired.has(credential)) return [{ group: credential.provider, label: credential.account, windows: [], state: "token expired" }];
-		return [credentialRow(credential, windowsByCredential.get(credential) ?? [], now)];
-	}));
+	rows.push(
+		...credentials.flatMap((credential) => {
+			const upstream = upstreamRows.get(credential);
+			if (upstream?.length) return upstream;
+			if (tokenExpired.has(credential))
+				return [
+					{
+						group: credential.provider,
+						label: credential.account,
+						windows: [],
+						state: "token expired",
+					},
+				];
+			return [credentialRow(credential, windowsByCredential.get(credential) ?? [], now)];
+		}),
+	);
 	if (!credentials.length) notes.push("No credentials reported by the proxy.");
 	const observedAt = isRecord(listing) ? epochSeconds(listing.observed_at) : undefined;
 	return {
@@ -645,7 +849,10 @@ export const cliproxyapiAdapter: ProviderAdapter = {
 	title: LABEL,
 	async hasCredentials(ctx) {
 		const origin = resolveOrigin(ctx);
-		return origin !== undefined && await fetchStatus(`${origin}/healthz`, ctx.fetch, HEALTH_TIMEOUT_MS) === 200;
+		return (
+			origin !== undefined &&
+			(await fetchStatus(`${origin}/healthz`, ctx.fetch, HEALTH_TIMEOUT_MS)) === 200
+		);
 	},
 	fetch: (ctx, signal) => fetchCliproxySnapshot(ctx, signal),
 };

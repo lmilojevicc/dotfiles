@@ -17,14 +17,12 @@ not supported.
 
 ```json
 {
-  "models": {
-    "gpt-6-astra": [
-      "Keep UI/TUI copy minimal; omit redundant explanations."
-    ],
-    "openai-codex/gpt-6-astra": [
-      "Use concise UI/TUI labels. Preserve essential warnings and accessible names."
-    ]
-  }
+	"models": {
+		"gpt-6-astra": ["Keep UI/TUI copy minimal; omit redundant explanations."],
+		"openai-codex/gpt-6-astra": [
+			"Use concise UI/TUI labels. Preserve essential warnings and accessible names."
+		]
+	}
 }
 ```
 

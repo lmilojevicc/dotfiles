@@ -34,7 +34,9 @@ export function cleanOutput(text: string, maxLines = 30): string {
 		.replace(/\r\n/g, "\n")
 		.split("\n")
 		.map((line) =>
-			(line.split("\r").filter(Boolean).at(-1) ?? "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").trimEnd(),
+			(line.split("\r").filter(Boolean).at(-1) ?? "")
+				.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+				.trimEnd(),
 		);
 	while (lines.length > 0 && lines.at(-1) === "") lines.pop();
 	while (lines.length > 0 && lines[0] === "") lines.shift();
@@ -49,7 +51,9 @@ export function quote(label: string, max = 80): string {
 /** The task's description if the model gave one, otherwise its command. */
 export function title(task: Task, max = 80): string {
 	if (!task.description) return quote(task.label, max);
-	return task.description.length > max ? `${task.description.slice(0, max - 1)}…` : task.description;
+	return task.description.length > max
+		? `${task.description.slice(0, max - 1)}…`
+		: task.description;
 }
 
 /** Claude Code's task states: running, then completed, failed or killed. */
@@ -107,7 +111,12 @@ export function progressReport(task: Task): string {
 }
 
 /** Appended to a bash result whose command now runs in the background. */
-export function backgroundNotice(task: Task, waitSeconds: number, oneShot: boolean, interrupted = false): string {
+export function backgroundNotice(
+	task: Task,
+	waitSeconds: number,
+	oneShot: boolean,
+	interrupted = false,
+): string {
 	const id = task.id;
 	const lines = [
 		task.reason === "leftover"
@@ -119,7 +128,10 @@ export function backgroundNotice(task: Task, waitSeconds: number, oneShot: boole
 					: `Still running after ${waitSeconds}s, so it continues in the background as task ${id} (pid ${task.pid}).`,
 		`You get a message when it exits; keep working meanwhile. \`tasks output ${id}\` shows its new output, \`tasks wait ${id}\` waits for it, \`tasks stop ${id}\` stops it. Full output: ${task.logPath}`,
 	];
-	if (oneShot) lines.push(`This run ends when you finish and stops tasks still running then: run \`tasks wait ${id}\` if you need its result.`);
+	if (oneShot)
+		lines.push(
+			`This run ends when you finish and stops tasks still running then: run \`tasks wait ${id}\` if you need its result.`,
+		);
 	return lines.join("\n");
 }
 
@@ -127,7 +139,9 @@ export function listTasks(tasks: Task[]): string {
 	if (tasks.length === 0) return "No background tasks.";
 	return tasks
 		.map((task) => {
-			const state = task.running ? `running for ${formatDuration(Date.now() - task.startedAt)}` : endSummary(task);
+			const state = task.running
+				? `running for ${formatDuration(Date.now() - task.startedAt)}`
+				: endSummary(task);
 			return `${task.id}  ${title(task, 60)}  ${state}  (pid ${task.pid}, output ${task.logPath})`;
 		})
 		.join("\n");

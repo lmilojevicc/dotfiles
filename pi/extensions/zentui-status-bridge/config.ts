@@ -42,7 +42,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readKeyList(value: unknown, where: string, report: (detail: string) => void): string[] | undefined {
+function readKeyList(
+	value: unknown,
+	where: string,
+	report: (detail: string) => void,
+): string[] | undefined {
 	if (value === undefined) return [];
 	if (!Array.isArray(value)) {
 		report(`"${where}" must be an array of status keys; ignored`);
@@ -83,7 +87,9 @@ export function readBridgeConfig(
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
 		if (code !== "ENOENT") {
-			report(`${code ?? (error instanceof Error ? error.message : "cannot read")}; bridging every status key`);
+			report(
+				`${code ?? (error instanceof Error ? error.message : "cannot read")}; bridging every status key`,
+			);
 		}
 		return { ...DEFAULT_CONFIG };
 	}
@@ -107,7 +113,10 @@ export function readBridgeConfig(
 	const prefix = value.keyPrefix;
 	if (prefix === undefined) {
 		// Default.
-	} else if (typeof prefix !== "string" || (prefix !== "" && !KEY_PATTERN.test(prefix.replace(/\/+$/, "")))) {
+	} else if (
+		typeof prefix !== "string" ||
+		(prefix !== "" && !KEY_PATTERN.test(prefix.replace(/\/+$/, "")))
+	) {
 		report('"keyPrefix" must be a string of [A-Za-z0-9._:/-]; ignored');
 	} else if (prefix.length > MAX_KEY_LENGTH) {
 		report(`"keyPrefix" is longer than ${MAX_KEY_LENGTH} characters; ignored`);
@@ -128,14 +137,20 @@ export function readBridgeConfig(
 	if (max === undefined) {
 		// Default.
 	} else if (!Number.isInteger(max) || (max as number) < 1 || (max as number) > MAX_TEXT_LENGTH) {
-		report(`"maxTextLength" must be an integer between 1 and ${MAX_TEXT_LENGTH}; using the default`);
+		report(
+			`"maxTextLength" must be an integer between 1 and ${MAX_TEXT_LENGTH}; using the default`,
+		);
 	} else {
 		config.maxTextLength = max as number;
 	}
 
-	const dropped = config.include.filter((key) => config.keyPrefix.length + key.length > MAX_KEY_LENGTH);
+	const dropped = config.include.filter(
+		(key) => config.keyPrefix.length + key.length > MAX_KEY_LENGTH,
+	);
 	for (const key of dropped) {
-		report(`"keyPrefix" plus status key "${key}" exceeds ${MAX_KEY_LENGTH} characters; that key stays on the host surface`);
+		report(
+			`"keyPrefix" plus status key "${key}" exceeds ${MAX_KEY_LENGTH} characters; that key stays on the host surface`,
+		);
 	}
 	config.include = config.include.filter((key) => !dropped.includes(key));
 	return config;

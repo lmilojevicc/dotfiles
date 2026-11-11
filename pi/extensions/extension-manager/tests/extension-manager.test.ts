@@ -17,7 +17,10 @@ import { applyExtensionChanges } from "../state.ts";
 
 const agentDir = getAgentDir();
 // beforeEach wipes agentDir; refuse to run against the real one when the shared test loader is missing.
-assert.ok(agentDir.startsWith(tmpdir()), `refusing to wipe non-temporary agent dir ${agentDir}; run npm test`);
+assert.ok(
+	agentDir.startsWith(tmpdir()),
+	`refusing to wipe non-temporary agent dir ${agentDir}; run npm test`,
+);
 
 function resource(options: {
 	path: string;
@@ -76,10 +79,7 @@ test("top-level toggles normalize exact overrides and preserve broad exclusions"
 		agentDir,
 	);
 
-	assert.deepEqual(update.extensionPaths, [
-		"!extensions/**",
-		"+extensions/sample/index.ts",
-	]);
+	assert.deepEqual(update.extensionPaths, ["!extensions/**", "+extensions/sample/index.ts"]);
 });
 
 test("package toggles use native filters and restore autoload when the last exclusion is removed", () => {
@@ -123,11 +123,13 @@ test("package toggles normalize exact override paths and preserve exclusion filt
 		agentDir,
 	);
 
-	assert.deepEqual(update.packages, [{
-		source: "npm:suite",
-		extensions: ["!*.ts", "+first.ts"],
-		skills: ["skills/review.md"],
-	}]);
+	assert.deepEqual(update.packages, [
+		{
+			source: "npm:suite",
+			extensions: ["!*.ts", "+first.ts"],
+			skills: ["skills/review.md"],
+		},
+	]);
 });
 
 test("autoload-disabled packages retain explicit enable overrides", () => {
@@ -146,11 +148,13 @@ test("autoload-disabled packages retain explicit enable overrides", () => {
 		agentDir,
 	);
 
-	assert.deepEqual(update.packages, [{
-		source: "npm:suite",
-		autoload: false,
-		extensions: ["+first.ts"],
-	}]);
+	assert.deepEqual(update.packages, [
+		{
+			source: "npm:suite",
+			autoload: false,
+			extensions: ["+first.ts"],
+		},
+	]);
 });
 
 test("enabling entries from an empty package filter does not enable every extension", () => {
@@ -169,7 +173,9 @@ test("enabling entries from an empty package filter does not enable every extens
 		source: "npm:suite",
 		baseDir: packageRoot,
 	});
-	const packages: PackageSource[] = [{ source: "npm:suite", extensions: [], skills: ["skills/review.md"] }];
+	const packages: PackageSource[] = [
+		{ source: "npm:suite", extensions: [], skills: ["skills/review.md"] },
+	];
 	const update = applyExtensionChanges(
 		[],
 		packages,
@@ -180,12 +186,16 @@ test("enabling entries from an empty package filter does not enable every extens
 		agentDir,
 	);
 
-	assert.deepEqual(update.packages, [{
-		source: "npm:suite",
-		extensions: ["first.ts", "+second.ts"],
-		skills: ["skills/review.md"],
-	}]);
-	assert.deepEqual(packages, [{ source: "npm:suite", extensions: [], skills: ["skills/review.md"] }]);
+	assert.deepEqual(update.packages, [
+		{
+			source: "npm:suite",
+			extensions: ["first.ts", "+second.ts"],
+			skills: ["skills/review.md"],
+		},
+	]);
+	assert.deepEqual(packages, [
+		{ source: "npm:suite", extensions: [], skills: ["skills/review.md"] },
+	]);
 });
 
 test("a stale package resource cannot be reported as saved", () => {
@@ -273,7 +283,9 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 	frames: string[];
 }> {
 	const command = registerExtensionCommand();
-	let reloadCount = 0, customCount = 0, selectCount = 0;
+	let reloadCount = 0,
+		customCount = 0,
+		selectCount = 0;
 	let customOptions: CapturedCustomOptions | undefined;
 	const notifications: string[] = [];
 	const frames: string[] = [];
@@ -291,12 +303,23 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 				customCount++;
 				customOptions = options;
 				let result: unknown;
-				const component = await factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), (value: unknown) => { result = value; });
+				const component = await factory(
+					tui,
+					theme,
+					new KeybindingsManager(TUI_KEYBINDINGS),
+					(value: unknown) => {
+						result = value;
+					},
+				);
 				const renderWidth = () => {
-					const overlayOptions = typeof options.overlayOptions === "function" ? options.overlayOptions() : options.overlayOptions;
+					const overlayOptions =
+						typeof options.overlayOptions === "function"
+							? options.overlayOptions()
+							: options.overlayOptions;
 					const width = overlayOptions?.width;
 					if (typeof width === "number") return width;
-					if (typeof width === "string") return Math.floor(tui.terminal.columns * Number.parseFloat(width) / 100);
+					if (typeof width === "string")
+						return Math.floor((tui.terminal.columns * Number.parseFloat(width)) / 100);
 					return tui.terminal.columns;
 				};
 				component.focused = true;
@@ -307,13 +330,28 @@ async function runTuiCommand(inputs: readonly string[]): Promise<{
 				}
 				return result;
 			},
-			async select() { selectCount++; return undefined; },
-			notify(message: string) { notifications.push(message); },
+			async select() {
+				selectCount++;
+				return undefined;
+			},
+			notify(message: string) {
+				notifications.push(message);
+			},
 		},
-		async reload() { reloadCount++; },
+		async reload() {
+			reloadCount++;
+		},
 	} as unknown as ExtensionCommandContext;
 	await command.handler("", ctx);
-	return { reloadCount, notifications, customCount, selectCount, customOptions, terminal: tui.terminal, frames };
+	return {
+		reloadCount,
+		notifications,
+		customCount,
+		selectCount,
+		customOptions,
+		terminal: tui.terminal,
+		frames,
+	};
 }
 
 function writeExtension(name: string): void {
@@ -348,12 +386,21 @@ test("TUI saves staged toggles across single-result filters", async () => {
 	writeFileSync(join(agentDir, "settings.json"), "{}");
 
 	// Save directly from a filtered extension row without an action row.
-	const inputs = ["aaaaaaaa", "\r", ...Array.from({ length: 8 }, () => "\x7f"), "qqqqqqqq", "\r", "\x13"];
+	const inputs = [
+		"aaaaaaaa",
+		"\r",
+		...Array.from({ length: 8 }, () => "\x7f"),
+		"qqqqqqqq",
+		"\r",
+		"\x13",
+	];
 	const result = await runTuiCommand(inputs);
 	assert.equal(result.customCount, 1);
 	assert.equal(result.selectCount, 0);
 	assert.equal(result.reloadCount, 0, JSON.stringify(result));
-	assert.deepEqual(result.notifications, ["Saved 2 extension changes; reload Pi for changes to take effect"]);
+	assert.deepEqual(result.notifications, [
+		"Saved 2 extension changes; reload Pi for changes to take effect",
+	]);
 	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
 		"-extensions/aaaaaaaa/index.ts",
 		"-extensions/qqqqqqqq/index.ts",
@@ -367,15 +414,17 @@ test("TUI ctrl+s on the last extension persists staged changes without runtime r
 		"-extensions/first/index.ts",
 	]);
 	assert.equal(result.reloadCount, 0);
-	assert.deepEqual(result.notifications, ["Saved 1 extension change; reload Pi for changes to take effect"]);
+	assert.deepEqual(result.notifications, [
+		"Saved 1 extension change; reload Pi for changes to take effect",
+	]);
 });
 
 test("TUI save without staged changes is a no-op", async () => {
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
-	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
+	writeFileSync(settingsPath, '{"theme":"dark"}\n');
 	const result = await runTuiCommand(["\x13"]);
-	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
+	assert.equal(readFileSync(settingsPath, "utf8"), '{"theme":"dark"}\n');
 	assert.equal(result.reloadCount, 0);
 	assert.deepEqual(result.notifications, ["No extension changes to save"]);
 });
@@ -383,12 +432,12 @@ test("TUI save without staged changes is a no-op", async () => {
 test("TUI cancel discards staged changes without saving or reloading", async () => {
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
-	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
+	writeFileSync(settingsPath, '{"theme":"dark"}\n');
 	const result = await runTuiCommand(["\r", "\x1b", "\x1b", "\x1b", "\x1b[B", "\r"]);
 	assert.match(result.frames[2], /› Keep editing/);
 	assert.match(result.frames[4], /› Keep editing/);
 	assert.equal(result.reloadCount, 0);
-	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
+	assert.equal(readFileSync(settingsPath, "utf8"), '{"theme":"dark"}\n');
 	assert.ok(result.notifications.includes("Extension changes discarded"));
 });
 
@@ -412,17 +461,23 @@ test("TUI keeps filtered draft after declining discard and can still save it", a
 	assert.match(result.frames[3], /› Keep editing/);
 	assert.match(result.frames[4], /Search: > first/);
 	assert.match(result.frames[4], /Extensions \(1 staged\)/);
-	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions,
-		["-extensions/first/index.ts"]);
+	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
+		"-extensions/first/index.ts",
+	]);
 	assert.equal(result.reloadCount, 0);
-	assert.deepEqual(result.notifications, ["Saved 1 extension change; reload Pi for changes to take effect"]);
+	assert.deepEqual(result.notifications, [
+		"Saved 1 extension change; reload Pi for changes to take effect",
+	]);
 });
 
 test("non-UI mode rejects the command instead of silently opening a custom UI", async () => {
 	writeExtension("first");
 	const command = registerExtensionCommand();
 	const ctx = { cwd: agentDir, hasUI: false, mode: "json" } as unknown as ExtensionCommandContext;
-	await assert.rejects(command.handler("", ctx), /\/extensions-manager requires interactive or RPC UI mode/);
+	await assert.rejects(
+		command.handler("", ctx),
+		/\/extensions-manager requires interactive or RPC UI mode/,
+	);
 });
 
 test("the slash command stages multiple local toggles, saves them, and can re-enable them", async () => {
@@ -447,7 +502,9 @@ test("the slash command stages multiple local toggles, saves them, and can re-en
 	assert.equal(settings.quietStartup, true);
 	assert.equal(result.reloadCount, 0);
 	assert.ok(result.titles.includes("Extensions (2 staged)"));
-	assert.deepEqual(result.notifications, ["Saved 2 extension changes; reload Pi for changes to take effect"]);
+	assert.deepEqual(result.notifications, [
+		"Saved 2 extension changes; reload Pi for changes to take effect",
+	]);
 
 	const enabled = await runCommand([
 		(choices) => choices.find((choice) => choice.includes("first/index.ts")),
@@ -461,15 +518,17 @@ test("the slash command stages multiple local toggles, saves them, and can re-en
 	]);
 	assert.equal(enabledSettings.quietStartup, true);
 	assert.equal(enabled.reloadCount, 0);
-	assert.deepEqual(enabled.notifications, ["Saved 2 extension changes; reload Pi for changes to take effect"]);
+	assert.deepEqual(enabled.notifications, [
+		"Saved 2 extension changes; reload Pi for changes to take effect",
+	]);
 });
 
 test("RPC Save changes without staged changes is a no-op", async () => {
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
-	writeFileSync(settingsPath, "{\"theme\":\"dark\"}\n");
+	writeFileSync(settingsPath, '{"theme":"dark"}\n');
 	const result = await runCommand([SAVE_CHOICE]);
-	assert.equal(readFileSync(settingsPath, "utf8"), "{\"theme\":\"dark\"}\n");
+	assert.equal(readFileSync(settingsPath, "utf8"), '{"theme":"dark"}\n');
 	assert.equal(result.reloadCount, 0);
 	assert.deepEqual(result.notifications, ["No extension changes to save"]);
 });
@@ -480,11 +539,15 @@ test("cancel discards all staged changes without writing or reloading", async ()
 	const originalSettings = `${JSON.stringify({ extensions: ["!extensions/legacy/**"] }, null, 2)}\n`;
 	writeFileSync(join(agentDir, "settings.json"), originalSettings);
 
-	const result = await runCommand([
-		(choices) => choices.find((choice) => choice.includes("first/index.ts")),
-		(choices) => choices.find((choice) => choice.includes("second/index.ts")),
-		CANCEL_CHOICE,
-	], agentDir, [true]);
+	const result = await runCommand(
+		[
+			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+			(choices) => choices.find((choice) => choice.includes("second/index.ts")),
+			CANCEL_CHOICE,
+		],
+		agentDir,
+		[true],
+	);
 
 	assert.equal(result.prompts.length, 1);
 	assert.equal(readFileSync(join(agentDir, "settings.json"), "utf8"), originalSettings);
@@ -506,28 +569,38 @@ test("RPC cancellation confirms only net changes, and No resumes the same draft"
 			cancellation,
 		]);
 		assert.deepEqual(back.prompts, []);
-		const resumed = await runCommand([
-			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
-			cancellation,
-			(titleChoices) => {
-				assert.match(titleChoices.find((choice) => choice.includes("first/index.ts")) ?? "", /^\[ \]/);
-				return titleChoices.find((choice) => choice.includes("second/index.ts"));
-			},
-			cancellation,
-			SAVE_CHOICE,
-		], agentDir, [false, false]);
+		const resumed = await runCommand(
+			[
+				(choices) => choices.find((choice) => choice.includes("first/index.ts")),
+				cancellation,
+				(titleChoices) => {
+					assert.match(
+						titleChoices.find((choice) => choice.includes("first/index.ts")) ?? "",
+						/^\[ \]/,
+					);
+					return titleChoices.find((choice) => choice.includes("second/index.ts"));
+				},
+				cancellation,
+				SAVE_CHOICE,
+			],
+			agentDir,
+			[false, false],
+		);
 		assert.equal(resumed.prompts.length, 2);
 		assert.ok(resumed.prompts.every((prompt) => prompt.includes("Discard staged changes?")));
 		assert.ok(resumed.titles.includes("Extensions (1 staged)"));
 		assert.ok(resumed.titles.includes("Extensions (2 staged)"));
 		assert.equal(resumed.reloadCount, 0);
-		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions,
-			["-extensions/first/index.ts", "-extensions/second/index.ts"]);
+		assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions, [
+			"-extensions/first/index.ts",
+			"-extensions/second/index.ts",
+		]);
 		writeFileSync(settingsPath, "{}\n");
-		const confirmed = await runCommand([
-			(choices) => choices.find((choice) => choice.includes("first/index.ts")),
-			cancellation,
-		], agentDir, [true]);
+		const confirmed = await runCommand(
+			[(choices) => choices.find((choice) => choice.includes("first/index.ts")), cancellation],
+			agentDir,
+			[true],
+		);
 		assert.equal(confirmed.prompts.length, 1);
 		assert.deepEqual(confirmed.notifications, ["Extension changes discarded"]);
 		assert.equal(readFileSync(settingsPath, "utf8"), "{}\n");
@@ -544,13 +617,19 @@ test("project-local resources and settings stay outside the global menu", async 
 	const projectSettings = `${JSON.stringify({ extensions: ["!extensions/**"] }, null, 2)}\n`;
 	writeFileSync(projectSettingsPath, projectSettings);
 
-	const result = await runCommand([
-		(choices) => {
-			assert.equal(choices.some((choice) => choice.includes("project-only")), false);
-			return choices.find((choice) => choice.includes("global/index.ts"));
-		},
-		SAVE_CHOICE,
-	], projectDir);
+	const result = await runCommand(
+		[
+			(choices) => {
+				assert.equal(
+					choices.some((choice) => choice.includes("project-only")),
+					false,
+				);
+				return choices.find((choice) => choice.includes("global/index.ts"));
+			},
+			SAVE_CHOICE,
+		],
+		projectDir,
+	);
 
 	assert.deepEqual(JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")).extensions, [
 		"-extensions/global/index.ts",
@@ -559,7 +638,7 @@ test("project-local resources and settings stay outside the global menu", async 
 	assert.equal(result.reloadCount, 0);
 });
 
-for (const bytes of ["{ invalid json\n", "[]", "null", "\"scalar\"", "2", "true"]) {
+for (const bytes of ["{ invalid json\n", "[]", "null", '"scalar"', "2", "true"]) {
 	test(`invalid global settings root ${JSON.stringify(bytes)} is reported without being overwritten`, async () => {
 		writeExtension("first");
 		const settingsPath = join(agentDir, "settings.json");
@@ -569,9 +648,9 @@ for (const bytes of ["{ invalid json\n", "[]", "null", "\"scalar\"", "2", "true"
 
 		assert.equal(readFileSync(settingsPath, "utf8"), bytes);
 		assert.equal(result.reloadCount, 0);
-		assert.ok(result.notifications.some((message) =>
-			message.includes("Extension manager failed:"),
-		));
+		assert.ok(
+			result.notifications.some((message) => message.includes("Extension manager failed:")),
+		);
 	});
 }
 
@@ -589,7 +668,7 @@ test("an empty global settings file follows native settings semantics", async ()
 test("a BOM-prefixed object is accepted during discovery without rewriting it", async () => {
 	writeExtension("first");
 	const settingsPath = join(agentDir, "settings.json");
-	const bytes = "\uFEFF{\"theme\":\"dark\"}";
+	const bytes = '\uFEFF{"theme":"dark"}';
 	writeFileSync(settingsPath, bytes);
 
 	const result = await runCommand([CANCEL_CHOICE]);
@@ -599,7 +678,7 @@ test("a BOM-prefixed object is accepted during discovery without rewriting it", 
 	assert.equal(result.titles[0], "Extensions (select to toggle)");
 });
 
-for (const bytes of ["[]", "null", "\"scalar\""]) {
+for (const bytes of ["[]", "null", '"scalar"']) {
 	test(`invalid global root introduced before Save is preserved: ${bytes}`, async () => {
 		writeExtension("first");
 		const settingsPath = join(agentDir, "settings.json");
@@ -615,9 +694,11 @@ for (const bytes of ["[]", "null", "\"scalar\""]) {
 
 		assert.equal(readFileSync(settingsPath, "utf8"), bytes);
 		assert.equal(result.reloadCount, 0);
-		assert.ok(result.notifications.some((message) =>
-			message.includes("Global settings.json must contain a JSON object"),
-		));
+		assert.ok(
+			result.notifications.some((message) =>
+				message.includes("Global settings.json must contain a JSON object"),
+			),
+		);
 	});
 }
 
@@ -630,7 +711,10 @@ test("a BOM-prefixed object introduced before Save is refreshed and merged", asy
 	const result = await runCommand([
 		(choices) => choices.find((choice) => choice.includes("first/index.ts")),
 		() => {
-			writeFileSync(settingsPath, "\uFEFF{\"theme\":\"dark\",\"extensions\":[\"-extensions/second/index.ts\"]}");
+			writeFileSync(
+				settingsPath,
+				'\uFEFF{"theme":"dark","extensions":["-extensions/second/index.ts"]}',
+			);
 			return SAVE_CHOICE;
 		},
 	]);
@@ -639,10 +723,7 @@ test("a BOM-prefixed object introduced before Save is refreshed and merged", asy
 	assert.equal(persisted.startsWith("\uFEFF"), false);
 	assert.deepEqual(JSON.parse(persisted), {
 		theme: "dark",
-		extensions: [
-			"-extensions/second/index.ts",
-			"-extensions/first/index.ts",
-		],
+		extensions: ["-extensions/second/index.ts", "-extensions/first/index.ts"],
 	});
 	assert.equal(result.reloadCount, 0);
 });
@@ -656,9 +737,12 @@ test("a concurrent same-field edit is preserved when staged changes are saved", 
 	const result = await runCommand([
 		(choices) => choices.find((choice) => choice.includes("first/index.ts")),
 		() => {
-			writeFileSync(settingsPath, JSON.stringify({
-				extensions: ["!extensions/legacy/**", "-extensions/second/index.ts"],
-			}));
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					extensions: ["!extensions/legacy/**", "-extensions/second/index.ts"],
+				}),
+			);
 			return SAVE_CHOICE;
 		},
 	]);
@@ -689,9 +773,11 @@ test("a local-file package is visibly unavailable and cannot be toggled", async 
 
 	assert.equal(readFileSync(settingsPath, "utf8"), settingsBytes);
 	assert.equal(result.reloadCount, 0);
-	assert.ok(result.notifications.some((message) =>
-		message.includes("does not support extension filters for local-file packages"),
-	));
+	assert.ok(
+		result.notifications.some((message) =>
+			message.includes("does not support extension filters for local-file packages"),
+		),
+	);
 });
 
 test("the slash command can enable extensions omitted by an autoload-disabled package", async () => {
@@ -699,14 +785,20 @@ test("the slash command can enable extensions omitted by an autoload-disabled pa
 	mkdirSync(packageRoot, { recursive: true });
 	writeFileSync(join(packageRoot, "first.ts"), "export default function () {}\n");
 	writeFileSync(join(packageRoot, "second.ts"), "export default function () {}\n");
-	writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
-		name: "delta-suite",
-		version: "1.0.0",
-		pi: { extensions: ["./first.ts", "./second.ts"] },
-	}));
-	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({
-		packages: [{ source: "npm:delta-suite", autoload: false, extensions: [] }],
-	}));
+	writeFileSync(
+		join(packageRoot, "package.json"),
+		JSON.stringify({
+			name: "delta-suite",
+			version: "1.0.0",
+			pi: { extensions: ["./first.ts", "./second.ts"] },
+		}),
+	);
+	writeFileSync(
+		join(agentDir, "settings.json"),
+		JSON.stringify({
+			packages: [{ source: "npm:delta-suite", autoload: false, extensions: [] }],
+		}),
+	);
 
 	const result = await runCommand([
 		(choices) => {
@@ -717,11 +809,13 @@ test("the slash command can enable extensions omitted by an autoload-disabled pa
 	]);
 
 	const settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
-	assert.deepEqual(settings.packages, [{
-		source: "npm:delta-suite",
-		autoload: false,
-		extensions: ["+first.ts"],
-	}]);
+	assert.deepEqual(settings.packages, [
+		{
+			source: "npm:delta-suite",
+			autoload: false,
+			extensions: ["+first.ts"],
+		},
+	]);
 	assert.equal(result.reloadCount, 0);
 });
 
@@ -730,11 +824,14 @@ test("the slash command disables and re-enables a package extension without unin
 	mkdirSync(packageRoot, { recursive: true });
 	writeFileSync(join(packageRoot, "first.ts"), "export default function () {}\n");
 	writeFileSync(join(packageRoot, "second.ts"), "export default function () {}\n");
-	writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
-		name: "suite",
-		version: "1.0.0",
-		pi: { extensions: ["./first.ts", "./second.ts"] },
-	}));
+	writeFileSync(
+		join(packageRoot, "package.json"),
+		JSON.stringify({
+			name: "suite",
+			version: "1.0.0",
+			pi: { extensions: ["./first.ts", "./second.ts"] },
+		}),
+	);
 	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: ["npm:suite"] }));
 
 	const disabled = await runCommand([
@@ -744,7 +841,10 @@ test("the slash command disables and re-enables a package extension without unin
 	let settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
 	assert.deepEqual(settings.packages, [{ source: "npm:suite", extensions: ["-first.ts"] }]);
 	assert.equal(disabled.reloadCount, 0);
-	assert.equal(readFileSync(join(packageRoot, "first.ts"), "utf8"), "export default function () {}\n");
+	assert.equal(
+		readFileSync(join(packageRoot, "first.ts"), "utf8"),
+		"export default function () {}\n",
+	);
 
 	const enabled = await runCommand([
 		(choices) => choices.find((choice) => choice.includes("npm:suite · first.ts")),
@@ -759,11 +859,14 @@ test("a package removed while the menu is open is rejected without reload", asyn
 	const packageRoot = join(agentDir, "npm", "node_modules", "stale-suite");
 	mkdirSync(packageRoot, { recursive: true });
 	writeFileSync(join(packageRoot, "index.ts"), "export default function () {}\n");
-	writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
-		name: "stale-suite",
-		version: "1.0.0",
-		pi: { extensions: ["./index.ts"] },
-	}));
+	writeFileSync(
+		join(packageRoot, "package.json"),
+		JSON.stringify({
+			name: "stale-suite",
+			version: "1.0.0",
+			pi: { extensions: ["./index.ts"] },
+		}),
+	);
 	const settingsPath = join(agentDir, "settings.json");
 	writeFileSync(settingsPath, JSON.stringify({ packages: ["npm:stale-suite"] }));
 
@@ -777,9 +880,11 @@ test("a package removed while the menu is open is rejected without reload", asyn
 
 	assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")), { packages: [] });
 	assert.equal(result.reloadCount, 0);
-	assert.ok(result.notifications.some((message) =>
-		message.includes("Package source is no longer configured globally: npm:stale-suite"),
-	));
+	assert.ok(
+		result.notifications.some((message) =>
+			message.includes("Package source is no longer configured globally: npm:stale-suite"),
+		),
+	);
 });
 
 test("a persistence lock failure is surfaced and suppresses reload", async () => {
@@ -808,7 +913,11 @@ test("a persistence lock failure is surfaced and suppresses reload", async () =>
 
 	assert.equal(readFileSync(settingsPath, "utf8"), "{}");
 	assert.equal(result.reloadCount, 0);
-	assert.ok(result.notifications.some((message) => /Could not save extension settings.*lock/i.test(message)));
+	assert.ok(
+		result.notifications.some((message) =>
+			/Could not save extension settings.*lock/i.test(message),
+		),
+	);
 });
 
 test("initial self-manager repair is dirty and asks before RPC cancellation", async () => {
@@ -822,8 +931,9 @@ test("initial self-manager repair is dirty and asks before RPC cancellation", as
 	const result = await runCommand([CANCEL_CHOICE, SAVE_CHOICE], agentDir, [false]);
 	assert.equal(result.prompts.length, 1);
 	assert.ok(result.titles.every((title) => title === "Extensions (1 staged)"));
-	assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions,
-		["+extensions/extension-manager/index.ts"]);
+	assert.deepEqual(JSON.parse(readFileSync(settingsPath, "utf8")).extensions, [
+		"+extensions/extension-manager/index.ts",
+	]);
 	assert.equal(result.reloadCount, 0);
 });
 
@@ -849,9 +959,12 @@ test("a stale self-disable setting is repaired before saving", async () => {
 	mkdirSync(managerDirectory, { recursive: true });
 	const managerPath = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
 	symlinkSync(managerPath, join(managerDirectory, "index.ts"));
-	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({
-		extensions: ["-extensions/extension-manager/index.ts"],
-	}));
+	writeFileSync(
+		join(agentDir, "settings.json"),
+		JSON.stringify({
+			extensions: ["-extensions/extension-manager/index.ts"],
+		}),
+	);
 
 	const result = await runCommand([SAVE_CHOICE]);
 	const settings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));

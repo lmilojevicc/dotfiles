@@ -20,7 +20,10 @@ const requested: Array<{ url: string; signal?: AbortSignal }> = [];
 const originalFetch = globalThis.fetch;
 
 function json(value: unknown): Response {
-	return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 function urlOf(input: string | URL | Request): string {
@@ -30,7 +33,9 @@ function urlOf(input: string | URL | Request): string {
 
 function hang(signal: AbortSignal | undefined): Promise<Response> {
 	return new Promise((_, reject) => {
-		signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+		signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+			once: true,
+		});
 	});
 }
 
@@ -38,8 +43,12 @@ globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
 	const url = urlOf(input);
 	requested.push({ url, signal: init?.signal ?? undefined });
 	// The version lookup succeeds; the catalogue requests hang until the session ends.
-	if (url.includes("homebrew")) return Promise.resolve(new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 }));
-	if (url.includes("/zen/v1/models")) return Promise.resolve(json({ data: [{ id: "fresh-free" }] }));
+	if (url.includes("homebrew"))
+		return Promise.resolve(
+			new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 }),
+		);
+	if (url.includes("/zen/v1/models"))
+		return Promise.resolve(json({ data: [{ id: "fresh-free" }] }));
 	if (url.includes("models.dev")) return Promise.resolve(json({}));
 	return hang(init?.signal ?? undefined);
 }) as typeof fetch;
@@ -74,22 +83,40 @@ async function until(condition: () => boolean, timeoutMs = 5000): Promise<void> 
 test("without a cache the factory still registers the bundled baseline", () => {
 	assert.ok(provider.getModels().length > 0, "the baseline catalogue keeps the provider usable");
 	assert.equal(requested.length, 0, "loading did not fetch anything");
-	assert.ok(!existsSync(cachePath) || !readFileSync(cachePath, "utf8").includes("models"), "loading did not write a catalogue");
+	assert.ok(
+		!existsSync(cachePath) || !readFileSync(cachePath, "utf8").includes("models"),
+		"loading did not write a catalogue",
+	);
 });
 
 test("session_start refreshes in the background and session_shutdown cancels it", async () => {
 	handlers.get("session_start")?.({ type: "session_start" });
-	await until(() => requested.some((entry) => entry.url.includes("/api/models/providers/opencode")));
-	assert.ok(requested.some((entry) => entry.url.includes("homebrew")), "the version lookup runs with the discovery");
+	await until(() =>
+		requested.some((entry) => entry.url.includes("/api/models/providers/opencode")),
+	);
+	assert.ok(
+		requested.some((entry) => entry.url.includes("homebrew")),
+		"the version lookup runs with the discovery",
+	);
 
 	handlers.get("session_shutdown")?.({ type: "session_shutdown" });
-	const catalogueRequest = requested.find((entry) => entry.url.includes("/api/models/providers/opencode"));
+	const catalogueRequest = requested.find((entry) =>
+		entry.url.includes("/api/models/providers/opencode"),
+	);
 	assert.ok(catalogueRequest?.signal, "the background requests carry an abort signal");
-	assert.equal(catalogueRequest.signal.aborted, true, "session_shutdown aborts the in-flight discovery request");
+	assert.equal(
+		catalogueRequest.signal.aborted,
+		true,
+		"session_shutdown aborts the in-flight discovery request",
+	);
 
 	// Give the aborted requests a chance to settle; nothing may be published.
 	await new Promise((resolve) => setTimeout(resolve, 50));
 	const cache = existsSync(cachePath) ? JSON.parse(readFileSync(cachePath, "utf8")) : {};
 	assert.equal(cache.models, undefined, "a cancelled discovery does not publish a catalogue");
-	assert.equal(cache.modelsCheckedAt, undefined, "a cancelled discovery does not mark the cache fresh");
+	assert.equal(
+		cache.modelsCheckedAt,
+		undefined,
+		"a cancelled discovery does not mark the cache fresh",
+	);
 });

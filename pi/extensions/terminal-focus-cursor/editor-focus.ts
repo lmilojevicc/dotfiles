@@ -1,4 +1,9 @@
-import { CURSOR_MARKER, type EditorComponent, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
+import {
+	CURSOR_MARKER,
+	type EditorComponent,
+	type EditorTheme,
+	type TUI,
+} from "@earendil-works/pi-tui";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 
 export const FOCUS_IN = "\x1b[I";
@@ -23,7 +28,11 @@ function hideCursor(line: string): string {
 	return hidden.replace(INVERSE_VIDEO_SPAN, "$1");
 }
 
-export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
+export type EditorFactory = (
+	tui: TUI,
+	theme: EditorTheme,
+	keybindings: KeybindingsManager,
+) => EditorComponent;
 
 type PatchableEditor = EditorComponent & {
 	focused?: boolean;
@@ -46,7 +55,8 @@ function editorLayerMetadata(factory: EditorFactory | undefined): EditorLayerMet
 	if (!metadata || typeof metadata !== "object") return undefined;
 	const candidate = metadata as Partial<EditorLayerMetadata>;
 	if (candidate.version !== 1 || !(candidate.layers instanceof Map)) return undefined;
-	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function") return undefined;
+	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function")
+		return undefined;
 	for (const [id, layer] of candidate.layers) {
 		if (typeof id !== "string" || typeof layer !== "function") return undefined;
 	}
@@ -101,7 +111,10 @@ export function isFocusEvent(data: string): boolean {
 
 export const __testing = Object.freeze({ installEditorLayer });
 
-export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocusDependencies): EditorFocus {
+export function createEditorFocus({
+	createDefaultEditor,
+	scheduler,
+}: EditorFocusDependencies): EditorFocus {
 	let paneFocused = true;
 	let tui: TUI | undefined;
 	let editor: PatchableEditor | undefined;
@@ -118,12 +131,17 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 	// when a factory builds a fresh one, so the fallback editor is created once per TUI and reused.
 	const defaultEditors = new WeakMap<TUI, EditorComponent>();
 
-	const defaultEditorFor = (nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager): EditorComponent => {
+	const defaultEditorFor = (
+		nextTui: TUI,
+		theme: EditorTheme,
+		keybindings: KeybindingsManager,
+	): EditorComponent => {
 		const reused = defaultEditors.get(nextTui);
 		if (reused) {
 			// A reinstalled editor is new to Pi; drop the status indicator of the previous session.
-			(reused as PatchableEditor & { setWorkingStatusIndicator?: (indicator: undefined) => void })
-				.setWorkingStatusIndicator?.(undefined);
+			(
+				reused as PatchableEditor & { setWorkingStatusIndicator?: (indicator: undefined) => void }
+			).setWorkingStatusIndicator?.(undefined);
 			return reused;
 		}
 		const created = createDefaultEditor(nextTui, theme, keybindings);
@@ -175,8 +193,8 @@ export function createEditorFocus({ createDefaultEditor, scheduler }: EditorFocu
 			installTimer = scheduler.setTimeout(() => {
 				installTimer = undefined;
 				const previousFactory = ui.getEditorComponent();
-				const focusLayer: EditorLayerBuilder = (baseFactory) =>
-					(nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
+				const focusLayer: EditorLayerBuilder =
+					(baseFactory) => (nextTui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
 						const nextEditor = baseFactory
 							? baseFactory(nextTui, theme, keybindings)
 							: defaultEditorFor(nextTui, theme, keybindings);

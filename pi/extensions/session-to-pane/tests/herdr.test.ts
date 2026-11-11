@@ -1,286 +1,456 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildPiCommand, quoteShellArg, type PiLauncher, type ForkRuntimeState } from "../host.ts";
-import {
-  createHerdrAdapter,
-  orientationDirection,
-  type HerdrExecResult,
-} from "../herdr.ts";
+import { createHerdrAdapter, orientationDirection, type HerdrExecResult } from "../herdr.ts";
 
 function ok(stdout = "{}"): HerdrExecResult {
-  return { ok: true, stdout, stderr: "" };
+	return { ok: true, stdout, stderr: "" };
 }
 
 const env = {
-  HERDR_ENV: "1",
-  HERDR_SOCKET_PATH: "/tmp/herdr.sock",
-  HERDR_PANE_ID: "w1:p1",
-  HERDR_WORKSPACE_ID: "w1",
-  HERDR_TAB_ID: "w1:t1",
+	HERDR_ENV: "1",
+	HERDR_SOCKET_PATH: "/tmp/herdr.sock",
+	HERDR_PANE_ID: "w1:p1",
+	HERDR_WORKSPACE_ID: "w1",
+	HERDR_TAB_ID: "w1:t1",
 } as NodeJS.ProcessEnv;
 
 const launcher: PiLauncher = { command: "/opt/pi/node", prefixArgs: ["/opt/pi/lib/cli.js"] };
 const piCommand = (sessionPath: string, bootstrapPath: string, runtimeState?: ForkRuntimeState) =>
-  buildPiCommand(sessionPath, bootstrapPath, runtimeState, launcher);
+	buildPiCommand(sessionPath, bootstrapPath, runtimeState, launcher);
 
 const readyOptions = {
-  piLauncher: launcher,
-  waitForReady: async () => ({ ok: true }),
+	piLauncher: launcher,
+	waitForReady: async () => ({ ok: true }),
 };
 
 test("orientation names map to unambiguous Herdr physical directions", () => {
-  assert.equal(orientationDirection("horizontal"), "right");
-  assert.equal(orientationDirection("vertical"), "down");
+	assert.equal(orientationDirection("horizontal"), "right");
+	assert.equal(orientationDirection("vertical"), "down");
 });
 
 test("shell command quotes every argument and does not include editor text", () => {
-  assert.equal(quoteShellArg("a'b"), `'a'"'"'b'`);
-  const command = piCommand("/tmp/a b/'session.jsonl", "/tmp/ext ' one.ts", {
-    model: { provider: "provider ' one", modelId: "model ' two" },
-    thinkingLevel: "xhigh",
-  });
-  assert.equal(
-    command,
-    `exec '/opt/pi/node' '/opt/pi/lib/cli.js' '--session' '/tmp/a b/'"'"'session.jsonl' '--extension' '/tmp/ext '"'"' one.ts' '--provider' 'provider '"'"' one' '--model' 'model '"'"' two' '--thinking' 'xhigh'`,
-  );
-  assert.ok(!command.includes("selected prompt"));
+	assert.equal(quoteShellArg("a'b"), `'a'"'"'b'`);
+	const command = piCommand("/tmp/a b/'session.jsonl", "/tmp/ext ' one.ts", {
+		model: { provider: "provider ' one", modelId: "model ' two" },
+		thinkingLevel: "xhigh",
+	});
+	assert.equal(
+		command,
+		`exec '/opt/pi/node' '/opt/pi/lib/cli.js' '--session' '/tmp/a b/'"'"'session.jsonl' '--extension' '/tmp/ext '"'"' one.ts' '--provider' 'provider '"'"' one' '--model' 'model '"'"' two' '--thinking' 'xhigh'`,
+	);
+	assert.ok(!command.includes("selected prompt"));
 });
 
 test("adapter verifies caller identity, splits relative to it, and launches quoted Pi", async () => {
-  const calls: string[][] = [];
-  const exec = (args: string[]): HerdrExecResult => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr 0.9.1");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
-    return ok();
-  };
-  const adapter = createHerdrAdapter(exec, env, readyOptions);
-  assert.deepEqual(adapter.validateSource(), { ok: true, sourcePaneId: "w1:p1" });
-  const result = await adapter.launch({
-    placement: "horizontal",
-    cwd: "/project with space",
-    sessionPath: "/sessions/fork.jsonl",
-    sessionId: "fork-session",
-    bootstrapPath: "/extensions/bootstrap.ts",
-    handoffPath: "/tmp/private/handoff.json",
-    handoffNonce: "nonce",
-    runtimeState: {
-      model: { provider: "nondefault-provider", modelId: "nondefault-model" },
-      thinkingLevel: "high",
-    },
-  });
-  assert.deepEqual(result, { ok: true, paneId: "w1:p2" });
-  assert.deepEqual(calls[3], [
-    "pane", "split", "--pane", "w1:p1", "--direction", "right", "--cwd", "/project with space",
-    "--env", "PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff.json",
-    "--env", "PI_SESSION_TO_PANE_NONCE=nonce", "--no-focus",
-  ]);
-  assert.deepEqual(calls[4], [
-    "pane", "run", "w1:p2",
-    piCommand("/sessions/fork.jsonl", "/extensions/bootstrap.ts", {
-      model: { provider: "nondefault-provider", modelId: "nondefault-model" },
-      thinkingLevel: "high",
-    }),
-  ]);
+	const calls: string[][] = [];
+	const exec = (args: string[]): HerdrExecResult => {
+		calls.push(args);
+		if (args[0] === "--version") return ok("herdr 0.9.1");
+		if (args[1] === "current")
+			return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+		if (args[1] === "get")
+			return ok(
+				JSON.stringify({
+					result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+				}),
+			);
+		if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
+		return ok();
+	};
+	const adapter = createHerdrAdapter(exec, env, readyOptions);
+	assert.deepEqual(adapter.validateSource(), { ok: true, sourcePaneId: "w1:p1" });
+	const result = await adapter.launch({
+		placement: "horizontal",
+		cwd: "/project with space",
+		sessionPath: "/sessions/fork.jsonl",
+		sessionId: "fork-session",
+		bootstrapPath: "/extensions/bootstrap.ts",
+		handoffPath: "/tmp/private/handoff.json",
+		handoffNonce: "nonce",
+		runtimeState: {
+			model: { provider: "nondefault-provider", modelId: "nondefault-model" },
+			thinkingLevel: "high",
+		},
+	});
+	assert.deepEqual(result, { ok: true, paneId: "w1:p2" });
+	assert.deepEqual(calls[3], [
+		"pane",
+		"split",
+		"--pane",
+		"w1:p1",
+		"--direction",
+		"right",
+		"--cwd",
+		"/project with space",
+		"--env",
+		"PI_SESSION_TO_PANE_HANDOFF=/tmp/private/handoff.json",
+		"--env",
+		"PI_SESSION_TO_PANE_NONCE=nonce",
+		"--no-focus",
+	]);
+	assert.deepEqual(calls[4], [
+		"pane",
+		"run",
+		"w1:p2",
+		piCommand("/sessions/fork.jsonl", "/extensions/bootstrap.ts", {
+			model: { provider: "nondefault-provider", modelId: "nondefault-model" },
+			thinkingLevel: "high",
+		}),
+	]);
 });
 
 test("tab placement targets the captured source workspace and returns its root pane", async () => {
-  const calls: string[][] = [];
-  const adapter = createHerdrAdapter((args) => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[0] === "tab" && args[1] === "create") {
-      return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }));
-    }
-    return ok();
-  }, env, readyOptions);
-  assert.equal(adapter.validateSource().ok, true);
-  assert.deepEqual(await adapter.launch({
-    placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-    handoffPath: "/handoff", handoffNonce: "nonce",
-  }), { ok: true, paneId: "w1:p9" });
-  assert.deepEqual(calls[3], [
-    "tab", "create", "--workspace", "w1", "--cwd", "/project",
-    "--env", "PI_SESSION_TO_PANE_HANDOFF=/handoff",
-    "--env", "PI_SESSION_TO_PANE_NONCE=nonce", "--no-focus",
-  ]);
-  assert.deepEqual(calls[4], ["pane", "run", "w1:p9", piCommand("/fork", "/boot")]);
+	const calls: string[][] = [];
+	const adapter = createHerdrAdapter(
+		(args) => {
+			calls.push(args);
+			if (args[0] === "--version") return ok("herdr");
+			if (args[1] === "current")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+			if (args[1] === "get")
+				return ok(
+					JSON.stringify({
+						result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+					}),
+				);
+			if (args[0] === "tab" && args[1] === "create") {
+				return ok(
+					JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }),
+				);
+			}
+			return ok();
+		},
+		env,
+		readyOptions,
+	);
+	assert.equal(adapter.validateSource().ok, true);
+	assert.deepEqual(
+		await adapter.launch({
+			placement: "tab",
+			cwd: "/project",
+			sessionPath: "/fork",
+			sessionId: "fork-session",
+			bootstrapPath: "/boot",
+			handoffPath: "/handoff",
+			handoffNonce: "nonce",
+		}),
+		{ ok: true, paneId: "w1:p9" },
+	);
+	assert.deepEqual(calls[3], [
+		"tab",
+		"create",
+		"--workspace",
+		"w1",
+		"--cwd",
+		"/project",
+		"--env",
+		"PI_SESSION_TO_PANE_HANDOFF=/handoff",
+		"--env",
+		"PI_SESSION_TO_PANE_NONCE=nonce",
+		"--no-focus",
+	]);
+	assert.deepEqual(calls[4], ["pane", "run", "w1:p9", piCommand("/fork", "/boot")]);
 });
 
 test("failed launch in a new tab closes only that returned tab", async () => {
-  const calls: string[][] = [];
-  const adapter = createHerdrAdapter((args) => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }));
-    if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
-    return ok();
-  }, env, { piLauncher: launcher });
-  assert.equal(adapter.validateSource().ok, true);
-  const result = await adapter.launch({
-    placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-    handoffPath: "/handoff", handoffNonce: "nonce",
-  });
-  assert.equal(result.ok, false);
-  assert.deepEqual(calls.at(-1), ["tab", "close", "w1:t2"]);
+	const calls: string[][] = [];
+	const adapter = createHerdrAdapter(
+		(args) => {
+			calls.push(args);
+			if (args[0] === "--version") return ok("herdr");
+			if (args[1] === "current")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+			if (args[1] === "get")
+				return ok(
+					JSON.stringify({
+						result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+					}),
+				);
+			if (args[0] === "tab" && args[1] === "create")
+				return ok(
+					JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }),
+				);
+			if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
+			return ok();
+		},
+		env,
+		{ piLauncher: launcher },
+	);
+	assert.equal(adapter.validateSource().ok, true);
+	const result = await adapter.launch({
+		placement: "tab",
+		cwd: "/project",
+		sessionPath: "/fork",
+		sessionId: "fork-session",
+		bootstrapPath: "/boot",
+		handoffPath: "/handoff",
+		handoffNonce: "nonce",
+	});
+	assert.equal(result.ok, false);
+	assert.deepEqual(calls.at(-1), ["tab", "close", "w1:t2"]);
 });
 
 test("accepted pane command stays pending until readiness acknowledgement", async () => {
-  const calls: string[][] = [];
-  let acknowledge: ((result: { ok: boolean; error?: string }) => void) | undefined;
-  const readiness = new Promise<{ ok: boolean; error?: string }>((resolve) => { acknowledge = resolve; });
-  const adapter = createHerdrAdapter((args) => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
-    return ok();
-  }, env, { piLauncher: launcher, waitForReady: async () => readiness });
-  assert.equal(adapter.validateSource().ok, true);
-  let settled = false;
-  const pending = adapter.launch({
-    placement: "horizontal", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-    handoffPath: "/handoff", handoffNonce: "nonce",
-  }).then((result) => { settled = true; return result; });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(settled, false);
-  assert.deepEqual(calls.at(-1), ["pane", "run", "w1:p2", piCommand("/fork", "/boot")]);
+	const calls: string[][] = [];
+	let acknowledge: ((result: { ok: boolean; error?: string }) => void) | undefined;
+	const readiness = new Promise<{ ok: boolean; error?: string }>((resolve) => {
+		acknowledge = resolve;
+	});
+	const adapter = createHerdrAdapter(
+		(args) => {
+			calls.push(args);
+			if (args[0] === "--version") return ok("herdr");
+			if (args[1] === "current")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+			if (args[1] === "get")
+				return ok(
+					JSON.stringify({
+						result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+					}),
+				);
+			if (args[1] === "split")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
+			return ok();
+		},
+		env,
+		{ piLauncher: launcher, waitForReady: async () => readiness },
+	);
+	assert.equal(adapter.validateSource().ok, true);
+	let settled = false;
+	const pending = adapter
+		.launch({
+			placement: "horizontal",
+			cwd: "/project",
+			sessionPath: "/fork",
+			sessionId: "fork-session",
+			bootstrapPath: "/boot",
+			handoffPath: "/handoff",
+			handoffNonce: "nonce",
+		})
+		.then((result) => {
+			settled = true;
+			return result;
+		});
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	assert.equal(settled, false);
+	assert.deepEqual(calls.at(-1), ["pane", "run", "w1:p2", piCommand("/fork", "/boot")]);
 
-  acknowledge!({ ok: true });
-  assert.deepEqual(await pending, { ok: true, paneId: "w1:p2" });
+	acknowledge!({ ok: true });
+	assert.deepEqual(await pending, { ok: true, paneId: "w1:p2" });
 });
 
 test("readiness failure closes only the proven pane or tab and never the source", async (t) => {
-  for (const placement of ["horizontal", "tab"] as const) {
-    await t.test(placement, async () => {
-      const calls: string[][] = [];
-      const adapter = createHerdrAdapter((args) => {
-        calls.push(args);
-        if (args[0] === "--version") return ok("herdr");
-        if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-        if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-        if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
-        if (args[0] === "tab" && args[1] === "create") {
-          return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } } }));
-        }
-        return ok();
-      }, env, {
-        piLauncher: launcher,
-        readinessTimeoutMs: 1,
-        waitForReady: async (_expected, timeoutMs) => ({
-          ok: false,
-          error: `readiness timed out after ${timeoutMs}ms`,
-        }),
-      });
-      assert.equal(adapter.validateSource().ok, true);
-      const result = await adapter.launch({
-        placement, cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-        handoffPath: "/handoff", handoffNonce: "nonce",
-      });
-      assert.equal(result.ok, false);
-      assert.match(result.error ?? "", /readiness timed out/);
-      const expectedClose = placement === "tab" ? ["tab", "close", "w1:t2"] : ["pane", "close", "w1:p2"];
-      assert.deepEqual(calls.at(-1), expectedClose);
-      assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"));
-      assert.ok(!calls.some((call) => call[0] === "tab" && call[1] === "close" && call[2] === "w1:t1"));
-    });
-  }
+	for (const placement of ["horizontal", "tab"] as const) {
+		await t.test(placement, async () => {
+			const calls: string[][] = [];
+			const adapter = createHerdrAdapter(
+				(args) => {
+					calls.push(args);
+					if (args[0] === "--version") return ok("herdr");
+					if (args[1] === "current")
+						return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+					if (args[1] === "get")
+						return ok(
+							JSON.stringify({
+								result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+							}),
+						);
+					if (args[1] === "split")
+						return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p2" } } }));
+					if (args[0] === "tab" && args[1] === "create") {
+						return ok(
+							JSON.stringify({
+								result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p9" } },
+							}),
+						);
+					}
+					return ok();
+				},
+				env,
+				{
+					piLauncher: launcher,
+					readinessTimeoutMs: 1,
+					waitForReady: async (_expected, timeoutMs) => ({
+						ok: false,
+						error: `readiness timed out after ${timeoutMs}ms`,
+					}),
+				},
+			);
+			assert.equal(adapter.validateSource().ok, true);
+			const result = await adapter.launch({
+				placement,
+				cwd: "/project",
+				sessionPath: "/fork",
+				sessionId: "fork-session",
+				bootstrapPath: "/boot",
+				handoffPath: "/handoff",
+				handoffNonce: "nonce",
+			});
+			assert.equal(result.ok, false);
+			assert.match(result.error ?? "", /readiness timed out/);
+			const expectedClose =
+				placement === "tab" ? ["tab", "close", "w1:t2"] : ["pane", "close", "w1:p2"];
+			assert.deepEqual(calls.at(-1), expectedClose);
+			assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"));
+			assert.ok(
+				!calls.some((call) => call[0] === "tab" && call[1] === "close" && call[2] === "w1:t1"),
+			);
+		});
+	}
 });
 
 test("adapter rejects unsupported and mismatched hosts before split", () => {
-  let called = false;
-  const noHost = createHerdrAdapter(() => { called = true; return ok(); }, {} as NodeJS.ProcessEnv);
-  assert.equal(noHost.validateSource().ok, false);
-  assert.equal(called, false);
+	let called = false;
+	const noHost = createHerdrAdapter(() => {
+		called = true;
+		return ok();
+	}, {} as NodeJS.ProcessEnv);
+	assert.equal(noHost.validateSource().ok, false);
+	assert.equal(called, false);
 
-  const mismatch = createHerdrAdapter((args) => {
-    if (args[0] === "--version") return ok("herdr");
-    return ok(JSON.stringify({ result: { pane: { pane_id: "w1:other" } } }));
-  }, env);
-  assert.match(mismatch.validateSource().error ?? "", /does not match/);
+	const mismatch = createHerdrAdapter((args) => {
+		if (args[0] === "--version") return ok("herdr");
+		return ok(JSON.stringify({ result: { pane: { pane_id: "w1:other" } } }));
+	}, env);
+	assert.match(mismatch.validateSource().error ?? "", /does not match/);
 });
 
 test("launch failure closes only the newly returned pane", async () => {
-  const calls: string[][] = [];
-  const adapter = createHerdrAdapter((args) => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[1] === "split") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:new" } } }));
-    if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
-    return ok();
-  }, env, { piLauncher: launcher });
-  assert.equal(adapter.validateSource().ok, true);
-  const result = await adapter.launch({
-    placement: "vertical", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-    handoffPath: "/handoff", handoffNonce: "nonce",
-  });
-  assert.equal(result.ok, false);
-  assert.deepEqual(calls.at(-1), ["pane", "close", "w1:new"]);
-  assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"));
+	const calls: string[][] = [];
+	const adapter = createHerdrAdapter(
+		(args) => {
+			calls.push(args);
+			if (args[0] === "--version") return ok("herdr");
+			if (args[1] === "current")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+			if (args[1] === "get")
+				return ok(
+					JSON.stringify({
+						result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+					}),
+				);
+			if (args[1] === "split")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:new" } } }));
+			if (args[1] === "run") return { ok: false, stdout: "", stderr: "failed", error: "failed" };
+			return ok();
+		},
+		env,
+		{ piLauncher: launcher },
+	);
+	assert.equal(adapter.validateSource().ok, true);
+	const result = await adapter.launch({
+		placement: "vertical",
+		cwd: "/project",
+		sessionPath: "/fork",
+		sessionId: "fork-session",
+		bootstrapPath: "/boot",
+		handoffPath: "/handoff",
+		handoffNonce: "nonce",
+	});
+	assert.equal(result.ok, false);
+	assert.deepEqual(calls.at(-1), ["pane", "close", "w1:new"]);
+	assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"));
 });
 
 test("an invalid new tab identity still closes the identity Herdr proved", async (t) => {
-  for (const [name, createOutput, expectedClose] of [
-    ["tab id only", { result: { tab: { tab_id: "w1:t2" } } }, ["tab", "close", "w1:t2"]],
-    ["root pane id only", { result: { root_pane: { pane_id: "w1:p9" } } }, ["pane", "close", "w1:p9"]],
-    ["no identity", {}, undefined],
-  ] as const) {
-    await t.test(name, async () => {
-      const calls: string[][] = [];
-      const adapter = createHerdrAdapter((args) => {
-        calls.push(args);
-        if (args[0] === "--version") return ok("herdr");
-        if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-        if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-        if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify(createOutput));
-        return ok();
-      }, env, { piLauncher: launcher });
-      assert.equal(adapter.validateSource().ok, true);
-      const result = await adapter.launch({
-        placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-        handoffPath: "/handoff", handoffNonce: "nonce",
-      });
-      assert.equal(result.ok, false);
-      assert.match(result.error ?? "", /invalid new tab identity/);
-      assert.ok(!calls.some((call) => call[1] === "run"), "an unproven tab is never launched into");
-      assert.ok(!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"), "never the source pane");
-      assert.ok(!calls.some((call) => call[0] === "tab" && call[1] === "close" && call[2] === "w1:t1"), "never the source tab");
-      if (expectedClose) {
-        assert.deepEqual(calls.at(-1), expectedClose);
-        assert.equal(result.cleanupError, undefined);
-      } else {
-        assert.ok(!calls.some((call) => call[1] === "close"), "nothing was proven, so nothing is closed");
-      }
-    });
-  }
+	for (const [name, createOutput, expectedClose] of [
+		["tab id only", { result: { tab: { tab_id: "w1:t2" } } }, ["tab", "close", "w1:t2"]],
+		[
+			"root pane id only",
+			{ result: { root_pane: { pane_id: "w1:p9" } } },
+			["pane", "close", "w1:p9"],
+		],
+		["no identity", {}, undefined],
+	] as const) {
+		await t.test(name, async () => {
+			const calls: string[][] = [];
+			const adapter = createHerdrAdapter(
+				(args) => {
+					calls.push(args);
+					if (args[0] === "--version") return ok("herdr");
+					if (args[1] === "current")
+						return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+					if (args[1] === "get")
+						return ok(
+							JSON.stringify({
+								result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+							}),
+						);
+					if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify(createOutput));
+					return ok();
+				},
+				env,
+				{ piLauncher: launcher },
+			);
+			assert.equal(adapter.validateSource().ok, true);
+			const result = await adapter.launch({
+				placement: "tab",
+				cwd: "/project",
+				sessionPath: "/fork",
+				sessionId: "fork-session",
+				bootstrapPath: "/boot",
+				handoffPath: "/handoff",
+				handoffNonce: "nonce",
+			});
+			assert.equal(result.ok, false);
+			assert.match(result.error ?? "", /invalid new tab identity/);
+			assert.ok(!calls.some((call) => call[1] === "run"), "an unproven tab is never launched into");
+			assert.ok(
+				!calls.some((call) => call[1] === "close" && call[2] === "w1:p1"),
+				"never the source pane",
+			);
+			assert.ok(
+				!calls.some((call) => call[0] === "tab" && call[1] === "close" && call[2] === "w1:t1"),
+				"never the source tab",
+			);
+			if (expectedClose) {
+				assert.deepEqual(calls.at(-1), expectedClose);
+				assert.equal(result.cleanupError, undefined);
+			} else {
+				assert.ok(
+					!calls.some((call) => call[1] === "close"),
+					"nothing was proven, so nothing is closed",
+				);
+			}
+		});
+	}
 });
 
 test("a failed close of a partially identified tab is reported", async () => {
-  const calls: string[][] = [];
-  const adapter = createHerdrAdapter((args) => {
-    calls.push(args);
-    if (args[0] === "--version") return ok("herdr");
-    if (args[1] === "current") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
-    if (args[1] === "get") return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } } }));
-    if (args[0] === "tab" && args[1] === "create") return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" } } }));
-    if (args[0] === "tab" && args[1] === "close") return { ok: false, stdout: "", stderr: "close failed", error: "close failed" };
-    return ok();
-  }, env, { piLauncher: launcher });
-  assert.equal(adapter.validateSource().ok, true);
-  const result = await adapter.launch({
-    placement: "tab", cwd: "/project", sessionPath: "/fork", sessionId: "fork-session", bootstrapPath: "/boot",
-    handoffPath: "/handoff", handoffNonce: "nonce",
-  });
-  assert.equal(result.ok, false);
-  assert.match(result.error ?? "", /invalid new tab identity/);
-  assert.equal(result.cleanupError, "close failed");
+	const calls: string[][] = [];
+	const adapter = createHerdrAdapter(
+		(args) => {
+			calls.push(args);
+			if (args[0] === "--version") return ok("herdr");
+			if (args[1] === "current")
+				return ok(JSON.stringify({ result: { pane: { pane_id: "w1:p1" } } }));
+			if (args[1] === "get")
+				return ok(
+					JSON.stringify({
+						result: { pane: { pane_id: "w1:p1", workspace_id: "w1", tab_id: "w1:t1" } },
+					}),
+				);
+			if (args[0] === "tab" && args[1] === "create")
+				return ok(JSON.stringify({ result: { tab: { tab_id: "w1:t2" } } }));
+			if (args[0] === "tab" && args[1] === "close")
+				return { ok: false, stdout: "", stderr: "close failed", error: "close failed" };
+			return ok();
+		},
+		env,
+		{ piLauncher: launcher },
+	);
+	assert.equal(adapter.validateSource().ok, true);
+	const result = await adapter.launch({
+		placement: "tab",
+		cwd: "/project",
+		sessionPath: "/fork",
+		sessionId: "fork-session",
+		bootstrapPath: "/boot",
+		handoffPath: "/handoff",
+		handoffNonce: "nonce",
+	});
+	assert.equal(result.ok, false);
+	assert.match(result.error ?? "", /invalid new tab identity/);
+	assert.equal(result.cleanupError, "close failed");
 });

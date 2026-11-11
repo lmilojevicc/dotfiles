@@ -15,14 +15,36 @@ test("advertised schema retains typed singular fields and bounds, compacting onl
 test("tool schema exposes the exact seven v1 actions and bounded batch", () => {
 	const schema = TodoParameters as any;
 	assert.equal(schema.additionalProperties, false);
-	assert.deepEqual(schema.properties.action.enum, ["create", "update", "batch", "list", "get", "delete", "clear"]);
+	assert.deepEqual(schema.properties.action.enum, [
+		"create",
+		"update",
+		"batch",
+		"list",
+		"get",
+		"delete",
+		"clear",
+	]);
 	assert.equal(schema.properties.operations.minItems, 1);
 	assert.equal(schema.properties.operations.maxItems, 50);
 });
 
 test("schema retains rpiv-compatible singular fields and expectedRevision", () => {
 	const names = Object.keys(TodoParameters.properties);
-	for (const field of ["id", "subject", "description", "activeForm", "status", "blockedBy", "addBlockedBy", "removeBlockedBy", "owner", "metadata", "includeDeleted", "expectedRevision"]) assert.ok(names.includes(field), field);
+	for (const field of [
+		"id",
+		"subject",
+		"description",
+		"activeForm",
+		"status",
+		"blockedBy",
+		"addBlockedBy",
+		"removeBlockedBy",
+		"owner",
+		"metadata",
+		"includeDeleted",
+		"expectedRevision",
+	])
+		assert.ok(names.includes(field), field);
 });
 
 test("runtime schema retains string and metadata bounds, nullable patches and strict batch branches", () => {
@@ -51,7 +73,11 @@ test("runtime schema retains string and metadata bounds, nullable patches and st
 		assert.equal(branch.properties.subject.maxLength, 500);
 		assert.equal(branch.properties.metadata.maxProperties, 50);
 	}
-	for (const [field, maximum] of [["description", 20_000], ["activeForm", 500], ["owner", 200]] as const) {
+	for (const [field, maximum] of [
+		["description", 20_000],
+		["activeForm", 500],
+		["owner", 200],
+	] as const) {
 		assert.equal(create.properties[field].maxLength, maximum);
 		assert.equal(create.properties[field].type, "string");
 		assert.equal(update.properties[field].anyOf[0].maxLength, maximum);

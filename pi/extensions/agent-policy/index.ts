@@ -14,7 +14,16 @@ export default async function agentPolicy(pi: ExtensionAPI): Promise<void> {
 	const extensionPath = fileURLToPath(import.meta.url);
 	const register = await loadRequiredChildAPI(import.meta.url, getAgentDir());
 	installAgentPolicy(pi, {
-		policyDir: dirname(extensionPath), configPath: resolvePolicyConfigPath(process.env.PI_AGENT_POLICY_CONFIG, getAgentDir(), dirname(extensionPath)),
-		extensionPath, register, backgroundChild, bbSignal, bbOrigin,
+		policyDir: dirname(extensionPath),
+		configPath: resolvePolicyConfigPath(
+			process.env.PI_AGENT_POLICY_CONFIG,
+			getAgentDir(),
+			dirname(extensionPath),
+		),
+		extensionPath,
+		register,
+		backgroundChild,
+		bbSignal,
+		bbOrigin,
 	});
 }

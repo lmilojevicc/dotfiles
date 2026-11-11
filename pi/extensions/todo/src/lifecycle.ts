@@ -31,13 +31,17 @@ export function synchronizationMessage(id: string) {
 	const slot = getSlot(id);
 	const revision = slot.pendingHumanRevision;
 	if (revision === undefined || revision <= slot.announcedRevision) return undefined;
-	const visible = slot.snapshot.tasks.filter((task) => task.status !== "deleted" && task.status !== "completed");
+	const visible = slot.snapshot.tasks.filter(
+		(task) => task.status !== "deleted" && task.status !== "completed",
+	);
 	const active = visible.find((task) => task.status === "in_progress");
 	const open = visible.filter((task) => task.status === "pending").slice(0, 8);
 	const summary = [
 		`The user edited Tasks in the interactive manager (revision ${revision}).`,
 		active ? `Active: #${active.id} ${active.activeForm || active.subject}.` : "No task is active.",
-		open.length ? `Open: ${open.map((task) => `#${task.id} ${task.subject}`).join("; ")}.` : "No open tasks.",
+		open.length
+			? `Open: ${open.map((task) => `#${task.id} ${task.subject}`).join("; ")}.`
+			: "No open tasks.",
 		"Use the todo tool for subsequent task changes; do not recreate deleted tasks.",
 	].join(" ");
 	markAnnounced(id, revision);

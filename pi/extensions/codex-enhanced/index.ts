@@ -21,8 +21,18 @@
  */
 
 import { unwatchFile, watchFile } from "node:fs";
-import { getAgentDir, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	getAgentDir,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
+import {
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import {
 	getConfigPath as resolveConfigPath,
 	injectFastServiceTier,
@@ -56,7 +66,23 @@ import {
 	type RequestShape,
 } from "./compaction.ts";
 import { fetchBoundedJson, requestSignal, withAbort } from "./network.ts";
-import { coordinateReset, legacyResetIntent, preserveLegacyReset, readResetJournal, withResetAccountLock, resetPaths, resetAccountState, manualResetNeedsRefresh, offerLegacyAcknowledgement, acknowledgeLegacyReset, type LegacyAcknowledgementOffer, type ResetAccountState, type LegacyResetIntent, type ResetOperationResult, type ManualResetAction } from "./resets.ts";
+import {
+	coordinateReset,
+	legacyResetIntent,
+	preserveLegacyReset,
+	readResetJournal,
+	withResetAccountLock,
+	resetPaths,
+	resetAccountState,
+	manualResetNeedsRefresh,
+	offerLegacyAcknowledgement,
+	acknowledgeLegacyReset,
+	type LegacyAcknowledgementOffer,
+	type ResetAccountState,
+	type LegacyResetIntent,
+	type ResetOperationResult,
+	type ManualResetAction,
+} from "./resets.ts";
 import { inspectResetLock, probeResetLock, type ResetLockAvailability } from "./reset-lock.ts";
 
 const STATUS_KEY = "codex-enhanced";
@@ -69,8 +95,13 @@ type AccountUsageSnapshot = UsageSnapshot & { accountKey: string };
 type UsageState = AccountUsageSnapshot | { error: string } | undefined;
 type MenuTab = "quota" | "resets" | "fast" | "compaction";
 const MENU_TABS: readonly MenuTab[] = ["quota", "resets", "fast", "compaction"];
-let resetCreditsCache: { key: string; expiresAt: number; promise: Promise<ResetCredits | undefined> } | undefined;
-const weeklyUsageCache = new Map<string, { value?: number; expiresAt: number; promise?: Promise<number | undefined> }>();
+let resetCreditsCache:
+	| { key: string; expiresAt: number; promise: Promise<ResetCredits | undefined> }
+	| undefined;
+const weeklyUsageCache = new Map<
+	string,
+	{ value?: number; expiresAt: number; promise?: Promise<number | undefined> }
+>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -100,7 +131,9 @@ function extractAccountId(token: string): string | undefined {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) return undefined;
-		const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8")) as unknown;
+		const payload = JSON.parse(
+			Buffer.from(parts[1] ?? "", "base64url").toString("utf8"),
+		) as unknown;
 		const authClaims = isRecord(payload) ? payload[JWT_CLAIM_PATH] : undefined;
 		return isRecord(authClaims) ? stringValue(authClaims.chatgpt_account_id) : undefined;
 	} catch {
@@ -112,10 +145,15 @@ async function buildHeaders(ctx: ExtensionContext): Promise<Headers> {
 	const resolved = await ctx.modelRegistry.getProviderAuth("openai-codex");
 	const token = resolved?.auth.apiKey;
 	if (!token || !isCanonicalBaseUrl(resolved?.auth.baseUrl, true)) {
-		throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
 	}
 	const accountId = extractAccountId(token);
-	if (!accountId) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
+	if (!accountId)
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
 	return new Headers({
 		accept: "application/json",
 		authorization: `Bearer ${token}`,
@@ -134,20 +172,39 @@ async function fetchJson(url: string, options: RequestInit): Promise<unknown> {
 	return await fetchBoundedJson(url, options);
 }
 
-async function fetchDetailedResetCredits(headers: Headers, signal?: AbortSignal): Promise<ResetCredits | undefined> {
+async function fetchDetailedResetCredits(
+	headers: Headers,
+	signal?: AbortSignal,
+): Promise<ResetCredits | undefined> {
 	const key = accountKey(headers);
-	if (key && resetCreditsCache?.key === key && resetCreditsCache.expiresAt > Date.now()) return resetCreditsCache.promise;
-	const promise = fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, { method: "GET", headers, signal })
-		.then(parseResetCredits);
+	if (key && resetCreditsCache?.key === key && resetCreditsCache.expiresAt > Date.now())
+		return resetCreditsCache.promise;
+	const promise = fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, {
+		method: "GET",
+		headers,
+		signal,
+	}).then(parseResetCredits);
 	if (key) resetCreditsCache = { key, expiresAt: Date.now() + RESET_CREDITS_CACHE_MS, promise };
 	return promise;
 }
 
-async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, includeDetailedResetCredits = true): Promise<AccountUsageSnapshot> {
+async function fetchUsageWithHeaders(
+	headers: Headers,
+	signal?: AbortSignal,
+	includeDetailedResetCredits = true,
+): Promise<AccountUsageSnapshot> {
 	const key = accountKey(headers);
-	if (!key) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
-	const snapshot = parseUsagePayload(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/usage`, { method: "GET", headers, signal }));
-	if (includeDetailedResetCredits && (!snapshot.resetCredits || snapshot.resetCredits.availableCount > 0)) {
+	if (!key)
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
+	const snapshot = parseUsagePayload(
+		await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/usage`, { method: "GET", headers, signal }),
+	);
+	if (
+		includeDetailedResetCredits &&
+		(!snapshot.resetCredits || snapshot.resetCredits.availableCount > 0)
+	) {
 		try {
 			const detailed = await fetchDetailedResetCredits(headers, signal);
 			if (detailed) snapshot.resetCredits = detailed;
@@ -158,13 +215,19 @@ async function fetchUsageWithHeaders(headers: Headers, signal?: AbortSignal, inc
 	return { ...snapshot, accountKey: key };
 }
 
-async function fetchUsage(ctx: ExtensionContext, signal?: AbortSignal): Promise<AccountUsageSnapshot> {
+async function fetchUsage(
+	ctx: ExtensionContext,
+	signal?: AbortSignal,
+): Promise<AccountUsageSnapshot> {
 	const boundedSignal = requestSignal(signal);
 	const headers = await withAbort(buildHeaders(ctx), boundedSignal);
 	return fetchUsageWithHeaders(headers, boundedSignal);
 }
 
-async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal): Promise<number | undefined> {
+async function fetchWeeklyUsageLeft(
+	ctx: ExtensionContext,
+	signal?: AbortSignal,
+): Promise<number | undefined> {
 	const combinedSignal = requestSignal(signal);
 	try {
 		const headers = await withAbort(buildHeaders(ctx), combinedSignal);
@@ -194,11 +257,17 @@ async function fetchWeeklyUsageLeft(ctx: ExtensionContext, signal?: AbortSignal)
 	}
 }
 
-async function resolveResetAccount(ctx: ExtensionContext, signal?: AbortSignal): Promise<{ key: string; headers: Headers }> {
+async function resolveResetAccount(
+	ctx: ExtensionContext,
+	signal?: AbortSignal,
+): Promise<{ key: string; headers: Headers }> {
 	const boundedSignal = requestSignal(signal);
 	const headers = await withAbort(buildHeaders(ctx), boundedSignal);
 	const key = accountKey(headers);
-	if (!key) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
+	if (!key)
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
 	return { key, headers };
 }
 
@@ -208,21 +277,29 @@ async function consumeResetCredit(
 	redeemRequestId: string,
 	signal?: AbortSignal,
 ): Promise<ResetResult> {
-	if (!creditId?.trim()) throw new Error("No usable reset credit ID is available. Refresh reset credits before retrying.");
+	if (!creditId?.trim())
+		throw new Error(
+			"No usable reset credit ID is available. Refresh reset credits before retrying.",
+		);
 	const accountId = headers.get("chatgpt-account-id")?.trim();
-	if (!accountId) throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
+	if (!accountId)
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
 	headers.set("content-type", "application/json");
 	resetCreditsCache = undefined;
-	const result = parseResetResult(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits/consume`, {
-		method: "POST",
-		headers,
-		body: JSON.stringify({
-			credit_id: creditId,
-			redeem_request_id: redeemRequestId,
-			account_id: accountId,
+	const result = parseResetResult(
+		await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits/consume`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				credit_id: creditId,
+				redeem_request_id: redeemRequestId,
+				account_id: accountId,
+			}),
+			signal,
 		}),
-		signal,
-	}));
+	);
 	resetCreditsCache = undefined;
 	if (result.outcome === "reset" || result.outcome === "already_redeemed") {
 		const key = accountKey(headers);
@@ -248,9 +325,16 @@ function formatResetShort(timestampSeconds: number | undefined): string {
 	return `~${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-function usageColumns(window: UsageWindow | undefined): { bar: string; percent: string; reset: string } {
+function usageColumns(window: UsageWindow | undefined): {
+	bar: string;
+	percent: string;
+	reset: string;
+} {
 	if (!window) return { bar: "", percent: "", reset: "" };
-	const percent = window.usedPercent === undefined ? undefined : 100 - Math.max(0, Math.min(100, window.usedPercent));
+	const percent =
+		window.usedPercent === undefined
+			? undefined
+			: 100 - Math.max(0, Math.min(100, window.usedPercent));
 	return {
 		bar: usageBar(percent),
 		percent: percent === undefined ? "?%" : `${Math.round(percent)}%`,
@@ -264,7 +348,8 @@ function stripAnsi(value: string): string {
 
 function columnWidths(rows: string[][]): number[] {
 	return Array.from({ length: Math.max(...rows.map((row) => row.length)) }, (_, index) =>
-		Math.max(...rows.map((row) => stripAnsi(row[index] ?? "").length)));
+		Math.max(...rows.map((row) => stripAnsi(row[index] ?? "").length)),
+	);
 }
 
 function formatRow(row: string[], widths: number[]): string {
@@ -274,15 +359,23 @@ function formatRow(row: string[], widths: number[]): string {
 function formatResetCreditExpiries(credits: ResetCredit[], count: number): string[] {
 	const now = Date.now();
 	const usable = credits.filter((credit) => selectAutoResetCredit([credit], now));
-	const expiries = usable.filter((credit) => credit.expiresAt).sort((a, b) => Date.parse(a.expiresAt!) - Date.parse(b.expiresAt!));
+	const expiries = usable
+		.filter((credit) => credit.expiresAt)
+		.sort((a, b) => Date.parse(a.expiresAt!) - Date.parse(b.expiresAt!));
 	const labels = expiries.slice(0, 3).map((credit) => {
 		const minutes = Math.max(1, Math.ceil((Date.parse(credit.expiresAt!) - now) / 60_000));
-		return minutes < 90 ? `~${minutes}m` : minutes < 2880 ? `~${Math.round(minutes / 60)}h` : `~${Math.round(minutes / 1440)}d`;
+		return minutes < 90
+			? `~${minutes}m`
+			: minutes < 2880
+				? `~${Math.round(minutes / 60)}h`
+				: `~${Math.round(minutes / 1440)}d`;
 	});
 	if (!labels.length) return ["Expiry unknown"];
 	const partial = expiries.length < count || usable.length !== credits.length;
-	return [`Next expiry in ${labels[0]}${labels.length > 1 ? ` · then ${labels.slice(1).join(", ")}` : ""}${expiries.length > 3 ? ` · +${expiries.length - 3} more` : ""}`,
-		...(partial ? ["Other expiry details unknown"] : [])];
+	return [
+		`Next expiry in ${labels[0]}${labels.length > 1 ? ` · then ${labels.slice(1).join(", ")}` : ""}${expiries.length > 3 ? ` · +${expiries.length - 3} more` : ""}`,
+		...(partial ? ["Other expiry details unknown"] : []),
+	];
 }
 
 /** Layout with terminal cells, not byte/string length; truncation is only the outer safety net. */
@@ -294,7 +387,8 @@ function packControls(controls: string[], width: number): string[] {
 	const lines: string[] = [];
 	for (const control of controls) {
 		const previous = lines.at(-1);
-		if (previous && visibleWidth(`${previous} · ${control}`) <= width - 2) lines[lines.length - 1] = `${previous} · ${control}`;
+		if (previous && visibleWidth(`${previous} · ${control}`) <= width - 2)
+			lines[lines.length - 1] = `${previous} · ${control}`;
 		else lines.push(...wrapTextWithAnsi(control, Math.max(1, width - 2)));
 	}
 	return lines;
@@ -311,10 +405,11 @@ function formatResetResult(result: ResetResult): string {
 function legacyResetIntents(): Map<string, LegacyResetIntent> {
 	const store: unknown = Reflect.get(globalThis, Symbol.for("codex-enhanced.reset-request-store"));
 	const intents = new Map<string, LegacyResetIntent>();
-	if (store instanceof Map) for (const [key, value] of store) {
-		if (typeof key !== "string" || !key.startsWith("account:")) continue;
-		intents.set(key, legacyResetIntent(value));
-	}
+	if (store instanceof Map)
+		for (const [key, value] of store) {
+			if (typeof key !== "string" || !key.startsWith("account:")) continue;
+			intents.set(key, legacyResetIntent(value));
+		}
 	return intents;
 }
 
@@ -334,32 +429,59 @@ async function runCoordinatedReset(
 		const account = await resolveResetAccount(ctx, signal);
 		const configPath = getConfigPath();
 		const preference = readAutoResetPreference(configPath, account.key);
-		if (expectedAccountKey && account.key !== expectedAccountKey) throw new Error("Account changed");
+		if (expectedAccountKey && account.key !== expectedAccountKey)
+			throw new Error("Account changed");
 		let headers = account.headers;
 		const check = () => {
 			signal.throwIfAborted();
-			if (!isCurrent() || ctx.mode !== "tui" || JSON.stringify(ctx.model) !== modelIdentity) throw new Error("Context changed");
+			if (!isCurrent() || ctx.mode !== "tui" || JSON.stringify(ctx.model) !== modelIdentity)
+				throw new Error("Context changed");
 			if (mode === "auto") {
 				const current = readAutoResetPreference(configPath, account.key);
-				if (!isCanonicalCodexModel(ctx.model) || !preference.enabled || !current.enabled
-					|| preference.revision !== current.revision) throw new Error("Consent changed");
+				if (
+					!isCanonicalCodexModel(ctx.model) ||
+					!preference.enabled ||
+					!current.enabled ||
+					preference.revision !== current.revision
+				)
+					throw new Error("Consent changed");
 			}
 		};
 		const validate = async () => {
 			check();
 			const current = await resolveResetAccount(ctx, signal);
 			check();
-			if (current.key !== account.key || current.headers.get("authorization") !== account.headers.get("authorization")) throw new Error("Auth changed");
+			if (
+				current.key !== account.key ||
+				current.headers.get("authorization") !== account.headers.get("authorization")
+			)
+				throw new Error("Auth changed");
 			headers = current.headers;
 		};
 		check();
 		return await coordinateReset({
-			agentDir: getAgentDir(), accountKey: account.key, mode, validate, checkBeforePost: check, manualAfterRequestId, manualAction,
+			agentDir: getAgentDir(),
+			accountKey: account.key,
+			mode,
+			validate,
+			checkBeforePost: check,
+			manualAfterRequestId,
+			manualAction,
 			legacyIntent: () => legacyResetIntents().get(account.key),
 			readUsage: () => fetchUsageWithHeaders(headers, signal, false),
 			// Spending decisions never use the menu's five-second detail cache.
-			readCredits: async () => parseResetCredits(await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, { method: "GET", headers, signal })),
-			consume: (creditId, requestId) => { onApplying?.(); return consumeResetCredit(headers, creditId, requestId, signal); },
+			readCredits: async () =>
+				parseResetCredits(
+					await fetchJson(`${DEFAULT_CODEX_BASE_URL}/wham/rate-limit-reset-credits`, {
+						method: "GET",
+						headers,
+						signal,
+					}),
+				),
+			consume: (creditId, requestId) => {
+				onApplying?.();
+				return consumeResetCredit(headers, creditId, requestId, signal);
+			},
 			refresh: async () => {
 				const usage = await fetchUsageWithHeaders(headers, signal, false);
 				await validate();
@@ -372,44 +494,75 @@ async function runCoordinatedReset(
 			},
 		});
 	} catch {
-		return { status: "Paused: current account, model, consent or lifecycle changed/unavailable; no new POST." };
+		return {
+			status:
+				"Paused: current account, model, consent or lifecycle changed/unavailable; no new POST.",
+		};
 	}
 }
 
 function visibleUsageLimits(snapshot: UsageSnapshot): UsageLimit[] {
-	return snapshot.limits.filter((limit) => !/spark/i.test(`${limit.limitName ?? ""} ${limit.limitId}`));
+	return snapshot.limits.filter(
+		(limit) => !/spark/i.test(`${limit.limitName ?? ""} ${limit.limitId}`),
+	);
 }
 
 function formatQuotaLines(theme: Theme, usageState: UsageState, loading: boolean): string[] {
 	if (!usageState) return [theme.fg("dim", "  Loading Codex usage…")];
-	if ("error" in usageState) return [theme.fg("error", `  ${usageState.error}`), theme.fg("dim", "  Press R to retry.")];
+	if ("error" in usageState)
+		return [theme.fg("error", `  ${usageState.error}`), theme.fg("dim", "  Press R to retry.")];
 
 	const rows = visibleUsageLimits(usageState).map((limit) => {
 		const primary = usageColumns(limit.primary);
 		const secondary = usageColumns(limit.secondary);
-		return [limit.limitName ?? limit.limitId, primary.bar, primary.percent, primary.reset, secondary.bar, secondary.percent, secondary.reset];
+		return [
+			limit.limitName ?? limit.limitId,
+			primary.bar,
+			primary.percent,
+			primary.reset,
+			secondary.bar,
+			secondary.percent,
+			secondary.reset,
+		];
 	});
 	const headers = ["Limit", "5h left", "", "Reset", "Weekly left", "", "Reset"];
 	const widths = columnWidths([headers, ...rows]);
 	return [
 		`  ${theme.bold(`Codex quota${usageState.planType ? ` · ${usageState.planType}` : ""}`)}${loading ? theme.fg("dim", "  refreshing…") : ""}`,
 		"",
-		formatRow(headers.map((header) => theme.fg("dim", header)), widths),
-		theme.fg("borderMuted", `  ${"─".repeat(widths.reduce((sum, width) => sum + width, 0) + 2 * (widths.length - 1))}`),
+		formatRow(
+			headers.map((header) => theme.fg("dim", header)),
+			widths,
+		),
+		theme.fg(
+			"borderMuted",
+			`  ${"─".repeat(widths.reduce((sum, width) => sum + width, 0) + 2 * (widths.length - 1))}`,
+		),
 		...rows.map((row) => formatRow(row, widths)),
 	];
 }
 
-function formatResetLines(theme: Theme, usageState: UsageState, loading: boolean,
-	autoEnabled: boolean | undefined, status: string, width: number): string[] {
+function formatResetLines(
+	theme: Theme,
+	usageState: UsageState,
+	loading: boolean,
+	autoEnabled: boolean | undefined,
+	status: string,
+	width: number,
+): string[] {
 	const usage = usageState && !("error" in usageState) ? usageState : undefined;
 	const count = usage?.resetCredits?.availableCount;
-	const balance = count === undefined ? (!usageState && loading ? "Loading banked resets…" : "Banked resets: unknown")
-		: `${count} banked reset${count === 1 ? "" : "s"}`;
+	const balance =
+		count === undefined
+			? !usageState && loading
+				? "Loading banked resets…"
+				: "Banked resets: unknown"
+			: `${count} banked reset${count === 1 ? "" : "s"}`;
 	const lines = resetWrappedLines(theme.bold(balance), width);
-	if (count && count > 0) for (const expiry of formatResetCreditExpiries(usage?.resetCredits?.credits ?? [], count)) {
-		lines.push(...resetWrappedLines(theme.fg("muted", expiry), width));
-	}
+	if (count && count > 0)
+		for (const expiry of formatResetCreditExpiries(usage?.resetCredits?.credits ?? [], count)) {
+			lines.push(...resetWrappedLines(theme.fg("muted", expiry), width));
+		}
 	const setting = `Auto reset ${autoEnabled === undefined ? "—" : autoEnabled ? theme.fg("accent", "on") : theme.fg("text", "off")}`;
 	const full = `${setting} · Weekly 0% · soonest expiry first · no prompts`;
 	const short = `${setting} · Weekly 0% · expiry first · no prompts`;
@@ -432,7 +585,11 @@ function fitSettingRule(full: string, short: string, width: number): string {
 
 function formatFastLines(theme: Theme, fast: boolean, status: string, width: number): string[] {
 	const rule = fast
-		? fitSettingRule("Fast service tier on Codex requests · served tier unobserved", "Fast tier · served tier unobserved", width)
+		? fitSettingRule(
+				"Fast service tier on Codex requests · served tier unobserved",
+				"Fast tier · served tier unobserved",
+				width,
+			)
 		: fitSettingRule("Standard processing · service tier untouched", "Standard processing", width);
 	return [
 		`  ${theme.bold("Fast mode")}  ${fast ? theme.fg("accent", "on") : theme.fg("text", "off")}`,
@@ -441,9 +598,18 @@ function formatFastLines(theme: Theme, fast: boolean, status: string, width: num
 	];
 }
 
-function formatCompactionLines(theme: Theme, enabled: boolean, status: string, width: number): string[] {
+function formatCompactionLines(
+	theme: Theme,
+	enabled: boolean,
+	status: string,
+	width: number,
+): string[] {
 	const rule = enabled
-		? fitSettingRule("Server-side compaction for Codex sessions · falls back to local", "Codex sessions · local fallback", width)
+		? fitSettingRule(
+				"Server-side compaction for Codex sessions · falls back to local",
+				"Codex sessions · local fallback",
+				width,
+			)
 		: "Pi compacts sessions locally";
 	return [
 		`  ${theme.bold("Server compaction")}  ${enabled ? theme.fg("accent", "on") : theme.fg("text", "off")}`,
@@ -454,15 +620,24 @@ function formatCompactionLines(theme: Theme, enabled: boolean, status: string, w
 
 function formatUsageText(snapshot: UsageSnapshot): string {
 	const lines = [`Codex usage${snapshot.planType ? ` (${snapshot.planType})` : ""}:`];
-	if (snapshot.resetCredits) lines.push(`- resets available: ${snapshot.resetCredits.availableCount}`);
+	if (snapshot.resetCredits)
+		lines.push(`- resets available: ${snapshot.resetCredits.availableCount}`);
 	for (const limit of visibleUsageLimits(snapshot)) {
 		const formatWindow = (label: string, window: UsageWindow | undefined) => {
 			if (!window) return undefined;
-			const remaining = window.usedPercent === undefined ? "?" : String(Math.round(100 - Math.max(0, Math.min(100, window.usedPercent))));
+			const remaining =
+				window.usedPercent === undefined
+					? "?"
+					: String(Math.round(100 - Math.max(0, Math.min(100, window.usedPercent))));
 			return `${label}: ${remaining}% left (${formatResetShort(window.resetsAt)})`;
 		};
-		const windows = [formatWindow("5h", limit.primary), formatWindow("weekly", limit.secondary)].filter(Boolean);
-		lines.push(`- ${limit.limitName ?? limit.limitId}: ${windows.length ? windows.join("; ") : "no usage data"}`);
+		const windows = [
+			formatWindow("5h", limit.primary),
+			formatWindow("weekly", limit.secondary),
+		].filter(Boolean);
+		lines.push(
+			`- ${limit.limitName ?? limit.limitId}: ${windows.length ? windows.join("; ") : "no usage data"}`,
+		);
 	}
 	return lines.join("\n");
 }
@@ -478,7 +653,11 @@ type ResetMenuControls = {
 	onStatusChange: (render: (usage?: AccountUsageSnapshot) => void) => () => void;
 };
 
-async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, controls: ResetMenuControls): Promise<void> {
+async function openUsage(
+	ctx: ExtensionContext,
+	shutdownSignal: AbortSignal,
+	controls: ResetMenuControls,
+): Promise<void> {
 	if (ctx.mode !== "tui") {
 		try {
 			ctx.ui.notify(formatUsageText(await fetchUsage(ctx, shutdownSignal)), "info");
@@ -502,7 +681,9 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		let armCurrent: (() => boolean) | undefined;
 		let lockAvailability: ResetLockAvailability = "available";
 		const localAvailability = () => {
-			const pathState = resetAccountKey ? inspectResetLock(resetPaths(getAgentDir(), resetAccountKey).lock) : "available";
+			const pathState = resetAccountKey
+				? inspectResetLock(resetPaths(getAgentDir(), resetAccountKey).lock)
+				: "available";
 			return pathState === "available" ? lockAvailability : pathState;
 		};
 		let fastMessage: string | undefined;
@@ -521,27 +702,64 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		let resetMessage: string | undefined;
 		let manualRefresh: { accountKey: string; requestId?: string } | undefined;
 		let recoveryRevision = 0;
-		let recoveryFailure: { offer: LegacyAcknowledgementOffer; contextCurrent: () => boolean } | undefined;
-		let recovery: { offer?: LegacyAcknowledgementOffer; outcome?: "reset" | "already_redeemed";
-			checking: boolean; valid: () => boolean; contextCurrent: () => boolean; authorization?: string } | undefined;
-		const cancelRecovery = () => { recoveryRevision += 1; recovery = undefined; };
+		let recoveryFailure:
+			| { offer: LegacyAcknowledgementOffer; contextCurrent: () => boolean }
+			| undefined;
+		let recovery:
+			| {
+					offer?: LegacyAcknowledgementOffer;
+					outcome?: "reset" | "already_redeemed";
+					checking: boolean;
+					valid: () => boolean;
+					contextCurrent: () => boolean;
+					authorization?: string;
+			  }
+			| undefined;
+		const cancelRecovery = () => {
+			recoveryRevision += 1;
+			recovery = undefined;
+		};
 		const offerMatches = (offer: LegacyAcknowledgementOffer) => {
-			const current = offerLegacyAcknowledgement(getAgentDir(), offer.accountKey,
-				() => legacyResetIntents().get(offer.accountKey), localAvailability());
+			const current = offerLegacyAcknowledgement(
+				getAgentDir(),
+				offer.accountKey,
+				() => legacyResetIntents().get(offer.accountKey),
+				localAvailability(),
+			);
 			return current.eligible && current.offer.snapshot === offer.snapshot;
 		};
 		const offeredRecordCurrent = () => Boolean(recovery?.offer && offerMatches(recovery.offer));
-		const durableState = (): ResetAccountState => resetAccountKey
-			? resetAccountState(getAgentDir(), resetAccountKey, legacyResetIntents().get(resetAccountKey), localAvailability())
-			: { reason: "ready", status: "", manualAction: { kind: "blocked" } };
-		const usableManualCredit = () => Boolean(usageState && !("error" in usageState) && usageState.accountKey === resetAccountKey
-			&& usageState.resetCredits && usageState.resetCredits.availableCount > 0 && selectResetCredit(usageState.resetCredits.credits));
-		const manualEligible = (state: ResetAccountState) => state.manualAction.kind !== "blocked"
-			&& !manualResetNeedsRefresh(state.manualAction, manualRefresh)
-			&& (state.manualAction.kind === "retry" || usableManualCredit());
+		const durableState = (): ResetAccountState =>
+			resetAccountKey
+				? resetAccountState(
+						getAgentDir(),
+						resetAccountKey,
+						legacyResetIntents().get(resetAccountKey),
+						localAvailability(),
+					)
+				: { reason: "ready", status: "", manualAction: { kind: "blocked" } };
+		const usableManualCredit = () =>
+			Boolean(
+				usageState &&
+				!("error" in usageState) &&
+				usageState.accountKey === resetAccountKey &&
+				usageState.resetCredits &&
+				usageState.resetCredits.availableCount > 0 &&
+				selectResetCredit(usageState.resetCredits.credits),
+			);
+		const manualEligible = (state: ResetAccountState) =>
+			state.manualAction.kind !== "blocked" &&
+			!manualResetNeedsRefresh(state.manualAction, manualRefresh) &&
+			(state.manualAction.kind === "retry" || usableManualCredit());
 		const discardStaleArm = (state: ResetAccountState) => {
-			if (resetArmedAccountKey && (resetArmedAccountKey !== resetAccountKey || !armCurrent?.() || !manualEligible(state)
-				|| resetArmedAction !== JSON.stringify(state.manualAction))) cancelManual();
+			if (
+				resetArmedAccountKey &&
+				(resetArmedAccountKey !== resetAccountKey ||
+					!armCurrent?.() ||
+					!manualEligible(state) ||
+					resetArmedAction !== JSON.stringify(state.manualAction))
+			)
+				cancelManual();
 		};
 
 		const render = () => {
@@ -579,13 +797,16 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				timer = setTimeout(() => void probe(), 1_000);
 				timer.unref?.();
 			};
-			refreshLockStatus = () => { void probe(); };
+			refreshLockStatus = () => {
+				void probe();
+			};
 			const onResetChange = () => {
 				if (!watching || resetAccountKey !== key) return;
 				render(); // Local reread only; never auth, refresh or auto check.
 				void probe();
 			};
-			for (const path of [paths.lock, paths.journal]) watchFile(path, { interval: 250, persistent: false }, onResetChange);
+			for (const path of [paths.lock, paths.journal])
+				watchFile(path, { interval: 250, persistent: false }, onResetChange);
 			void probe();
 			stopResetWatcher = () => {
 				if (!watching) return;
@@ -610,7 +831,10 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			render();
 		});
 		const configPath = getConfigPath();
-		const onConfigChange = () => { if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery(); render(); };
+		const onConfigChange = () => {
+			if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery();
+			render();
+		};
 		let configWatcherActive = true;
 		watchFile(configPath, { interval: 250, persistent: false }, onConfigChange);
 		const stopConfigWatcher = () => {
@@ -638,33 +862,47 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			const modelIdentity = JSON.stringify(ctx.model);
 			const revision = ++usageRevision;
 			if (explicit) manualRefresh = undefined;
-			const usagePromise = explicit ? (async () => {
-				const before = await resolveResetAccount(ctx, viewSignal);
-				const readDisplay = async () => {
-					const usage = await fetchUsageWithHeaders(before.headers, viewSignal);
-					const after = await resolveResetAccount(ctx, viewSignal);
-					if (viewSignal.aborted || !current() || JSON.stringify(ctx.model) !== modelIdentity
-						|| before.key !== after.key || before.headers.get("authorization") !== after.headers.get("authorization")) throw new Error("Account or context changed.");
-					return usage;
-				};
-				try {
-					const refreshed = await withResetAccountLock(getAgentDir(), before.key, async () => {
-						const journal = readResetJournal(getAgentDir(), before.key);
-						const usage = await readDisplay();
-						return { usage, requestId: journal && !["pending", "ambiguous", "unknown"].includes(journal.phase) ? journal.requestId : undefined };
-					});
-					if (!viewSignal.aborted && current() && revision === usageRevision) {
-						manualRefresh = { accountKey: before.key, requestId: refreshed.requestId };
-					}
-					return refreshed.usage;
-				} catch {
-					// Read-only quota remains available with a busy/orphan lock or corrupt journal.
-					// No manual authorization is issued unless the entire coordinated refresh succeeds.
-					return readDisplay();
-				}
-			})() : account
-				? fetchUsageWithHeaders(account.headers, requestSignal(viewSignal))
-				: fetchUsage(ctx, viewSignal);
+			const usagePromise = explicit
+				? (async () => {
+						const before = await resolveResetAccount(ctx, viewSignal);
+						const readDisplay = async () => {
+							const usage = await fetchUsageWithHeaders(before.headers, viewSignal);
+							const after = await resolveResetAccount(ctx, viewSignal);
+							if (
+								viewSignal.aborted ||
+								!current() ||
+								JSON.stringify(ctx.model) !== modelIdentity ||
+								before.key !== after.key ||
+								before.headers.get("authorization") !== after.headers.get("authorization")
+							)
+								throw new Error("Account or context changed.");
+							return usage;
+						};
+						try {
+							const refreshed = await withResetAccountLock(getAgentDir(), before.key, async () => {
+								const journal = readResetJournal(getAgentDir(), before.key);
+								const usage = await readDisplay();
+								return {
+									usage,
+									requestId:
+										journal && !["pending", "ambiguous", "unknown"].includes(journal.phase)
+											? journal.requestId
+											: undefined,
+								};
+							});
+							if (!viewSignal.aborted && current() && revision === usageRevision) {
+								manualRefresh = { accountKey: before.key, requestId: refreshed.requestId };
+							}
+							return refreshed.usage;
+						} catch {
+							// Read-only quota remains available with a busy/orphan lock or corrupt journal.
+							// No manual authorization is issued unless the entire coordinated refresh succeeds.
+							return readDisplay();
+						}
+					})()
+				: account
+					? fetchUsageWithHeaders(account.headers, requestSignal(viewSignal))
+					: fetchUsage(ctx, viewSignal);
 			usagePromise
 				.then((usage) => {
 					if (viewSignal.aborted || revision !== usageRevision || !current()) return;
@@ -672,11 +910,18 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					bindResetAccount(usage.accountKey);
 				})
 				.catch((error) => {
-					if (!viewSignal.aborted && revision === usageRevision && current()) usageState = { error: error instanceof Error ? error.message : String(error) };
+					if (!viewSignal.aborted && revision === usageRevision && current())
+						usageState = { error: error instanceof Error ? error.message : String(error) };
 				})
-				.finally(() => { usageLoading = false; refreshLockStatus(); render(); });
+				.finally(() => {
+					usageLoading = false;
+					refreshLockStatus();
+					render();
+				});
 		};
-		const ensureResetAccount = async (isCurrent = () => true): Promise<{ key: string; headers: Headers } | undefined> => {
+		const ensureResetAccount = async (
+			isCurrent = () => true,
+		): Promise<{ key: string; headers: Headers } | undefined> => {
 			if (resetAccountLoading) return undefined;
 			resetAccountLoading = true;
 			render();
@@ -686,7 +931,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				bindResetAccount(account.key);
 				return account;
 			} catch (error) {
-				if (!viewSignal.aborted && isCurrent()) usageState = { error: error instanceof Error ? error.message : String(error) };
+				if (!viewSignal.aborted && isCurrent())
+					usageState = { error: error instanceof Error ? error.message : String(error) };
 				return undefined;
 			} finally {
 				resetAccountLoading = false;
@@ -696,28 +942,45 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 		const startReset = async () => {
 			const state = durableState();
 			discardStaleArm(state);
-			if (usageLoading || resetAccountLoading || resetRunning || recovery || !manualEligible(state)) return;
+			if (usageLoading || resetAccountLoading || resetRunning || recovery || !manualEligible(state))
+				return;
 			const revision = ++manualInteractionRevision;
 			const lifecycleCurrent = controls.captureCurrent();
 			const model = JSON.stringify(ctx.model);
-			const current = () => lifecycleCurrent() && !viewSignal.aborted && activeTab === "resets"
-				&& revision === manualInteractionRevision && JSON.stringify(ctx.model) === model;
+			const current = () =>
+				lifecycleCurrent() &&
+				!viewSignal.aborted &&
+				activeTab === "resets" &&
+				revision === manualInteractionRevision &&
+				JSON.stringify(ctx.model) === model;
 			const action = JSON.stringify(state.manualAction);
 			const account = await ensureResetAccount(current);
 			if (!account || !current()) return;
-			if (state.manualAction.kind !== "retry" && (!usageState || "error" in usageState || usageState.accountKey !== account.key)) {
+			if (
+				state.manualAction.kind !== "retry" &&
+				(!usageState || "error" in usageState || usageState.accountKey !== account.key)
+			) {
 				load(account);
 				return;
 			}
 			const refreshedState = durableState();
-			if (!manualEligible(refreshedState) || action !== JSON.stringify(refreshedState.manualAction)) {
-				cancelManual(); render(); return;
+			if (
+				!manualEligible(refreshedState) ||
+				action !== JSON.stringify(refreshedState.manualAction)
+			) {
+				cancelManual();
+				render();
+				return;
 			}
 			if (resetArmedAccountKey !== account.key || resetArmedAction !== action) {
 				manualEnterReserved = true;
 				resetArmedAccountKey = account.key;
 				resetArmedAction = action;
-				armCurrent = () => lifecycleCurrent() && !viewSignal.aborted && activeTab === "resets" && JSON.stringify(ctx.model) === model;
+				armCurrent = () =>
+					lifecycleCurrent() &&
+					!viewSignal.aborted &&
+					activeTab === "resets" &&
+					JSON.stringify(ctx.model) === model;
 				render();
 				return;
 			}
@@ -727,11 +990,27 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			resetRunning = true;
 			resetMessage = undefined;
 			render();
-			const result = await controls.track(runCoordinatedReset(ctx, "manual", shutdownSignal, current, account.key,
-				manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined, undefined, undefined, JSON.parse(action)));
+			const result = await controls.track(
+				runCoordinatedReset(
+					ctx,
+					"manual",
+					shutdownSignal,
+					current,
+					account.key,
+					manualRefresh?.accountKey === account.key ? manualRefresh.requestId : undefined,
+					undefined,
+					undefined,
+					JSON.parse(action),
+				),
+			);
 			manualRefresh = undefined;
 			resetRunning = false;
-			resetMessage = result.reason === "busy" ? undefined : result.result ? formatResetResult(result.result) : result.displayStatus ?? "Could not apply reset";
+			resetMessage =
+				result.reason === "busy"
+					? undefined
+					: result.result
+						? formatResetResult(result.result)
+						: (result.displayStatus ?? "Could not apply reset");
 			if (!viewSignal.aborted) load();
 			render();
 		};
@@ -744,7 +1023,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			const account = await ensureResetAccount();
 			if (!account || viewSignal.aborted || !current()) return;
 			if (!displayedAccountKey || displayedAccountKey !== account.key) {
-				resetMessage = "Account changed; refreshed current account. No spending preference changed.";
+				resetMessage =
+					"Account changed; refreshed current account. No spending preference changed.";
 				load(account);
 				return;
 			}
@@ -756,9 +1036,15 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			render();
 		};
 		const beginRecovery = async () => {
-			if (recovery || usageLoading || resetAccountLoading || resetRunning || !resetAccountKey) return;
+			if (recovery || usageLoading || resetAccountLoading || resetRunning || !resetAccountKey)
+				return;
 			const key = resetAccountKey;
-			const offered = offerLegacyAcknowledgement(getAgentDir(), key, () => legacyResetIntents().get(key), localAvailability());
+			const offered = offerLegacyAcknowledgement(
+				getAgentDir(),
+				key,
+				() => legacyResetIntents().get(key),
+				localAvailability(),
+			);
 			if (!offered.eligible) return;
 			cancelManual(true);
 			recoveryFailure = undefined;
@@ -766,12 +1052,22 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			const current = controls.captureCurrent();
 			const model = JSON.stringify(ctx.model);
 			const preference = readAutoResetPreference(configPath, key);
-			const contextCurrent = () => !viewSignal.aborted && current() && activeTab === "resets"
-				&& resetAccountKey === key && JSON.stringify(ctx.model) === model
-				&& JSON.stringify(readAutoResetPreference(configPath, key)) === JSON.stringify(preference);
+			const contextCurrent = () =>
+				!viewSignal.aborted &&
+				current() &&
+				activeTab === "resets" &&
+				resetAccountKey === key &&
+				JSON.stringify(ctx.model) === model &&
+				JSON.stringify(readAutoResetPreference(configPath, key)) === JSON.stringify(preference);
 			const valid = () => contextCurrent() && revision === recoveryRevision;
-			const state = { offer: offered.offer, checking: true, valid, contextCurrent, authorization: undefined as string | undefined,
-				outcome: undefined as "reset" | "already_redeemed" | undefined };
+			const state = {
+				offer: offered.offer,
+				checking: true,
+				valid,
+				contextCurrent,
+				authorization: undefined as string | undefined,
+				outcome: undefined as "reset" | "already_redeemed" | undefined,
+			};
 			recovery = state;
 			manualRefresh = undefined;
 			render();
@@ -782,7 +1078,8 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				state.checking = false;
 			} catch {
 				if (recovery === state) {
-					if (state.contextCurrent() && offerMatches(state.offer)) recoveryFailure = { offer: state.offer, contextCurrent: state.contextCurrent };
+					if (state.contextCurrent() && offerMatches(state.offer))
+						recoveryFailure = { offer: state.offer, contextCurrent: state.contextCurrent };
 					cancelRecovery();
 				}
 			}
@@ -796,18 +1093,32 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 			try {
 				const account = await resolveResetAccount(ctx, viewSignal);
 				const checkCurrent = () => {
-					if (!state.valid() || recovery !== state || account.key !== state.offer!.accountKey
-						|| account.headers.get("authorization") !== state.authorization) throw new Error("Changed");
+					if (
+						!state.valid() ||
+						recovery !== state ||
+						account.key !== state.offer!.accountKey ||
+						account.headers.get("authorization") !== state.authorization
+					)
+						throw new Error("Changed");
 				};
 				checkCurrent();
-				const result = await controls.track(acknowledgeLegacyReset({ agentDir: getAgentDir(), offer: state.offer,
-					attestation: { outcome: state.outcome, noPriorOperationInFlight: true }, checkCurrent,
-					validateIdentity: async () => {
-						const currentAccount = await resolveResetAccount(ctx, viewSignal);
-						if (currentAccount.key !== state.offer!.accountKey
-							|| currentAccount.headers.get("authorization") !== state.authorization) throw new Error("Changed");
-					},
-					legacyIntent: () => legacyResetIntents().get(account.key) }));
+				const result = await controls.track(
+					acknowledgeLegacyReset({
+						agentDir: getAgentDir(),
+						offer: state.offer,
+						attestation: { outcome: state.outcome, noPriorOperationInFlight: true },
+						checkCurrent,
+						validateIdentity: async () => {
+							const currentAccount = await resolveResetAccount(ctx, viewSignal);
+							if (
+								currentAccount.key !== state.offer!.accountKey ||
+								currentAccount.headers.get("authorization") !== state.authorization
+							)
+								throw new Error("Changed");
+						},
+						legacyIntent: () => legacyResetIntents().get(account.key),
+					}),
+				);
 				if (result.acknowledged) {
 					recoveryFailure = undefined;
 					controls.clearStatus(account.key);
@@ -869,44 +1180,121 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) cancelRecovery();
 				const state = durableState();
 				discardStaleArm(state);
-				if (recoveryFailure && (!recoveryFailure.contextCurrent() || !offerMatches(recoveryFailure.offer))) recoveryFailure = undefined;
+				if (
+					recoveryFailure &&
+					(!recoveryFailure.contextCurrent() || !offerMatches(recoveryFailure.offer))
+				)
+					recoveryFailure = undefined;
 				const autoActivity = resetAccountKey ? controls.activity(resetAccountKey) : undefined;
-				const safety = ["legacy", "legacy-lock", "active", "storage"].includes(state.reason) || (state.reason === "busy" && !resetRunning && !autoActivity);
+				const safety =
+					["legacy", "legacy-lock", "active", "storage"].includes(state.reason) ||
+					(state.reason === "busy" && !resetRunning && !autoActivity);
 				const armed = Boolean(resetAccountKey && resetArmedAccountKey === resetAccountKey);
-				const preference = resetAccountKey ? readAutoResetPreference(configPath, resetAccountKey).enabled : undefined;
-				const canAcknowledge = !usageLoading && !resetRunning && !resetAccountLoading && resetAccountKey
-					&& offerLegacyAcknowledgement(getAgentDir(), resetAccountKey, () => legacyResetIntents().get(resetAccountKey!), localAvailability()).eligible;
+				const preference = resetAccountKey
+					? readAutoResetPreference(configPath, resetAccountKey).enabled
+					: undefined;
+				const canAcknowledge =
+					!usageLoading &&
+					!resetRunning &&
+					!resetAccountLoading &&
+					resetAccountKey &&
+					offerLegacyAcknowledgement(
+						getAgentDir(),
+						resetAccountKey,
+						() => legacyResetIntents().get(resetAccountKey!),
+						localAvailability(),
+					).eligible;
 				const usable = usableManualCredit();
-				const manual = !usageLoading && !resetRunning && !resetAccountLoading && manualEligible(state);
+				const manual =
+					!usageLoading && !resetRunning && !resetAccountLoading && manualEligible(state);
 				const needsRefresh = manualResetNeedsRefresh(state.manualAction, manualRefresh);
-				const status = safety ? (recoveryFailure ? "Paused: could not verify account; completion not saved" : state.status) : resetRunning || autoActivity === "applying" ? "Applying reset…" : resetAccountLoading ? "Checking account…" : autoActivity ? "Checking weekly usage…"
-					: armed ? (state.reason === "uncertain" ? "Retry previous reset?" : "Use 1 banked reset?")
-					: usageLoading && usageState ? "Refreshing balance…" : resetMessage
-					?? (usageState && "error" in usageState ? "Could not refresh balance" : state.reason === "uncertain" ? state.status
-						: preference && resetAccountKey ? controls.status(resetAccountKey) : !usable && usageState && !("error" in usageState) && (usageState.resetCredits?.availableCount ?? 0) > 0 ? "No usable reset details" : "");
+				const status = safety
+					? recoveryFailure
+						? "Paused: could not verify account; completion not saved"
+						: state.status
+					: resetRunning || autoActivity === "applying"
+						? "Applying reset…"
+						: resetAccountLoading
+							? "Checking account…"
+							: autoActivity
+								? "Checking weekly usage…"
+								: armed
+									? state.reason === "uncertain"
+										? "Retry previous reset?"
+										: "Use 1 banked reset?"
+									: usageLoading && usageState
+										? "Refreshing balance…"
+										: (resetMessage ??
+											(usageState && "error" in usageState
+												? "Could not refresh balance"
+												: state.reason === "uncertain"
+													? state.status
+													: preference && resetAccountKey
+														? controls.status(resetAccountKey)
+														: !usable &&
+															  usageState &&
+															  !("error" in usageState) &&
+															  (usageState.resetCredits?.availableCount ?? 0) > 0
+															? "No usable reset details"
+															: ""));
 				const resetFooter = recovery
-					? recovery.checking ? ["Esc cancel"] : recovery.outcome ? ["Enter acknowledge · Esc cancel"] : ["1 reset · 2 already applied", "Esc cancel"]
-					: armed ? [state.manualAction.kind === "retry" ? "Ctrl+R retry · Esc cancel" : "Ctrl+R use reset · Esc cancel"]
+					? recovery.checking
+						? ["Esc cancel"]
+						: recovery.outcome
+							? ["Enter acknowledge · Esc cancel"]
+							: ["1 reset · 2 already applied", "Esc cancel"]
+					: armed
+						? [
+								state.manualAction.kind === "retry"
+									? "Ctrl+R retry · Esc cancel"
+									: "Ctrl+R use reset · Esc cancel",
+							]
+						: [
+								...(canAcknowledge ? ["A acknowledge completion"] : []),
+								"R refresh",
+								...(resetAccountKey && !resetAccountLoading ? ["Space auto"] : []),
+								"Tab next · Esc close",
+							];
+				const resetBody = recovery
+					? [
+							...resetWrappedLines(theme.bold("Acknowledge completion"), width),
+							...resetWrappedLines("Save locally · no reset used", width),
+							"",
+							...resetWrappedLines(
+								recovery.checking
+									? "Checking account…"
+									: recovery.outcome
+										? `I confirm the original reset ${recovery.outcome === "reset" ? "completed" : "was already applied"} and no old request is running.`
+										: "Choose the confirmed original outcome. If unsure, cancel.",
+								width,
+							),
+						]
 					: [
-						...(canAcknowledge ? ["A acknowledge completion"] : []),
-						"R refresh",
-						...(resetAccountKey && !resetAccountLoading ? ["Space auto"] : []), "Tab next · Esc close",
-					];
-				const resetBody = recovery ? [
-					...resetWrappedLines(theme.bold("Acknowledge completion"), width),
-					...resetWrappedLines("Save locally · no reset used", width), "",
-					...resetWrappedLines(recovery.checking ? "Checking account…" : recovery.outcome
-						? `I confirm the original reset ${recovery.outcome === "reset" ? "completed" : "was already applied"} and no old request is running.`
-						: "Choose the confirmed original outcome. If unsure, cancel.", width),
-				] : [
-					...formatResetLines(theme, usageState, usageLoading, preference, status, width),
-					...(armed ? state.manualAction.kind === "retry" ? resetWrappedLines("Same credit and request ID", width) : [] : ["", ...resetWrappedLines(
-						safety || resetRunning || autoActivity ? "Manual reset unavailable"
-						: needsRefresh ? "Manual reset · R refresh first"
-						: manual ? state.manualAction.kind === "retry" ? "Ctrl+R retry previous reset" : "Ctrl+R use 1 reset"
-						: usageState && !("error" in usageState) && usageState.resetCredits?.availableCount === 0 ? "Manual reset · no banked resets"
-						: "Manual reset · R refresh", width)]),
-				];
+							...formatResetLines(theme, usageState, usageLoading, preference, status, width),
+							...(armed
+								? state.manualAction.kind === "retry"
+									? resetWrappedLines("Same credit and request ID", width)
+									: []
+								: [
+										"",
+										...resetWrappedLines(
+											safety || resetRunning || autoActivity
+												? "Manual reset unavailable"
+												: needsRefresh
+													? "Manual reset · R refresh first"
+													: manual
+														? state.manualAction.kind === "retry"
+															? "Ctrl+R retry previous reset"
+															: "Ctrl+R use 1 reset"
+														: usageState &&
+															  !("error" in usageState) &&
+															  usageState.resetCredits?.availableCount === 0
+															? "Manual reset · no banked resets"
+															: "Manual reset · R refresh",
+											width,
+										),
+									]),
+						];
 				return [
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 					tabs,
@@ -916,13 +1304,28 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 						: activeTab === "resets"
 							? resetBody
 							: activeTab === "fast"
-								? formatFastLines(theme, config.fast, fastMessage ?? (config.fast && !eligible ? "Requires a Codex model" : ""), width)
-								: formatCompactionLines(theme, config.compaction.responsesCompactEnabled, compactionMessage ?? (config.compaction.responsesCompactEnabled && !eligible ? "Requires a Codex model" : ""), width)),
+								? formatFastLines(
+										theme,
+										config.fast,
+										fastMessage ?? (config.fast && !eligible ? "Requires a Codex model" : ""),
+										width,
+									)
+								: formatCompactionLines(
+										theme,
+										config.compaction.responsesCompactEnabled,
+										compactionMessage ??
+											(config.compaction.responsesCompactEnabled && !eligible
+												? "Requires a Codex model"
+												: ""),
+										width,
+									)),
 					"",
 					...(activeTab === "quota"
 						? [theme.fg("dim", "  Tab next · Shift+Tab previous · R to refresh · Esc to close")]
-						: packControls(activeTab === "resets" ? resetFooter : ["Space toggle", "Tab next · Esc close"], width)
-							.map((line) => `  ${theme.fg("muted", line)}`)),
+						: packControls(
+								activeTab === "resets" ? resetFooter : ["Space toggle", "Tab next · Esc close"],
+								width,
+							).map((line) => `  ${theme.fg("muted", line)}`)),
 					theme.fg("accent", "─".repeat(Math.max(0, width))),
 				].map((line) => truncateToWidth(line, width, ""));
 			},
@@ -938,16 +1341,37 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 				if (viewSignal.aborted) return;
 				discardStaleArm(durableState());
 				// Stale/consumed confirmation keys must not become automatic-spending consent.
-				if (activeTab === "resets" && matchesKey(data, "enter")
-					&& (resetRunning || (manualEnterReserved && !resetArmedAccountKey))) { render(); return; }
-				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) { cancelRecovery(); render(); return; }
-				if (matchesKey(data, "escape") && (recovery || resetArmedAccountKey)) {
-					cancelRecovery(); cancelManual(true); render(); return;
+				if (
+					activeTab === "resets" &&
+					matchesKey(data, "enter") &&
+					(resetRunning || (manualEnterReserved && !resetArmedAccountKey))
+				) {
+					render();
+					return;
 				}
-				if (recovery && !matchesKey(data, "tab") && !matchesKey(data, "shift+tab") && !matchesKey(data, "ctrl+c") && !matchesKey(data, "space")) {
-					if (!recovery.checking && (data === "1" || data === "2")) recovery.outcome = data === "1" ? "reset" : "already_redeemed";
+				if (recovery && (!recovery.valid() || !offeredRecordCurrent())) {
+					cancelRecovery();
+					render();
+					return;
+				}
+				if (matchesKey(data, "escape") && (recovery || resetArmedAccountKey)) {
+					cancelRecovery();
+					cancelManual(true);
+					render();
+					return;
+				}
+				if (
+					recovery &&
+					!matchesKey(data, "tab") &&
+					!matchesKey(data, "shift+tab") &&
+					!matchesKey(data, "ctrl+c") &&
+					!matchesKey(data, "space")
+				) {
+					if (!recovery.checking && (data === "1" || data === "2"))
+						recovery.outcome = data === "1" ? "reset" : "already_redeemed";
 					else if (matchesKey(data, "enter")) void confirmRecovery();
-					render(); return;
+					render();
+					return;
 				}
 				if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 					cancelManual();
@@ -958,19 +1382,31 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, con
 					cycleTab(-1);
 				} else if (matchesKey(data, "tab")) {
 					cycleTab(1);
-				} else if (activeTab === "fast" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
+				} else if (
+					activeTab === "fast" &&
+					(matchesKey(data, "enter") || matchesKey(data, "space"))
+				) {
 					toggleFast();
-				} else if (activeTab === "compaction" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
+				} else if (
+					activeTab === "compaction" &&
+					(matchesKey(data, "enter") || matchesKey(data, "space"))
+				) {
 					toggleCompaction();
 				} else if (activeTab === "resets" && resetArmedAccountKey && matchesKey(data, "enter")) {
 					void startReset();
-				} else if (activeTab === "resets" && (matchesKey(data, "enter") || matchesKey(data, "space"))) {
+				} else if (
+					activeTab === "resets" &&
+					(matchesKey(data, "enter") || matchesKey(data, "space"))
+				) {
 					void toggleAuto();
 				} else if (activeTab === "resets" && data.toLowerCase() === "a") {
 					void beginRecovery();
 				} else if (activeTab === "resets" && matchesKey(data, "ctrl+r")) {
 					void startReset();
-				} else if ((activeTab === "quota" || activeTab === "resets") && data.toLowerCase() === "r") {
+				} else if (
+					(activeTab === "quota" || activeTab === "resets") &&
+					data.toLowerCase() === "r"
+				) {
 					resetMessage = undefined;
 					load(undefined, true);
 				}
@@ -1000,7 +1436,10 @@ async function runCompactionHook(
 function setStatus(ctx: ExtensionContext, weeklyLeft?: number): void {
 	try {
 		if (!ctx.hasUI) return;
-		ctx.ui.setStatus(STATUS_KEY, weeklyLeft === undefined ? undefined : `Codex weekly: ${Math.round(weeklyLeft)}% left`);
+		ctx.ui.setStatus(
+			STATUS_KEY,
+			weeklyLeft === undefined ? undefined : `Codex weekly: ${Math.round(weeklyLeft)}% left`,
+		);
 	} catch {
 		// UI contexts may become stale during reload or shutdown.
 	}
@@ -1042,7 +1481,8 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 		if (autoCheck) return autoCheck;
 		const ctx = lastContext;
 		const current = captureCurrent();
-		if (!ctx || !current() || ctx.mode !== "tui" || !isCanonicalCodexModel(ctx.model)) return Promise.resolve();
+		if (!ctx || !current() || ctx.mode !== "tui" || !isCanonicalCodexModel(ctx.model))
+			return Promise.resolve();
 		const signal = shutdownController.signal;
 		const promise = (async () => {
 			try {
@@ -1050,25 +1490,41 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 				if (!current() || !readAutoResetPreference(getConfigPath(), account.key).enabled) return;
 				autoActivity.set(account.key, "checking");
 				for (const render of resetStatusListeners) render();
-				const result = await runCoordinatedReset(ctx, "auto", signal, current, account.key, undefined, (usage) => {
-					generation += 1; // Invalidate older footer reads as well as its cached value.
-					const weeklyLeft = weeklyUsageLeft(usage);
-					weeklyUsageCache.set(usage.accountKey, { value: weeklyLeft, expiresAt: Date.now() + WEEKLY_USAGE_CACHE_MS });
-					setStatus(ctx, weeklyLeft);
-					for (const render of resetStatusListeners) render(usage);
-				}, () => {
-					autoActivity.set(account.key, "applying");
-					for (const render of resetStatusListeners) render();
-				});
+				const result = await runCoordinatedReset(
+					ctx,
+					"auto",
+					signal,
+					current,
+					account.key,
+					undefined,
+					(usage) => {
+						generation += 1; // Invalidate older footer reads as well as its cached value.
+						const weeklyLeft = weeklyUsageLeft(usage);
+						weeklyUsageCache.set(usage.accountKey, {
+							value: weeklyLeft,
+							expiresAt: Date.now() + WEEKLY_USAGE_CACHE_MS,
+						});
+						setStatus(ctx, weeklyLeft);
+						for (const render of resetStatusListeners) render(usage);
+					},
+					() => {
+						autoActivity.set(account.key, "applying");
+						for (const render of resetStatusListeners) render();
+					},
+				);
 				autoActivity.delete(account.key);
 				if (current()) {
-					autoStatus.set(account.key, result.reason === "busy" ? "" : result.displayStatus ?? "");
+					autoStatus.set(account.key, result.reason === "busy" ? "" : (result.displayStatus ?? ""));
 					for (const render of resetStatusListeners) render();
 				}
-			} catch { /* No auth: do not spend or emit per-minute notifications. */ }
+			} catch {
+				/* No auth: do not spend or emit per-minute notifications. */
+			}
 		})();
 		autoCheck = promise;
-		void promise.finally(() => { if (autoCheck === promise) autoCheck = undefined; });
+		void promise.finally(() => {
+			if (autoCheck === promise) autoCheck = undefined;
+		});
 		return promise;
 	};
 	const stopAuto = () => {
@@ -1097,24 +1553,39 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 			const signal = shutdownController.signal;
 			await openUsage(ctx, signal, {
 				captureCurrent,
-				changed: () => { resetGeneration += 1; },
-				checkAuto: async () => { if (autoCheck) await autoCheck; await checkAuto(); },
+				changed: () => {
+					resetGeneration += 1;
+				},
+				checkAuto: async () => {
+					if (autoCheck) await autoCheck;
+					await checkAuto();
+				},
 				status: (key) => {
 					const durable = resetAccountState(getAgentDir(), key, legacyResetIntents().get(key));
 					if (durable.reason !== "ready" && durable.reason !== "recovery") return durable.status;
 					if (!readAutoResetPreference(getConfigPath(), key).enabled) return "";
 					if (!isCanonicalCodexModel(ctx.model)) return "Paused: select a Codex model";
-					return durable.reason === "recovery" ? durable.status : autoStatus.get(key) ?? durable.status;
+					return durable.reason === "recovery"
+						? durable.status
+						: (autoStatus.get(key) ?? durable.status);
 				},
-				clearStatus: (key) => { autoStatus.delete(key); },
+				clearStatus: (key) => {
+					autoStatus.delete(key);
+				},
 				activity: (key) => autoActivity.get(key),
 				onStatusChange: (render) => {
 					resetStatusListeners.add(render);
-					return () => { resetStatusListeners.delete(render); };
+					return () => {
+						resetStatusListeners.delete(render);
+					};
 				},
 				track: async (operation) => {
 					manualOperations.add(operation);
-					try { return await operation; } finally { manualOperations.delete(operation); }
+					try {
+						return await operation;
+					} finally {
+						manualOperations.delete(operation);
+					}
 				},
 			});
 			if (!signal.aborted && signal === shutdownController.signal) void refreshStatus(ctx);
@@ -1157,11 +1628,16 @@ export default function codexEnhanced(pi: ExtensionAPI) {
 			// A prior account's awaited migration may overlap a legacy producer transition.
 			const intent = legacyResetIntents().get(key);
 			if (!intent) continue;
-			try { await preserveLegacyReset(getAgentDir(), key, intent); }
-			catch { autoStatus.set(key, "Paused: previous reset needs recovery; see README."); }
+			try {
+				await preserveLegacyReset(getAgentDir(), key, intent);
+			} catch {
+				autoStatus.set(key, "Paused: previous reset needs recovery; see README.");
+			}
 		}
 		if (active && !signal.aborted) {
-			autoTimer = setInterval(() => { void checkAuto(); }, 60_000);
+			autoTimer = setInterval(() => {
+				void checkAuto();
+			}, 60_000);
 			autoTimer.unref?.();
 			void checkAuto();
 		}

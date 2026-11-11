@@ -73,7 +73,11 @@ export function storedProviderIds(runtime: RuntimeLike): string[] | undefined {
  */
 export function installStoreHook(runtime: RuntimeLike, state: HookState): InstallResult {
 	const store = runtime.models;
-	if (!store?.providers || typeof store.setProvider !== "function" || !(store.providers instanceof Map))
+	if (
+		!store?.providers ||
+		typeof store.setProvider !== "function" ||
+		!(store.providers instanceof Map)
+	)
 		return "unsupported";
 	const marked = store as MarkedStore;
 	if (marked[HOOK_MARKER]) return "already-installed";

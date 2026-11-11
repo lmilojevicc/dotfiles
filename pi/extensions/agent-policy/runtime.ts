@@ -1,7 +1,22 @@
-import type { ExtensionAPI, ExtensionContext, NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import type { registerRequiredChildExtensions, RequiredChildExtensionRegistration } from "pi-subagents/required-child-extensions";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	NormalizedBuildSystemPromptOptions,
+} from "@earendil-works/pi-coding-agent";
+import type {
+	registerRequiredChildExtensions,
+	RequiredChildExtensionRegistration,
+} from "pi-subagents/required-child-extensions";
 import { join } from "node:path";
-import { ADDENDUM_SECTION, POLICY_SECTION, policySection, type PolicyProfile, selectAgentName, selectProfile, stripOwnedBlocks } from "./child-profile.ts";
+import {
+	ADDENDUM_SECTION,
+	POLICY_SECTION,
+	policySection,
+	type PolicyProfile,
+	selectAgentName,
+	selectProfile,
+	stripOwnedBlocks,
+} from "./child-profile.ts";
 import { composeSources, readConfigSnapshot } from "./config.ts";
 import type { BBPolicySignal } from "./bb-profile.ts";
 
@@ -37,7 +52,10 @@ function promptSource(manager: unknown): SessionPromptSource | undefined {
 	const candidate = manager as Partial<SessionPromptSource>;
 	const { getHeader, buildSessionProjection } = candidate;
 	return typeof getHeader === "function" && typeof buildSessionProjection === "function"
-		? { getHeader: () => getHeader.call(candidate), buildSessionProjection: () => buildSessionProjection.call(candidate) }
+		? {
+				getHeader: () => getHeader.call(candidate),
+				buildSessionProjection: () => buildSessionProjection.call(candidate),
+			}
 		: undefined;
 }
 
@@ -62,7 +80,12 @@ export function readInheritedPrompt(manager: unknown): InheritedPrompt {
 	const tools = new Set<string>();
 	let recorded = 0;
 	for (const message of messages) {
-		if (message?.role !== "system" || typeof message.timestamp !== "number" || message.timestamp >= forkedAt) continue;
+		if (
+			message?.role !== "system" ||
+			typeof message.timestamp !== "number" ||
+			message.timestamp >= forkedAt
+		)
+			continue;
 		recorded += 1;
 		for (const [name, value] of Object.entries(message.sections ?? {})) sections[name] = value;
 		// Host order: removals first, then additions, as Pi replays a record into its current tool set.
@@ -76,7 +99,9 @@ export function readInheritedPrompt(manager: unknown): InheritedPrompt {
 export function unwrapSection(name: string, text: string): string {
 	const open = `<${name}>\n`;
 	const close = `\n</${name}>`;
-	return text.startsWith(open) && text.endsWith(close) ? text.slice(open.length, -close.length) : text;
+	return text.startsWith(open) && text.endsWith(close)
+		? text.slice(open.length, -close.length)
+		: text;
 }
 
 /**
@@ -84,12 +109,17 @@ export function unwrapSection(name: string, text: string): string {
  * differs lands before the fork point and re-bills the whole conversation. A tool this session
  * cannot serve stays declared and fails when called, which is the fork contract pi-subagents keeps.
  */
-function reproduceInheritedPrompt(options: NormalizedBuildSystemPromptOptions, inherited: Extract<InheritedPrompt, { inherited: true }>): void {
+function reproduceInheritedPrompt(
+	options: NormalizedBuildSystemPromptOptions,
+	inherited: Extract<InheritedPrompt, { inherited: true }>,
+): void {
 	const policy = inherited.sections[POLICY_SECTION];
-	if (typeof policy === "string") options.sections[POLICY_SECTION] = unwrapSection(POLICY_SECTION, policy);
+	if (typeof policy === "string")
+		options.sections[POLICY_SECTION] = unwrapSection(POLICY_SECTION, policy);
 	else delete options.sections[POLICY_SECTION];
 	const addendum = inherited.sections[ADDENDUM_SECTION];
-	options.appendSystemPrompt = typeof addendum === "string" ? unwrapSection(ADDENDUM_SECTION, addendum) : "";
+	options.appendSystemPrompt =
+		typeof addendum === "string" ? unwrapSection(ADDENDUM_SECTION, addendum) : "";
 	// An empty record means an older host never declared tools here; keep this session's selection.
 	if (inherited.tools.length > 0) options.selectedTools = inherited.tools;
 }
@@ -107,7 +137,10 @@ export type PolicyRuntimeOptions = {
 
 export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptions): void {
 	// Like native APPEND_SYSTEM.md, snapshot at runtime creation, not first use.
-	const config = readConfigSnapshot(options.policyDir, options.configPath ?? join(options.policyDir, "config.json"));
+	const config = readConfigSnapshot(
+		options.policyDir,
+		options.configPath ?? join(options.policyDir, "config.json"),
+	);
 	const bbWorkflowWorker = options.bbSignal?.workflowWorker ?? false;
 	const bbOrigin = options.bbOrigin ?? false;
 	const bbDiagnostic = options.bbSignal?.diagnostic;
@@ -165,8 +198,9 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 	pi.on("session_shutdown", () => dispose());
 	/** Sources for this session's layer: a root takes the host's main layer, a child its own. */
 	function composeLayer(profile: PolicyProfile, agentName: string | undefined): string {
-		if (profile === "main") return composeSources(config.common, bbOrigin ? config.mainBb : config.main);
-		const named = agentName === undefined ? [] : config.agents.get(agentName) ?? [];
+		if (profile === "main")
+			return composeSources(config.common, bbOrigin ? config.mainBb : config.main);
+		const named = agentName === undefined ? [] : (config.agents.get(agentName) ?? []);
 		return composeSources(config.common, config.child, named);
 	}
 
@@ -203,7 +237,12 @@ export function installAgentPolicy(pi: ExtensionAPI, options: PolicyRuntimeOptio
 			// Pi renders a fresh base prompt each run; drop owned blocks inherited as text (fork/child role bodies).
 			for (const key of ["customPrompt", "appendSystemPrompt"] as const) {
 				const text = event.systemPromptOptions[key];
-				if (text) event.systemPromptOptions[key] = stripOwnedBlocks(text, layer, section !== undefined && layer === "subagent");
+				if (text)
+					event.systemPromptOptions[key] = stripOwnedBlocks(
+						text,
+						layer,
+						section !== undefined && layer === "subagent",
+					);
 			}
 			if (section === undefined) delete event.systemPromptOptions.sections[POLICY_SECTION];
 			else event.systemPromptOptions.sections[POLICY_SECTION] = section;

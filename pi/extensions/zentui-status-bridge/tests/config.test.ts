@@ -22,7 +22,10 @@ function withConfig(
 
 test("a missing file bridges every key, warns nothing and is never created", () => {
 	withConfig(undefined, (path, notices) => {
-		assert.deepEqual(readBridgeConfig((message) => notices.push(message), path), DEFAULT_CONFIG);
+		assert.deepEqual(
+			readBridgeConfig((message) => notices.push(message), path),
+			DEFAULT_CONFIG,
+		);
 		assert.deepEqual(notices, []);
 		assert.equal(existsSync(path), false);
 	});
@@ -30,21 +33,31 @@ test("a missing file bridges every key, warns nothing and is never created", () 
 
 test("an empty object is the default configuration", () => {
 	withConfig("{}", (path, notices) => {
-		assert.deepEqual(readBridgeConfig((message) => notices.push(message), path), DEFAULT_CONFIG);
+		assert.deepEqual(
+			readBridgeConfig((message) => notices.push(message), path),
+			DEFAULT_CONFIG,
+		);
 		assert.deepEqual(notices, []);
 	});
 });
 
 test("include and exclude are trimmed, deduplicated by use and validated", () => {
 	withConfig(
-		JSON.stringify({ include: [" pi-lens-lsp ", "usage"], exclude: ["usage"], keyPrefix: "status/" }),
+		JSON.stringify({
+			include: [" pi-lens-lsp ", "usage"],
+			exclude: ["usage"],
+			keyPrefix: "status/",
+		}),
 		(path, notices) => {
-			assert.deepEqual(readBridgeConfig((message) => notices.push(message), path), {
-				...DEFAULT_CONFIG,
-				include: ["pi-lens-lsp", "usage"],
-				exclude: ["usage"],
-				keyPrefix: "status/",
-			});
+			assert.deepEqual(
+				readBridgeConfig((message) => notices.push(message), path),
+				{
+					...DEFAULT_CONFIG,
+					include: ["pi-lens-lsp", "usage"],
+					exclude: ["usage"],
+					keyPrefix: "status/",
+				},
+			);
 			assert.deepEqual(notices, []);
 		},
 	);
@@ -65,7 +78,10 @@ test("invalid entries are reported and skipped without discarding the valid ones
 test("malformed JSON and a non-object root fall back to the defaults with one warning", () => {
 	for (const contents of ["", "{bad", "null", "[]", "true", "42", '"text"']) {
 		withConfig(contents, (path, notices) => {
-			assert.deepEqual(readBridgeConfig((message) => notices.push(message), path), DEFAULT_CONFIG);
+			assert.deepEqual(
+				readBridgeConfig((message) => notices.push(message), path),
+				DEFAULT_CONFIG,
+			);
 			assert.equal(notices.length, 1, contents);
 			assert.ok(notices[0].includes(path));
 		});
@@ -89,11 +105,14 @@ test("keyPrefix rejects whitespace, over-length values and non-strings", () => {
 
 test("suppressHostStatus and maxTextLength are validated against their bounds", () => {
 	withConfig(JSON.stringify({ suppressHostStatus: false, maxTextLength: 64 }), (path, notices) => {
-		assert.deepEqual(readBridgeConfig((message) => notices.push(message), path), {
-			...DEFAULT_CONFIG,
-			suppressHostStatus: false,
-			maxTextLength: 64,
-		});
+		assert.deepEqual(
+			readBridgeConfig((message) => notices.push(message), path),
+			{
+				...DEFAULT_CONFIG,
+				suppressHostStatus: false,
+				maxTextLength: 64,
+			},
+		);
 		assert.deepEqual(notices, []);
 	});
 	for (const [field, value] of [
@@ -127,7 +146,9 @@ test("underscore-prefixed example keys are inert", () => {
 	withConfig(
 		JSON.stringify({ _examples: { include: ["nope"] }, include: ["usage"] }),
 		(path, notices) => {
-			assert.deepEqual(readBridgeConfig((message) => notices.push(message), path).include, ["usage"]);
+			assert.deepEqual(readBridgeConfig((message) => notices.push(message), path).include, [
+				"usage",
+			]);
 			assert.deepEqual(notices, []);
 		},
 	);

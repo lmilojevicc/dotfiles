@@ -3,19 +3,19 @@ show_hidden = true
 
 [plugin]
 prepend_previewers = [
-  { url = "*.md", run = 'piper -- glow -s dark "$1"' },
-  { url = "*.csv", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_csv_auto(getenv('YAZI_FILE')) LIMIT 500;\"" },
-  { url = "*.tsv", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_csv_auto(getenv('YAZI_FILE')) LIMIT 500;\"" },
-  { url = "*.parquet", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_parquet(getenv('YAZI_FILE')) LIMIT 500;\"" },
-  { url = "*.xlsx", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"INSTALL spatial; LOAD spatial; FROM st_read(getenv('YAZI_FILE')) LIMIT 500;\"" },
-  { url = "*.duckdb", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
-  { url = "*.sqlite", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
-  { url = "*.sqlite3", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
-  { url = "*.db", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
-  { mime = "application/{,g}zip", run = "lsar" },
-  { mime = "application/{tar,bzip*,7z*,xz,rar}", run = "lsar" },
+	{ url = "*.md", run = 'piper -- glow -s dark "$1"' },
+	{ url = "*.csv", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_csv_auto(getenv('YAZI_FILE')) LIMIT 500;\"" },
+	{ url = "*.tsv", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_csv_auto(getenv('YAZI_FILE')) LIMIT 500;\"" },
+	{ url = "*.parquet", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"FROM read_parquet(getenv('YAZI_FILE')) LIMIT 500;\"" },
+	{ url = "*.xlsx", run = "piper -- env YAZI_FILE=\"$1\" duckdb -no-init -c \"INSTALL spatial; LOAD spatial; FROM st_read(getenv('YAZI_FILE')) LIMIT 500;\"" },
+	{ url = "*.duckdb", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
+	{ url = "*.sqlite", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
+	{ url = "*.sqlite3", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
+	{ url = "*.db", run = 'piper -- duckdb -safe -no-init -readonly "$1" -c "SHOW ALL TABLES;"' },
+	{ mime = "application/{,g}zip", run = "lsar" },
+	{ mime = "application/{tar,bzip*,7z*,xz,rar}", run = "lsar" },
 ]
 prepend_fetchers = [
-  { url = "*", run = "git", group = "git" },
-  { url = "*/", run = "git", group = "git" },
+	{ url = "*", run = "git", group = "git" },
+	{ url = "*/", run = "git", group = "git" },
 ]

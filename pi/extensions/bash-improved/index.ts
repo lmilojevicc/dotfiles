@@ -31,7 +31,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Box, Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
-import { type Control, parseControl, SHIM, startsWithCompoundTasks, taskId, USAGE } from "./control.ts";
+import {
+	type Control,
+	parseControl,
+	SHIM,
+	startsWithCompoundTasks,
+	taskId,
+	USAGE,
+} from "./control.ts";
 import {
 	backgroundNotice,
 	batchReport,
@@ -48,7 +55,14 @@ import {
 	status,
 	title,
 } from "./format.ts";
-import { DEFAULT_READY_SECONDS, describeReady, parseReady, type ReadyOutcome, type ReadySpec, waitReady } from "./ready.ts";
+import {
+	DEFAULT_READY_SECONDS,
+	describeReady,
+	parseReady,
+	type ReadyOutcome,
+	type ReadySpec,
+	waitReady,
+} from "./ready.ts";
 import { INTERRUPT_POLL_MS, runCommand, type Task, TaskTable, removeStaleTables } from "./tasks.ts";
 
 function secondsFromEnv(name: string, fallback: number): number {
@@ -178,7 +192,8 @@ function seconds(value: number | undefined): number | undefined {
 
 /** `~` and paths relative to the session's directory, as the model writes them. */
 function resolveDir(base: string, dir: string): string {
-	const expanded = dir === "~" ? homedir() : dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir;
+	const expanded =
+		dir === "~" ? homedir() : dir.startsWith("~/") ? join(homedir(), dir.slice(2)) : dir;
 	return resolve(base, expanded);
 }
 
@@ -209,21 +224,35 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		),
 		description: Type.Optional(
 			Type.String({
-				description: 'What the command does in 5-10 words, e.g. "Run the test suite"; the user sees it while the command runs',
+				description:
+					'What the command does in 5-10 words, e.g. "Run the test suite"; the user sees it while the command runs',
 			}),
 		),
 		cwd: Type.Optional(
 			Type.String({
-				description: "Directory to run the command in, absolute or relative to the session's directory; use it instead of `cd dir && …`",
+				description:
+					"Directory to run the command in, absolute or relative to the session's directory; use it instead of `cd dir && …`",
 			}),
 		),
 		ready: Type.Optional(
 			Type.Object(
 				{
-					port: Type.Optional(Type.Number({ description: "Ready once this TCP port accepts connections" })),
-					host: Type.Optional(Type.String({ description: "Host for the port check (default: 127.0.0.1 and ::1)" })),
-					log: Type.Optional(Type.String({ description: "Ready once an output line matches this regular expression" })),
-					timeout: Type.Optional(Type.Number({ description: `Seconds to wait for readiness (default ${DEFAULT_READY_SECONDS})` })),
+					port: Type.Optional(
+						Type.Number({ description: "Ready once this TCP port accepts connections" }),
+					),
+					host: Type.Optional(
+						Type.String({ description: "Host for the port check (default: 127.0.0.1 and ::1)" }),
+					),
+					log: Type.Optional(
+						Type.String({
+							description: "Ready once an output line matches this regular expression",
+						}),
+					),
+					timeout: Type.Optional(
+						Type.Number({
+							description: `Seconds to wait for readiness (default ${DEFAULT_READY_SECONDS})`,
+						}),
+					),
 				},
 				{
 					description:
@@ -269,7 +298,9 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		}
 		let settings: SettingsManager | undefined;
 		try {
-			settings = SettingsManager.create(ctx.cwd, getAgentDir(), { projectTrusted: ctx.isProjectTrusted() });
+			settings = SettingsManager.create(ctx.cwd, getAgentDir(), {
+				projectTrusted: ctx.isProjectTrusted(),
+			});
 		} catch {
 			// Fall back to Pi's default shell.
 		}
@@ -312,8 +343,13 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		// After a print or JSON run has finished, no one would read a new turn.
 		if ((ctx?.mode === "print" || ctx?.mode === "json") && ctx.isIdle()) return;
 		const details: TaskDetails | BatchDetails =
-			ended.length === 1 ? taskDetails(ended[0]) : { tasks: ended.map(taskDetails), failed: ended.some(failed) };
-		pi.sendMessage({ customType: MESSAGE_TYPE, content: batchReport(ended), display: true, details }, { triggerTurn: true });
+			ended.length === 1
+				? taskDetails(ended[0])
+				: { tasks: ended.map(taskDetails), failed: ended.some(failed) };
+		pi.sendMessage(
+			{ customType: MESSAGE_TYPE, content: batchReport(ended), display: true, details },
+			{ triggerTurn: true },
+		);
 	}
 
 	function changed(): void {
@@ -371,10 +407,12 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		if (running.length === 0) return undefined;
 		const { theme } = current.ctx.ui;
 		const now = Date.now();
-		const lines = running.slice(0, WIDGET_LINES).map(
-			(task) =>
-				`${theme.fg("accent", "⏵")} ${theme.fg("muted", "Running background command:")} ${title(task, 70)} ${theme.fg("dim", formatDuration(now - task.startedAt))}`,
-		);
+		const lines = running
+			.slice(0, WIDGET_LINES)
+			.map(
+				(task) =>
+					`${theme.fg("accent", "⏵")} ${theme.fg("muted", "Running background command:")} ${title(task, 70)} ${theme.fg("dim", formatDuration(now - task.startedAt))}`,
+			);
 		const more = running.length - WIDGET_LINES;
 		lines.push(`  ${theme.fg("dim", `${more > 0 ? `+${more} more · ` : ""}/tasks to manage`)}`);
 		return lines;
@@ -402,7 +440,10 @@ export default function bashImproved(pi: ExtensionAPI): void {
 
 	/** Text for the user, such as a `/tasks` answer outside the TUI: shown in the transcript without waking the agent. */
 	function showToUser(text: string, details?: TaskDetails): void {
-		pi.sendMessage({ customType: MESSAGE_TYPE, content: text, display: true, details }, { triggerTurn: false });
+		pi.sendMessage(
+			{ customType: MESSAGE_TYPE, content: text, display: true, details },
+			{ triggerTurn: false },
+		);
 	}
 
 	/** The user stopped a task (`/tasks` or BB): the model learns about it on its next turn, without being woken. */
@@ -423,12 +464,25 @@ export default function bashImproved(pi: ExtensionAPI): void {
 	/** The bash result with notes after its output: where the command runs now and whether it is ready. */
 	function withNotes<T>(
 		result: AgentToolResult<T>,
-		notes: { task?: Task; mode: string; interrupted: boolean; ready?: { spec: ReadySpec; outcome: ReadyOutcome } },
+		notes: {
+			task?: Task;
+			mode: string;
+			interrupted: boolean;
+			ready?: { spec: ReadySpec; outcome: ReadyOutcome };
+		},
 	): AgentToolResult<T> {
 		const { task, ready } = notes;
 		const lines: string[] = [];
 		if (ready) lines.push(readyNote(ready.spec, ready.outcome, task));
-		if (task?.running) lines.push(backgroundNotice(task, WAIT_SECONDS, notes.mode === "print" || notes.mode === "json", notes.interrupted));
+		if (task?.running)
+			lines.push(
+				backgroundNotice(
+					task,
+					WAIT_SECONDS,
+					notes.mode === "print" || notes.mode === "json",
+					notes.interrupted,
+				),
+			);
 		if (lines.length === 0) return result;
 		const text = result.content.find((part) => part.type === "text")?.text ?? "";
 		// Pi's exit status stays the last line, after the notes.
@@ -450,19 +504,23 @@ export default function bashImproved(pi: ExtensionAPI): void {
 				...(ready ? { ready: ready.outcome.kind } : {}),
 			} as T,
 			structuredContent:
-				structured && typeof structured === "object" && !Array.isArray(structured) ? { ...structured, ...extra } : structured,
+				structured && typeof structured === "object" && !Array.isArray(structured)
+					? { ...structured, ...extra }
+					: structured,
 		};
 	}
 
 	function readyNote(spec: ReadySpec, outcome: ReadyOutcome, task: Task | undefined): string {
 		const what = describeReady(spec);
 		if (outcome.kind === "ready") return `Ready: ${what}.`;
-		if (outcome.kind === "interrupted") return `Stopped waiting for ${what} to handle an incoming message; the server keeps starting.`;
+		if (outcome.kind === "interrupted")
+			return `Stopped waiting for ${what} to handle an incoming message; the server keeps starting.`;
 		if (outcome.kind === "exited" || !task?.running) {
 			return `Not ready: it ${task ? endSummary(task) : "exited"} before ${what}.`;
 		}
 		const missing: string[] = [];
-		if (spec.port !== undefined && !outcome.portOpen) missing.push(`port ${spec.port} does not accept connections`);
+		if (spec.port !== undefined && !outcome.portOpen)
+			missing.push(`port ${spec.port} does not accept connections`);
 		if (spec.log && !outcome.logMatched) missing.push(`no output line matches ${spec.log}`);
 		return `NOT ready after ${spec.timeoutSeconds}s: ${missing.join(" and ")}. It keeps running.`;
 	}
@@ -471,7 +529,12 @@ export default function bashImproved(pi: ExtensionAPI): void {
 	 * Wait for a task to end, the time to run out, or `interrupt` (a message from the user), whichever
 	 * comes first; true when interrupted. Abort rejects like Pi's bash.
 	 */
-	async function waitFor(task: Task, timeout: number, signal: AbortSignal | undefined, interrupt?: () => boolean): Promise<boolean> {
+	async function waitFor(
+		task: Task,
+		timeout: number,
+		signal: AbortSignal | undefined,
+		interrupt?: () => boolean,
+	): Promise<boolean> {
 		task.watchers++;
 		let poll: NodeJS.Timeout | undefined;
 		try {
@@ -517,10 +580,18 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		signal: AbortSignal | undefined,
 		interrupt?: () => boolean,
 	): Promise<{ text: string; exitCode: number }> {
-		if (control.verb === "usage") return { text: control.error ? `${control.error}\n${USAGE}` : USAGE, exitCode: control.error ? 2 : 0 };
+		if (control.verb === "usage")
+			return {
+				text: control.error ? `${control.error}\n${USAGE}` : USAGE,
+				exitCode: control.error ? 2 : 0,
+			};
 		if (control.verb === "list") return { text: listTasks([...table.tasks.values()]), exitCode: 0 };
 		const task = table.get(taskId(control.id) ?? 0);
-		if (!task) return { text: `tasks: no background task ${control.id}\n${listTasks([...table.tasks.values()])}`, exitCode: 1 };
+		if (!task)
+			return {
+				text: `tasks: no background task ${control.id}\n${listTasks([...table.tasks.values()])}`,
+				exitCode: 1,
+			};
 		if (control.verb === "stop") return { text: await stop(task), exitCode: 0 };
 		if (control.verb === "wait" && task.running) {
 			const interrupted = await waitFor(task, control.timeout, signal, interrupt);
@@ -531,13 +602,19 @@ export default function bashImproved(pi: ExtensionAPI): void {
 				};
 			}
 			if (task.running) {
-				return { text: `Waited ${control.timeout}s; it keeps running and you get a message when it exits.\n\n${progressReport(task)}`, exitCode: 0 };
+				return {
+					text: `Waited ${control.timeout}s; it keeps running and you get a message when it exits.\n\n${progressReport(task)}`,
+					exitCode: 0,
+				};
 			}
 		}
 		if (task.running) return { text: progressReport(task), exitCode: 0 };
 		task.reported = true;
 		// Like the shell's `wait`, the answer carries the task's own exit status.
-		return { text: endReport(task), exitCode: control.verb === "wait" && failed(task) ? Math.max(1, task.exitStatus()) : 0 };
+		return {
+			text: endReport(task),
+			exitCode: control.verb === "wait" && failed(task) ? Math.max(1, task.exitStatus()) : 0,
+		};
 	}
 
 	pi.registerTool({
@@ -546,7 +623,7 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		promptGuidelines: [
 			`A bash command still running after ${WAIT_SECONDS}s keeps running as a numbered background task and you get its output so far; when it exits you get a message with its result, unless you already waited for it or stopped it. Start servers, watchers and long builds with run_in_background: true, and give long commands a short description.`,
 			"Don't sleep or poll to wait for a background task; keep working on something else, and the exit message comes on its own. Run `tasks output <id>` to see what a task printed since you last saw its output, `tasks wait <id>` when your next step needs its result, `tasks stop <id>` to stop it, and `tasks` to list them all. `tasks` only works as a bash command of its own, not in a pipeline. End your turn with tasks still running only when they should outlive it, like a server the user wants left up.",
-			"Start a server with `ready`, such as `ready: {port: 3000}` or `ready: {log: \"Listening on\"}`: the call returns once it is ready, exits, or the readiness timeout runs out, so you need no curl loop.",
+			'Start a server with `ready`, such as `ready: {port: 3000}` or `ready: {log: "Listening on"}`: the call returns once it is ready, exits, or the readiness timeout runs out, so you need no curl loop.',
 			"Use `cwd` to run a command in another directory instead of `cd dir && …`.",
 			"Run a check as it is: don't append `; echo $?`, `|| true` or similar, because a task reports its own exit status and that would hide a failure.",
 			...(base.promptGuidelines ?? []),
@@ -554,9 +631,15 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		parameters: bashParameters,
 		outputSchema: Type.Object({
 			...(base.outputSchema as ReturnType<typeof Type.Object>).properties,
-			task_id: Type.Optional(Type.String({ description: "ID of the background task the command now runs as" })),
-			running: Type.Optional(Type.Boolean({ description: "The command is still running in the background" })),
-			ready: Type.Optional(Type.Boolean({ description: "The readiness condition held before the call returned" })),
+			task_id: Type.Optional(
+				Type.String({ description: "ID of the background task the command now runs as" }),
+			),
+			running: Type.Optional(
+				Type.Boolean({ description: "The command is still running in the background" }),
+			),
+			ready: Type.Optional(
+				Type.Boolean({ description: "The readiness condition held before the call returned" }),
+			),
 		}),
 		// Models trained on other agents name the flag differently or send strings.
 		prepareArguments(args: unknown): BashParams {
@@ -565,14 +648,20 @@ export default function bashImproved(pi: ExtensionAPI): void {
 			alias(input, "command", ["cmd"]);
 			alias(input, "run_in_background", ["background", "is_background", "runInBackground"]);
 			alias(input, "cwd", ["workdir", "working_directory", "workingDirectory"]);
-			if (typeof input.run_in_background === "string") input.run_in_background = input.run_in_background.trim().toLowerCase() === "true";
+			if (typeof input.run_in_background === "string")
+				input.run_in_background = input.run_in_background.trim().toLowerCase() === "true";
 			if (input.run_in_background === null) delete input.run_in_background;
-			if (typeof input.timeout === "string" && input.timeout.trim() !== "" && Number.isFinite(Number(input.timeout))) {
+			if (
+				typeof input.timeout === "string" &&
+				input.timeout.trim() !== "" &&
+				Number.isFinite(Number(input.timeout))
+			) {
 				input.timeout = Number(input.timeout);
 			}
 			if (input.timeout === null) delete input.timeout;
 			if (input.description === null) delete input.description;
-			if (input.cwd === null || (typeof input.cwd === "string" && input.cwd.trim() === "")) delete input.cwd;
+			if (input.cwd === null || (typeof input.cwd === "string" && input.cwd.trim() === ""))
+				delete input.cwd;
 			// Checked in execute, so a bad value gets a clear answer instead of a schema error.
 			if (input.ready === null || input.ready === "") delete input.ready;
 			else if (typeof input.ready === "string") {
@@ -587,7 +676,8 @@ export default function bashImproved(pi: ExtensionAPI): void {
 				for (const key of ["port", "timeout"]) {
 					const value = ready[key];
 					if (value === null || value === "") delete ready[key];
-					else if (typeof value === "string" && Number.isFinite(Number(value))) ready[key] = Number(value);
+					else if (typeof value === "string" && Number.isFinite(Number(value)))
+						ready[key] = Number(value);
 				}
 				for (const key of ["host", "log"]) if (ready[key] === null) delete ready[key];
 				input.ready = ready;
@@ -641,7 +731,9 @@ export default function bashImproved(pi: ExtensionAPI): void {
 			const timeoutSeconds = control ? undefined : seconds(params.timeout);
 			// A command that its own timeout ends soon after the wait stays in the foreground, instead of
 			// becoming a task only to be killed a moment later.
-			const shortTimeout = timeoutSeconds !== undefined && timeoutSeconds <= WAIT_SECONDS + SHORT_TIMEOUT_SLACK_SECONDS;
+			const shortTimeout =
+				timeoutSeconds !== undefined &&
+				timeoutSeconds <= WAIT_SECONDS + SHORT_TIMEOUT_SLACK_SECONDS;
 
 			let task: Task | undefined;
 			let interrupted = false;
@@ -653,14 +745,21 @@ export default function bashImproved(pi: ExtensionAPI): void {
 						onData(Buffer.from(`${answer.text}\n`));
 						return { exitCode: answer.exitCode };
 					}
-					if (!existsSync(dir)) throw new Error(`Working directory does not exist: ${dir}\nCannot execute bash commands.`);
+					if (!existsSync(dir))
+						throw new Error(
+							`Working directory does not exist: ${dir}\nCannot execute bash commands.`,
+						);
 					const shell = getShellConfig(current.shellPath);
 					const result = await runCommand(current.table, {
 						command,
 						label,
 						description: params.description?.trim() || undefined,
 						cwd: dir,
-						env: { ...env, ...NON_INTERACTIVE_ENV, PATH: `${current.binDir}:${env?.PATH ?? process.env.PATH ?? ""}` },
+						env: {
+							...env,
+							...NON_INTERACTIVE_ENV,
+							PATH: `${current.binDir}:${env?.PATH ?? process.env.PATH ?? ""}`,
+						},
 						shell: shell.shell,
 						args: shell.args,
 						commandFromStdin: shell.commandTransport === "stdin",
@@ -700,27 +799,43 @@ export default function bashImproved(pi: ExtensionAPI): void {
 				commandPrefix: current.commandPrefix,
 				shellPath: current.shellPath,
 			});
-			const result = await bash.execute(toolCallId, { command: params.command, timeout: timeoutSeconds }, signal, onUpdate, ctx);
+			const result = await bash.execute(
+				toolCallId,
+				{ command: params.command, timeout: timeoutSeconds },
+				signal,
+				onUpdate,
+				ctx,
+			);
 			const noted = withNotes(result, { task, mode: ctx.mode, interrupted, ready: readiness });
 			// A server that exited before it was ready failed at what it was started for.
 			return readiness?.outcome.kind === "exited" ? { ...noted, isError: true } : noted;
 		},
 	});
 
-	pi.registerMessageRenderer<TaskDetails | BatchDetails>(MESSAGE_TYPE, (message, { expanded, outputPad }, theme) => {
-		const text =
-			typeof message.content === "string"
-				? message.content
-				: message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
-		const [first = "", ...rest] = text.split("\n");
-		const head = theme.fg(message.details?.failed ? "error" : "success", first);
-		const box = new Box(outputPad, 1, (line) => theme.bg("customMessageBg", line));
-		box.addChild(new Text(expanded ? [head, ...rest.map((line) => theme.fg("toolOutput", line))].join("\n") : head, 0, 0));
-		return box;
-	});
+	pi.registerMessageRenderer<TaskDetails | BatchDetails>(
+		MESSAGE_TYPE,
+		(message, { expanded, outputPad }, theme) => {
+			const text =
+				typeof message.content === "string"
+					? message.content
+					: message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+			const [first = "", ...rest] = text.split("\n");
+			const head = theme.fg(message.details?.failed ? "error" : "success", first);
+			const box = new Box(outputPad, 1, (line) => theme.bg("customMessageBg", line));
+			box.addChild(
+				new Text(
+					expanded ? [head, ...rest.map((line) => theme.fg("toolOutput", line))].join("\n") : head,
+					0,
+					0,
+				),
+			);
+			return box;
+		},
+	);
 
 	pi.registerCommand("tasks", {
-		description: "Manage background tasks: pick one to see its output or stop it; /tasks stop <id> stops one",
+		description:
+			"Manage background tasks: pick one to see its output or stop it; /tasks stop <id> stops one",
 		handler: async (args, ctx) => {
 			const current = attach(ctx);
 			const all = [...current.table.tasks.values()].reverse();
@@ -729,7 +844,9 @@ export default function bashImproved(pi: ExtensionAPI): void {
 			const answer = (text: string, level: "info" | "warning" = "info") =>
 				tui ? ctx.ui.notify(text, level) : showToUser(text);
 			const stopTask = (task: Task) =>
-				task.running ? userStop(task, tui) : answer(`Task ${task.id} already ${endSummary(task)}.`, "warning");
+				task.running
+					? userStop(task, tui)
+					: answer(`Task ${task.id} already ${endSummary(task)}.`, "warning");
 			const showOutput = async (task: Task) => {
 				const output = cleanOutput(task.tail(64 * 1024), 500) || "(no output yet)";
 				await ctx.ui.editor(
@@ -749,7 +866,8 @@ export default function bashImproved(pi: ExtensionAPI): void {
 
 			const now = Date.now();
 			const labels = all.map(
-				(task) => `${task.id}  ${status(task)}  ${formatDuration((task.endedAt ?? now) - task.startedAt)}  ${title(task, 60)}`,
+				(task) =>
+					`${task.id}  ${status(task)}  ${formatDuration((task.endedAt ?? now) - task.startedAt)}  ${title(task, 60)}`,
 			);
 			const picked = await ctx.ui.select("Background tasks", labels);
 			const task = picked === undefined ? undefined : all[labels.indexOf(picked)];

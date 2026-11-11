@@ -9,7 +9,10 @@ test("attributes finite nonnegative parent usage to the sole current active task
 	store.reset("a", state, 100);
 	store.addTurnUsage("a", state, 41, 9, 200);
 	store.addTurnUsage("a", state, Number.NaN, -4, 300);
-	assert.deepEqual(store.get("a"), { activeTaskId: 1, metrics: { startedAt: 100, inputTokens: 41, outputTokens: 9 } });
+	assert.deepEqual(store.get("a"), {
+		activeTaskId: 1,
+		metrics: { startedAt: 100, inputTokens: 41, outputTokens: 9 },
+	});
 });
 
 test("reconcile preserves only the same active task and never resurrects dormant metrics", () => {
@@ -21,9 +24,15 @@ test("reconcile preserves only the same active task and never resurrects dormant
 	const paused = snapshot([task(1), task(2)]);
 	assert.deepEqual(store.reconcile("s", paused, 30), {});
 	const restarted = snapshot([task(1, "in_progress"), task(2)]);
-	assert.deepEqual(store.reconcile("s", restarted, 40), { activeTaskId: 1, metrics: { startedAt: 40, inputTokens: 0, outputTokens: 0 } });
+	assert.deepEqual(store.reconcile("s", restarted, 40), {
+		activeTaskId: 1,
+		metrics: { startedAt: 40, inputTokens: 0, outputTokens: 0 },
+	});
 	const changed = snapshot([task(1), task(2, "in_progress")]);
-	assert.deepEqual(store.reconcile("s", changed, 50), { activeTaskId: 2, metrics: { startedAt: 50, inputTokens: 0, outputTokens: 0 } });
+	assert.deepEqual(store.reconcile("s", changed, 50), {
+		activeTaskId: 2,
+		metrics: { startedAt: 50, inputTokens: 0, outputTokens: 0 },
+	});
 });
 
 test("sessions are isolated and reset/evict boundaries are explicit", () => {

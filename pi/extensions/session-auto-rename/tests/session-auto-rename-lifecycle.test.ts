@@ -35,7 +35,9 @@ test("background naming returns immediately and ignores stale completions", asyn
 
 	try {
 		// Pi's extension loader is not an exported subpath, so load it from the package the shared loader resolved.
-		const { createExtensionRuntime, loadExtensions } = await import(piModuleUrl("dist/core/extensions/loader.js"));
+		const { createExtensionRuntime, loadExtensions } = await import(
+			piModuleUrl("dist/core/extensions/loader.js")
+		);
 		const completions: Deferred[] = [];
 		const notifications: string[] = [];
 		let sessionName: string | undefined;
@@ -46,7 +48,12 @@ test("background naming returns immediately and ignores stale completions", asyn
 		};
 
 		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
-		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
+		const loaded = await loadExtensions(
+			[extensionPath],
+			dirname(extensionPath),
+			undefined,
+			runtime,
+		);
 		assert.deepEqual(loaded.errors, []);
 		assert.equal(loaded.extensions.length, 1);
 		const handlers = loaded.extensions[0].handlers;
@@ -71,7 +78,8 @@ test("background naming returns immediately and ignores stale completions", asyn
 			assert.ok(handler, `${event} handler was registered`);
 			return handler(...args);
 		};
-		const userPrompt = (prompt: string) => invoke("before_agent_start", { messageType: "user", prompt }, ctx);
+		const userPrompt = (prompt: string) =>
+			invoke("before_agent_start", { messageType: "user", prompt }, ctx);
 		const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 		invoke("session_start", {}, ctx);
@@ -106,7 +114,10 @@ test("background naming returns immediately and ignores stale completions", asyn
 		completions[3].reject(new Error(secret));
 		await settle();
 		assert.equal(notifications.at(-1), "Session auto-rename failed.");
-		assert.equal(notifications.some((message) => message.includes(secret)), false);
+		assert.equal(
+			notifications.some((message) => message.includes(secret)),
+			false,
+		);
 
 		// A custom-triggered run carries `message` instead of `prompt`; it must neither crash nor use up
 		// the session's only naming attempt.
@@ -114,16 +125,28 @@ test("background naming returns immediately and ignores stale completions", asyn
 		invoke("session_start", {}, ctx);
 		const completionsBeforeCustom = completions.length;
 		assert.equal(
-			invoke("before_agent_start", {
-				messageType: "custom",
-				message: { customType: "injected", content: "Injected turn" },
-			}, ctx),
+			invoke(
+				"before_agent_start",
+				{
+					messageType: "custom",
+					message: { customType: "injected", content: "Injected turn" },
+				},
+				ctx,
+			),
 			undefined,
 			"custom-message run is ignored without throwing",
 		);
-		assert.equal(completions.length, completionsBeforeCustom, "custom-message run started no naming request");
+		assert.equal(
+			completions.length,
+			completionsBeforeCustom,
+			"custom-message run started no naming request",
+		);
 		userPrompt("First real prompt");
-		assert.equal(completions.length, completionsBeforeCustom + 1, "custom run did not consume eligibility");
+		assert.equal(
+			completions.length,
+			completionsBeforeCustom + 1,
+			"custom run did not consume eligibility",
+		);
 		completions.at(-1)?.resolve(successfulTitle);
 		await settle();
 		assert.equal(sessionName, "Generated title", "first real user prompt still named the session");
@@ -135,7 +158,11 @@ test("background naming returns immediately and ignores stale completions", asyn
 			invoke("session_start", {}, oneShotCtx);
 			const completionsBeforeOneShot = completions.length;
 			invoke("before_agent_start", { messageType: "user", prompt: `${mode} prompt` }, oneShotCtx);
-			assert.equal(completions.length, completionsBeforeOneShot, `${mode} mode started no naming request`);
+			assert.equal(
+				completions.length,
+				completionsBeforeOneShot,
+				`${mode} mode started no naming request`,
+			);
 			assert.equal(sessionName, undefined);
 		}
 	} finally {

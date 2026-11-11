@@ -24,7 +24,8 @@ const THRESHOLD = /^(.*?)(\d+(?:[.-]\d+)*)\+$/;
 const LEADING_VERSION = /^\d+(?:[.-]\d+)*/;
 
 const PROBLEM_BARE_NEGATION = "a negation without a pattern";
-const PROBLEM_MISSING_VERSION = "a trailing + without a numeric version (write gemini-3.8+, not gemini-3.8-flash+)";
+const PROBLEM_MISSING_VERSION =
+	"a trailing + without a numeric version (write gemini-3.8+, not gemini-3.8-flash+)";
 const PROBLEM_MISSING_PREFIX = "a version threshold without a model-id prefix (e.g. gemini-3.8+)";
 const PROBLEM_UNCLOSED_BRACE = "an unclosed { (write {opus,sonnet})";
 const PROBLEM_STRAY_BRACE = "a } without a matching {";
@@ -135,7 +136,11 @@ function versionAt(text: string, index: number): string | undefined {
 	return VERSION_AT.exec(text)?.[0];
 }
 
-function satisfies(version: readonly number[], operator: Operator, bound: readonly number[]): boolean {
+function satisfies(
+	version: readonly number[],
+	operator: Operator,
+	bound: readonly number[],
+): boolean {
 	const order = compare(version, bound);
 	if (operator === "<") return order < 0;
 	if (operator === "<=") return order <= 0;
@@ -219,11 +224,13 @@ function matchTokens(tokens: readonly Token[], id: string): boolean {
 		const token = tokens[tokenIndex]!;
 		let matched = false;
 		if (token.kind === "literal") {
-			matched = id.startsWith(token.text, position) && step(tokenIndex + 1, position + token.text.length);
+			matched =
+				id.startsWith(token.text, position) && step(tokenIndex + 1, position + token.text.length);
 		} else if (token.kind === "any") {
 			matched = position < id.length && step(tokenIndex + 1, position + 1);
 		} else if (token.kind === "star") {
-			for (let end = position; end <= id.length && !matched; end += 1) matched = step(tokenIndex + 1, end);
+			for (let end = position; end <= id.length && !matched; end += 1)
+				matched = step(tokenIndex + 1, end);
 		} else if (position === 0 || !DIGIT.test(id[position - 1]!)) {
 			const version = versionAt(id, position);
 			matched =

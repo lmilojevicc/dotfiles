@@ -2,7 +2,10 @@ import type { ReduceResult, TaskResultDetails, TodoInput } from "../domain/types
 import { plainTaskLine, progress } from "../ui/format.js";
 import { sanitizeTerminalText } from "../ui/sanitize.js";
 
-export function resultDetails(action: TodoInput["action"], result: ReduceResult): TaskResultDetails {
+export function resultDetails(
+	action: TodoInput["action"],
+	result: ReduceResult,
+): TaskResultDetails {
 	return {
 		...result.state,
 		action,
@@ -15,12 +18,21 @@ export function resultDetails(action: TodoInput["action"], result: ReduceResult)
 export function resultText(input: TodoInput, details: TaskResultDetails): string {
 	const counts = progress(details);
 	if (details.error) {
-		const location = details.error.operationIndex === undefined ? "" : ` at operation ${details.error.operationIndex}`;
+		const location =
+			details.error.operationIndex === undefined
+				? ""
+				: ` at operation ${details.error.operationIndex}`;
 		return `todo ${input.action} failed${location}: ${sanitizeTerminalText(details.error.message)}. Revision ${details.revision}; ${counts.done}/${counts.total} done.`;
 	}
 	if (input.action === "list") {
-		const tasks = details.tasks.filter((task) => (input.includeDeleted || task.status !== "deleted") && (!input.status || task.status === input.status));
-		return tasks.length ? `${tasks.map(plainTaskLine).join("\n")}\nRevision ${details.revision}; ${counts.done}/${counts.total} done.` : `No matching tasks. Revision ${details.revision}.`;
+		const tasks = details.tasks.filter(
+			(task) =>
+				(input.includeDeleted || task.status !== "deleted") &&
+				(!input.status || task.status === input.status),
+		);
+		return tasks.length
+			? `${tasks.map(plainTaskLine).join("\n")}\nRevision ${details.revision}; ${counts.done}/${counts.total} done.`
+			: `No matching tasks. Revision ${details.revision}.`;
 	}
 	if (input.action === "get") {
 		const task = details.tasks.find((candidate) => candidate.id === input.id)!;

@@ -21,16 +21,26 @@ function characterLength(value: string): number {
 	return Array.from(value).length;
 }
 
-export function validateBoundedString(value: unknown, label: string, maximum: number): string | undefined {
+export function validateBoundedString(
+	value: unknown,
+	label: string,
+	maximum: number,
+): string | undefined {
 	if (typeof value !== "string") return `${label} must be a string`;
 	if (characterLength(value) > maximum) return `${label} must be at most ${maximum} characters`;
 	return undefined;
 }
 
-function inspectJson(value: unknown, depth: number, seen: Set<object>, keyCount: { value: number }): string | undefined {
+function inspectJson(
+	value: unknown,
+	depth: number,
+	seen: Set<object>,
+	keyCount: { value: number },
+): string | undefined {
 	if (depth > MAX_METADATA_DEPTH) return `metadata exceeds maximum depth ${MAX_METADATA_DEPTH}`;
 	if (value === null || typeof value === "string" || typeof value === "boolean") return undefined;
-	if (typeof value === "number") return Number.isFinite(value) ? undefined : "metadata numbers must be finite";
+	if (typeof value === "number")
+		return Number.isFinite(value) ? undefined : "metadata numbers must be finite";
 	if (typeof value !== "object") return "metadata must contain JSON values only";
 	if (seen.has(value)) return "metadata must not contain cycles";
 	seen.add(value);
@@ -41,10 +51,12 @@ function inspectJson(value: unknown, depth: number, seen: Set<object>, keyCount:
 		}
 	} else {
 		const proto = Object.getPrototypeOf(value);
-		if (proto !== Object.prototype && proto !== null) return "metadata must contain plain JSON objects only";
+		if (proto !== Object.prototype && proto !== null)
+			return "metadata must contain plain JSON objects only";
 		const entries = Object.entries(value as Record<string, unknown>);
 		keyCount.value += entries.length;
-		if (keyCount.value > MAX_METADATA_KEYS) return `metadata may have at most ${MAX_METADATA_KEYS} keys`;
+		if (keyCount.value > MAX_METADATA_KEYS)
+			return `metadata may have at most ${MAX_METADATA_KEYS} keys`;
 		for (const [, item] of entries) {
 			const error = inspectJson(item, depth + 1, seen, keyCount);
 			if (error) return error;
@@ -55,7 +67,8 @@ function inspectJson(value: unknown, depth: number, seen: Set<object>, keyCount:
 }
 
 export function validateMetadata(value: unknown): string | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return "metadata must be a JSON object";
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		return "metadata must be a JSON object";
 	const error = inspectJson(value, 0, new Set(), { value: 0 });
 	if (error) return error;
 	let encoded: string;
@@ -71,7 +84,8 @@ export function validateMetadata(value: unknown): string | undefined {
 }
 
 export function validateSnapshot(snapshot: TaskSnapshot): string | undefined {
-	if (snapshot.kind !== "pi.tasks.snapshot" || snapshot.schemaVersion !== 1) return "invalid snapshot discriminator";
+	if (snapshot.kind !== "pi.tasks.snapshot" || snapshot.schemaVersion !== 1)
+		return "invalid snapshot discriminator";
 	if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0) return "invalid revision";
 	if (!Number.isSafeInteger(snapshot.nextId) || snapshot.nextId < 1) return "invalid nextId";
 	if (!Array.isArray(snapshot.tasks)) return "tasks must be an array";
@@ -80,7 +94,8 @@ export function validateSnapshot(snapshot: TaskSnapshot): string | undefined {
 	let maxId = 0;
 	for (const task of snapshot.tasks) {
 		if (!task || typeof task !== "object") return "tasks must contain task objects";
-		if (!Number.isSafeInteger(task.id) || task.id < 1 || ids.has(task.id)) return "task ids must be unique positive integers";
+		if (!Number.isSafeInteger(task.id) || task.id < 1 || ids.has(task.id))
+			return "task ids must be unique positive integers";
 		ids.add(task.id);
 		maxId = Math.max(maxId, task.id);
 		const subjectError = validateBoundedString(task.subject, "subject", MAX_SUBJECT_LENGTH);
@@ -98,13 +113,19 @@ export function validateSnapshot(snapshot: TaskSnapshot): string | undefined {
 			const error = validateBoundedString(task.owner, "owner", MAX_OWNER_LENGTH);
 			if (error) return `#${task.id} ${error}`;
 		}
-		if (!["pending", "in_progress", "completed", "deleted"].includes(task.status)) return `#${task.id} has invalid status`;
+		if (!["pending", "in_progress", "completed", "deleted"].includes(task.status))
+			return `#${task.id} has invalid status`;
 		if (task.status === "in_progress" && ++active > 1) return "at most one task may be in_progress";
-		if (!Number.isFinite(task.createdAt) || !Number.isFinite(task.updatedAt)) return `#${task.id} has invalid timestamps`;
-		if (!Array.isArray(task.blockedBy) || task.blockedBy.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+		if (!Number.isFinite(task.createdAt) || !Number.isFinite(task.updatedAt))
+			return `#${task.id} has invalid timestamps`;
+		if (
+			!Array.isArray(task.blockedBy) ||
+			task.blockedBy.some((id) => !Number.isSafeInteger(id) || id < 1)
+		) {
 			return `#${task.id} dependencies must be positive integer ids`;
 		}
-		if (new Set(task.blockedBy).size !== task.blockedBy.length) return `#${task.id} has duplicate dependencies`;
+		if (new Set(task.blockedBy).size !== task.blockedBy.length)
+			return `#${task.id} has duplicate dependencies`;
 		if (task.blockedBy.includes(task.id)) return `#${task.id} cannot depend on itself`;
 		const metadataError = validateMetadata(task.metadata);
 		if (metadataError) return `#${task.id}: ${metadataError}`;

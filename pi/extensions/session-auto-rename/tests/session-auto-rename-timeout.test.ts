@@ -35,7 +35,9 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 
 	try {
 		// Pi's extension loader is not an exported subpath, so load it from the package the shared loader resolved.
-		const { createExtensionRuntime, loadExtensions } = await import(piModuleUrl("dist/core/extensions/loader.js"));
+		const { createExtensionRuntime, loadExtensions } = await import(
+			piModuleUrl("dist/core/extensions/loader.js")
+		);
 		const runtime = createExtensionRuntime();
 		const notifications: string[] = [];
 		let sessionName: string | undefined;
@@ -47,7 +49,12 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 		const signals: AbortSignal[] = [];
 		const adapterTimeouts: Array<number | undefined> = [];
 		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
-		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
+		const loaded = await loadExtensions(
+			[extensionPath],
+			dirname(extensionPath),
+			undefined,
+			runtime,
+		);
 		assert.deepEqual(loaded.errors, []);
 		const handlers = loaded.extensions[0].handlers;
 		const model = { provider: "test", id: "fast", name: "Fast" };
@@ -67,7 +74,9 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 					adapterTimeouts.push(options.timeoutMs);
 					// Model an adapter that only ends the request when the signal aborts.
 					return new Promise((_resolve, reject) => {
-						options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+						options.signal.addEventListener("abort", () => reject(new Error("aborted")), {
+							once: true,
+						});
 					});
 				},
 			},
@@ -78,12 +87,17 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 			assert.ok(handler, `${event} handler was registered`);
 			return handler(...args);
 		};
-		const userPrompt = (prompt: string) => invoke("before_agent_start", { messageType: "user", prompt }, ctx);
+		const userPrompt = (prompt: string) =>
+			invoke("before_agent_start", { messageType: "user", prompt }, ctx);
 
 		invoke("session_start", {}, ctx);
 		userPrompt("Hanging prompt");
 		assert.equal(signals.length, 1);
-		assert.deepEqual(requestedDelays, [10_000], "the request carries the documented 10 second bound");
+		assert.deepEqual(
+			requestedDelays,
+			[10_000],
+			"the request carries the documented 10 second bound",
+		);
 		assert.equal(adapterTimeouts[0], 10_000, "the adapter hint is still passed");
 		assert.equal(signals[0].aborted, false);
 
@@ -103,7 +117,11 @@ test("a naming request that ignores timeoutMs is cancelled by its own bound and 
 		invoke("session_shutdown", {}, ctx);
 		await settle();
 		assert.equal(shutdownSignal.aborted, true, "session shutdown cancels the naming request");
-		assert.equal(notifications.length, notificationsBeforeShutdown, "cancellation is not reported as a failure");
+		assert.equal(
+			notifications.length,
+			notificationsBeforeShutdown,
+			"cancellation is not reported as a failure",
+		);
 	} finally {
 		AbortSignal.timeout = originalTimeout;
 		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

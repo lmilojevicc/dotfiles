@@ -1,4 +1,14 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -46,7 +56,10 @@ const NATIVE_ACTIONS = {
 	"app.thinking.cycle": { defaultKeys: "shift+tab", description: "Cycle thinking level" },
 	"app.thinking.save": { defaultKeys: "ctrl+s", description: "Save thinking level" },
 	"app.model.cycleForward": { defaultKeys: "ctrl+p", description: "Cycle to next model" },
-	"app.model.cycleBackward": { defaultKeys: "shift+ctrl+p", description: "Cycle to previous model" },
+	"app.model.cycleBackward": {
+		defaultKeys: "shift+ctrl+p",
+		description: "Cycle to previous model",
+	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
 	"app.thinking.toggle": { defaultKeys: "ctrl+t", description: "Toggle thinking blocks" },
@@ -55,7 +68,10 @@ const NATIVE_ACTIONS = {
 		description: "Toggle named session filter",
 	},
 	"app.editor.external": { defaultKeys: "ctrl+g", description: "Open external editor" },
-	"app.message.copy": { defaultKeys: "ctrl+x", description: "Copy selection or last assistant message" },
+	"app.message.copy": {
+		defaultKeys: "ctrl+x",
+		description: "Copy selection or last assistant message",
+	},
 	"app.message.followUp": { defaultKeys: "alt+enter", description: "Queue follow-up message" },
 	"app.message.dequeue": { defaultKeys: "alt+up", description: "Restore queued messages" },
 	"app.clipboard.pasteImage": { defaultKeys: "ctrl+v", description: "Paste image from clipboard" },
@@ -87,16 +103,34 @@ const NATIVE_ACTIONS = {
 	"app.models.save": { defaultKeys: "ctrl+s", description: "Save model selection" },
 	"app.models.enableAll": { defaultKeys: "ctrl+a", description: "Enable all models" },
 	"app.models.clearAll": { defaultKeys: "ctrl+x", description: "Clear all models" },
-	"app.models.toggleProvider": { defaultKeys: "ctrl+p", description: "Toggle all models for provider" },
+	"app.models.toggleProvider": {
+		defaultKeys: "ctrl+p",
+		description: "Toggle all models for provider",
+	},
 	"app.models.reorderUp": { defaultKeys: "alt+up", description: "Move model up in order" },
 	"app.models.reorderDown": { defaultKeys: "alt+down", description: "Move model down in order" },
 	"app.tree.filter.default": { defaultKeys: "ctrl+d", description: "Tree filter: default view" },
-	"app.tree.filter.noTools": { defaultKeys: "ctrl+t", description: "Tree filter: hide tool results" },
-	"app.tree.filter.userOnly": { defaultKeys: "ctrl+u", description: "Tree filter: user messages only" },
-	"app.tree.filter.labeledOnly": { defaultKeys: "ctrl+l", description: "Tree filter: labeled entries only" },
+	"app.tree.filter.noTools": {
+		defaultKeys: "ctrl+t",
+		description: "Tree filter: hide tool results",
+	},
+	"app.tree.filter.userOnly": {
+		defaultKeys: "ctrl+u",
+		description: "Tree filter: user messages only",
+	},
+	"app.tree.filter.labeledOnly": {
+		defaultKeys: "ctrl+l",
+		description: "Tree filter: labeled entries only",
+	},
 	"app.tree.filter.all": { defaultKeys: "ctrl+a", description: "Tree filter: show all entries" },
-	"app.tree.filter.cycleForward": { defaultKeys: "ctrl+o", description: "Tree filter: cycle forward" },
-	"app.tree.filter.cycleBackward": { defaultKeys: "shift+ctrl+o", description: "Tree filter: cycle backward" },
+	"app.tree.filter.cycleForward": {
+		defaultKeys: "ctrl+o",
+		description: "Tree filter: cycle forward",
+	},
+	"app.tree.filter.cycleBackward": {
+		defaultKeys: "shift+ctrl+o",
+		description: "Tree filter: cycle backward",
+	},
 } satisfies Record<AppKeybinding, NativeActionInfo>;
 
 const EXTENSION_ACTIONS = {
@@ -202,7 +236,8 @@ function editorLayerMetadata(factory: EditorFactory | undefined): EditorLayerMet
 	if (!metadata || typeof metadata !== "object") return undefined;
 	const candidate = metadata as Partial<EditorLayerMetadata>;
 	if (candidate.version !== 1 || !(candidate.layers instanceof Map)) return undefined;
-	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function") return undefined;
+	if (candidate.baseFactory !== undefined && typeof candidate.baseFactory !== "function")
+		return undefined;
 	for (const [id, layer] of candidate.layers) {
 		if (typeof id !== "string" || typeof layer !== "function") return undefined;
 	}
@@ -371,9 +406,10 @@ function closeActionIds(action: string): PrefixAction[] {
 
 function unknownActionMessage(action: string): string {
 	const suggestions = closeActionIds(action);
-	const hint = suggestions.length > 0
-		? `Did you mean ${suggestions.map((id) => `"${id}"`).join(" or ")}?`
-		: "Run /prefix-keybinds actions to list the supported actions.";
+	const hint =
+		suggestions.length > 0
+			? `Did you mean ${suggestions.map((id) => `"${id}"`).join(" or ")}?`
+			: "Run /prefix-keybinds actions to list the supported actions.";
 	return `Unknown prefix action "${action}". ${hint}`;
 }
 
@@ -393,7 +429,12 @@ function defaultMutableConfig(): MutableConfig {
 		showHelp: true,
 		cancelKeys: [...DEFAULT_CANCEL_KEYS],
 		loadedPaths: [],
-		bindings: new Map(Object.entries(DEFAULT_BINDINGS).map(([key, action]) => [key, bindingFromAction(key, action)])),
+		bindings: new Map(
+			Object.entries(DEFAULT_BINDINGS).map(([key, action]) => [
+				key,
+				bindingFromAction(key, action),
+			]),
+		),
 	};
 }
 
@@ -442,7 +483,10 @@ function configWritePath(cwd: string, loadedPaths: string[]): string {
 	return loadedPaths.at(-1) ?? globalConfigPath();
 }
 
-function readRawConfigs(cwd: string, warnings: string[]): Array<{ path: string; config: RawConfig }> {
+function readRawConfigs(
+	cwd: string,
+	warnings: string[],
+): Array<{ path: string; config: RawConfig }> {
 	const configs: Array<{ path: string; config: RawConfig }> = [];
 
 	for (const path of configPaths(cwd)) {
@@ -512,11 +556,14 @@ function applyRawConfig(config: MutableConfig, raw: RawConfig, source: string, w
 
 		const action = typeof rawBinding === "string" ? rawBinding : rawBinding.action;
 		if (!isPrefixAction(action)) {
-			warnings.push(`${source}: ignored ${normalizedKey} -> ${String(action)} because it is not a supported prefix action`);
+			warnings.push(
+				`${source}: ignored ${normalizedKey} -> ${String(action)} because it is not a supported prefix action`,
+			);
 			continue;
 		}
 
-		const label = typeof rawBinding === "string" ? normalizedKey : rawBinding.label?.trim() || normalizedKey;
+		const label =
+			typeof rawBinding === "string" ? normalizedKey : rawBinding.label?.trim() || normalizedKey;
 		const description =
 			typeof rawBinding === "string"
 				? PREFIX_ACTIONS[action].description
@@ -615,7 +662,9 @@ function readRawConfigFile(path: string): RawConfig {
 }
 
 function bindingsOf(raw: RawConfig): Record<string, RawBinding> {
-	return raw.bindings && typeof raw.bindings === "object" && !Array.isArray(raw.bindings) ? { ...raw.bindings } : {};
+	return raw.bindings && typeof raw.bindings === "object" && !Array.isArray(raw.bindings)
+		? { ...raw.bindings }
+		: {};
 }
 
 function applyConfigChange(raw: RawConfig, change: ConfigChange): RawConfig {
@@ -675,7 +724,10 @@ function writeRawConfig(configPath: string, raw: RawConfig): void {
 
 function persistConfig(cwd: string, config: ResolvedConfig, change: ConfigChange): string {
 	const path = configWritePath(cwd, config.loadedPaths);
-	const raw = change.kind === "replace" ? rawConfigFromResolved(change.config) : applyConfigChange(readRawConfigFile(path), change);
+	const raw =
+		change.kind === "replace"
+			? rawConfigFromResolved(change.config)
+			: applyConfigChange(readRawConfigFile(path), change);
 	writeRawConfig(path, raw);
 	// Re-read so the in-memory merge matches the layers the written file now takes part in.
 	loadState(cwd);
@@ -817,7 +869,10 @@ class PrefixCommandPaletteComponent implements Component {
 		const maxVisible = this.maxVisibleRows();
 		const start = Math.max(
 			0,
-			Math.min(this.selected - Math.floor(maxVisible / 2), this.config.bindings.length - maxVisible),
+			Math.min(
+				this.selected - Math.floor(maxVisible / 2),
+				this.config.bindings.length - maxVisible,
+			),
 		);
 		const end = Math.min(start + maxVisible, this.config.bindings.length);
 
@@ -838,7 +893,11 @@ class PrefixCommandPaletteComponent implements Component {
 		}
 
 		lines.push(divider());
-		lines.push(row(`${accent("↑/↓")} choose  ${accent("enter")} run  ${accent("esc")} close  ${accent("mapped key")} run`));
+		lines.push(
+			row(
+				`${accent("↑/↓")} choose  ${accent("enter")} run  ${accent("esc")} close  ${accent("mapped key")} run`,
+			),
+		);
 		lines.push(bottom);
 		return lines;
 	}
@@ -860,7 +919,8 @@ async function showPrefixCommandPalette(
 	const releaseModalLock = acquireVstackModalLock();
 	try {
 		const selected = await ui.custom<ResolvedBinding | undefined>(
-			(tui, theme, _keybindings, done) => new PrefixCommandPaletteComponent(done, tui, theme, config),
+			(tui, theme, _keybindings, done) =>
+				new PrefixCommandPaletteComponent(done, tui, theme, config),
 			{
 				overlay: true,
 				overlayOptions: {
@@ -882,7 +942,11 @@ async function showNativeActionsModal(ui: ExtensionUIContext) {
 	await ui.select("Pi/prefix actions", prefixActionIds().map(formatAction));
 }
 
-function saveConfig(ctx: ExtensionCommandContext, config: ResolvedConfig, change: ConfigChange): string | undefined {
+function saveConfig(
+	ctx: ExtensionCommandContext,
+	config: ResolvedConfig,
+	change: ConfigChange,
+): string | undefined {
 	try {
 		const path = persistConfig(ctx.cwd, config, change);
 		ctx.ui.notify(`Saved prefix keybindings to ${path}`, "info");
@@ -897,12 +961,16 @@ function saveConfig(ctx: ExtensionCommandContext, config: ResolvedConfig, change
 }
 
 async function chooseNativeAction(ctx: ExtensionCommandContext): Promise<PrefixAction | undefined> {
-	return parseFormattedAction(await ctx.ui.select("Choose Pi/prefix action", prefixActionIds().map(formatAction)));
+	return parseFormattedAction(
+		await ctx.ui.select("Choose Pi/prefix action", prefixActionIds().map(formatAction)),
+	);
 }
 
 async function configurePrefix(ctx: ExtensionCommandContext) {
 	const state = ensureState(ctx.cwd);
-	const nextPrefix = (await ctx.ui.input("Prefix key", `Current: ${state.config.prefixKey}`))?.trim();
+	const nextPrefix = (
+		await ctx.ui.input("Prefix key", `Current: ${state.config.prefixKey}`)
+	)?.trim();
 	if (!nextPrefix) return;
 
 	const problem = keyIdProblem(nextPrefix);
@@ -915,9 +983,14 @@ async function configurePrefix(ctx: ExtensionCommandContext) {
 	saveConfig(ctx, nextConfig, { kind: "prefix", prefixKey: nextPrefix });
 }
 
-async function configureSetBinding(ctx: ExtensionCommandContext, keyArg?: string, actionArg?: string) {
+async function configureSetBinding(
+	ctx: ExtensionCommandContext,
+	keyArg?: string,
+	actionArg?: string,
+) {
 	const state = ensureState(ctx.cwd);
-	const key = keyArg?.trim() || (await ctx.ui.input("Key after prefix", "m, alt+m, ctrl+p, ..."))?.trim();
+	const key =
+		keyArg?.trim() || (await ctx.ui.input("Key after prefix", "m, alt+m, ctrl+p, ..."))?.trim();
 	if (!key) return;
 
 	if (key === HELP_KEY) {
@@ -954,7 +1027,9 @@ async function configureRemoveBinding(ctx: ExtensionCommandContext, keyArg?: str
 	const state = ensureState(ctx.cwd);
 	const key =
 		keyArg?.trim() ||
-		parseFormattedMappingKey(await ctx.ui.select("Remove mapping", state.config.bindings.map(formatMapping)));
+		parseFormattedMappingKey(
+			await ctx.ui.select("Remove mapping", state.config.bindings.map(formatMapping)),
+		);
 	if (!key) return;
 
 	const nextConfig = withoutBinding(state.config, key);
@@ -962,10 +1037,16 @@ async function configureRemoveBinding(ctx: ExtensionCommandContext, keyArg?: str
 }
 
 async function configureReset(ctx: ExtensionCommandContext) {
-	const confirmed = await ctx.ui.confirm("Reset prefix keybindings", "Replace your prefix keybindings with the defaults?");
+	const confirmed = await ctx.ui.confirm(
+		"Reset prefix keybindings",
+		"Replace your prefix keybindings with the defaults?",
+	);
 	if (!confirmed) return;
 
-	const nextConfig = { ...defaultResolvedConfig(), loadedPaths: ensureState(ctx.cwd).config.loadedPaths };
+	const nextConfig = {
+		...defaultResolvedConfig(),
+		loadedPaths: ensureState(ctx.cwd).config.loadedPaths,
+	};
 	// A reset is the one write that replaces the whole layer, so it keeps `replaceDefaults`.
 	saveConfig(ctx, nextConfig, { kind: "replace", config: nextConfig });
 }
@@ -1032,7 +1113,11 @@ async function handlePrefixCommand(args: string, ctx: ExtensionCommandContext) {
 				break;
 			}
 
-			saveConfig(ctx, { ...state.config, prefixKey: requestedPrefix }, { kind: "prefix", prefixKey: requestedPrefix });
+			saveConfig(
+				ctx,
+				{ ...state.config, prefixKey: requestedPrefix },
+				{ kind: "prefix", prefixKey: requestedPrefix },
+			);
 			break;
 		}
 		case "set":
@@ -1078,7 +1163,9 @@ function hintText(ui: ExtensionUIContext, config: ResolvedConfig): string {
 
 	const hints = [
 		`${ui.theme.fg("accent", HELP_KEY)} help`,
-		...config.bindings.map((binding) => `${ui.theme.fg("accent", binding.label)} ${binding.description}`),
+		...config.bindings.map(
+			(binding) => `${ui.theme.fg("accent", binding.label)} ${binding.description}`,
+		),
 	].join(ui.theme.fg("muted", " · "));
 	return `${prefix} prefix: ${hints}`;
 }
@@ -1091,7 +1178,10 @@ function activeWidgetLines(ui: ExtensionUIContext, config: ResolvedConfig): stri
 	const mappings = visibleBindings
 		.map((binding) => `${accent(binding.label)} ${binding.description}`)
 		.join(muted(" · "));
-	const overflow = config.bindings.length > visibleBindings.length ? muted(` · +${config.bindings.length - visibleBindings.length}`) : "";
+	const overflow =
+		config.bindings.length > visibleBindings.length
+			? muted(` · +${config.bindings.length - visibleBindings.length}`)
+			: "";
 
 	return [
 		`${accent("PREFIX ACTIVE")} ${dim("(")}${accent(config.prefixKey)}${dim(")")} ${muted("— waiting for next key")}`,
@@ -1153,12 +1243,14 @@ function patchWithPrefix(
 
 	const runBinding = (binding: ResolvedBinding) => {
 		if (binding.action === "pi.model-picker") {
-			if (!openModelPicker?.()) ui.notify("Model picker is unavailable; enable the model-picker extension", "warning");
+			if (!openModelPicker?.())
+				ui.notify("Model picker is unavailable; enable the model-picker extension", "warning");
 			return;
 		}
-		const slash = binding.action in SLASH_ACTIONS
-			? SLASH_ACTIONS[binding.action as ExtensionAction]
-			: undefined;
+		const slash =
+			binding.action in SLASH_ACTIONS
+				? SLASH_ACTIONS[binding.action as ExtensionAction]
+				: undefined;
 		if (slash) {
 			const submit = editor.onSubmit;
 			if (!submit) {
@@ -1197,7 +1289,9 @@ function patchWithPrefix(
 				return;
 			}
 
-			const binding = config.bindings.find((candidate) => matchesConfiguredKey(data, candidate.key));
+			const binding = config.bindings.find((candidate) =>
+				matchesConfiguredKey(data, candidate.key),
+			);
 			clearPrefix();
 
 			if (binding) {
@@ -1256,7 +1350,9 @@ export default function (pi: ExtensionAPI) {
 		if (!sessionActive) return false;
 		let handled = false;
 		// Synchronous acknowledgement detects a missing picker without submitting or replacing the draft.
-		pi.events.emit("model-picker:open", () => { handled = true; });
+		pi.events.emit("model-picker:open", () => {
+			handled = true;
+		});
 		return handled;
 	};
 	pi.registerCommand("prefix-keybinds", {
@@ -1289,12 +1385,17 @@ export default function (pi: ExtensionAPI) {
 			// Pi may still hold the editor patched for a replaced session, and it never disposes it.
 			resetLiveEditors();
 			const previousFactory = ctx.ui.getEditorComponent() as EditorFactory | undefined;
-			const prefixLayer: EditorLayerBuilder = (baseFactory) =>
-				(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
+			const prefixLayer: EditorLayerBuilder =
+				(baseFactory) => (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => {
 					const editor = baseFactory
 						? baseFactory(tui, theme, keybindings)
 						: new CustomEditor(tui, theme, keybindings);
-					return patchWithPrefix(editor as PrefixEditor, ctx.ui, () => ensureState(ctx.cwd).config, openModelPicker);
+					return patchWithPrefix(
+						editor as PrefixEditor,
+						ctx.ui,
+						() => ensureState(ctx.cwd).config,
+						openModelPicker,
+					);
 				};
 			ctx.ui.setEditorComponent(installEditorLayer(previousFactory, PREFIX_LAYER_ID, prefixLayer));
 		}, 0);

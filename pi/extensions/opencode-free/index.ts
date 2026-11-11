@@ -73,7 +73,11 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { getAgentDir, VERSION as PI_VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	VERSION as PI_VERSION,
+	type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import {
 	createAssistantMessageEventStream,
 	createProvider,
@@ -93,7 +97,8 @@ const PROVIDER_NAME = "OpenCode Zen Free";
 const DEFAULT_BASE_URL = "https://opencode.ai/inference/v1";
 const DEFAULT_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const DEFAULT_CATALOG_URL = "https://pi.dev/api/models/providers/opencode";
-const DEFAULT_VERSION_URL = "https://raw.githubusercontent.com/anomalyco/homebrew-tap/master/opencode-v2.rb";
+const DEFAULT_VERSION_URL =
+	"https://raw.githubusercontent.com/anomalyco/homebrew-tap/master/opencode-v2.rb";
 const DEFAULT_MODELS_DEV_URL = "https://models.dev/api.json";
 
 /** Last resort when neither the version cache nor the network gives a version. */
@@ -120,7 +125,9 @@ function truthyEnvFlag(value: string | undefined): boolean {
  * offline for Pi's own flag handling, so it must not be offline here either.
  */
 const OFFLINE =
-	process.argv.includes("--offline") || truthyEnvFlag(process.env.OPENCODE_FREE_OFFLINE) || truthyEnvFlag(process.env.PI_OFFLINE);
+	process.argv.includes("--offline") ||
+	truthyEnvFlag(process.env.OPENCODE_FREE_OFFLINE) ||
+	truthyEnvFlag(process.env.PI_OFFLINE);
 
 const AGENT_DIR = getAgentDir();
 /** Exported for tests. */
@@ -144,13 +151,177 @@ const ID_MASK = 0xffffffffffffn;
  * 2026-10-16; discovery replaces this list.
  */
 const BASELINE_FREE_MODELS: Model<Api>[] = [
-	{ id: "big-pickle", name: "Big Pickle", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" }, contextWindow: 200000, maxTokens: 32000, type: "chat" },
-	{ id: "deepseek-v4.1-flash-free", name: "DeepSeek V4.1 Flash Free", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens", requiresReasoningContentOnAssistantMessages: true }, contextWindow: 200000, maxTokens: 32000, thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" }, inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } }, type: "chat" },
-	{ id: "longcat-2.5-preview-free", name: "LongCat 2.5 Preview Free", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" }, contextWindow: 1000000, maxTokens: 131072, inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } }, type: "chat" },
-	{ id: "mimo-v2.6-flash-free", name: "MiMo-V2.6-Flash Free", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" }, contextWindow: 200000, maxTokens: 32000, inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } }, type: "chat" },
-	{ id: "muse-spark-1.3-contributor-free", name: "Muse Spark 1.3 Free", api: "openai-responses", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { sessionAffinityFormat: "openai-nosession" }, contextWindow: 1048576, maxTokens: 131072, thinkingLevelMap: { off: null, minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null }, inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } }, type: "chat" },
-	{ id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning Free", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" }, contextWindow: 262144, maxTokens: 262144, type: "chat" },
-	{ id: "space-bunny-free", name: "Space Bunny Free", api: "openai-completions", provider: PROVIDER_ID, baseUrl: BASE_URL, reasoning: true, input: ["text", "image"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, compat: { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" }, contextWindow: 1048576, maxTokens: 524288, thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" }, inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } }, type: "chat" },
+	{
+		id: "big-pickle",
+		name: "Big Pickle",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+		},
+		contextWindow: 200000,
+		maxTokens: 32000,
+		type: "chat",
+	},
+	{
+		id: "deepseek-v4.1-flash-free",
+		name: "DeepSeek V4.1 Flash Free",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+			requiresReasoningContentOnAssistantMessages: true,
+		},
+		contextWindow: 200000,
+		maxTokens: 32000,
+		thinkingLevelMap: {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: null,
+			high: "high",
+			xhigh: null,
+			max: "max",
+		},
+		inputLimits: {
+			images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+		},
+		type: "chat",
+	},
+	{
+		id: "longcat-2.5-preview-free",
+		name: "LongCat 2.5 Preview Free",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+		},
+		contextWindow: 1000000,
+		maxTokens: 131072,
+		inputLimits: {
+			images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+		},
+		type: "chat",
+	},
+	{
+		id: "mimo-v2.6-flash-free",
+		name: "MiMo-V2.6-Flash Free",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+		},
+		contextWindow: 200000,
+		maxTokens: 32000,
+		inputLimits: {
+			images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+		},
+		type: "chat",
+	},
+	{
+		id: "muse-spark-1.3-contributor-free",
+		name: "Muse Spark 1.3 Free",
+		api: "openai-responses",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: { sessionAffinityFormat: "openai-nosession" },
+		contextWindow: 1048576,
+		maxTokens: 131072,
+		thinkingLevelMap: {
+			off: null,
+			minimal: "minimal",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: null,
+		},
+		inputLimits: {
+			images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+		},
+		type: "chat",
+	},
+	{
+		id: "nemotron-3.5-lightning-free",
+		name: "Nemotron 3.5 Lightning Free",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+		},
+		contextWindow: 262144,
+		maxTokens: 262144,
+		type: "chat",
+	},
+	{
+		id: "space-bunny-free",
+		name: "Space Bunny Free",
+		api: "openai-completions",
+		provider: PROVIDER_ID,
+		baseUrl: BASE_URL,
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		compat: {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsStrictMode: true,
+			maxTokensField: "max_tokens",
+		},
+		contextWindow: 1048576,
+		maxTokens: 524288,
+		thinkingLevelMap: {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+		inputLimits: {
+			images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+		},
+		type: "chat",
+	},
 ];
 
 // ---------------------------------------------------------------------------
@@ -207,7 +378,10 @@ export function writeCache(patch: Partial<CacheEntry>): void {
 /** Pi's persisted catalog for this provider, used when discovery is offline. */
 function readStoredModels(): Model<Api>[] {
 	try {
-		const store = JSON.parse(readFileSync(MODELS_STORE_PATH, "utf8")) as Record<string, { models?: Model<Api>[] }>;
+		const store = JSON.parse(readFileSync(MODELS_STORE_PATH, "utf8")) as Record<
+			string,
+			{ models?: Model<Api>[] }
+		>;
 		const models = store?.[PROVIDER_ID]?.models;
 		return Array.isArray(models) ? models : [];
 	} catch {
@@ -227,7 +401,11 @@ function parseVersion(text: string): string | undefined {
 /** Version of the locally installed OpenCode CLI, when one is on PATH. */
 async function localOpenCodeVersion(signal?: AbortSignal): Promise<string | undefined> {
 	try {
-		const { stdout } = await promisify(execFile)("opencode", ["--version"], { encoding: "utf8", timeout: 4000, signal });
+		const { stdout } = await promisify(execFile)("opencode", ["--version"], {
+			encoding: "utf8",
+			timeout: 4000,
+			signal,
+		});
 		return parseVersion(String(stdout));
 	} catch {
 		return undefined;
@@ -235,7 +413,8 @@ async function localOpenCodeVersion(signal?: AbortSignal): Promise<string | unde
 }
 
 const cache = readCache();
-let openCodeVersion = process.env.OPENCODE_FREE_VERSION ?? cache.version ?? FALLBACK_OPENCODE_VERSION;
+let openCodeVersion =
+	process.env.OPENCODE_FREE_VERSION ?? cache.version ?? FALLBACK_OPENCODE_VERSION;
 let versionRefreshInFlight: Promise<void> | undefined;
 
 /** Ids this extension's discovery has ever published: the baseline plus everything seen since. */
@@ -363,7 +542,8 @@ type ToolDef = { type: "function"; name: string; description: string; parameters
 const READ_TOOL: ToolDef = {
 	type: "function",
 	name: "read",
-	description: "Gateway protocol marker. This tool is not executable in this session; do not call it. Use only the tools listed in this request.",
+	description:
+		"Gateway protocol marker. This tool is not executable in this session; do not call it. Use only the tools listed in this request.",
 	parameters: { type: "object", properties: {} },
 };
 
@@ -389,9 +569,21 @@ export function ensureFingerprintTools(payload: unknown, api: string): unknown {
 	if (!payload || typeof payload !== "object") return payload;
 	const body = payload as JsonObject;
 	const existing = Array.isArray(body.tools) ? (body.tools as Array<Record<string, unknown>>) : [];
-	const names = new Set(existing.map(toolName).filter((name): name is string => typeof name === "string"));
+	const names = new Set(
+		existing.map(toolName).filter((name): name is string => typeof name === "string"),
+	);
 	if (names.has("read")) return payload;
-	const addition = api === "openai-responses" ? READ_TOOL : { type: READ_TOOL.type, function: { name: READ_TOOL.name, description: READ_TOOL.description, parameters: READ_TOOL.parameters } };
+	const addition =
+		api === "openai-responses"
+			? READ_TOOL
+			: {
+					type: READ_TOOL.type,
+					function: {
+						name: READ_TOOL.name,
+						description: READ_TOOL.description,
+						parameters: READ_TOOL.parameters,
+					},
+				};
 	const next: JsonObject = { ...body, tools: [...existing, addition] };
 	if (existing.length === 0 && api !== "openai-responses" && next.tool_choice === undefined) {
 		next.tool_choice = "none";
@@ -465,7 +657,10 @@ export function describeZenError(message: string | undefined): string {
  * Pass-through stream that rewrites terminal error events with actionable
  * messages and refreshes the fingerprint version after a gate rejection.
  */
-function guardStream(stream: AssistantMessageEventStream, model: Model<Api>): AssistantMessageEventStream {
+function guardStream(
+	stream: AssistantMessageEventStream,
+	model: Model<Api>,
+): AssistantMessageEventStream {
 	const out = createAssistantMessageEventStream();
 	void (async () => {
 		try {
@@ -473,7 +668,10 @@ function guardStream(stream: AssistantMessageEventStream, model: Model<Api>): As
 				if (event.type === "error") {
 					const message = event.error.errorMessage ?? "";
 					if (message.includes("FreeTierError")) void refreshOpenCodeVersion().catch(() => {});
-					out.push({ ...event, error: { ...event.error, errorMessage: describeZenError(message) } });
+					out.push({
+						...event,
+						error: { ...event.error, errorMessage: describeZenError(message) },
+					});
 				} else {
 					out.push(event);
 				}
@@ -489,7 +687,14 @@ function guardStream(stream: AssistantMessageEventStream, model: Model<Api>): As
 					api: model.api,
 					provider: model.provider,
 					model: model.id,
-					usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
 					stopReason: "error",
 					errorMessage: describeZenError(error instanceof Error ? error.message : String(error)),
 					timestamp: Date.now(),
@@ -504,8 +709,13 @@ function guardStream(stream: AssistantMessageEventStream, model: Model<Api>): As
 function withFingerprint(inner: ProviderStreams): ProviderStreams {
 	return {
 		...inner,
-		stream: (model, context, options) => guardStream(inner.stream(model, context, patchOptions(options) as StreamOptions), model),
-		streamSimple: (model, context, options) => guardStream(inner.streamSimple(model, context, patchOptions(options) as SimpleStreamOptions), model),
+		stream: (model, context, options) =>
+			guardStream(inner.stream(model, context, patchOptions(options) as StreamOptions), model),
+		streamSimple: (model, context, options) =>
+			guardStream(
+				inner.streamSimple(model, context, patchOptions(options) as SimpleStreamOptions),
+				model,
+			),
 	};
 }
 
@@ -513,7 +723,11 @@ function withFingerprint(inner: ProviderStreams): ProviderStreams {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-async function fetchText(url: string, init: RequestInit = {}, timeoutMs = NETWORK_TIMEOUT_MS): Promise<string> {
+async function fetchText(
+	url: string,
+	init: RequestInit = {},
+	timeoutMs = NETWORK_TIMEOUT_MS,
+): Promise<string> {
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	const onAbort = () => controller.abort();
@@ -528,7 +742,11 @@ async function fetchText(url: string, init: RequestInit = {}, timeoutMs = NETWOR
 	}
 }
 
-async function fetchJson(url: string, init: RequestInit = {}, timeoutMs = NETWORK_TIMEOUT_MS): Promise<unknown> {
+async function fetchJson(
+	url: string,
+	init: RequestInit = {},
+	timeoutMs = NETWORK_TIMEOUT_MS,
+): Promise<unknown> {
 	return JSON.parse(await fetchText(url, init, timeoutMs));
 }
 
@@ -598,7 +816,11 @@ function guessApi(id: string): string {
 function prettyName(id: string): string {
 	return id
 		.split("-")
-		.map((part) => (/^(glm|llm|vl|ai|v\d)/i.test(part) || /^v?\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+		.map((part) =>
+			/^(glm|llm|vl|ai|v\d)/i.test(part) || /^v?\d/.test(part)
+				? part.toUpperCase()
+				: part.charAt(0).toUpperCase() + part.slice(1),
+		)
 		.join(" ");
 }
 
@@ -607,7 +829,9 @@ function stemId(id: string): string {
 	return id.replace(/-contributor-free$/, "").replace(/-free$/, "");
 }
 
-function unionInput(...values: Array<Array<"text" | "image"> | undefined>): Array<"text" | "image"> {
+function unionInput(
+	...values: Array<Array<"text" | "image"> | undefined>
+): Array<"text" | "image"> {
 	return [...new Set<"text" | "image">(["text", ...values.flatMap((value) => value ?? [])])];
 }
 
@@ -627,10 +851,18 @@ function applyUpstreamCapabilities(
 ): Model<Api> {
 	const stem = stemId(model.id);
 	const sibling = paidByStem.get(stem) ?? anyByStem.get(stem);
-	const input = unionInput(model.input, sibling && sibling.id !== model.id ? sibling.input : undefined, meta?.input);
+	const input = unionInput(
+		model.input,
+		sibling && sibling.id !== model.id ? sibling.input : undefined,
+		meta?.input,
+	);
 	const capabilities =
 		sibling && sibling.id !== model.id
-			? { contextWindow: sibling.contextWindow, maxTokens: sibling.maxTokens, reasoning: sibling.reasoning }
+			? {
+					contextWindow: sibling.contextWindow,
+					maxTokens: sibling.maxTokens,
+					reasoning: sibling.reasoning,
+				}
 			: {
 					contextWindow: meta?.contextWindow ?? model.contextWindow,
 					maxTokens: meta?.maxTokens ?? model.maxTokens,
@@ -656,7 +888,9 @@ export function familyKey(id: string): string {
 		.replace(/^-|-$/g, "");
 }
 
-const IMAGE_LIMITS = { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } };
+const IMAGE_LIMITS = {
+	images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } },
+};
 
 function defaultFreeModel(id: string): Model<Api> {
 	const api = guessApi(id);
@@ -669,7 +903,15 @@ function defaultFreeModel(id: string): Model<Api> {
 		reasoning: true,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		compat: api === "openai-responses" ? { sessionAffinityFormat: "openai-nosession" } : { supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: true, maxTokensField: "max_tokens" },
+		compat:
+			api === "openai-responses"
+				? { sessionAffinityFormat: "openai-nosession" }
+				: {
+						supportsStore: false,
+						supportsDeveloperRole: false,
+						supportsStrictMode: true,
+						maxTokensField: "max_tokens",
+					},
 		contextWindow: 200000,
 		maxTokens: 32000,
 		type: "chat",
@@ -687,21 +929,35 @@ function defaultFreeModel(id: string): Model<Api> {
  * Free variants can be smaller than the paid model of the same name, so the
  * exact entry must win over the sibling. Exported for tests.
  */
-export function synthesizeFreeModel(id: string, templates: readonly Model<Api>[] = [], meta?: ModelsDevMeta): Model<Api> {
+export function synthesizeFreeModel(
+	id: string,
+	templates: readonly Model<Api>[] = [],
+	meta?: ModelsDevMeta,
+): Model<Api> {
 	const template = pickTemplate(id, templates);
 	const base: Model<Api> =
 		template && SUPPORTED_APIS.has(template.api)
-			? ({ ...template, id, name: prettyName(id), provider: PROVIDER_ID, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } } as Model<Api>)
+			? ({
+					...template,
+					id,
+					name: prettyName(id),
+					provider: PROVIDER_ID,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				} as Model<Api>)
 			: defaultFreeModel(id);
 	if (!meta) return base;
 	// The free lane routes to the same upstream model as its namesake, so a
 	// sibling entry describes the real limits; models.dev only fills the gaps.
 	const limitsFromTemplate = template !== undefined;
-	const input = [...new Set<"text" | "image">(["text", ...(base.input ?? []), ...(meta.input ?? [])])];
+	const input = [
+		...new Set<"text" | "image">(["text", ...(base.input ?? []), ...(meta.input ?? [])]),
+	];
 	return {
 		...base,
 		name: meta.name ?? base.name,
-		contextWindow: limitsFromTemplate ? base.contextWindow : (meta.contextWindow ?? base.contextWindow),
+		contextWindow: limitsFromTemplate
+			? base.contextWindow
+			: (meta.contextWindow ?? base.contextWindow),
 		maxTokens: limitsFromTemplate ? base.maxTokens : (meta.maxTokens ?? base.maxTokens),
 		input,
 		reasoning: limitsFromTemplate ? base.reasoning : (meta.reasoning ?? base.reasoning),
@@ -730,7 +986,13 @@ function pickTemplate(id: string, templates: readonly Model<Api>[]): Model<Api> 
  *
  * Exported for tests.
  */
-export function mergeFreeModels(input: { catalog?: JsonObject[]; knownIds?: Set<string>; stored?: readonly Model<Api>[]; liveIds?: Set<string>; meta?: Record<string, ModelsDevMeta> }): Model<Api>[] {
+export function mergeFreeModels(input: {
+	catalog?: JsonObject[];
+	knownIds?: Set<string>;
+	stored?: readonly Model<Api>[];
+	liveIds?: Set<string>;
+	meta?: Record<string, ModelsDevMeta>;
+}): Model<Api>[] {
 	const byId = new Map<string, Model<Api>>();
 	// Siblings at any price supply metadata for free models the catalog has not listed yet.
 	const templates: Model<Api>[] = [];
@@ -747,7 +1009,10 @@ export function mergeFreeModels(input: { catalog?: JsonObject[]; knownIds?: Set<
 	for (const raw of input.catalog ?? []) {
 		const model = toModel(raw, true);
 		if (!model) continue;
-		byId.set(model.id, applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[model.id]));
+		byId.set(
+			model.id,
+			applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[model.id]),
+		);
 	}
 	// Persisted copies are candidates for the gap-filling pass below, never overrides:
 	// a stale copy must not shadow the catalog or exact models.dev metadata.
@@ -764,14 +1029,18 @@ export function mergeFreeModels(input: { catalog?: JsonObject[]; knownIds?: Set<
 			if (byId.has(id) || input.knownIds.has(id)) continue;
 			if (!/-free$/.test(id)) continue;
 			const model = synthesizeFreeModel(id, templates, input.meta?.[id]);
-			if (SUPPORTED_APIS.has(model.api)) byId.set(id, applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[id]));
+			if (SUPPORTED_APIS.has(model.api))
+				byId.set(id, applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[id]));
 		}
 	}
 	// Gap fill from the persisted list; catalog-known ids stay authoritative.
 	for (const model of storedCandidates) {
 		if (byId.has(model.id) || input.knownIds?.has(model.id)) continue;
 		if (input.liveIds && !input.liveIds.has(model.id)) continue;
-		byId.set(model.id, applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[model.id]));
+		byId.set(
+			model.id,
+			applyUpstreamCapabilities(model, paidByStem, anyByStem, input.meta?.[model.id]),
+		);
 	}
 	if (input.liveIds) {
 		for (const id of [...byId.keys()]) {
@@ -782,7 +1051,10 @@ export function mergeFreeModels(input: { catalog?: JsonObject[]; knownIds?: Set<
 }
 
 /** Ids the Zen endpoint currently serves; undefined when the list was unreachable. */
-async function fetchLiveModelIds(signal: AbortSignal | undefined, timeoutMs: number): Promise<Set<string> | undefined> {
+async function fetchLiveModelIds(
+	signal: AbortSignal | undefined,
+	timeoutMs: number,
+): Promise<Set<string> | undefined> {
 	try {
 		const session = openCodeSessionId("opencode-free-models");
 		const value = await fetchJson(
@@ -799,20 +1071,33 @@ async function fetchLiveModelIds(signal: AbortSignal | undefined, timeoutMs: num
 			},
 			timeoutMs,
 		);
-		const data = Array.isArray((value as JsonObject)?.data) ? ((value as JsonObject).data as unknown[]) : [];
-		const ids = new Set(data.map((entry) => (entry as JsonObject)?.id).filter((id): id is string => typeof id === "string"));
+		const data = Array.isArray((value as JsonObject)?.data)
+			? ((value as JsonObject).data as unknown[])
+			: [];
+		const ids = new Set(
+			data
+				.map((entry) => (entry as JsonObject)?.id)
+				.filter((id): id is string => typeof id === "string"),
+		);
 		return ids.size > 0 ? ids : undefined;
 	} catch {
 		return undefined;
 	}
 }
 
-async function fetchCatalog(signal: AbortSignal | undefined, timeoutMs: number): Promise<Catalog | undefined> {
+async function fetchCatalog(
+	signal: AbortSignal | undefined,
+	timeoutMs: number,
+): Promise<Catalog | undefined> {
 	try {
 		const url = new URL(CATALOG_URL);
 		url.searchParams.set("types", "chat,classifier");
 		url.searchParams.set("pi-version", PI_VERSION);
-		const value = await fetchJson(url.href, { signal, headers: { accept: "application/json", "User-Agent": `pi/${PI_VERSION}` } }, timeoutMs);
+		const value = await fetchJson(
+			url.href,
+			{ signal, headers: { accept: "application/json", "User-Agent": `pi/${PI_VERSION}` } },
+			timeoutMs,
+		);
 		const catalog = parseCatalog(value);
 		return catalog.chat.length > 0 ? catalog : undefined;
 	} catch {
@@ -842,7 +1127,8 @@ export function extractModelsDev(value: unknown): Record<string, ModelsDevMeta> 
 	const root = (value ?? {}) as JsonObject;
 	const modelsOf = (providerId: string): JsonObject | undefined => {
 		const provider = root[providerId];
-		const models = provider && typeof provider === "object" ? (provider as JsonObject).models : undefined;
+		const models =
+			provider && typeof provider === "object" ? (provider as JsonObject).models : undefined;
 		return models && typeof models === "object" ? (models as JsonObject) : undefined;
 	};
 	const models = modelsOf("opencode");
@@ -856,17 +1142,31 @@ export function extractModelsDev(value: unknown): Record<string, ModelsDevMeta> 
 		// (glm-5.3-flash-free advertises 200K/32K while the routed model serves
 		// 1048576 tokens). The vendor's own entry for the canonical model has the
 		// real limits, so prefer it.
-		const canonical = typeof model.canonical_model_id === "string" ? model.canonical_model_id : undefined;
+		const canonical =
+			typeof model.canonical_model_id === "string" ? model.canonical_model_id : undefined;
 		const [vendorID, vendorModelID] = canonical ? canonical.split("/") : [];
-		const vendorEntry = vendorID && vendorModelID ? modelsOf(VENDOR_ALIASES[vendorID] ?? vendorID)?.[vendorModelID] : undefined;
+		const vendorEntry =
+			vendorID && vendorModelID
+				? modelsOf(VENDOR_ALIASES[vendorID] ?? vendorID)?.[vendorModelID]
+				: undefined;
 		const vendorLimit =
-			vendorEntry && typeof vendorEntry === "object" && (vendorEntry as JsonObject).limit && typeof (vendorEntry as JsonObject).limit === "object"
+			vendorEntry &&
+			typeof vendorEntry === "object" &&
+			(vendorEntry as JsonObject).limit &&
+			typeof (vendorEntry as JsonObject).limit === "object"
 				? ((vendorEntry as JsonObject).limit as JsonObject)
 				: undefined;
-		const limit = vendorLimit ?? (model.limit && typeof model.limit === "object" ? (model.limit as JsonObject) : {});
-		const modalities = model.modalities && typeof model.modalities === "object" ? (model.modalities as JsonObject).input : undefined;
+		const limit =
+			vendorLimit ??
+			(model.limit && typeof model.limit === "object" ? (model.limit as JsonObject) : {});
+		const modalities =
+			model.modalities && typeof model.modalities === "object"
+				? (model.modalities as JsonObject).input
+				: undefined;
 		const input = Array.isArray(modalities)
-			? modalities.filter((entry): entry is "text" | "image" => entry === "text" || entry === "image")
+			? modalities.filter(
+					(entry): entry is "text" | "image" => entry === "text" || entry === "image",
+				)
 			: undefined;
 		const contextWindow = Number(limit.context);
 		const maxTokens = Number(limit.output);
@@ -874,7 +1174,11 @@ export function extractModelsDev(value: unknown): Record<string, ModelsDevMeta> 
 			...(typeof model.name === "string" && model.name.length > 0 ? { name: model.name } : {}),
 			...(Number.isFinite(contextWindow) && contextWindow > 0 ? { contextWindow } : {}),
 			...(Number.isFinite(maxTokens) && maxTokens > 0 ? { maxTokens } : {}),
-			...(input && input.length > 0 ? { input: input.includes("text") ? input : (["text", ...input] as Array<"text" | "image">) } : {}),
+			...(input && input.length > 0
+				? {
+						input: input.includes("text") ? input : (["text", ...input] as Array<"text" | "image">),
+					}
+				: {}),
 			...(typeof model.reasoning === "boolean" ? { reasoning: model.reasoning } : {}),
 		};
 	}
@@ -895,11 +1199,17 @@ async function loadModelsDevMeta(
 	if (OFFLINE) return undefined;
 	const cache = readCache();
 	const cached = cache.modelsDev;
-	const needed = liveIds ? [...liveIds].some((id) => /-free$/.test(id) && !catalog?.knownIds.has(id) && !cached?.[id]) : false;
+	const needed = liveIds
+		? [...liveIds].some((id) => /-free$/.test(id) && !catalog?.knownIds.has(id) && !cached?.[id])
+		: false;
 	if (!needed) return cached;
 	if (Date.now() - (cache.modelsDevCheckedAt ?? 0) < MODELS_DEV_TTL_MS) return cached;
 	try {
-		const value = await fetchJson(MODELS_DEV_URL, { signal, headers: { accept: "application/json" } }, MODELS_DEV_TIMEOUT_MS);
+		const value = await fetchJson(
+			MODELS_DEV_URL,
+			{ signal, headers: { accept: "application/json" } },
+			MODELS_DEV_TIMEOUT_MS,
+		);
 		const meta = extractModelsDev(value);
 		if (Object.keys(meta).length === 0) return cached;
 		writeCache({ modelsDev: meta, modelsDevCheckedAt: Date.now() });
@@ -916,9 +1226,16 @@ let discoveryFetch: Promise<Discovery> | undefined;
 
 function cachedDiscovery(): Discovery | undefined {
 	const entry = readCache();
-	if (!entry.modelsCheckedAt || !Array.isArray(entry.models) || entry.models.length === 0) return undefined;
-	const liveIds = Array.isArray(entry.liveIds) ? entry.liveIds.filter((id): id is string => typeof id === "string") : [];
-	return { models: entry.models, liveIds: liveIds.length > 0 ? new Set(liveIds) : undefined, checkedAt: entry.modelsCheckedAt };
+	if (!entry.modelsCheckedAt || !Array.isArray(entry.models) || entry.models.length === 0)
+		return undefined;
+	const liveIds = Array.isArray(entry.liveIds)
+		? entry.liveIds.filter((id): id is string => typeof id === "string")
+		: [];
+	return {
+		models: entry.models,
+		liveIds: liveIds.length > 0 ? new Set(liveIds) : undefined,
+		checkedAt: entry.modelsCheckedAt,
+	};
 }
 
 function buildDiscovery(
@@ -931,10 +1248,20 @@ function buildDiscovery(
 	// Our own cache is written by the same discovery, so it outranks Pi's store copy.
 	const stored = [...(cached?.models ?? []), ...(options.stored ?? readStoredModels())];
 	const effectiveLiveIds = liveIds ?? cached?.liveIds;
-	const models = mergeFreeModels({ catalog: catalog?.chat, knownIds: catalog?.knownIds, stored, liveIds: effectiveLiveIds, meta });
+	const models = mergeFreeModels({
+		catalog: catalog?.chat,
+		knownIds: catalog?.knownIds,
+		stored,
+		liveIds: effectiveLiveIds,
+		meta,
+	});
 	const fetched = catalog !== undefined || liveIds !== undefined;
 	if (!fetched) return { models, liveIds: effectiveLiveIds, checkedAt: cached?.checkedAt ?? 0 };
-	const result: Discovery = { models: models.length > 0 ? models : (cached?.models ?? []), liveIds: effectiveLiveIds, checkedAt: Date.now() };
+	const result: Discovery = {
+		models: models.length > 0 ? models : (cached?.models ?? []),
+		liveIds: effectiveLiveIds,
+		checkedAt: Date.now(),
+	};
 	discovery = result;
 	for (const model of result.models) discoveredIds.add(model.id);
 	if (models.length > 0) {
@@ -954,18 +1281,32 @@ function buildDiscovery(
  * keeps the cached list without refreshing its timestamp, so the next call
  * retries.
  */
-async function discoverFreeModels(options: { stored?: readonly Model<Api>[]; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Discovery> {
+async function discoverFreeModels(
+	options: { stored?: readonly Model<Api>[]; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<Discovery> {
 	const cached = discovery ?? cachedDiscovery();
 	if (cached) discovery = cached;
-	if (cached && Date.now() - cached.checkedAt < CATALOG_TTL_MS) return buildDiscovery(undefined, undefined, options, cached);
+	if (cached && Date.now() - cached.checkedAt < CATALOG_TTL_MS)
+		return buildDiscovery(undefined, undefined, options, cached);
 	if (discoveryFetch) {
 		await discoveryFetch;
 		return buildDiscovery(undefined, undefined, options, discovery ?? cached);
 	}
 	if (OFFLINE) return buildDiscovery(undefined, undefined, options, cached);
 	const timeoutMs = options.timeoutMs ?? NETWORK_TIMEOUT_MS;
-	discoveryFetch = Promise.all([fetchCatalog(options.signal, timeoutMs), fetchLiveModelIds(options.signal, timeoutMs)])
-		.then(async ([catalog, liveIds]) => buildDiscovery(catalog, liveIds, options, cached, await loadModelsDevMeta(catalog, liveIds, options.signal)))
+	discoveryFetch = Promise.all([
+		fetchCatalog(options.signal, timeoutMs),
+		fetchLiveModelIds(options.signal, timeoutMs),
+	])
+		.then(async ([catalog, liveIds]) =>
+			buildDiscovery(
+				catalog,
+				liveIds,
+				options,
+				cached,
+				await loadModelsDevMeta(catalog, liveIds, options.signal),
+			),
+		)
 		.finally(() => {
 			discoveryFetch = undefined;
 		});
@@ -1096,7 +1437,8 @@ export default function openCodeFreeExtension(pi: ExtensionAPI): void {
 					return discovery?.models ?? BASELINE_FREE_MODELS;
 				}
 			},
-			filterModels: (candidates) => filterDiscoveredModels(candidates, discovery?.models ?? [], lastLiveIds, discoveredIds),
+			filterModels: (candidates) =>
+				filterDiscoveredModels(candidates, discovery?.models ?? [], lastLiveIds, discoveredIds),
 			api: {
 				"openai-responses": withFingerprint(openAIResponsesApi()),
 				"openai-completions": withFingerprint(openAICompletionsApi()),

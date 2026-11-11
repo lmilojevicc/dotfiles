@@ -6,540 +6,636 @@ import test from "node:test";
 import { loadModule, loadPi, loadPiInternal, loadTui } from "./runtime.ts";
 
 interface ForkToPaneDependencies {
-  env: NodeJS.ProcessEnv;
-  tmux: any;
-  herdr: any;
-  bootstrapPath: string;
-  chooseCandidate: Function;
-  chooseTreeEntry: Function;
-  createFork: Function;
-  createFullTree: Function;
-  createProtectedHandoff: Function;
+	env: NodeJS.ProcessEnv;
+	tmux: any;
+	herdr: any;
+	bootstrapPath: string;
+	chooseCandidate: Function;
+	chooseTreeEntry: Function;
+	createFork: Function;
+	createFullTree: Function;
+	createProtectedHandoff: Function;
 }
 
 const {
-  chooseTreeEntry,
-  createSessionToPaneExtension,
-  parsePlacement,
-  runCloneToPane,
-  runForkToPane,
-  runTreeToPane,
-  selectHostAdapter,
+	chooseTreeEntry,
+	createSessionToPaneExtension,
+	parsePlacement,
+	runCloneToPane,
+	runForkToPane,
+	runTreeToPane,
+	selectHostAdapter,
 } = await loadModule<any>("../index.ts");
 const { initTheme } = await loadPi<any>();
-const { KeybindingsManager: AppKeybindingsManager } = await loadPiInternal<any>("core/keybindings.js");
+const { KeybindingsManager: AppKeybindingsManager } =
+	await loadPiInternal<any>("core/keybindings.js");
 const { Editor, setKeybindings } = await loadTui<any>();
 const appKeybindings = new AppKeybindingsManager();
 setKeybindings(appKeybindings);
 initTheme("dark", false);
 
 function context(file: string, overrides: Record<string, any> = {}) {
-  const notifications: Array<[string, string | undefined]> = [];
-  let sourceForkCalls = 0;
-  const ctx = {
-    cwd: "/project",
-    mode: "tui",
-    hasUI: true,
-    model: { provider: "runtime-provider", id: "runtime-model" },
-    thinkingLevel: "high",
-    isIdle: () => true,
-    hasPendingMessages: () => false,
-    fork: async () => { sourceForkCalls += 1; return { cancelled: false }; },
-    navigateTree: async () => { throw new Error("must not navigate source tree"); },
-    sessionManager: {
-      getSessionFile: () => file,
-      getSessionId: () => "source",
-      getSessionDir: () => join(file, ".."),
-      getCwd: () => "/project",
-      getLeafId: () => "u1",
-      getEntry: (id: string) => id === "u1" ? {
-        type: "message", id: "u1", parentId: null, timestamp: "now",
-        message: { role: "user", content: "prompt", timestamp: 1 },
-      } : undefined,
-      getEntries: () => [{
-        type: "message", id: "u1", parentId: null, timestamp: "now",
-        message: { role: "user", content: "prompt", timestamp: 1 },
-      }],
-      getTree: () => [{
-        entry: {
-          type: "message", id: "u1", parentId: null, timestamp: "now",
-          message: { role: "user", content: "prompt", timestamp: 1 },
-        },
-        children: [],
-      }],
-    },
-    ui: {
-      notify: (message: string, type?: string) => notifications.push([message, type]),
-      select: async () => "Right",
-      getEditorText: () => "current draft",
-    },
-    ...overrides,
-  } as any;
-  return { ctx, notifications, getSourceForkCalls: () => sourceForkCalls };
+	const notifications: Array<[string, string | undefined]> = [];
+	let sourceForkCalls = 0;
+	const ctx = {
+		cwd: "/project",
+		mode: "tui",
+		hasUI: true,
+		model: { provider: "runtime-provider", id: "runtime-model" },
+		thinkingLevel: "high",
+		isIdle: () => true,
+		hasPendingMessages: () => false,
+		fork: async () => {
+			sourceForkCalls += 1;
+			return { cancelled: false };
+		},
+		navigateTree: async () => {
+			throw new Error("must not navigate source tree");
+		},
+		sessionManager: {
+			getSessionFile: () => file,
+			getSessionId: () => "source",
+			getSessionDir: () => join(file, ".."),
+			getCwd: () => "/project",
+			getLeafId: () => "u1",
+			getEntry: (id: string) =>
+				id === "u1"
+					? {
+							type: "message",
+							id: "u1",
+							parentId: null,
+							timestamp: "now",
+							message: { role: "user", content: "prompt", timestamp: 1 },
+						}
+					: undefined,
+			getEntries: () => [
+				{
+					type: "message",
+					id: "u1",
+					parentId: null,
+					timestamp: "now",
+					message: { role: "user", content: "prompt", timestamp: 1 },
+				},
+			],
+			getTree: () => [
+				{
+					entry: {
+						type: "message",
+						id: "u1",
+						parentId: null,
+						timestamp: "now",
+						message: { role: "user", content: "prompt", timestamp: 1 },
+					},
+					children: [],
+				},
+			],
+		},
+		ui: {
+			notify: (message: string, type?: string) => notifications.push([message, type]),
+			select: async () => "Right",
+			getEditorText: () => "current draft",
+		},
+		...overrides,
+	} as any;
+	return { ctx, notifications, getSourceForkCalls: () => sourceForkCalls };
 }
 
 function dependencies(overrides: Partial<ForkToPaneDependencies> = {}) {
-  const launches: any[] = [];
-  const deps: ForkToPaneDependencies = {
-    env: { HERDR_ENV: "1" },
-    tmux: {
-      kind: "tmux",
-      validateSource: () => ({ ok: true }),
-      launch: (request) => { launches.push(request); return { ok: true, paneId: "%2" }; },
-    },
-    herdr: {
-      kind: "herdr",
-      validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
-      launch: (request) => { launches.push(request); return { ok: true, paneId: "new-pane" }; },
-    },
-    bootstrapPath: "/extension/bootstrap.ts",
-    chooseCandidate: async (_ctx, candidates) => candidates.at(-1) ?? null,
-    chooseTreeEntry: async () => "u1",
-    createFork: (snapshot) => ({
-      path: "/sessions/fork.jsonl",
-      sessionId: "fork",
-      editorText: snapshot.text,
-      launchState: snapshot.runtimeState,
-    }),
-    createFullTree: (snapshot) => ({
-      path: "/sessions/copy.jsonl",
-      sessionId: "copy",
-      editorText: snapshot.editorText,
-      launchState: snapshot.runtimeState,
-    }),
-    createProtectedHandoff: () => ({ path: "/tmp/handoff.json", nonce: "nonce" }),
-    ...overrides,
-  };
-  return { deps, launches };
+	const launches: any[] = [];
+	const deps: ForkToPaneDependencies = {
+		env: { HERDR_ENV: "1" },
+		tmux: {
+			kind: "tmux",
+			validateSource: () => ({ ok: true }),
+			launch: (request) => {
+				launches.push(request);
+				return { ok: true, paneId: "%2" };
+			},
+		},
+		herdr: {
+			kind: "herdr",
+			validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
+			launch: (request) => {
+				launches.push(request);
+				return { ok: true, paneId: "new-pane" };
+			},
+		},
+		bootstrapPath: "/extension/bootstrap.ts",
+		chooseCandidate: async (_ctx, candidates) => candidates.at(-1) ?? null,
+		chooseTreeEntry: async () => "u1",
+		createFork: (snapshot) => ({
+			path: "/sessions/fork.jsonl",
+			sessionId: "fork",
+			editorText: snapshot.text,
+			launchState: snapshot.runtimeState,
+		}),
+		createFullTree: (snapshot) => ({
+			path: "/sessions/copy.jsonl",
+			sessionId: "copy",
+			editorText: snapshot.editorText,
+			launchState: snapshot.runtimeState,
+		}),
+		createProtectedHandoff: () => ({ path: "/tmp/handoff.json", nonce: "nonce" }),
+		...overrides,
+	};
+	return { deps, launches };
 }
 
 test("argument parsing accepts only the documented orientations", () => {
-  assert.equal(parsePlacement(""), undefined);
-  assert.equal(parsePlacement(" horizontal "), "horizontal");
-  assert.equal(parsePlacement("VERTICAL"), "vertical");
-  assert.equal(parsePlacement("tab"), "tab");
-  assert.equal(parsePlacement("right"), "invalid");
-  assert.equal(parsePlacement("horizontal extra"), "invalid");
+	assert.equal(parsePlacement(""), undefined);
+	assert.equal(parsePlacement(" horizontal "), "horizontal");
+	assert.equal(parsePlacement("VERTICAL"), "vertical");
+	assert.equal(parsePlacement("tab"), "tab");
+	assert.equal(parsePlacement("right"), "invalid");
+	assert.equal(parsePlacement("horizontal extra"), "invalid");
 });
 
 test("host detection prefers tmux and otherwise selects Herdr only when marked", () => {
-  const tmux = { kind: "tmux" };
-  const herdr = { kind: "herdr" };
-  assert.equal(selectHostAdapter({ TMUX: "/tmp/tmux,1,0", HERDR_ENV: "1" }, { tmux, herdr }), tmux);
-  assert.equal(selectHostAdapter({ HERDR_PANE_ID: "w1:p1" }, { tmux, herdr }), herdr);
-  assert.equal(selectHostAdapter({}, { tmux, herdr }), undefined);
+	const tmux = { kind: "tmux" };
+	const herdr = { kind: "herdr" };
+	assert.equal(selectHostAdapter({ TMUX: "/tmp/tmux,1,0", HERDR_ENV: "1" }, { tmux, herdr }), tmux);
+	assert.equal(selectHostAdapter({ HERDR_PANE_ID: "w1:p1" }, { tmux, herdr }), herdr);
+	assert.equal(selectHostAdapter({}, { tmux, herdr }), undefined);
 });
 
 test("invalid args and non-TUI calls stop before host or session side effects", async () => {
-  const { deps } = dependencies({
-    herdr: {
-      validateSource: () => { throw new Error("must not validate"); },
-      launch: () => { throw new Error("must not launch"); },
-    },
-  });
-  const invalid = context("/missing");
-  await runForkToPane("diagonal", invalid.ctx, deps);
-  assert.match(invalid.notifications[0][0], /Usage/);
+	const { deps } = dependencies({
+		herdr: {
+			validateSource: () => {
+				throw new Error("must not validate");
+			},
+			launch: () => {
+				throw new Error("must not launch");
+			},
+		},
+	});
+	const invalid = context("/missing");
+	await runForkToPane("diagonal", invalid.ctx, deps);
+	assert.match(invalid.notifications[0][0], /Usage/);
 
-  const noUi = context("/missing", { mode: "print", hasUI: false });
-  await runForkToPane("horizontal", noUi.ctx, deps);
-  assert.match(noUi.notifications[0][0], /interactive TUI/);
+	const noUi = context("/missing", { mode: "print", hasUI: false });
+	await runForkToPane("horizontal", noUi.ctx, deps);
+	assert.match(noUi.notifications[0][0], /interactive TUI/);
 });
 
 test("unsupported host and picker cancellation create no fork", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let forkCalls = 0;
-    const unsupported = dependencies({
-      env: {},
-      createFork: () => { forkCalls += 1; throw new Error("unexpected"); },
-    });
-    const first = context(file);
-    (first.ctx as any).ui.select = async () => { throw new Error("destination picker must not open"); };
-    await runForkToPane("", first.ctx, unsupported.deps);
-    assert.equal(forkCalls, 0);
-    assert.match(first.notifications[0][0], /requires tmux or Herdr/);
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let forkCalls = 0;
+		const unsupported = dependencies({
+			env: {},
+			createFork: () => {
+				forkCalls += 1;
+				throw new Error("unexpected");
+			},
+		});
+		const first = context(file);
+		(first.ctx as any).ui.select = async () => {
+			throw new Error("destination picker must not open");
+		};
+		await runForkToPane("", first.ctx, unsupported.deps);
+		assert.equal(forkCalls, 0);
+		assert.match(first.notifications[0][0], /requires tmux or Herdr/);
 
-    const invalidHerdr = dependencies({
-      herdr: { kind: "herdr", validateSource: () => ({ ok: false, error: "Herdr identity is stale" }), launch: () => ({ ok: false }) },
-      createFork: () => { forkCalls += 1; throw new Error("unexpected"); },
-    });
-    const stale = context(file);
-    await runForkToPane("horizontal", stale.ctx, invalidHerdr.deps);
-    assert.equal(forkCalls, 0);
-    assert.match(stale.notifications[0][0], /identity is stale/);
+		const invalidHerdr = dependencies({
+			herdr: {
+				kind: "herdr",
+				validateSource: () => ({ ok: false, error: "Herdr identity is stale" }),
+				launch: () => ({ ok: false }),
+			},
+			createFork: () => {
+				forkCalls += 1;
+				throw new Error("unexpected");
+			},
+		});
+		const stale = context(file);
+		await runForkToPane("horizontal", stale.ctx, invalidHerdr.deps);
+		assert.equal(forkCalls, 0);
+		assert.match(stale.notifications[0][0], /identity is stale/);
 
-    const cancelled = dependencies({
-      chooseCandidate: async () => null,
-      createFork: () => { forkCalls += 1; throw new Error("unexpected"); },
-    });
-    const second = context(file);
-    await runForkToPane("horizontal", second.ctx, cancelled.deps);
-    assert.equal(forkCalls, 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+		const cancelled = dependencies({
+			chooseCandidate: async () => null,
+			createFork: () => {
+				forkCalls += 1;
+				throw new Error("unexpected");
+			},
+		});
+		const second = context(file);
+		await runForkToPane("horizontal", second.ctx, cancelled.deps);
+		assert.equal(forkCalls, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("nested tmux in Herdr launches only the tmux target", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let tmuxLaunches = 0;
-    let herdrCalls = 0;
-    const { deps } = dependencies({
-      env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" },
-      tmux: {
-        kind: "tmux",
-        validateSource: () => ({ ok: true }),
-        launch: () => { tmuxLaunches += 1; return { ok: true, paneId: "%2" }; },
-      },
-      herdr: {
-        kind: "herdr",
-        validateSource: () => { herdrCalls += 1; return { ok: true }; },
-        launch: () => { herdrCalls += 1; return { ok: true }; },
-      },
-    });
-    await runForkToPane("horizontal", context(file).ctx, deps);
-    assert.equal(tmuxLaunches, 1);
-    assert.equal(herdrCalls, 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let tmuxLaunches = 0;
+		let herdrCalls = 0;
+		const { deps } = dependencies({
+			env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" },
+			tmux: {
+				kind: "tmux",
+				validateSource: () => ({ ok: true }),
+				launch: () => {
+					tmuxLaunches += 1;
+					return { ok: true, paneId: "%2" };
+				},
+			},
+			herdr: {
+				kind: "herdr",
+				validateSource: () => {
+					herdrCalls += 1;
+					return { ok: true };
+				},
+				launch: () => {
+					herdrCalls += 1;
+					return { ok: true };
+				},
+			},
+		});
+		await runForkToPane("horizontal", context(file).ctx, deps);
+		assert.equal(tmuxLaunches, 1);
+		assert.equal(herdrCalls, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("stale tmux identity fails closed without validating or launching Herdr", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let herdrCalls = 0;
-    let forkCalls = 0;
-    const { deps } = dependencies({
-      env: { TMUX: "malformed", HERDR_ENV: "1" },
-      tmux: {
-        kind: "tmux",
-        validateSource: () => ({ ok: false, error: "tmux session identity is malformed" }),
-        launch: () => { throw new Error("must not launch"); },
-      },
-      herdr: {
-        kind: "herdr",
-        validateSource: () => { herdrCalls += 1; return { ok: true }; },
-        launch: () => { herdrCalls += 1; return { ok: true }; },
-      },
-      createFork: () => { forkCalls += 1; throw new Error("must not fork"); },
-    });
-    const run = context(file);
-    (run.ctx as any).ui.select = async () => { throw new Error("destination picker must not open"); };
-    await runForkToPane("", run.ctx, deps);
-    assert.equal(herdrCalls, 0);
-    assert.equal(forkCalls, 0);
-    assert.match(run.notifications[0][0], /tmux session identity is malformed/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let herdrCalls = 0;
+		let forkCalls = 0;
+		const { deps } = dependencies({
+			env: { TMUX: "malformed", HERDR_ENV: "1" },
+			tmux: {
+				kind: "tmux",
+				validateSource: () => ({ ok: false, error: "tmux session identity is malformed" }),
+				launch: () => {
+					throw new Error("must not launch");
+				},
+			},
+			herdr: {
+				kind: "herdr",
+				validateSource: () => {
+					herdrCalls += 1;
+					return { ok: true };
+				},
+				launch: () => {
+					herdrCalls += 1;
+					return { ok: true };
+				},
+			},
+			createFork: () => {
+				forkCalls += 1;
+				throw new Error("must not fork");
+			},
+		});
+		const run = context(file);
+		(run.ctx as any).ui.select = async () => {
+			throw new Error("destination picker must not open");
+		};
+		await runForkToPane("", run.ctx, deps);
+		assert.equal(herdrCalls, 0);
+		assert.equal(forkCalls, 0);
+		assert.match(run.notifications[0][0], /tmux session identity is malformed/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("successful command launches a separate Pi fork and never calls ctx.fork", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    const { deps, launches } = dependencies();
-    const run = context(file);
-    await runForkToPane("vertical", run.ctx, deps);
-    assert.equal(run.getSourceForkCalls(), 0);
-    assert.equal(launches.length, 1);
-    assert.equal(launches[0].placement, "vertical");
-    assert.equal(launches[0].cwd, "/project");
-    assert.equal(launches[0].sessionPath, "/sessions/fork.jsonl");
-    assert.equal(launches[0].sessionId, "fork");
-    assert.deepEqual(launches[0].runtimeState, {
-      model: { provider: "runtime-provider", modelId: "runtime-model" },
-      thinkingLevel: "high",
-    });
-    assert.ok(run.notifications.at(-1)?.[0].includes("source session unchanged"));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		const { deps, launches } = dependencies();
+		const run = context(file);
+		await runForkToPane("vertical", run.ctx, deps);
+		assert.equal(run.getSourceForkCalls(), 0);
+		assert.equal(launches.length, 1);
+		assert.equal(launches[0].placement, "vertical");
+		assert.equal(launches[0].cwd, "/project");
+		assert.equal(launches[0].sessionPath, "/sessions/fork.jsonl");
+		assert.equal(launches[0].sessionId, "fork");
+		assert.deepEqual(launches[0].runtimeState, {
+			model: { provider: "runtime-provider", modelId: "runtime-model" },
+			thinkingLevel: "high",
+		});
+		assert.ok(run.notifications.at(-1)?.[0].includes("source session unchanged"));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("command does not report success before child readiness acknowledgement", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let acknowledge: ((result: any) => void) | undefined;
-    const launchResult = new Promise((resolve) => { acknowledge = resolve; });
-    const { deps } = dependencies({
-      herdr: {
-        validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
-        launch: () => launchResult,
-      },
-    });
-    const run = context(file);
-    const pending = runForkToPane("horizontal", run.ctx, deps);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(run.notifications.length, 0);
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let acknowledge: ((result: any) => void) | undefined;
+		const launchResult = new Promise((resolve) => {
+			acknowledge = resolve;
+		});
+		const { deps } = dependencies({
+			herdr: {
+				validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
+				launch: () => launchResult,
+			},
+		});
+		const run = context(file);
+		const pending = runForkToPane("horizontal", run.ctx, deps);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.equal(run.notifications.length, 0);
 
-    acknowledge!({ ok: true, paneId: "new-pane" });
-    await pending;
-    assert.match(run.notifications.at(-1)?.[0] ?? "", /Fork opened/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+		acknowledge!({ ok: true, paneId: "new-pane" });
+		await pending;
+		assert.match(run.notifications.at(-1)?.[0] ?? "", /Fork opened/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("readiness failure removes the protected handoff and never reports success", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const handoffDir = mkdtempSync(join(tmpdir(), "pi-session-to-pane-command-"));
-  chmodSync(handoffDir, 0o700);
-  const file = join(dir, "source.jsonl");
-  const handoffPath = join(handoffDir, "handoff.json");
-  writeFileSync(file, "{}\n");
-  writeFileSync(handoffPath, "protected prompt", { mode: 0o600 });
-  try {
-    const { deps } = dependencies({
-      herdr: {
-        validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
-        launch: async () => ({ ok: false, paneId: "new-pane", error: "readiness timed out" }),
-      },
-      createProtectedHandoff: () => ({ path: handoffPath, nonce: "nonce" }),
-    });
-    const run = context(file);
-    await runForkToPane("horizontal", run.ctx, deps);
-    assert.equal(existsSync(handoffDir), false);
-    assert.equal(run.notifications.some(([message]) => message.includes("Fork opened")), false);
-    assert.match(run.notifications.at(-1)?.[0] ?? "", /readiness timed out/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(handoffDir, { recursive: true, force: true });
-  }
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const handoffDir = mkdtempSync(join(tmpdir(), "pi-session-to-pane-command-"));
+	chmodSync(handoffDir, 0o700);
+	const file = join(dir, "source.jsonl");
+	const handoffPath = join(handoffDir, "handoff.json");
+	writeFileSync(file, "{}\n");
+	writeFileSync(handoffPath, "protected prompt", { mode: 0o600 });
+	try {
+		const { deps } = dependencies({
+			herdr: {
+				validateSource: () => ({ ok: true, sourcePaneId: "source-pane" }),
+				launch: async () => ({ ok: false, paneId: "new-pane", error: "readiness timed out" }),
+			},
+			createProtectedHandoff: () => ({ path: handoffPath, nonce: "nonce" }),
+		});
+		const run = context(file);
+		await runForkToPane("horizontal", run.ctx, deps);
+		assert.equal(existsSync(handoffDir), false);
+		assert.equal(
+			run.notifications.some(([message]) => message.includes("Fork opened")),
+			false,
+		);
+		assert.match(run.notifications.at(-1)?.[0] ?? "", /readiness timed out/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+		rmSync(handoffDir, { recursive: true, force: true });
+	}
 });
 
 test("no args uses host-specific final choice; explicit tab bypasses it", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    const first = context(file);
-    let offered: string[] | undefined;
-    (first.ctx as any).ui.select = async (_title: string, options: string[]) => {
-      offered = options;
-      return "New tab";
-    };
-    const chooserRun = dependencies();
-    await runForkToPane("", first.ctx, chooserRun.deps);
-    assert.deepEqual(offered, ["Right", "Below", "New tab"]);
-    assert.equal(chooserRun.launches[0].placement, "tab");
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		const first = context(file);
+		let offered: string[] | undefined;
+		(first.ctx as any).ui.select = async (_title: string, options: string[]) => {
+			offered = options;
+			return "New tab";
+		};
+		const chooserRun = dependencies();
+		await runForkToPane("", first.ctx, chooserRun.deps);
+		assert.deepEqual(offered, ["Right", "Below", "New tab"]);
+		assert.equal(chooserRun.launches[0].placement, "tab");
 
-    const tmuxContext = context(file);
-    let tmuxOffered: string[] | undefined;
-    (tmuxContext.ctx as any).ui.select = async (_title: string, options: string[]) => {
-      tmuxOffered = options;
-      return "New window";
-    };
-    const tmuxRun = dependencies({ env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1" } });
-    await runForkToPane("", tmuxContext.ctx, tmuxRun.deps);
-    assert.deepEqual(tmuxOffered, ["Right", "Below", "New window"]);
-    assert.equal(tmuxRun.launches[0].placement, "tab");
+		const tmuxContext = context(file);
+		let tmuxOffered: string[] | undefined;
+		(tmuxContext.ctx as any).ui.select = async (_title: string, options: string[]) => {
+			tmuxOffered = options;
+			return "New window";
+		};
+		const tmuxRun = dependencies({
+			env: { TMUX: "/tmp/tmux,1,0", TMUX_PANE: "%1", HERDR_ENV: "1" },
+		});
+		await runForkToPane("", tmuxContext.ctx, tmuxRun.deps);
+		assert.deepEqual(tmuxOffered, ["Right", "Below", "New window"]);
+		assert.equal(tmuxRun.launches[0].placement, "tab");
 
-    const second = context(file);
-    (second.ctx as any).ui.select = async () => { throw new Error("chooser must be bypassed"); };
-    const directRun = dependencies();
-    await runForkToPane("tab", second.ctx, directRun.deps);
-    assert.equal(directRun.launches[0].placement, "tab");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+		const second = context(file);
+		(second.ctx as any).ui.select = async () => {
+			throw new Error("chooser must be bypassed");
+		};
+		const directRun = dependencies();
+		await runForkToPane("tab", second.ctx, directRun.deps);
+		assert.equal(directRun.launches[0].placement, "tab");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 function treePickerSession() {
-  const entry = {
-    type: "message",
-    id: "u1",
-    parentId: null,
-    timestamp: "now",
-    message: { role: "user", content: "prompt", timestamp: 1 },
-  };
-  return {
-    getTree: () => [{ entry, children: [] }],
-    getLeafId: () => "u1",
-  };
+	const entry = {
+		type: "message",
+		id: "u1",
+		parentId: null,
+		timestamp: "now",
+		message: { role: "user", content: "prompt", timestamp: 1 },
+	};
+	return {
+		getTree: () => [{ entry, children: [] }],
+		getLeafId: () => "u1",
+	};
 }
 
 function editorWithCollapsedPaste() {
-  const editor = new Editor({ requestRender() {} } as any, {
-    borderColor: (text: string) => text,
-    selectList: {} as any,
-  });
-  let submissions = 0;
-  editor.onSubmit = () => { submissions += 1; };
-  const pasted = "x".repeat(1500);
-  editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
-  for (const char of " tail") editor.handleInput(char);
-  editor.handleInput("\x1b[D");
-  return { editor, expanded: `${pasted} tail`, submissions: () => submissions };
+	const editor = new Editor({ requestRender() {} } as any, {
+		borderColor: (text: string) => text,
+		selectList: {} as any,
+	});
+	let submissions = 0;
+	editor.onSubmit = () => {
+		submissions += 1;
+	};
+	const pasted = "x".repeat(1500);
+	editor.handleInput(`\x1b[200~${pasted}\x1b[201~`);
+	for (const char of " tail") editor.handleInput(char);
+	editor.handleInput("\x1b[D");
+	return { editor, expanded: `${pasted} tail`, submissions: () => submissions };
 }
 
 test("tree picker overlay preserves collapsed-paste content and cursor on selection and cancellation", async () => {
-  for (const scenario of [
-    { key: "\r", expected: "u1" },
-    { key: "\x1b", expected: null },
-  ]) {
-    const { editor, expanded, submissions } = editorWithCollapsedPaste();
-    const cursor = editor.getCursor();
-    let overlay: boolean | undefined;
-    const ctx = {
-      sessionManager: treePickerSession(),
-      ui: {
-        notify() {},
-        custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
-          overlay = options?.overlay;
-          const savedText = editor.getText();
-          let completed = false;
-          let result: string | null = null;
-          const selector = await factory(
-            { terminal: { rows: 40 }, requestRender() {} },
-            undefined,
-            appKeybindings,
-            (value: string | null) => { completed = true; result = value; },
-          );
-          selector.handleInput(scenario.key);
-          assert.equal(completed, true);
-          if (!options?.overlay) editor.setText(savedText);
-          return result;
-        },
-      },
-    } as any;
+	for (const scenario of [
+		{ key: "\r", expected: "u1" },
+		{ key: "\x1b", expected: null },
+	]) {
+		const { editor, expanded, submissions } = editorWithCollapsedPaste();
+		const cursor = editor.getCursor();
+		let overlay: boolean | undefined;
+		const ctx = {
+			sessionManager: treePickerSession(),
+			ui: {
+				notify() {},
+				custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
+					overlay = options?.overlay;
+					const savedText = editor.getText();
+					let completed = false;
+					let result: string | null = null;
+					const selector = await factory(
+						{ terminal: { rows: 40 }, requestRender() {} },
+						undefined,
+						appKeybindings,
+						(value: string | null) => {
+							completed = true;
+							result = value;
+						},
+					);
+					selector.handleInput(scenario.key);
+					assert.equal(completed, true);
+					if (!options?.overlay) editor.setText(savedText);
+					return result;
+				},
+			},
+		} as any;
 
-    assert.equal(await chooseTreeEntry(ctx), scenario.expected);
-    assert.equal(overlay, true);
-    assert.equal(editor.getExpandedText(), expanded);
-    assert.deepEqual(editor.getCursor(), cursor);
-    assert.equal(submissions(), 0);
-  }
+		assert.equal(await chooseTreeEntry(ctx), scenario.expected);
+		assert.equal(overlay, true);
+		assert.equal(editor.getExpandedText(), expanded);
+		assert.deepEqual(editor.getCursor(), cursor);
+		assert.equal(submissions(), 0);
+	}
 });
 
 test("tree picker disables label editing in the real tree component", async () => {
-  assert.equal(appKeybindings.matches("L", "app.tree.editLabel"), true);
-  let checked = false;
-  const ctx = {
-    sessionManager: treePickerSession(),
-    ui: {
-      notify() {},
-      custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
-        const selector = await factory(
-          { terminal: { rows: 40 }, requestRender() {} },
-          undefined,
-          appKeybindings,
-          () => {},
-        );
-        assert.equal(options?.overlay, true);
-        assert.equal(selector.getTreeList().onLabelEdit, undefined);
-        selector.handleInput("L");
-        assert.doesNotMatch(selector.render(120).join("\n"), /Label \(empty to remove\):/);
-        checked = true;
-        return null;
-      },
-    },
-  } as any;
+	assert.equal(appKeybindings.matches("L", "app.tree.editLabel"), true);
+	let checked = false;
+	const ctx = {
+		sessionManager: treePickerSession(),
+		ui: {
+			notify() {},
+			custom: async (factory: Function, options: { overlay?: boolean } | undefined) => {
+				const selector = await factory(
+					{ terminal: { rows: 40 }, requestRender() {} },
+					undefined,
+					appKeybindings,
+					() => {},
+				);
+				assert.equal(options?.overlay, true);
+				assert.equal(selector.getTreeList().onLabelEdit, undefined);
+				selector.handleInput("L");
+				assert.doesNotMatch(selector.render(120).join("\n"), /Label \(empty to remove\):/);
+				checked = true;
+				return null;
+			},
+		},
+	} as any;
 
-  assert.equal(await chooseTreeEntry(ctx), null);
-  assert.equal(checked, true);
+	assert.equal(await chooseTreeEntry(ctx), null);
+	assert.equal(checked, true);
 });
 
 test("tree command copies the selected native position without navigating the source", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-tree-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let captured: any;
-    const { deps, launches } = dependencies({
-      chooseTreeEntry: async () => "u1",
-      createFullTree: (snapshot) => {
-        captured = snapshot;
-        return {
-          path: "/sessions/tree.jsonl",
-          sessionId: "tree-copy",
-          editorText: snapshot.editorText,
-          launchState: snapshot.runtimeState,
-        };
-      },
-    });
-    const run = context(file);
-    await runTreeToPane("horizontal", run.ctx, deps);
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-tree-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let captured: any;
+		const { deps, launches } = dependencies({
+			chooseTreeEntry: async () => "u1",
+			createFullTree: (snapshot) => {
+				captured = snapshot;
+				return {
+					path: "/sessions/tree.jsonl",
+					sessionId: "tree-copy",
+					editorText: snapshot.editorText,
+					launchState: snapshot.runtimeState,
+				};
+			},
+		});
+		const run = context(file);
+		await runTreeToPane("horizontal", run.ctx, deps);
 
-    assert.equal(captured.mode, "tree");
-    assert.equal(captured.targetLeafId, null);
-    assert.equal(captured.editorText, "prompt");
-    assert.equal(launches[0].sessionId, "tree-copy");
-    assert.deepEqual(launches[0].runtimeState, {
-      model: { provider: "runtime-provider", modelId: "runtime-model" },
-      thinkingLevel: "high",
-    });
-    assert.equal(run.getSourceForkCalls(), 0);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+		assert.equal(captured.mode, "tree");
+		assert.equal(captured.targetLeafId, null);
+		assert.equal(captured.editorText, "prompt");
+		assert.equal(launches[0].sessionId, "tree-copy");
+		assert.deepEqual(launches[0].runtimeState, {
+			model: { provider: "runtime-provider", modelId: "runtime-model" },
+			thinkingLevel: "high",
+		});
+		assert.equal(run.getSourceForkCalls(), 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("clone captures the active position and editor draft before the destination chooser", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-clone-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let draft = "draft before chooser";
-    let leaf = "u1";
-    let captured: any;
-    const run = context(file);
-    (run.ctx as any).ui.getEditorText = () => draft;
-    (run.ctx as any).sessionManager.getLeafId = () => leaf;
-    (run.ctx as any).ui.select = async () => {
-      draft = "changed by chooser";
-      leaf = "other";
-      return "Right";
-    };
-    const { deps } = dependencies({
-      createFullTree: (snapshot) => {
-        captured = snapshot;
-        return { path: "/sessions/clone.jsonl", sessionId: "clone", editorText: snapshot.editorText, launchState: snapshot.runtimeState };
-      },
-    });
-    await runCloneToPane("", run.ctx, deps);
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-clone-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let draft = "draft before chooser";
+		let leaf = "u1";
+		let captured: any;
+		const run = context(file);
+		(run.ctx as any).ui.getEditorText = () => draft;
+		(run.ctx as any).sessionManager.getLeafId = () => leaf;
+		(run.ctx as any).ui.select = async () => {
+			draft = "changed by chooser";
+			leaf = "other";
+			return "Right";
+		};
+		const { deps } = dependencies({
+			createFullTree: (snapshot) => {
+				captured = snapshot;
+				return {
+					path: "/sessions/clone.jsonl",
+					sessionId: "clone",
+					editorText: snapshot.editorText,
+					launchState: snapshot.runtimeState,
+				};
+			},
+		});
+		await runCloneToPane("", run.ctx, deps);
 
-    assert.equal(captured.mode, "clone");
-    assert.equal(captured.editorText, "draft before chooser");
-    assert.equal(captured.targetLeafId, "u1");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+		assert.equal(captured.mode, "clone");
+		assert.equal(captured.editorText, "draft before chooser");
+		assert.equal(captured.targetLeafId, "u1");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("the renamed extension registers exactly the three to-pane commands once", () => {
-  const registrations: string[] = [];
-  createSessionToPaneExtension({
-    registerCommand: (name: string) => registrations.push(name),
-  } as any, dependencies().deps);
-  assert.deepEqual(registrations, ["fork-to-pane", "tree-to-pane", "clone-to-pane"]);
-  assert.equal(new Set(registrations).size, 3);
+	const registrations: string[] = [];
+	createSessionToPaneExtension(
+		{
+			registerCommand: (name: string) => registrations.push(name),
+		} as any,
+		dependencies().deps,
+	);
+	assert.deepEqual(registrations, ["fork-to-pane", "tree-to-pane", "clone-to-pane"]);
+	assert.equal(new Set(registrations).size, 3);
 });
 
 test("busy sessions are rejected before opening a chooser", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
-  const file = join(dir, "source.jsonl");
-  writeFileSync(file, "{}\n");
-  try {
-    let picked = false;
-    const { deps } = dependencies({ chooseCandidate: async () => { picked = true; return null; } });
-    const run = context(file, { isIdle: () => false });
-    await runForkToPane("horizontal", run.ctx, deps);
-    assert.equal(picked, false);
-    assert.match(run.notifications[0][0], /idle/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+	const dir = mkdtempSync(join(tmpdir(), "session-to-pane-command-"));
+	const file = join(dir, "source.jsonl");
+	writeFileSync(file, "{}\n");
+	try {
+		let picked = false;
+		const { deps } = dependencies({
+			chooseCandidate: async () => {
+				picked = true;
+				return null;
+			},
+		});
+		const run = context(file, { isIdle: () => false });
+		await runForkToPane("horizontal", run.ctx, deps);
+		assert.equal(picked, false);
+		assert.match(run.notifications[0][0], /idle/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

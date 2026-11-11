@@ -22,7 +22,11 @@
  */
 
 import { homedir } from "node:os";
-import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { matchesKey, type KeyId } from "@earendil-works/pi-tui";
 import {
 	formatStatus,
@@ -58,7 +62,11 @@ function matchesAnyKey(data: string, ...keys: readonly KeyId[]): boolean {
 	return keys.some((key) => matchesKey(data, key));
 }
 
-type CacheEntry = { snapshot?: ProviderSnapshot; expiresAt: number; promise?: Promise<ProviderSnapshot> };
+type CacheEntry = {
+	snapshot?: ProviderSnapshot;
+	expiresAt: number;
+	promise?: Promise<ProviderSnapshot>;
+};
 
 /** Per-provider snapshot cache shared by the footer and the menu; one in-flight fetch per provider. */
 const snapshotCache = new Map<string, CacheEntry>();
@@ -76,14 +84,19 @@ function createAdapterContext(ctx: ExtensionContext): AdapterContext {
 		getProviderAuth: async (providerId) => {
 			try {
 				const resolved = await registry.getProviderAuth(providerId);
-				return resolved?.auth ? { apiKey: resolved.auth.apiKey, baseUrl: resolved.auth.baseUrl } : undefined;
+				return resolved?.auth
+					? { apiKey: resolved.auth.apiKey, baseUrl: resolved.auth.baseUrl }
+					: undefined;
 			} catch {
 				return undefined;
 			}
 		},
 		hasProviderCredentials: (providerId) => {
-			try { return registry.getProviderAuthStatus?.(providerId)?.configured === true; }
-			catch { return false; }
+			try {
+				return registry.getProviderAuthStatus?.(providerId)?.configured === true;
+			} catch {
+				return false;
+			}
 		},
 		agentDir: getAgentDir(),
 		homeDir: homedir(),
@@ -91,7 +104,9 @@ function createAdapterContext(ctx: ExtensionContext): AdapterContext {
 		fetch: (input, init) => globalThis.fetch(input, init),
 		// Tests inject a stub so a suite never reads the developer's real keychain.
 		...(() => {
-			const injected = (ctx as { readKeychainItem?: (service: string) => Promise<string | undefined> }).readKeychainItem;
+			const injected = (
+				ctx as { readKeychainItem?: (service: string) => Promise<string | undefined> }
+			).readKeychainItem;
 			return typeof injected === "function" ? { readKeychainItem: injected } : {};
 		})(),
 	};
@@ -99,7 +114,8 @@ function createAdapterContext(ctx: ExtensionContext): AdapterContext {
 
 function errorMessage(error: unknown): TabError {
 	if (error instanceof ProviderStateError) return { message: error.message, state: error.state };
-	if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return { message: "Request timed out." };
+	if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
+		return { message: "Request timed out." };
 	return { message: error instanceof Error && error.message ? error.message : "Request failed." };
 }
 
@@ -113,10 +129,16 @@ function mergeLiveSnapshot(snapshot: ProviderSnapshot): void {
 }
 
 /** Fresh cached snapshot unless forced; a failed refresh keeps the previous snapshot cached and rethrows. */
-function fetchSnapshot(adapter: ProviderAdapter, adapterContext: AdapterContext, signal: AbortSignal, force = false): Promise<ProviderSnapshot> {
+function fetchSnapshot(
+	adapter: ProviderAdapter,
+	adapterContext: AdapterContext,
+	signal: AbortSignal,
+	force = false,
+): Promise<ProviderSnapshot> {
 	const cached = snapshotCache.get(adapter.id);
 	if (cached?.promise) return cached.promise;
-	if (!force && cached?.snapshot && cached.expiresAt > Date.now()) return Promise.resolve(cached.snapshot);
+	if (!force && cached?.snapshot && cached.expiresAt > Date.now())
+		return Promise.resolve(cached.snapshot);
 	const entry: CacheEntry = cached ?? { expiresAt: 0 };
 	const promise = (async () => {
 		try {
@@ -133,11 +155,19 @@ function fetchSnapshot(adapter: ProviderAdapter, adapterContext: AdapterContext,
 	return promise;
 }
 
-async function visibleAdapters(adapters: readonly ProviderAdapter[], adapterContext: AdapterContext): Promise<ProviderAdapter[]> {
-	const visible = await Promise.all(adapters.map(async (adapter) => {
-		try { return await adapter.hasCredentials(adapterContext); }
-		catch { return false; }
-	}));
+async function visibleAdapters(
+	adapters: readonly ProviderAdapter[],
+	adapterContext: AdapterContext,
+): Promise<ProviderAdapter[]> {
+	const visible = await Promise.all(
+		adapters.map(async (adapter) => {
+			try {
+				return await adapter.hasCredentials(adapterContext);
+			} catch {
+				return false;
+			}
+		}),
+	);
 	return adapters.filter((_, index) => visible[index]);
 }
 
@@ -146,20 +176,35 @@ async function visibleAdapters(adapters: readonly ProviderAdapter[], adapterCont
  * `claude-bridge` and the built-in `anthropic` provider, for example). The footer and the panel's
  * initial tab share this predicate so both agree on which quota source a session belongs to.
  */
-function adapterForProvider(adapters: readonly ProviderAdapter[], providerId: string | undefined): ProviderAdapter | undefined {
+function adapterForProvider(
+	adapters: readonly ProviderAdapter[],
+	providerId: string | undefined,
+): ProviderAdapter | undefined {
 	if (!providerId) return undefined;
-	return adapters.find((adapter) => adapter.id === providerId || adapter.aliases?.includes(providerId));
+	return adapters.find(
+		(adapter) => adapter.id === providerId || adapter.aliases?.includes(providerId),
+	);
 }
 
 /** `<providerId> <used>% used` for the session model's provider, else the first visible provider with data. */
-async function computeStatus(ctx: ExtensionContext, adapters: readonly ProviderAdapter[], adapterContext: AdapterContext, signal: AbortSignal): Promise<string | undefined> {
+async function computeStatus(
+	ctx: ExtensionContext,
+	adapters: readonly ProviderAdapter[],
+	adapterContext: AdapterContext,
+	signal: AbortSignal,
+): Promise<string | undefined> {
 	const visible = await visibleAdapters(adapters, adapterContext);
 	const preferred = adapterForProvider(visible, ctx.model?.provider);
-	for (const adapter of preferred ? [preferred, ...visible.filter((candidate) => candidate !== preferred)] : visible) {
+	for (const adapter of preferred
+		? [preferred, ...visible.filter((candidate) => candidate !== preferred)]
+		: visible) {
 		if (signal.aborted) return undefined;
 		let snapshot: ProviderSnapshot | undefined;
-		try { snapshot = await fetchSnapshot(adapter, adapterContext, signal); }
-		catch { snapshot = snapshotCache.get(adapter.id)?.snapshot; }
+		try {
+			snapshot = await fetchSnapshot(adapter, adapterContext, signal);
+		} catch {
+			snapshot = snapshotCache.get(adapter.id)?.snapshot;
+		}
 		const used = snapshot ? statusUsedPercent(snapshot) : undefined;
 		if (used !== undefined) return formatStatus(adapter.id, used);
 	}
@@ -175,7 +220,11 @@ function setStatus(ctx: ExtensionContext, text?: string): void {
 	}
 }
 
-async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, dependencies: UsageDependencies = {}): Promise<void> {
+async function openUsage(
+	ctx: ExtensionContext,
+	shutdownSignal: AbortSignal,
+	dependencies: UsageDependencies = {},
+): Promise<void> {
 	if (ctx.mode !== "tui") {
 		const message = "/usage requires interactive terminal mode";
 		if (ctx.hasUI) ctx.ui.notify(message, "warning");
@@ -273,13 +322,17 @@ async function openUsage(ctx: ExtensionContext, shutdownSignal: AbortSignal, dep
 
 		return {
 			render: (width: number) => {
-				const frame = formatScrollFrame(theme, {
-					titles: tabs?.map((adapter) => adapter.title) ?? [],
-					active: activeTab,
-					...body(width),
-					offset: scrollOffset,
-					height: frameHeight(tui.terminal?.rows) - STATUSLINE_RESERVE,
-				}, width);
+				const frame = formatScrollFrame(
+					theme,
+					{
+						titles: tabs?.map((adapter) => adapter.title) ?? [],
+						active: activeTab,
+						...body(width),
+						offset: scrollOffset,
+						height: frameHeight(tui.terminal?.rows) - STATUSLINE_RESERVE,
+					},
+					width,
+				);
 				// Clamp after any refresh or height change; the geometry feeds page scrolling.
 				scrollOffset = frame.offset;
 				bandView = { bandSize: frame.bandSize, maxOffset: frame.maxOffset };
@@ -333,8 +386,11 @@ export default function usage(pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const signal = shutdownController.signal;
 		let text: string | undefined;
-		try { text = await computeStatus(ctx, PROVIDER_ADAPTERS, createAdapterContext(ctx), signal); }
-		catch { text = undefined; }
+		try {
+			text = await computeStatus(ctx, PROVIDER_ADAPTERS, createAdapterContext(ctx), signal);
+		} catch {
+			text = undefined;
+		}
 		if (currentGeneration !== generation || signal.aborted) return;
 		setStatus(ctx, text);
 	};
@@ -360,7 +416,12 @@ export default function usage(pi: ExtensionAPI) {
 		const live = parseClaudeHeaders(event.headers);
 		if (!live) return;
 		const previous = snapshotCache.get(live.providerId)?.snapshot;
-		if (previous && previous.statusPercent === live.statusPercent && previous.rows.length === live.rows.length) return;
+		if (
+			previous &&
+			previous.statusPercent === live.statusPercent &&
+			previous.rows.length === live.rows.length
+		)
+			return;
 		mergeLiveSnapshot(live);
 		void refreshStatus(ctx);
 	});

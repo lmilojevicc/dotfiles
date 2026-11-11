@@ -18,9 +18,16 @@ function fixture(t: TestContext) {
 }
 
 test("settings exposes only the five approved display rows with upstream copy", () => {
-	assert.deepEqual(DISPLAY_SETTING_ITEMS.map((item) => item.label), [
-		"Collapse completed tasks", "Show all tasks in widget", "Max visible tasks in widget", "Widget sort order", "Hidden tasks position",
-	]);
+	assert.deepEqual(
+		DISPLAY_SETTING_ITEMS.map((item) => item.label),
+		[
+			"Collapse completed tasks",
+			"Show all tasks in widget",
+			"Max visible tasks in widget",
+			"Widget sort order",
+			"Hidden tasks position",
+		],
+	);
 	assert.match(DISPLAY_SETTING_ITEMS[0].description, /single 'N completed' line/);
 	assert.match(DISPLAY_SETTING_ITEMS[3].description, /custom sort spec/);
 });
@@ -32,15 +39,20 @@ test("SettingsList renders global scope, fits narrow widths, cycles all five row
 	let done = false;
 	const expectedValues = [true, true, 15, "status", "top"];
 	const ui: any = {
-		notify(message: string) { assert.fail(message); },
+		notify(message: string) {
+			assert.fail(message);
+		},
 		custom: async (factory: any) => {
-			const component = factory({}, plainTheme, {}, () => { done = true; });
+			const component = factory({}, plainTheme, {}, () => {
+				done = true;
+			});
 			const wide = component.render(100).join("\n");
 			assert.match(wide, /⚙  Global Task Settings/);
 			assert.match(wide, /Saved immediately for all projects/);
 			assert.match(wide, /Other sessions pick up changes on start or \/reload/);
 			assert.match(wide, /Collapse completed tasks/);
-			for (const width of [80, 40, 20]) assert.ok(component.render(width).every((line: string) => visibleWidth(line) <= width));
+			for (const width of [80, 40, 20])
+				assert.ok(component.render(width).every((line: string) => visibleWidth(line) <= width));
 			for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {
 				component.handleInput("\r");
 				assert.equal(JSON.parse(readFileSync(f.path, "utf8"))[item.id], expectedValues[index]);
@@ -50,7 +62,14 @@ test("SettingsList renders global scope, fits narrow widths, cycles all five row
 			component.handleInput("\u001b");
 		},
 	};
-	await openSettingsMenu(ui, config, () => { changed++; }, f.agent);
+	await openSettingsMenu(
+		ui,
+		config,
+		() => {
+			changed++;
+		},
+		f.agent,
+	);
 	assert.deepEqual(loadGlobalTasksConfig(f.agent), config);
 	assert.equal(changed, 5);
 	assert.equal(done, true);
@@ -65,7 +84,9 @@ for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {
 		const notifications: Array<{ message: string; level: string }> = [];
 		let changed = 0;
 		const ui: any = {
-			notify(message: string, level: string) { notifications.push({ message, level }); },
+			notify(message: string, level: string) {
+				notifications.push({ message, level });
+			},
 			custom: async (factory: any) => {
 				const component = factory({}, plainTheme, {}, () => {});
 				for (let i = 0; i < index; i++) component.handleInput("\u001b[B");
@@ -75,29 +96,53 @@ for (const [index, item] of DISPLAY_SETTING_ITEMS.entries()) {
 				component.handleInput("\u001b");
 			},
 		};
-		await openSettingsMenu(ui, config, () => { changed++; }, f.agent);
+		await openSettingsMenu(
+			ui,
+			config,
+			() => {
+				changed++;
+			},
+			f.agent,
+		);
 		assert.deepEqual(config, DEFAULT_TASKS_CONFIG);
 		assert.equal(changed, 0);
 		assert.equal(readFileSync(f.path, "utf8"), "{ malformed\n");
 		assert.equal(notifications.length, 1);
 		assert.equal(notifications[0].level, "error");
-		assert.match(notifications[0].message, /Could not save task settings: Error: Existing task config .* malformed JSON/);
+		assert.match(
+			notifications[0].message,
+			/Could not save task settings: Error: Existing task config .* malformed JSON/,
+		);
 	});
 }
 
 test("menu saves only the selected global field, preserving newer preferences and unknown keys", async (t) => {
 	const f = fixture(t);
 	const config = { ...DEFAULT_TASKS_CONFIG, glyphs: {} };
-	const latest = { showAll: true, maxVisible: 50, sortOrder: "recent", glyphs: { pending: "P", futureGlyph: "keep" }, future: { keep: true } };
+	const latest = {
+		showAll: true,
+		maxVisible: 50,
+		sortOrder: "recent",
+		glyphs: { pending: "P", futureGlyph: "keep" },
+		future: { keep: true },
+	};
 	writeFileSync(f.path, JSON.stringify(latest));
 	const ui: any = {
-		notify(message: string) { assert.fail(message); },
+		notify(message: string) {
+			assert.fail(message);
+		},
 		custom: async (factory: any) => {
 			const component = factory({}, plainTheme, {}, () => {});
 			component.handleInput("\r");
-			assert.deepEqual(JSON.parse(readFileSync(f.path, "utf8")), { ...latest, collapseCompleted: true });
+			assert.deepEqual(JSON.parse(readFileSync(f.path, "utf8")), {
+				...latest,
+				collapseCompleted: true,
+			});
 			component.handleInput("\r");
-			assert.deepEqual(JSON.parse(readFileSync(f.path, "utf8")), { ...latest, collapseCompleted: false });
+			assert.deepEqual(JSON.parse(readFileSync(f.path, "utf8")), {
+				...latest,
+				collapseCompleted: false,
+			});
 			component.handleInput("\u001b");
 		},
 	};
@@ -106,9 +151,15 @@ test("menu saves only the selected global field, preserving newer preferences an
 
 test("custom sort displays custom and cycles directly to id in the global file", async (t) => {
 	const f = fixture(t);
-	const config: any = { ...DEFAULT_TASKS_CONFIG, glyphs: {}, sortOrder: [{ field: "updatedAt", direction: "desc" }] };
+	const config: any = {
+		...DEFAULT_TASKS_CONFIG,
+		glyphs: {},
+		sortOrder: [{ field: "updatedAt", direction: "desc" }],
+	};
 	const ui: any = {
-		notify(message: string) { assert.fail(message); },
+		notify(message: string) {
+			assert.fail(message);
+		},
 		custom: async (factory: any) => {
 			const component = factory({}, plainTheme, {}, () => {});
 			component.handleInput("\u001b[B");

@@ -83,7 +83,9 @@ test("tmux observes raw focus before fullscreen and balances DEC mode writes", (
 	};
 	const terminal = terminalUI();
 	const writes: string[] = [];
-	const ingress = createTmuxIngress(recorder.focus, stdin as never, { write: (data) => writes.push(data) });
+	const ingress = createTmuxIngress(recorder.focus, stdin as never, {
+		write: (data) => writes.push(data),
+	});
 
 	ingress.start(terminal.ui);
 	stdin.emit("data", `prefix${FOCUS_OUT}${FOCUS_IN}`);

@@ -2,7 +2,12 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { readBlacklistConfig } from "./config.ts";
 import { describeApplication, formatReport, type ApplicationReport } from "./report.ts";
 import { compileRules, type CompiledRules } from "./rules.ts";
-import { installStoreHook, storedProviderIds, type HookState, type RuntimeLike } from "./store-hook.ts";
+import {
+	installStoreHook,
+	storedProviderIds,
+	type HookState,
+	type RuntimeLike,
+} from "./store-hook.ts";
 
 /** Rules read by the installed store hook, shared with hooks installed before a `/reload`. */
 const HOOK_STATE_KEY = Symbol.for("pi.model-blacklist.hook-state");
@@ -57,7 +62,9 @@ function applyRules(ctx: ExtensionContext): Application {
 		return { rules, report: describeApplication(rules, undefined), notices };
 	}
 	if (installStoreHook(runtime, state) === "unsupported") {
-		notices.push("Model blacklist: cannot filter Pi's model store (runtime.models.setProvider); no models are hidden");
+		notices.push(
+			"Model blacklist: cannot filter Pi's model store (runtime.models.setProvider); no models are hidden",
+		);
 		return { rules, report: describeApplication(rules, undefined), notices };
 	}
 	// The provider list is the one Pi stores, which also holds composed

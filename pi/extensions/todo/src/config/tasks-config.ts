@@ -38,7 +38,14 @@ export const CONFIG_FILE = "todo-config.json";
 /** Its name before the extension was renamed from tasks to todo; read only while the new file does not exist. */
 export const LEGACY_CONFIG_FILE = "tasks-config.json";
 
-const DISPLAY_KEYS = ["collapseCompleted", "showAll", "maxVisible", "sortOrder", "hiddenAt", "glyphs"] as const;
+const DISPLAY_KEYS = [
+	"collapseCompleted",
+	"showAll",
+	"maxVisible",
+	"sortOrder",
+	"hiddenAt",
+	"glyphs",
+] as const;
 type JsonObject = Record<string, unknown>;
 type ConfigLayer = Partial<Omit<TaskDisplayConfig, "glyphs">> & { glyphs?: TaskGlyphsConfig };
 
@@ -78,16 +85,22 @@ function acquireLock(path: string): () => void {
 		try {
 			closeSync(openSync(path, "wx", 0o600));
 			return () => {
-				try { unlinkSync(path); } catch {}
+				try {
+					unlinkSync(path);
+				} catch {}
 			};
 		} catch (error) {
 			if (!isExisting(error)) throw error;
 			if (isStaleLock(path, Date.now())) {
-				try { unlinkSync(path); } catch {}
+				try {
+					unlinkSync(path);
+				} catch {}
 				continue;
 			}
 			if (Date.now() >= deadline) {
-				throw new Error(`Timed out waiting for the task config lock at ${path}; another Pi session may be saving task settings.`);
+				throw new Error(
+					`Timed out waiting for the task config lock at ${path}; another Pi session may be saving task settings.`,
+				);
 			}
 			sleep(LOCK_RETRY_MS);
 		}
@@ -98,7 +111,9 @@ function readObject(path: string): JsonObject {
 	try {
 		assertSafeExistingDestination(path);
 		const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-		return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+		return value !== null && typeof value === "object" && !Array.isArray(value)
+			? (value as JsonObject)
+			: {};
 	} catch {
 		return {};
 	}
@@ -110,14 +125,20 @@ function readExistingObject(path: string): JsonObject {
 		text = readFileSync(path, "utf8");
 	} catch (error) {
 		if (isMissing(error)) return {};
-		throw new Error(`Could not read existing task config at ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+		throw new Error(
+			`Could not read existing task config at ${path}: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
+		);
 	}
 
 	let value: unknown;
 	try {
 		value = JSON.parse(text);
 	} catch (error) {
-		throw new Error(`Existing task config at ${path} contains malformed JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+		throw new Error(
+			`Existing task config at ${path} contains malformed JSON: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
+		);
 	}
 	if (value === null || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error(`Existing task config at ${path} must contain a JSON object`);
@@ -126,14 +147,18 @@ function readExistingObject(path: string): JsonObject {
 }
 
 function objectValue(value: unknown): JsonObject {
-	return value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? (value as JsonObject)
+		: {};
 }
 
 function normalizeLayer(value: JsonObject): ConfigLayer {
 	const normalized: ConfigLayer = {};
-	if (typeof value.collapseCompleted === "boolean") normalized.collapseCompleted = value.collapseCompleted;
+	if (typeof value.collapseCompleted === "boolean")
+		normalized.collapseCompleted = value.collapseCompleted;
 	if (typeof value.showAll === "boolean") normalized.showAll = value.showAll;
-	if (Number.isSafeInteger(value.maxVisible) && Number(value.maxVisible) > 0) normalized.maxVisible = Number(value.maxVisible);
+	if (Number.isSafeInteger(value.maxVisible) && Number(value.maxVisible) > 0)
+		normalized.maxVisible = Number(value.maxVisible);
 	if (isTaskSortOrder(value.sortOrder)) normalized.sortOrder = value.sortOrder;
 	if (value.hiddenAt === "top" || value.hiddenAt === "bottom") normalized.hiddenAt = value.hiddenAt;
 	const glyphs = normalizeTaskGlyphsConfig(value.glyphs);
@@ -162,8 +187,13 @@ export function loadGlobalTasksConfig(agentDir = getAgentDir()): TaskDisplayConf
 }
 
 function assertSafeDirectory(canonicalDirectory: string): void {
-	if (!lstatSync(canonicalDirectory).isDirectory() || realpathSync(canonicalDirectory) !== canonicalDirectory) {
-		throw new Error(`Task config parent is no longer the intended directory: ${canonicalDirectory}`);
+	if (
+		!lstatSync(canonicalDirectory).isDirectory() ||
+		realpathSync(canonicalDirectory) !== canonicalDirectory
+	) {
+		throw new Error(
+			`Task config parent is no longer the intended directory: ${canonicalDirectory}`,
+		);
 	}
 }
 
@@ -178,7 +208,10 @@ function assertSafeExistingDestination(path: string): void {
 }
 
 /** Merge display settings into the global file atomically, retaining unrelated keys. */
-export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentDir = getAgentDir()): void {
+export function saveGlobalTasksConfig(
+	config: Partial<TaskDisplayConfig>,
+	agentDir = getAgentDir(),
+): void {
 	mkdirSync(agentDir, { recursive: true });
 	// A deliberately symlinked agent directory is supported; writes stay at its canonical location.
 	const canonicalDirectory = realpathSync(agentDir);
@@ -192,11 +225,13 @@ export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentD
 	try {
 		// The first save carries the legacy file's settings over; the legacy file is left untouched.
 		const legacy = join(canonicalDirectory, LEGACY_CONFIG_FILE);
-		const existing = exists(path) || !exists(legacy) ? readExistingObject(path) : readObject(legacy);
+		const existing =
+			exists(path) || !exists(legacy) ? readExistingObject(path) : readObject(legacy);
 		const next: JsonObject = { ...existing };
 		for (const key of DISPLAY_KEYS) {
 			if (config[key] === undefined) continue;
-			next[key] = key === "glyphs" ? { ...objectValue(existing.glyphs), ...config.glyphs } : config[key];
+			next[key] =
+				key === "glyphs" ? { ...objectValue(existing.glyphs), ...config.glyphs } : config[key];
 		}
 
 		assertSafeDirectory(canonicalDirectory);
@@ -215,10 +250,14 @@ export function saveGlobalTasksConfig(config: Partial<TaskDisplayConfig>, agentD
 			renameSync(temporary, path);
 		} catch (error) {
 			if (fd !== undefined) {
-				try { closeSync(fd); } catch {}
+				try {
+					closeSync(fd);
+				} catch {}
 			}
 			if (created) {
-				try { unlinkSync(temporary); } catch {}
+				try {
+					unlinkSync(temporary);
+				} catch {}
 			}
 			throw error;
 		}

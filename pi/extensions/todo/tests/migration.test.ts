@@ -7,20 +7,37 @@ test("legacy migration preserves rpiv fields and demotes extra active tasks dete
 		nextId: 4,
 		tasks: [
 			{ id: 1, subject: "First", status: "in_progress", metadata: { a: 1 }, owner: "one" },
-			{ id: 2, subject: "Second", description: "d", activeForm: "Doing", status: "in_progress", blockedBy: [1] },
+			{
+				id: 2,
+				subject: "Second",
+				description: "d",
+				activeForm: "Doing",
+				status: "in_progress",
+				blockedBy: [1],
+			},
 			{ id: 3, subject: "Old", status: "deleted" },
 		],
 	});
 	assert.ok(result);
-	assert.deepEqual(result.snapshot.tasks.map((task) => task.status), ["in_progress", "pending", "deleted"]);
+	assert.deepEqual(
+		result.snapshot.tasks.map((task) => task.status),
+		["in_progress", "pending", "deleted"],
+	);
 	assert.deepEqual(result.snapshot.tasks[0]?.metadata, { a: 1 });
 	assert.equal(result.snapshot.tasks[0]?.owner, "one");
 	assert.match(result.warning ?? "", /paused 1 extra active task/);
 });
 
 test("legacy migration repairs nextId and removes dangling legacy edges", () => {
-	assert.equal(migrateLegacySnapshot({ nextId: 1, tasks: [{ id: 4, subject: "x", status: "pending" }] })?.snapshot.nextId, 5);
-	const repaired = migrateLegacySnapshot({ nextId: 3, tasks: [{ id: 1, subject: "x", status: "pending", blockedBy: [9] }] });
+	assert.equal(
+		migrateLegacySnapshot({ nextId: 1, tasks: [{ id: 4, subject: "x", status: "pending" }] })
+			?.snapshot.nextId,
+		5,
+	);
+	const repaired = migrateLegacySnapshot({
+		nextId: 3,
+		tasks: [{ id: 1, subject: "x", status: "pending", blockedBy: [9] }],
+	});
 	assert.deepEqual(repaired?.snapshot.tasks[0]?.blockedBy, []);
 	assert.match(repaired?.warning ?? "", /removed 1 invalid dependency edge/);
 });
@@ -50,11 +67,26 @@ test("legacy cycle repair retains valid edges despite an unrelated raw cycle", (
 		],
 	});
 	assert.ok(result);
-	assert.deepEqual(result.snapshot.tasks.map((task) => task.blockedBy), [[2], [], [4], []]);
+	assert.deepEqual(
+		result.snapshot.tasks.map((task) => task.blockedBy),
+		[[2], [], [4], []],
+	);
 	assert.match(result.warning ?? "", /removed 1 invalid dependency edge/);
 });
 
 test("legacy migration rejects persisted fields outside domain bounds", () => {
-	assert.equal(migrateLegacySnapshot({ nextId: 2, tasks: [{ id: 1, subject: "x".repeat(501), status: "pending" }] }), undefined);
-	assert.equal(migrateLegacySnapshot({ nextId: 2, tasks: [{ id: 1, subject: "x", status: "pending", metadata: { huge: "x".repeat(70_000) } }] }), undefined);
+	assert.equal(
+		migrateLegacySnapshot({
+			nextId: 2,
+			tasks: [{ id: 1, subject: "x".repeat(501), status: "pending" }],
+		}),
+		undefined,
+	);
+	assert.equal(
+		migrateLegacySnapshot({
+			nextId: 2,
+			tasks: [{ id: 1, subject: "x", status: "pending", metadata: { huge: "x".repeat(70_000) } }],
+		}),
+		undefined,
+	);
 });

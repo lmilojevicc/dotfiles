@@ -4,7 +4,14 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import { groupAlive, type Task, TaskTable, removeStaleTables, type RunOptions, runCommand } from "../tasks.ts";
+import {
+	groupAlive,
+	type Task,
+	TaskTable,
+	removeStaleTables,
+	type RunOptions,
+	runCommand,
+} from "../tasks.ts";
 
 const tables: TaskTable[] = [];
 
@@ -26,7 +33,10 @@ function table(): { table: TaskTable; ended: Task[] } {
 	return { table: created, ended };
 }
 
-function options(command: string, extra: Partial<RunOptions> = {}): RunOptions & { output: () => string } {
+function options(
+	command: string,
+	extra: Partial<RunOptions> = {},
+): RunOptions & { output: () => string } {
 	const chunks: Buffer[] = [];
 	return {
 		command,
@@ -114,19 +124,29 @@ test("processes that end soon after the shell do not become tasks", async () => 
 	assert.equal(tasks.tasks.size, 0);
 });
 
-test("a process that escaped the group cannot hold the call open through the pipes", { skip: !hasCommand("setsid") }, async () => {
-	const { table: tasks } = table();
-	for (const command of ["setsid sleep 3 &", "setsid bash -c 'for i in $(seq 100); do echo x; sleep 0.05; done' &"]) {
-		const started = Date.now();
-		const result = await runCommand(tasks, options(command));
-		assert.equal(result.kind, "exited", command);
-		assert.ok(Date.now() - started < 2500, `${command} took ${Date.now() - started}ms`);
-	}
-});
+test(
+	"a process that escaped the group cannot hold the call open through the pipes",
+	{ skip: !hasCommand("setsid") },
+	async () => {
+		const { table: tasks } = table();
+		for (const command of [
+			"setsid sleep 3 &",
+			"setsid bash -c 'for i in $(seq 100); do echo x; sleep 0.05; done' &",
+		]) {
+			const started = Date.now();
+			const result = await runCommand(tasks, options(command));
+			assert.equal(result.kind, "exited", command);
+			assert.ok(Date.now() - started < 2500, `${command} took ${Date.now() - started}ms`);
+		}
+	},
+);
 
 test("the timeout kills a command in the foreground", async () => {
 	const { table: tasks } = table();
-	await assert.rejects(runCommand(tasks, options("sleep 30", { timeoutSeconds: 0.3 })), /^Error: timeout:0\.3$/);
+	await assert.rejects(
+		runCommand(tasks, options("sleep 30", { timeoutSeconds: 0.3 })),
+		/^Error: timeout:0\.3$/,
+	);
 	assert.equal(tasks.tasks.size, 0);
 });
 
@@ -144,12 +164,18 @@ test("abort kills a command in the foreground", async () => {
 	const { table: tasks } = table();
 	const controller = new AbortController();
 	setTimeout(() => controller.abort(), 200);
-	await assert.rejects(runCommand(tasks, options("sleep 30", { signal: controller.signal })), /^Error: aborted$/);
+	await assert.rejects(
+		runCommand(tasks, options("sleep 30", { signal: controller.signal })),
+		/^Error: aborted$/,
+	);
 });
 
 test("stopping a task escalates to SIGKILL when SIGTERM is ignored", async () => {
 	const { table: tasks } = table();
-	const result = await runCommand(tasks, options("trap '' TERM; while :; do sleep 0.1; done", { waitMs: 200 }));
+	const result = await runCommand(
+		tasks,
+		options("trap '' TERM; while :; do sleep 0.1; done", { waitMs: 200 }),
+	);
 	const task = (result as { task: Task }).task;
 	const started = Date.now();
 	await task.stop("stopped", "SIGTERM", 300);
@@ -192,7 +218,9 @@ test("tasks that end while no runtime is bound are delivered when one binds", as
 
 test("unread output starts after what the foreground call showed and moves on with each read", async () => {
 	const { table: tasks } = table();
-	const run = options("echo first; sleep 0.4; echo second; sleep 0.4; echo third; sleep 30", { waitMs: 200 });
+	const run = options("echo first; sleep 0.4; echo second; sleep 0.4; echo third; sleep 30", {
+		waitMs: 200,
+	});
 	const task = ((await runCommand(tasks, run)) as { task: Task }).task;
 	assert.equal(run.output(), "first\n");
 	await until(() => task.tail().includes("second"));
@@ -204,7 +232,9 @@ test("unread output starts after what the foreground call showed and moves on wi
 
 test("unread output keeps the newest part when too much arrived", async () => {
 	const { table: tasks } = table();
-	const task = ((await runCommand(tasks, options("seq 1 2000; sleep 30", { waitMs: 300 }))) as { task: Task }).task;
+	const task = (
+		(await runCommand(tasks, options("seq 1 2000; sleep 30", { waitMs: 300 }))) as { task: Task }
+	).task;
 	task.readOffset = 0;
 	const { text, skipped } = task.unread(100);
 	assert.ok(skipped > 0);
@@ -215,15 +245,26 @@ test("unread output keeps the newest part when too much arrived", async () => {
 test("task directories of dead Pi processes are removed, others are kept", () => {
 	const root = mkdtempSync(join(tmpdir(), "tables-"));
 	const dead = execFileSync("bash", ["-c", "bash -c 'echo $$'"], { encoding: "utf8" }).trim();
-	for (const name of [`session-${dead}`, `session-${process.pid}`, `session-${process.ppid}`, "unrelated"]) {
+	for (const name of [
+		`session-${dead}`,
+		`session-${process.pid}`,
+		`session-${process.ppid}`,
+		"unrelated",
+	]) {
 		mkdirSync(join(root, name));
 	}
 	removeStaleTables(root);
-	assert.deepEqual(readdirSync(root).sort(), [`session-${process.pid}`, `session-${process.ppid}`, "unrelated"].sort());
+	assert.deepEqual(
+		readdirSync(root).sort(),
+		[`session-${process.pid}`, `session-${process.ppid}`, "unrelated"].sort(),
+	);
 });
 
 test("a shell that cannot start rejects", async () => {
 	const { table: tasks } = table();
-	await assert.rejects(runCommand(tasks, options("true", { shell: "/nonexistent/shell" })), /ENOENT/);
+	await assert.rejects(
+		runCommand(tasks, options("true", { shell: "/nonexistent/shell" })),
+		/ENOENT/,
+	);
 	assert.ok(existsSync(tasks.dir));
 });

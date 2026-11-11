@@ -1,7 +1,9 @@
 import type { Task } from "./types.js";
 
 export function findCycle(tasks: readonly Task[]): number[] | undefined {
-	const live = new Map(tasks.filter((task) => task.status !== "deleted").map((task) => [task.id, task]));
+	const live = new Map(
+		tasks.filter((task) => task.status !== "deleted").map((task) => [task.id, task]),
+	);
 	const visiting = new Set<number>();
 	const visited = new Set<number>();
 	const path: number[] = [];

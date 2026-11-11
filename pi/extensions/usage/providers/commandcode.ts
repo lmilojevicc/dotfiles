@@ -33,7 +33,10 @@ const LABEL = "Command Code";
 /** Registered provider config base; the alpha endpoints hang one level below its API root. */
 const DEFAULT_ALPHA_ORIGIN = "https://api.commandcode.ai";
 const PROVIDER_BASE_SUFFIX = /\/provider\/v1\/?$/;
-const WINDOW_LABELS: Readonly<Record<"fiveHour" | "weekly", string>> = { fiveHour: "5h", weekly: "weekly" };
+const WINDOW_LABELS: Readonly<Record<"fiveHour" | "weekly", string>> = {
+	fiveHour: "5h",
+	weekly: "weekly",
+};
 
 export type CommandCodeAccount = { login: string; orgId: string | null; keyName?: string };
 
@@ -116,7 +119,8 @@ export function parseCredits(value: unknown): CommandCodeCredits | null {
 	const monthlyCredits = amount(value.credits.monthlyCredits);
 	const purchasedCredits = amount(value.credits.purchasedCredits);
 	const freeCredits = amount(value.credits.freeCredits);
-	if (monthlyCredits === undefined && purchasedCredits === undefined && freeCredits === undefined) return null;
+	if (monthlyCredits === undefined && purchasedCredits === undefined && freeCredits === undefined)
+		return null;
 	const remainingCredits = (monthlyCredits ?? 0) + (purchasedCredits ?? 0) + (freeCredits ?? 0);
 	return {
 		monthlyCredits: monthlyCredits ?? 0,
@@ -189,10 +193,17 @@ function planNote(subscription: CommandCodeSubscription, now: number): string {
 	const end = planDate(subscription.currentPeriodEnd);
 	if (end) {
 		const days = Math.ceil((end.getTime() - now * 1000) / 86_400_000);
-		const date = end.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-		renewal = days > 0 ? ` · renews ${date} (${days}d)`
-			: days === 0 ? ` · renews ${date} (today)`
-			: ` · renewed ${date}`;
+		const date = end.toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+			timeZone: "UTC",
+		});
+		renewal =
+			days > 0
+				? ` · renews ${date} (${days}d)`
+				: days === 0
+					? ` · renews ${date} (today)`
+					: ` · renewed ${date}`;
 	}
 	return `Plan ${plan}${subscription.status ? ` (${subscription.status})` : ""}${renewal}`;
 }
@@ -239,24 +250,34 @@ export function parseCommandCodeSnapshot(
 	const notes: string[] = [];
 	notes.push(`Account ${account.login}${account.keyName ? ` · key "${account.keyName}"` : ""}`);
 	if (credits) {
-		const sources = [`monthly ${money(credits.monthlyCredits)}`, `purchased ${money(credits.purchasedCredits)}`];
+		const sources = [
+			`monthly ${money(credits.monthlyCredits)}`,
+			`purchased ${money(credits.purchasedCredits)}`,
+		];
 		if (credits.freeCredits > 0) sources.push(`free ${money(credits.freeCredits)}`);
 		notes.push(`Sources: ${sources.join(" / ")}`);
 	}
 	if (summary) {
-		const tokens = summary.totalTokens !== undefined ? ` · ${formatTokens(summary.totalTokens)} tokens` : "";
-		notes.push(`Usage: ${money(summary.totalCost)} · ${summary.totalCount.toLocaleString("en-US")} requests${tokens}`);
+		const tokens =
+			summary.totalTokens !== undefined ? ` · ${formatTokens(summary.totalTokens)} tokens` : "";
+		notes.push(
+			`Usage: ${money(summary.totalCost)} · ${summary.totalCount.toLocaleString("en-US")} requests${tokens}`,
+		);
 	}
 	if (subscription) notes.push(planNote(subscription, now));
-	for (const [section, reason] of Object.entries(sections.unavailable ?? {})) notes.push(`${section}: ${reason}`);
+	for (const [section, reason] of Object.entries(sections.unavailable ?? {}))
+		notes.push(`${section}: ${reason}`);
 
-	const known = rows.flatMap((row) => row.windows.map((window) => window.usedPercent))
+	const known = rows
+		.flatMap((row) => row.windows.map((window) => window.usedPercent))
 		.filter((value): value is number => value !== undefined && Number.isFinite(value));
 	return {
 		providerId: PROVIDER_ID,
 		title: LABEL,
 		rows,
-		...(subscription?.planId ? { subtitle: displayText(subscription.planId.replace(/[_-]+/g, " "), 24) } : {}),
+		...(subscription?.planId
+			? { subtitle: displayText(subscription.planId.replace(/[_-]+/g, " "), 24) }
+			: {}),
 		notes,
 		observedAt: Math.floor(now),
 		...(known.length ? { statusPercent: Math.max(...known) } : {}),
@@ -280,17 +301,24 @@ async function fetchSection(
 	for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
 	const suffix = query.size ? `?${query}` : "";
 	try {
-		const value = await fetchBoundedJson(`${url}${suffix}`, {
-			method: "GET",
-			headers,
-			...(deps.signal ? { signal: deps.signal } : {}),
-		}, { fetch: deps.fetch, label: LABEL });
+		const value = await fetchBoundedJson(
+			`${url}${suffix}`,
+			{
+				method: "GET",
+				headers,
+				...(deps.signal ? { signal: deps.signal } : {}),
+			},
+			{ fetch: deps.fetch, label: LABEL },
+		);
 		return { ok: true, value };
 	} catch (error) {
 		const blocked = error instanceof HttpError && (error.status === 401 || error.status === 403);
-		const reason = error instanceof HttpError ? `HTTP ${error.status}`
-			: error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError") ? "timed out"
-			: "request failed";
+		const reason =
+			error instanceof HttpError
+				? `HTTP ${error.status}`
+				: error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")
+					? "timed out"
+					: "request failed";
 		return { ok: false, reason, blocked };
 	}
 }
@@ -308,8 +336,13 @@ export const commandcodeAdapter: ProviderAdapter = {
 		const deps = { fetch: ctx.fetch, ...(signal ? { signal } : {}) };
 
 		const whoami = await fetchSection(`${origin}/alpha/whoami`, {}, headers, deps);
-		if (!whoami.ok) throw new ProviderStateError(whoami.blocked ? "auth-refresh" : "blocked",
-			whoami.blocked ? `${LABEL} rejected the API key · run /login ${PROVIDER_ID}` : `${LABEL} account lookup failed (${whoami.reason}) · press R to retry.`);
+		if (!whoami.ok)
+			throw new ProviderStateError(
+				whoami.blocked ? "auth-refresh" : "blocked",
+				whoami.blocked
+					? `${LABEL} rejected the API key · run /login ${PROVIDER_ID}`
+					: `${LABEL} account lookup failed (${whoami.reason}) · press R to retry.`,
+			);
 		const account = parseWhoami(whoami.value);
 		if (!account) throw new Error(`${LABEL} returned an unrecognized account response.`);
 
@@ -322,13 +355,26 @@ export const commandcodeAdapter: ProviderAdapter = {
 		// no point spending the summary request on it.
 		for (const result of [credits, subscription]) {
 			if (result.ok === false && result.blocked) {
-				throw new ProviderStateError("auth-refresh", `${LABEL} rejected the API key · run /login ${PROVIDER_ID}`);
+				throw new ProviderStateError(
+					"auth-refresh",
+					`${LABEL} rejected the API key · run /login ${PROVIDER_ID}`,
+				);
 			}
 		}
-		const since = parseSubscription(subscription.ok ? subscription.value : undefined)?.currentPeriodStart ?? undefined;
-		const summary = await fetchSection(`${origin}/alpha/usage/summary`, { orgId, since }, headers, deps);
+		const since =
+			parseSubscription(subscription.ok ? subscription.value : undefined)?.currentPeriodStart ??
+			undefined;
+		const summary = await fetchSection(
+			`${origin}/alpha/usage/summary`,
+			{ orgId, since },
+			headers,
+			deps,
+		);
 		if (summary.ok === false && summary.blocked) {
-			throw new ProviderStateError("auth-refresh", `${LABEL} rejected the API key · run /login ${PROVIDER_ID}`);
+			throw new ProviderStateError(
+				"auth-refresh",
+				`${LABEL} rejected the API key · run /login ${PROVIDER_ID}`,
+			);
 		}
 
 		// A section that answers 200 but no longer parses is unavailable too, exactly like upstream:
@@ -342,7 +388,11 @@ export const commandcodeAdapter: ProviderAdapter = {
 			throw new Error(`${LABEL} returned no recognized usage data for the account.`);
 		}
 		const unavailable: Record<string, string> = {};
-		for (const [section, result, value] of [["credits", credits, parsed.credits], ["subscription", subscription, parsed.subscription], ["summary", summary, parsed.summary]] as const) {
+		for (const [section, result, value] of [
+			["credits", credits, parsed.credits],
+			["subscription", subscription, parsed.subscription],
+			["summary", summary, parsed.summary],
+		] as const) {
 			if (!result.ok) unavailable[section] = result.reason;
 			else if (value === null) unavailable[section] = "unrecognized response";
 		}

@@ -1,60 +1,60 @@
 [settings]
-  # Unmanaged `go install` builds must survive Go version changes.
-  go.set_gobin = false
-  # Never shim the interpreter names: distro packagers and Makefiles invoke
-  # `python`/`pip` by bare name, and a mise shim would shadow them. Needs
-  # mise >= 2026.10 (nixpkgs 2026.5.12 rejects the field).
-  shims.exclude = ["python", "python3", "pip", "pip3"]
+# Unmanaged `go install` builds must survive Go version changes.
+go.set_gobin = false
+# Never shim the interpreter names: distro packagers and Makefiles invoke
+# `python`/`pip` by bare name, and a mise shim would shadow them. Needs
+# mise >= 2026.10 (nixpkgs 2026.5.12 rejects the field).
+shims.exclude = ["python", "python3", "pip", "pip3"]
 
 [env]
-  # Override even an inherited mise-version GOBIN; go: tools remain isolated.
-  GOBIN = "{{env.HOME}}/go/bin"
+# Override even an inherited mise-version GOBIN; go: tools remain isolated.
+GOBIN = "{{env.HOME}}/go/bin"
 
 [tools]
-  # Runtimes (Python 3.13 also supplies the pypi backend's interpreter).
-  node = "26"
-  go = "1.26"
-  python = "3.13"
-  uv = "latest"
-  bun = "latest"
+# Runtimes (Python 3.13 also supplies the pypi backend's interpreter).
+node = "26"
+go = "1.26"
+python = "3.13"
+uv = "latest"
+bun = "latest"
 
-  # Node CLI tools, isolated from the runtime's global npm prefix.
-  "npm:@firecrawl/anydoc" = "latest"
-  "npm:tokscale" = "latest"
-  "npm:agent-browser" = "latest"
-  "npm:@devcontainers/cli" = "latest"
-  "npm:skills" = "latest"
+# Node CLI tools, isolated from the runtime's global npm prefix.
+"npm:@firecrawl/anydoc" = "latest"
+"npm:tokscale" = "latest"
+"npm:agent-browser" = "latest"
+"npm:@devcontainers/cli" = "latest"
+"npm:skills" = "latest"
 
-  # Python CLI tools, each in an isolated uv venv.
-  "pypi:font-line" = "latest"
-  "pypi:huggingface-hub" = "latest"
-  "pypi:icloud-hme" = "latest"
-  "pypi:rendercv" = "latest"
-  "pypi:cloakbrowser" = "latest"
-  "pypi:graphifyy" = "latest"
-  "pypi:parakeet-mlx" = { version = "latest", os = "macos/arm64" }
-  "pypi:oraios/serena" = { version = "1.7.0", package_name = "serena-agent" }
-  "pypi:trafilatura" = "latest"
+# Python CLI tools, each in an isolated uv venv.
+"pypi:font-line" = "latest"
+"pypi:huggingface-hub" = "latest"
+"pypi:icloud-hme" = "latest"
+"pypi:rendercv" = "latest"
+"pypi:cloakbrowser" = "latest"
+"pypi:graphifyy" = "latest"
+"pypi:parakeet-mlx" = { version = "latest", os = "macos/arm64" }
+"pypi:oraios/serena" = { version = "1.7.0", package_name = "serena-agent" }
+"pypi:trafilatura" = "latest"
 
-  # Go CLI tools. Own dotty/seshagy builds stay unmanaged in ~/go/bin:
-  # go install github.com/lmilojevicc/dotty/cmd/dotty@latest
-  # go install github.com/lmilojevicc/seshagy/cmd/seshagy@latest
-  "aqua:dominikh/go-tools/staticcheck" = "latest"
-  "go:golang.org/x/tools/gopls" = "latest"
-  "go:github.com/cweill/gotests/gotests" = "latest"
-  "go:golang.org/x/pkgsite/cmd/pkgsite" = "latest"
-  "go:github.com/bootdotdev/bootdev" = "latest"
-  "go:github.com/lotusirous/gostdsym/stdsym" = "latest"
+# Go CLI tools. Own dotty/seshagy builds stay unmanaged in ~/go/bin:
+# go install github.com/lmilojevicc/dotty/cmd/dotty@latest
+# go install github.com/lmilojevicc/seshagy/cmd/seshagy@latest
+"aqua:dominikh/go-tools/staticcheck" = "latest"
+"go:golang.org/x/tools/gopls" = "latest"
+"go:github.com/cweill/gotests/gotests" = "latest"
+"go:golang.org/x/pkgsite/cmd/pkgsite" = "latest"
+"go:github.com/bootdotdev/bootdev" = "latest"
+"go:github.com/lotusirous/gostdsym/stdsym" = "latest"
 
-  # Rust CLI tools use rustup's cargo; mdroll uses GitHub releases, not crates.io.
-  "cargo:iroh-ssh" = "latest"
-  "cargo:lutgen-cli" = "latest"
-  "cargo:lutgen-studio" = "latest"
+# Rust CLI tools use rustup's cargo; mdroll uses GitHub releases, not crates.io.
+"cargo:iroh-ssh" = "latest"
+"cargo:lutgen-cli" = "latest"
+"cargo:lutgen-studio" = "latest"
 
-  # Build tooling: Kitware-published macOS binaries, no brew formula required.
-  # The tarball is a CMake.app bundle, so prune the GUI payload (Qt frameworks,
-  # cmake-gui, PlugIns) and keep it CLI-only like the Homebrew build was.
-  "aqua:Kitware/CMake" = { version = "latest", postinstall = '''
+# Build tooling: Kitware-published macOS binaries, no brew formula required.
+# The tarball is a CMake.app bundle, so prune the GUI payload (Qt frameworks,
+# cmake-gui, PlugIns) and keep it CLI-only like the Homebrew build was.
+"aqua:Kitware/CMake" = { version = "latest", postinstall = '''
     set -e
     found=0
     for app in "$MISE_TOOL_INSTALL_PATH"/cmake-*/CMake.app; do
@@ -71,11 +71,11 @@
     fi
   ''' }
 
-  # Standalone zig avoids brew's LLVM dependency chain.
-  zig = "latest"
-  # Node 26 no longer bundles corepack; pnpm self-provisions project versions.
-  "aqua:pnpm/pnpm" = "latest"
+# Standalone zig avoids brew's LLVM dependency chain.
+zig = "latest"
+# Node 26 no longer bundles corepack; pnpm self-provisions project versions.
+"aqua:pnpm/pnpm" = "latest"
 
-  # DevPod CLI replaced the Homebrew cask; cask GUI (DevPod.app) removed.
-  "aqua:loft-sh/devpod" = "latest"
-  "github:fosrl/cli" = { version = "latest", bin = "pangolin" }
+# DevPod CLI replaced the Homebrew cask; cask GUI (DevPod.app) removed.
+"aqua:loft-sh/devpod" = "latest"
+"github:fosrl/cli" = { version = "latest", bin = "pangolin" }

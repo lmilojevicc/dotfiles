@@ -28,7 +28,15 @@ export function formatTokens(value: number): string {
 	return `${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 
-function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivity | undefined, theme: Theme, frame: number, now: number, config: TaskDisplayConfig): string {
+function renderTask(
+	task: Task,
+	tasks: readonly Task[],
+	activity: SessionActivity | undefined,
+	theme: Theme,
+	frame: number,
+	now: number,
+	config: TaskDisplayConfig,
+): string {
 	const glyphs = resolveTaskGlyphs(config.glyphs);
 	// The local domain has exactly one canonical active task, so every in-progress row
 	// is animated. Activity only supplies fresh, session-scoped timing/counters.
@@ -44,14 +52,19 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 		return `${glyph} ${theme.fg("dim", theme.strikethrough(`#${task.id} ${sanitizeTerminalText(task.subject)}`))}`;
 	}
 	if (isActive) {
-		const metrics = activity?.activeTaskId === task.id && activity.metrics
-			? activity.metrics
-			: { startedAt: now, inputTokens: 0, outputTokens: 0 };
+		const metrics =
+			activity?.activeTaskId === task.id && activity.metrics
+				? activity.metrics
+				: { startedAt: now, inputTokens: 0, outputTokens: 0 };
 		const tokens: string[] = [];
-		if (metrics.inputTokens > 0) tokens.push(`${glyphs.inputTokens} ${formatTokens(metrics.inputTokens)}`);
-		if (metrics.outputTokens > 0) tokens.push(`${glyphs.outputTokens} ${formatTokens(metrics.outputTokens)}`);
+		if (metrics.inputTokens > 0)
+			tokens.push(`${glyphs.inputTokens} ${formatTokens(metrics.inputTokens)}`);
+		if (metrics.outputTokens > 0)
+			tokens.push(`${glyphs.outputTokens} ${formatTokens(metrics.outputTokens)}`);
 		const elapsed = formatDuration(now - metrics.startedAt);
-		const stats = tokens.length ? `(${elapsed} ${glyphs.statsSeparator} ${tokens.join(" ")})` : `(${elapsed})`;
+		const stats = tokens.length
+			? `(${elapsed} ${glyphs.statsSeparator} ${tokens.join(" ")})`
+			: `(${elapsed})`;
 		const action = sanitizeTerminalText(task.activeForm || task.subject);
 		return `${glyph} ${id} ${theme.fg("accent", `${action}${glyphs.trailingEllipsis}`)} ${theme.fg("dim", stats)}`;
 	}
@@ -60,9 +73,15 @@ function renderTask(task: Task, tasks: readonly Task[], activity: SessionActivit
 	if (task.status === "pending") {
 		const blockers = task.blockedBy.filter((blockedId) => {
 			const blocker = tasks.find((candidate) => candidate.id === blockedId);
-			return blocker !== undefined && blocker.status !== "completed" && blocker.status !== "deleted";
+			return (
+				blocker !== undefined && blocker.status !== "completed" && blocker.status !== "deleted"
+			);
 		});
-		if (blockers.length) suffix = theme.fg("dim", ` ${glyphs.blocked} blocked by ${blockers.map((id) => `#${id}`).join(", ")}`);
+		if (blockers.length)
+			suffix = theme.fg(
+				"dim",
+				` ${glyphs.blocked} blocked by ${blockers.map((id) => `#${id}`).join(", ")}`,
+			);
 	}
 	return `${glyph} ${id} ${sanitizeTerminalText(task.subject)}${suffix}`;
 }
@@ -81,7 +100,10 @@ export function renderWidget(
 ): string[] {
 	try {
 		if (width < 1) return [];
-		const tasks = sortTasks(snapshot.tasks.filter((task) => task.status !== "deleted"), config.sortOrder);
+		const tasks = sortTasks(
+			snapshot.tasks.filter((task) => task.status !== "deleted"),
+			config.sortOrder,
+		);
 		if (!tasks.length) return [];
 		const glyphs = resolveTaskGlyphs(config.glyphs);
 		const completed = tasks.filter((task) => task.status === "completed");
@@ -93,20 +115,34 @@ export function renderWidget(
 			pending.length ? `${pending.length} open` : "",
 		].filter(Boolean);
 		const clip = (line: string) => truncateToWidth(line, width, glyphs.truncation);
-		const lines = [clip(`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} tasks (${groups.join(", ")})`)}`)];
+		const lines = [
+			clip(
+				`${theme.fg("accent", glyphs.header)} ${theme.fg("accent", `${tasks.length} tasks (${groups.join(", ")})`)}`,
+			),
+		];
 		if (collapsed) return [...lines, ""];
-		const listed = config.collapseCompleted ? tasks.filter((task) => task.status !== "completed") : tasks;
+		const listed = config.collapseCompleted
+			? tasks.filter((task) => task.status !== "completed")
+			: tasks;
 		const showAll = toggleShowAll ? !config.showAll : config.showAll;
-		const limit = Number.isSafeInteger(config.maxVisible) && config.maxVisible > 0 ? config.maxVisible : 10;
-		const visible = showAll ? listed : config.hiddenAt === "top" ? listed.slice(-limit) : listed.slice(0, limit);
+		const limit =
+			Number.isSafeInteger(config.maxVisible) && config.maxVisible > 0 ? config.maxVisible : 10;
+		const visible = showAll
+			? listed
+			: config.hiddenAt === "top"
+				? listed.slice(-limit)
+				: listed.slice(0, limit);
 		const hidden = listed.length - visible.length;
 		const rows: string[] = [];
 		const overflow = hidden ? theme.fg("dim", `${glyphs.overflow} and ${hidden} more`) : undefined;
 		if (overflow && config.hiddenAt === "top") rows.push(overflow);
-		for (const task of visible) rows.push(renderTask(task, tasks, activity, theme, frame, now, config));
+		for (const task of visible)
+			rows.push(renderTask(task, tasks, activity, theme, frame, now, config));
 		if (overflow && config.hiddenAt !== "top") rows.push(overflow);
 		if (config.collapseCompleted && completed.length) {
-			rows.push(`${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`);
+			rows.push(
+				`${theme.fg("success", glyphs.completedSummary)} ${theme.fg("dim", `${completed.length} completed`)}`,
+			);
 		}
 		// The branch supplies row indentation; clip once with it included in the width.
 		for (const [index, row] of rows.entries()) {
@@ -139,7 +175,9 @@ export class TaskWidget {
 		if (this.ui === ui) return;
 		this.stopTimer();
 		if (this.registered && this.ui) {
-			try { this.ui.setWidget(WIDGET_KEY, undefined); } catch {}
+			try {
+				this.ui.setWidget(WIDGET_KEY, undefined);
+			} catch {}
 		}
 		this.ui = ui;
 		this.tui = undefined;
@@ -197,31 +235,49 @@ export class TaskWidget {
 			return;
 		}
 		if (!this.registered) {
-			this.ui.setWidget(WIDGET_KEY, (tui, theme) => {
-				this.tui = tui;
-				this.startTimer();
-				let disposed = false;
-				return {
-					render: (width: number) => renderWidget(
-						foregroundSnapshot(), taskActivity.get(getForeground()), this.config,
-						this.ui?.theme ?? theme, width, this.frame, this.toggleShowAllOverride,
-						Date.now(), this.collapsed,
-					),
-					handleMouse: (event: TuiMouseEvent) => {
-						if (disposed || this.tui !== tui || event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
-						if (event.shift || event.alt || event.ctrl) return undefined;
-						this.collapsed = !this.collapsed;
-						tui.requestRender(true);
-						return { handled: true };
-					},
-					invalidate() {},
-					dispose: () => {
-						disposed = true;
-						if (this.tui === tui) this.tui = undefined;
-						this.stopTimer();
-					},
-				};
-			}, { placement: "aboveEditor" });
+			this.ui.setWidget(
+				WIDGET_KEY,
+				(tui, theme) => {
+					this.tui = tui;
+					this.startTimer();
+					let disposed = false;
+					return {
+						render: (width: number) =>
+							renderWidget(
+								foregroundSnapshot(),
+								taskActivity.get(getForeground()),
+								this.config,
+								this.ui?.theme ?? theme,
+								width,
+								this.frame,
+								this.toggleShowAllOverride,
+								Date.now(),
+								this.collapsed,
+							),
+						handleMouse: (event: TuiMouseEvent) => {
+							if (
+								disposed ||
+								this.tui !== tui ||
+								event.type !== "click" ||
+								event.button !== "left" ||
+								event.y !== 0
+							)
+								return undefined;
+							if (event.shift || event.alt || event.ctrl) return undefined;
+							this.collapsed = !this.collapsed;
+							tui.requestRender(true);
+							return { handled: true };
+						},
+						invalidate() {},
+						dispose: () => {
+							disposed = true;
+							if (this.tui === tui) this.tui = undefined;
+							this.stopTimer();
+						},
+					};
+				},
+				{ placement: "aboveEditor" },
+			);
 			this.registered = true;
 		} else {
 			this.syncTimer();

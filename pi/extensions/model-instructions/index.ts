@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 export type ModelInstructions = Map<string, string[]>;
 
@@ -19,7 +23,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseConfig(value: unknown): ModelInstructions {
-	if (!isRecord(value) || Object.keys(value).some((key) => key !== "models") || !isRecord(value.models)) {
+	if (
+		!isRecord(value) ||
+		Object.keys(value).some((key) => key !== "models") ||
+		!isRecord(value.models)
+	) {
 		throw new Error('Expected an object containing only a "models" object.');
 	}
 
@@ -28,15 +36,26 @@ export function parseConfig(value: unknown): ModelInstructions {
 		if (!key || key.trim() !== key) {
 			throw new Error("Model keys must be non-empty, without surrounding whitespace.");
 		}
-		if (!Array.isArray(instructions) || instructions.some((item) => typeof item !== "string" || !item.trim())) {
-			throw new Error(`Instructions for ${JSON.stringify(key)} must be an array of non-empty strings.`);
+		if (
+			!Array.isArray(instructions) ||
+			instructions.some((item) => typeof item !== "string" || !item.trim())
+		) {
+			throw new Error(
+				`Instructions for ${JSON.stringify(key)} must be an array of non-empty strings.`,
+			);
 		}
-		models.set(key, instructions.map((item: string) => item.trim()));
+		models.set(
+			key,
+			instructions.map((item: string) => item.trim()),
+		);
 	}
 	return models;
 }
 
-export function instructionsFor(models: ModelInstructions, model: { provider: string; id: string }): string[] {
+export function instructionsFor(
+	models: ModelInstructions,
+	model: { provider: string; id: string },
+): string[] {
 	// A provider-specific entry replaces the model-wide entry, including [].
 	return models.get(`${model.provider}/${model.id}`) ?? models.get(model.id) ?? [];
 }

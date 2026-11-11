@@ -1,10 +1,32 @@
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import fs, {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+	unlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
-import { ADDENDUM_SECTION, CHILD_POLICY_MARKER, CHILD_PREFIXES, LEGACY_END, LEGACY_START, NATIVE_CHILD_BOUNDARIES, NATIVE_STRUCTURED_OUTPUT_SUFFIX, POLICY_SECTION, policySection, selectAgentName, selectProfile, stripOwnedBlocks, type PolicyProfile } from "../child-profile.ts";
+import {
+	ADDENDUM_SECTION,
+	CHILD_POLICY_MARKER,
+	CHILD_PREFIXES,
+	LEGACY_END,
+	LEGACY_START,
+	NATIVE_CHILD_BOUNDARIES,
+	NATIVE_STRUCTURED_OUTPUT_SUFFIX,
+	POLICY_SECTION,
+	policySection,
+	selectAgentName,
+	selectProfile,
+	stripOwnedBlocks,
+	type PolicyProfile,
+} from "../child-profile.ts";
 import { installAgentPolicy, POLICY_ID, readInheritedPrompt } from "../runtime.ts";
 import { parseBBPolicySignal, type BBPolicySignal } from "../bb-profile.ts";
 import { loadSystemPromptBuilder } from "./pi-package.ts";
@@ -26,20 +48,46 @@ function chadineer(pi: any) {
 }
 
 type Handler = (...args: any[]) => any;
-function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPolicySignal | undefined, bbOrigin = false, register = undefined as any, legacyFirst = false, legacy = false, deployed = false, configure = (_directory: string) => {} } = {}) {
+function harness(
+	t: any,
+	{
+		backgroundChild = false,
+		bbSignal = undefined as BBPolicySignal | undefined,
+		bbOrigin = false,
+		register = undefined as any,
+		legacyFirst = false,
+		legacy = false,
+		deployed = false,
+		configure = (_directory: string) => {},
+	} = {},
+) {
 	const directory = mkdtempSync(join(tmpdir(), "agent-policy-"));
 	t.after(() => rmSync(directory, { recursive: true, force: true }));
 	writeFileSync(join(directory, "common.md"), "COMMON draft");
 
-	for (const role of ["worker", "reviewer", "scout"]) writeFileSync(join(directory, `${role}.md`), `${role} overlay`);
+	for (const role of ["worker", "reviewer", "scout"])
+		writeFileSync(join(directory, `${role}.md`), `${role} overlay`);
 	writeFileSync(join(directory, "main.md"), "MAIN draft");
 	writeFileSync(join(directory, "main-bb.md"), "MAIN BB draft");
 	writeFileSync(join(directory, "child.md"), "CHILD draft");
-	const initialConfig = { common: ["common.md"], main: ["main.md"], mainBb: ["main-bb.md"], child: ["child.md"], agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] } };
+	const initialConfig = {
+		common: ["common.md"],
+		main: ["main.md"],
+		mainBb: ["main-bb.md"],
+		child: ["child.md"],
+		agents: { worker: ["worker.md"], reviewer: ["reviewer.md"], scout: ["scout.md"] },
+	};
 	if (deployed) {
-		for (const file of ["common.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) writeFileSync(join(directory, file), "");
-		writeFileSync(join(directory, "main.md"), readFileSync(new URL("../prompts/main.md", import.meta.url)));
-		writeFileSync(join(directory, "main-bb.md"), readFileSync(new URL("../prompts/main-bb.md", import.meta.url)));
+		for (const file of ["common.md", "child.md", "worker.md", "reviewer.md", "scout.md"])
+			writeFileSync(join(directory, file), "");
+		writeFileSync(
+			join(directory, "main.md"),
+			readFileSync(new URL("../prompts/main.md", import.meta.url)),
+		);
+		writeFileSync(
+			join(directory, "main-bb.md"),
+			readFileSync(new URL("../prompts/main-bb.md", import.meta.url)),
+		);
 		initialConfig.agents = { worker: [], reviewer: [], scout: [] };
 	}
 	writeFileSync(join(directory, "config.json"), JSON.stringify(initialConfig));
@@ -54,16 +102,27 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	let header: any = null;
 	let projection: any = { messages: [] };
 	const api = {
-		on(event: string, handler: Handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
-		registerCommand() {}, appendEntry() {},
+		on(event: string, handler: Handler) {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
+		registerCommand() {},
+		appendEntry() {},
 	};
 	const ctx: any = {
 		hasUI: true,
 		// A TUI keeps the stderr mirror quiet; the non-TUI paths are asserted explicitly.
 		mode: "tui",
-		ui: { notify(message: string, type: string) { assert.ok(type === "warning" || type === "error"); notices.push(message); noticeTypes.push(type); }, setStatus() {} },
+		ui: {
+			notify(message: string, type: string) {
+				assert.ok(type === "warning" || type === "error");
+				notices.push(message);
+				noticeTypes.push(type);
+			},
+			setStatus() {},
+		},
 		sessionManager: {
-			getSessionFile: () => sessionFile, getSessionId: () => sessionId,
+			getSessionFile: () => sessionFile,
+			getSessionId: () => sessionId,
 			getBranch: () => [],
 			getHeader: () => header,
 			buildSessionProjection: () => projection,
@@ -72,8 +131,21 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 	function install() {
 		if (legacy && legacyFirst) chadineer(api as any);
 		installAgentPolicy(api as any, {
-			policyDir: directory, extensionPath: join(directory, "index.ts"), backgroundChild, bbSignal, bbOrigin,
-			register: register ?? ((input: any) => { registrations.push(input); return { dispose() { disposed++; } }; }),
+			policyDir: directory,
+			extensionPath: join(directory, "index.ts"),
+			backgroundChild,
+			bbSignal,
+			bbOrigin,
+			register:
+				register ??
+				((input: any) => {
+					registrations.push(input);
+					return {
+						dispose() {
+							disposed++;
+						},
+					};
+				}),
 		});
 		if (legacy && !legacyFirst) chadineer(api as any);
 	}
@@ -84,26 +156,54 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 		return buildSystemPrompt({ cwd, customPrompt: prompt, selectedTools: [], sections });
 	}
 	function sourceText(bodies: string) {
-		const files: Record<string, string> = { "COMMON draft": "common.md", "MAIN draft": "main.md", "MAIN BB draft": "main-bb.md", "CHILD draft": "child.md", "worker overlay": "worker.md", "reviewer overlay": "reviewer.md", "scout overlay": "scout.md" };
-		return bodies.split("\n\n").map((body) => `## Policy source: ${join(directory, files[body])}\nResolve this source's relative file references against ${directory}.\n\n${body}`).join("\n\n");
+		const files: Record<string, string> = {
+			"COMMON draft": "common.md",
+			"MAIN draft": "main.md",
+			"MAIN BB draft": "main-bb.md",
+			"CHILD draft": "child.md",
+			"worker overlay": "worker.md",
+			"reviewer overlay": "reviewer.md",
+			"scout overlay": "scout.md",
+		};
+		return bodies
+			.split("\n\n")
+			.map(
+				(body) =>
+					`## Policy source: ${join(directory, files[body])}\nResolve this source's relative file references against ${directory}.\n\n${body}`,
+			)
+			.join("\n\n");
 	}
 	function expectedSection(profile: PolicyProfile, bodies: string) {
 		return policySection(profile, sourceText(bodies));
 	}
-	function emit(event: string, input: any = {}) { for (const fn of handlers.get(event) ?? []) fn(input, ctx); }
+	function emit(event: string, input: any = {}) {
+		for (const fn of handlers.get(event) ?? []) fn(input, ctx);
+	}
 	/** One run: Pi starts from fresh base options, so only this run's mutations are observed. */
 	function before(prompt = "root role", extra: Record<string, any> = {}) {
 		const options: any = { cwd, customPrompt: prompt, selectedTools: [], sections: {}, ...extra };
 		const returns: any[] = [];
 		for (const fn of handlers.get("before_agent_start") ?? []) {
 			// Like Pi: each handler sees the prompt rendered from the options earlier handlers mutated.
-			const result = fn({ systemPrompt: buildSystemPrompt(options), systemPromptOptions: options }, ctx);
+			const result = fn(
+				{ systemPrompt: buildSystemPrompt(options), systemPromptOptions: options },
+				ctx,
+			);
 			if (result) returns.push(result);
 		}
-		return { systemPrompt: buildSystemPrompt(options), options, sections: options.sections as Record<string, string>, returns };
+		return {
+			systemPrompt: buildSystemPrompt(options),
+			options,
+			sections: options.sections as Record<string, string>,
+			returns,
+		};
 	}
 	return {
-		directory, registrations, notices, noticeTypes, ctx,
+		directory,
+		registrations,
+		notices,
+		noticeTypes,
+		ctx,
 		expectedSection,
 		/** The rendered prompt for a run that composes nothing (`agent_policy` unset). */
 		base: (prompt: string) => render(prompt),
@@ -111,34 +211,68 @@ function harness(t: any, { backgroundChild = false, bbSignal = undefined as BBPo
 			const section = expectedSection(profile, bodies);
 			return render(prompt, section === undefined ? {} : { [POLICY_SECTION]: section });
 		},
-		get disposed() { return disposed; }, emit,
+		get disposed() {
+			return disposed;
+		},
+		emit,
 		reload() {
 			emit("session_shutdown", { reason: "reload" });
 			handlers.clear();
 			install();
 			emit("session_start", { reason: "reload" });
 		},
-		identity(file: string | undefined, uuid: string) { sessionFile = file; sessionId = uuid; },
-		/** A session branched from another one: the parent's prompt records, older than the fork. */
-		branched(uuid: string, inherited: { sections?: Record<string, string | null>; tools?: string[]; forkedAt?: number } = {}) {
+		identity(file: string | undefined, uuid: string) {
+			sessionFile = file;
 			sessionId = uuid;
-			header = { id: uuid, timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/sessions/parent.jsonl" };
-			projection = { messages: [{ role: "system", content: "", sections: inherited.sections ?? {}, toolsAdded: (inherited.tools ?? []).map((name) => ({ name })), timestamp: inherited.forkedAt ?? Date.parse("2024-01-01T00:00:01.000Z") }] };
+		},
+		/** A session branched from another one: the parent's prompt records, older than the fork. */
+		branched(
+			uuid: string,
+			inherited: {
+				sections?: Record<string, string | null>;
+				tools?: string[];
+				forkedAt?: number;
+			} = {},
+		) {
+			sessionId = uuid;
+			header = {
+				id: uuid,
+				timestamp: "2024-01-01T00:00:02.000Z",
+				parentSession: "/sessions/parent.jsonl",
+			};
+			projection = {
+				messages: [
+					{
+						role: "system",
+						content: "",
+						sections: inherited.sections ?? {},
+						toolsAdded: (inherited.tools ?? []).map((name) => ({ name })),
+						timestamp: inherited.forkedAt ?? Date.parse("2024-01-01T00:00:01.000Z"),
+					},
+				],
+			};
 		},
 		/** A parent link with nothing inherited: a session branched before its parent recorded a prompt. */
 		parentLinkOnly(uuid: string) {
 			sessionId = uuid;
-			header = { id: uuid, timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/sessions/parent.jsonl" };
+			header = {
+				id: uuid,
+				timestamp: "2024-01-01T00:00:02.000Z",
+				parentSession: "/sessions/parent.jsonl",
+			};
 			projection = { messages: [] };
 		},
 		before,
-		section(prompt = "root role") { return before(prompt).sections[POLICY_SECTION]; },
+		section(prompt = "root role") {
+			return before(prompt).sections[POLICY_SECTION];
+		},
 	};
 }
 
 test("native adapter distinguishes root, foreground/fork, background and explicit fanout", () => {
 	assert.equal(selectProfile("root role", false), "main");
-	for (const prefix of CHILD_PREFIXES) assert.equal(selectProfile(`\n${prefix}\nworker role`, false), "subagent");
+	for (const prefix of CHILD_PREFIXES)
+		assert.equal(selectProfile(`\n${prefix}\nworker role`, false), "subagent");
 	assert.equal(selectProfile("background role", true), "subagent");
 	assert.equal(selectProfile(`quoted later: ${CHILD_PREFIXES[0]}`, false), "main");
 });
@@ -147,14 +281,21 @@ test("root owns one prompt section from its initialization snapshot on each run 
 	const runtime = harness(t);
 	runtime.emit("session_start");
 	const first = runtime.before();
-	assert.deepEqual(first.returns, [], "a returned systemPrompt would force the prompt and drop later sections");
+	assert.deepEqual(
+		first.returns,
+		[],
+		"a returned systemPrompt would force the prompt and drop later sections",
+	);
 	assert.equal(first.options.forceSystemPrompt, undefined);
 	assert.ok(first.systemPrompt.startsWith("root role"));
 	assert.match(first.systemPrompt, /MAIN draft/);
 	assert.match(first.systemPrompt, /COMMON draft/);
 	assert.doesNotMatch(first.systemPrompt, /CHILD draft/);
 	assert.ok(first.systemPrompt.indexOf("COMMON draft") < first.systemPrompt.indexOf("MAIN draft"));
-	assert.equal(first.sections[POLICY_SECTION], runtime.expectedSection("main", "COMMON draft\n\nMAIN draft"));
+	assert.equal(
+		first.sections[POLICY_SECTION],
+		runtime.expectedSection("main", "COMMON draft\n\nMAIN draft"),
+	);
 	assert.equal(blocks(first.systemPrompt), 1);
 	writeFileSync(join(runtime.directory, "main.md"), "MAIN edited");
 	writeFileSync(join(runtime.directory, "common.md"), "COMMON edited");
@@ -177,11 +318,18 @@ test("a section inherited as prompt text is replaced in place, never duplicated"
 	const inherited = runtime.before(first.systemPrompt);
 	assert.equal(blocks(inherited.systemPrompt), 1);
 	assert.equal(inherited.sections[POLICY_SECTION], first.sections[POLICY_SECTION]);
-	assert.equal(blocks(inherited.options.customPrompt), 0, "the inherited block is removed from the text it came from");
+	assert.equal(
+		blocks(inherited.options.customPrompt),
+		0,
+		"the inherited block is removed from the text it came from",
+	);
 	// A launch header inherited inside the text is not the run's own launch metadata.
 	const child = runtime.before(`${CHILD_PREFIXES[0]}\nworker role\n${first.systemPrompt}`);
 	assert.equal(blocks(child.systemPrompt), 1);
-	assert.equal(child.sections[POLICY_SECTION], runtime.expectedSection("subagent", "COMMON draft\n\nCHILD draft"));
+	assert.equal(
+		child.sections[POLICY_SECTION],
+		runtime.expectedSection("subagent", "COMMON draft\n\nCHILD draft"),
+	);
 	assert.doesNotMatch(child.systemPrompt, /MAIN draft/);
 });
 
@@ -213,31 +361,102 @@ test("fork drops only owned parent policy blocks, retaining deliberate role/lega
 	assert.doesNotMatch(child, /MAIN draft/);
 	assert.match(child, /parent role/);
 	assert.match(child, /reviewer role/);
-	assert.ok(child.includes(CHADINEER_PROMPT), "unmarked user-supplied instructions are not heuristically removed");
+	assert.ok(
+		child.includes(CHADINEER_PROMPT),
+		"unmarked user-supplied instructions are not heuristically removed",
+	);
 	const marked = `${inherited}\n${LEGACY_START}\nlegacy peer block\n${LEGACY_END}`;
 	assert.doesNotMatch(stripOwnedBlocks(marked, "subagent"), /legacy peer block/);
-	assert.match(stripOwnedBlocks(marked, "main"), /legacy peer block/, "a main layer keeps the peer's block");
+	assert.match(
+		stripOwnedBlocks(marked, "main"),
+		/legacy peer block/,
+		"a main layer keeps the peer's block",
+	);
 });
 
 test("inherited prompt replay keeps the last value per section, including removal", () => {
-	const header = { id: "fork", timestamp: "2024-01-01T00:00:02.000Z", parentSession: "/parent.jsonl" };
+	const header = {
+		id: "fork",
+		timestamp: "2024-01-01T00:00:02.000Z",
+		parentSession: "/parent.jsonl",
+	};
 	const inherited = Date.parse("2024-01-01T00:00:01.000Z");
-	const manager = (messages: any[], value: any = header) => ({ getHeader: () => value, buildSessionProjection: () => ({ messages }) });
-	const system = (sections: any, timestamp = inherited) => ({ role: "system", content: "", sections, timestamp });
-	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: "B" })])), { inherited: true, sections: { [POLICY_SECTION]: "B" }, tools: [] });
-	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: null })])), { inherited: true, sections: { [POLICY_SECTION]: null }, tools: [] });
+	const manager = (messages: any[], value: any = header) => ({
+		getHeader: () => value,
+		buildSessionProjection: () => ({ messages }),
+	});
+	const system = (sections: any, timestamp = inherited) => ({
+		role: "system",
+		content: "",
+		sections,
+		timestamp,
+	});
+	assert.deepEqual(
+		readInheritedPrompt(
+			manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: "B" })]),
+		),
+		{ inherited: true, sections: { [POLICY_SECTION]: "B" }, tools: [] },
+	);
+	assert.deepEqual(
+		readInheritedPrompt(
+			manager([system({ [POLICY_SECTION]: "A" }), system({ [POLICY_SECTION]: null })]),
+		),
+		{ inherited: true, sections: { [POLICY_SECTION]: null }, tools: [] },
+	);
 	// Declared tools are part of the inherited prefix; a removal after the head applies in order.
-	const declared = (toolsAdded: any, toolsRemoved: any = undefined) => ({ role: "system", content: "", toolsAdded, toolsRemoved, timestamp: inherited });
-	assert.deepEqual(readInheritedPrompt(manager([
-		declared([{ name: "read" }, { name: "check_ui" }]),
-		{ role: "system", content: "", toolsRemoved: [{ name: "check_ui" }], toolsAdded: [{ name: "bash" }], timestamp: inherited + 1 },
-	])), { inherited: true, sections: {}, tools: ["read", "bash"] });
+	const declared = (toolsAdded: any, toolsRemoved: any = undefined) => ({
+		role: "system",
+		content: "",
+		toolsAdded,
+		toolsRemoved,
+		timestamp: inherited,
+	});
+	assert.deepEqual(
+		readInheritedPrompt(
+			manager([
+				declared([{ name: "read" }, { name: "check_ui" }]),
+				{
+					role: "system",
+					content: "",
+					toolsRemoved: [{ name: "check_ui" }],
+					toolsAdded: [{ name: "bash" }],
+					timestamp: inherited + 1,
+				},
+			]),
+		),
+		{ inherited: true, sections: {}, tools: ["read", "bash"] },
+	);
 	// The child's own records are not inherited, and neither is a session without a parent link.
-	assert.deepEqual(readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }, inherited + 1000)])), { inherited: false });
+	assert.deepEqual(
+		readInheritedPrompt(manager([system({ [POLICY_SECTION]: "A" }, inherited + 1000)])),
+		{ inherited: false },
+	);
 	assert.deepEqual(readInheritedPrompt(manager([], null)), { inherited: false });
-	assert.deepEqual(readInheritedPrompt(manager([system({})], { id: "fork", timestamp: "not-a-date", parentSession: "/parent.jsonl" })), { inherited: false }, "a header without a usable timestamp is not a fork");
-	assert.deepEqual(readInheritedPrompt({ getHeader: () => header }), { inherited: false }, "an older SDK without a projection is not a fork");
-	assert.deepEqual(readInheritedPrompt({ getHeader: () => header, buildSessionProjection: () => { throw new Error("projection"); } }), { inherited: false });
+	assert.deepEqual(
+		readInheritedPrompt(
+			manager([system({})], {
+				id: "fork",
+				timestamp: "not-a-date",
+				parentSession: "/parent.jsonl",
+			}),
+		),
+		{ inherited: false },
+		"a header without a usable timestamp is not a fork",
+	);
+	assert.deepEqual(
+		readInheritedPrompt({ getHeader: () => header }),
+		{ inherited: false },
+		"an older SDK without a projection is not a fork",
+	);
+	assert.deepEqual(
+		readInheritedPrompt({
+			getHeader: () => header,
+			buildSessionProjection: () => {
+				throw new Error("projection");
+			},
+		}),
+		{ inherited: false },
+	);
 });
 
 test("a branched session reproduces the inherited section byte for byte instead of composing a child layer", (t) => {
@@ -246,19 +465,53 @@ test("a branched session reproduces the inherited section byte for byte instead 
 	const inheritedSection = policySection("main-bb", "PARENT policy draft");
 	// What the parent's session recorded: Pi's rendered section, wrapper included.
 	const stored = `<${POLICY_SECTION}>\n${inheritedSection}\n</${POLICY_SECTION}>`;
-	runtime.branched("uuid-fork", { sections: { [POLICY_SECTION]: stored, addendum: `<${ADDENDUM_SECTION}>\nINHERITED ADDENDUM\n</${ADDENDUM_SECTION}>` }, tools: ["read", "check_ui"] });
+	runtime.branched("uuid-fork", {
+		sections: {
+			[POLICY_SECTION]: stored,
+			addendum: `<${ADDENDUM_SECTION}>\nINHERITED ADDENDUM\n</${ADDENDUM_SECTION}>`,
+		},
+		tools: ["read", "check_ui"],
+	});
 	runtime.identity("/sessions/fork.jsonl", "uuid-fork");
 	const role = `${CHILD_PREFIXES[0]}\nworker role\n\n${LEGACY_START}\nlegacy peer block\n${LEGACY_END}`;
-	const run = runtime.before(role, { appendSystemPrompt: "CHILD ADDENDUM", selectedTools: ["read"] });
-	assert.equal(run.options.appendSystemPrompt, "INHERITED ADDENDUM", "the parent's appended instructions are reproduced");
+	const run = runtime.before(role, {
+		appendSystemPrompt: "CHILD ADDENDUM",
+		selectedTools: ["read"],
+	});
+	assert.equal(
+		run.options.appendSystemPrompt,
+		"INHERITED ADDENDUM",
+		"the parent's appended instructions are reproduced",
+	);
 	assert.ok(run.systemPrompt.includes("INHERITED ADDENDUM"));
-	assert.deepEqual(run.options.selectedTools, ["read", "check_ui"], "the parent's tool declarations are reproduced");
-	assert.ok(!run.systemPrompt.includes("CHILD ADDENDUM"), "a fork does not insert its own appended text before the fork point");
-	assert.equal(run.sections[POLICY_SECTION], inheritedSection, "the inherited text is reproduced, not recomposed");
+	assert.deepEqual(
+		run.options.selectedTools,
+		["read", "check_ui"],
+		"the parent's tool declarations are reproduced",
+	);
+	assert.ok(
+		!run.systemPrompt.includes("CHILD ADDENDUM"),
+		"a fork does not insert its own appended text before the fork point",
+	);
+	assert.equal(
+		run.sections[POLICY_SECTION],
+		inheritedSection,
+		"the inherited text is reproduced, not recomposed",
+	);
 	assert.equal(blocks(run.systemPrompt), 1, "the stored wrapper is not applied twice");
-	assert.ok(run.systemPrompt.includes(inheritedSection), "the request carries the parent's section unchanged");
-	assert.doesNotMatch(run.systemPrompt, /CHILD draft|MAIN BB draft/, "no layer is composed for a fork");
-	assert.ok(run.systemPrompt.includes("legacy peer block"), "inherited text is never stripped for a fork");
+	assert.ok(
+		run.systemPrompt.includes(inheritedSection),
+		"the request carries the parent's section unchanged",
+	);
+	assert.doesNotMatch(
+		run.systemPrompt,
+		/CHILD draft|MAIN BB draft/,
+		"no layer is composed for a fork",
+	);
+	assert.ok(
+		run.systemPrompt.includes("legacy peer block"),
+		"inherited text is never stripped for a fork",
+	);
 	assert.deepEqual(run.returns, [], "a fork never forces a system prompt");
 	// Decided once per session: a later run reuses the same inherited state.
 	runtime.parentLinkOnly("uuid-fork");
@@ -269,10 +522,21 @@ test("a fork never adds the parent's section back when the parent had none", (t)
 	const runtime = harness(t);
 	runtime.emit("session_start");
 	runtime.branched("uuid-fork", { sections: { cwd: "inherited cwd" } });
-	const run = runtime.before(`${CHILD_PREFIXES[0]}\nworker role`, { appendSystemPrompt: "CHILD ADDENDUM", selectedTools: ["read"] });
+	const run = runtime.before(`${CHILD_PREFIXES[0]}\nworker role`, {
+		appendSystemPrompt: "CHILD ADDENDUM",
+		selectedTools: ["read"],
+	});
 	assert.equal(run.sections[POLICY_SECTION], undefined);
-	assert.equal(run.options.appendSystemPrompt, "", "a head the parent recorded without appended text stays without it");
-	assert.deepEqual(run.options.selectedTools, ["read"], "a head that recorded no tools keeps this session's selection");
+	assert.equal(
+		run.options.appendSystemPrompt,
+		"",
+		"a head the parent recorded without appended text stays without it",
+	);
+	assert.deepEqual(
+		run.options.selectedTools,
+		["read"],
+		"a head that recorded no tools keeps this session's selection",
+	);
 	assert.doesNotMatch(run.systemPrompt, /CHILD draft|CHILD ADDENDUM/);
 });
 
@@ -281,7 +545,10 @@ test("a parent link with nothing inherited still composes the child layer", (t) 
 	runtime.emit("session_start");
 	runtime.parentLinkOnly("uuid-fork");
 	const run = runtime.before(`${CHILD_PREFIXES[0]}\nworker role`);
-	assert.equal(run.sections[POLICY_SECTION], runtime.expectedSection("subagent", "COMMON draft\n\nCHILD draft"));
+	assert.equal(
+		run.sections[POLICY_SECTION],
+		runtime.expectedSection("subagent", "COMMON draft\n\nCHILD draft"),
+	);
 	assert.match(run.systemPrompt, /CHILD draft/);
 	assert.doesNotMatch(run.systemPrompt, /MAIN draft/);
 });
@@ -304,26 +571,41 @@ for (const legacyFirst of [true, false]) {
 test("multiple owned policy/legacy blocks are removed, never other sections", () => {
 	const own = `<agent_policy>\n${policySection("subagent", "stale")}\n</agent_policy>`;
 	const legacy = `${LEGACY_START}\nlegacy\n${LEGACY_END}`;
-	const output = stripOwnedBlocks(`${CHILD_PREFIXES[0]}\nrole\n${own}\n${own}\n${legacy}\nother section`, "subagent");
+	const output = stripOwnedBlocks(
+		`${CHILD_PREFIXES[0]}\nrole\n${own}\n${own}\n${legacy}\nother section`,
+		"subagent",
+	);
 	assert.equal(output.split("<agent_policy>").length - 1, 0);
 	assert.doesNotMatch(output, /stale|legacy/);
 	assert.match(output, /other section/);
-	assert.match(stripOwnedBlocks(legacy, "subagent", false), /chadineer:v1/, "an empty composition keeps the peer's block");
+	assert.match(
+		stripOwnedBlocks(legacy, "subagent", false),
+		/chadineer:v1/,
+		"an empty composition keeps the peer's block",
+	);
 	assert.throws(() => stripOwnedBlocks("<agent_policy>\nunterminated", "main"), /unterminated/);
 	assert.throws(() => stripOwnedBlocks(LEGACY_START, "subagent"), /unterminated/);
 });
 
 test("whitespace-only main file is omitted from the initialization snapshot", (t) => {
-	const runtime = harness(t, { configure(directory) {
-		writeFileSync(join(directory, "main.md"), "  \n");
-	} });
-	assert.equal(runtime.before().systemPrompt, runtime.expected("root role", "main", "COMMON draft"));
+	const runtime = harness(t, {
+		configure(directory) {
+			writeFileSync(join(directory, "main.md"), "  \n");
+		},
+	});
+	assert.equal(
+		runtime.before().systemPrompt,
+		runtime.expected("root role", "main", "COMMON draft"),
+	);
 });
 
 test("UUID identity for file-backed and in-memory sessions, session events, and shutdown dispose only owned registration", (t) => {
 	const runtime = harness(t);
 	runtime.emit("session_start");
-	assert.deepEqual(runtime.registrations[0], { sessionId: "uuid-parent", extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }] });
+	assert.deepEqual(runtime.registrations[0], {
+		sessionId: "uuid-parent",
+		extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }],
+	});
 	runtime.before();
 	assert.equal(runtime.registrations.length, 1);
 	runtime.identity("/sessions/renamed.jsonl", "uuid-parent");
@@ -349,7 +631,12 @@ test("UUID identity for file-backed and in-memory sessions, session events, and 
 
 test("registry conflicts surface, never overwrite or dispose another owner", (t) => {
 	let calls = 0;
-	const runtime = harness(t, { register() { calls++; throw new Error("already registered by another owner"); } });
+	const runtime = harness(t, {
+		register() {
+			calls++;
+			throw new Error("already registered by another owner");
+		},
+	});
 	assert.throws(() => runtime.emit("session_start"), /another owner/);
 	assert.throws(() => runtime.before(), /another owner/);
 	assert.equal(runtime.disposed, 0);
@@ -371,26 +658,47 @@ test("deployed main source loads for roots only; empty children and missing skil
 	writeFileSync(join(runtime.directory, "worker.md"), "not automatically loaded");
 	runtime.reload();
 	assert.equal(runtime.before(prompt).systemPrompt, runtime.base(prompt));
-	writeFileSync(join(runtime.directory, "config.json"), JSON.stringify({ agents: { worker: ["worker.md"] } }));
+	writeFileSync(
+		join(runtime.directory, "config.json"),
+		JSON.stringify({ agents: { worker: ["worker.md"] } }),
+	);
 	runtime.reload();
 	const active = runtime.before(`${prompt}\n${root}`);
 	assert.match(active.systemPrompt, /not automatically loaded/);
-	assert.ok(!active.systemPrompt.includes(mainHeader), "an inherited root main block is stripped from children");
+	assert.ok(
+		!active.systemPrompt.includes(mainHeader),
+		"an inherited root main block is stripped from children",
+	);
 	assert.ok(active.sections[POLICY_SECTION]!.includes(CHILD_POLICY_MARKER));
 	assert.equal(blocks(active.systemPrompt), 1);
 	for (const legacyFirst of [true, false]) {
-		const child = harness(t, { deployed: true, legacy: true, legacyFirst, configure(directory) {
-			writeFileSync(join(directory, "config.json"), JSON.stringify({ agents: { worker: ["missing.md"] } }));
-		} });
+		const child = harness(t, {
+			deployed: true,
+			legacy: true,
+			legacyFirst,
+			configure(directory) {
+				writeFileSync(
+					join(directory, "config.json"),
+					JSON.stringify({ agents: { worker: ["missing.md"] } }),
+				);
+			},
+		});
 		child.emit("session_start");
 		assert.equal(child.notices.length, 1);
 		// An empty child composition keeps the peer's own block, which it added through the options.
 		assert.ok(child.before(prompt).systemPrompt.includes(CHADINEER_PROMPT));
-		assert.equal(child.before(prompt).options.appendSystemPrompt, `${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`);
+		assert.equal(
+			child.before(prompt).options.appendSystemPrompt,
+			`${LEGACY_START}\n${CHADINEER_PROMPT}\n${LEGACY_END}`,
+		);
 		const inherited = policySection("subagent", "stale skill");
 		const observed = child.before(`${prompt}\n\n<agent_policy>\n${inherited}\n</agent_policy>`);
 		assert.doesNotMatch(observed.systemPrompt, /stale skill/);
-		assert.equal(observed.systemPrompt.includes(CHADINEER_PROMPT), legacyFirst === false, "legacy hook can observe and skip an inherited child marker before cleanup");
+		assert.equal(
+			observed.systemPrompt.includes(CHADINEER_PROMPT),
+			legacyFirst === false,
+			"legacy hook can observe and skip an inherited child marker before cleanup",
+		);
 		assert.equal(blocks(observed.systemPrompt), 0);
 	}
 	writeFileSync(join(runtime.directory, "worker.md"), " \n");
@@ -415,8 +723,12 @@ for (const role of ["worker", "reviewer", "scout"] as const) {
 		assert.match(output.systemPrompt, /COMMON draft/);
 		assert.match(output.systemPrompt, /CHILD draft/);
 		assert.ok(output.systemPrompt.includes(`${role} overlay`));
-		assert.ok(output.systemPrompt.indexOf("COMMON draft") < output.systemPrompt.indexOf("CHILD draft"));
-		assert.ok(output.systemPrompt.indexOf("CHILD draft") < output.systemPrompt.indexOf(`${role} overlay`));
+		assert.ok(
+			output.systemPrompt.indexOf("COMMON draft") < output.systemPrompt.indexOf("CHILD draft"),
+		);
+		assert.ok(
+			output.systemPrompt.indexOf("CHILD draft") < output.systemPrompt.indexOf(`${role} overlay`),
+		);
 		assert.equal(runtime.before(prompt).systemPrompt, output.systemPrompt);
 		writeFileSync(join(runtime.directory, `${role}.md`), `${role} edited`);
 		assert.equal(runtime.before(prompt).systemPrompt, output.systemPrompt);
@@ -428,17 +740,44 @@ for (const role of ["worker", "reviewer", "scout"] as const) {
 test("root metadata cannot classify children; unknown/unsafe names and absent tags stay generic", (t) => {
 	const runtime = harness(t);
 	// A bare tag is only a lookalike when nothing follows it; Pi always renders a <cwd> section after custom text.
-	assert.equal(selectProfile('<active_agent name="worker"/>\n\n<cwd>\n/tmp/project\n</cwd>', false), "subagent");
-	assert.match(runtime.before('root role\n<active_agent name="worker"/>').systemPrompt, /MAIN draft/);
+	assert.equal(
+		selectProfile('<active_agent name="worker"/>\n\n<cwd>\n/tmp/project\n</cwd>', false),
+		"subagent",
+	);
+	assert.match(
+		runtime.before('root role\n<active_agent name="worker"/>').systemPrompt,
+		/MAIN draft/,
+	);
 	assert.equal(selectAgentName('<active_agent name="worker"/>', "main"), undefined);
-	for (const name of ["custom", "researcher", "oracle", "delegate", "developer", "Worker", "pkg.worker", "../worker", "__proto__", "constructor", "worker&amp;", ""]) {
+	for (const name of [
+		"custom",
+		"researcher",
+		"oracle",
+		"delegate",
+		"developer",
+		"Worker",
+		"pkg.worker",
+		"../worker",
+		"__proto__",
+		"constructor",
+		"worker&amp;",
+		"",
+	]) {
 		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${name}"/>\n<active_agent name="worker"/>\nquoted role`;
-		assert.equal(selectAgentName(prompt, "subagent"), name.replace(/&amp;/g, "&") || undefined, name);
+		assert.equal(
+			selectAgentName(prompt, "subagent"),
+			name.replace(/&amp;/g, "&") || undefined,
+			name,
+		);
 		const output = runtime.before(prompt).systemPrompt;
 		assert.match(output, /CHILD draft/);
 		assert.doesNotMatch(output, /worker overlay|reviewer overlay|scout overlay/);
 	}
-	for (const tag of ["", '<active_agent name="worker"/ malformed>', 'quoted: <active_agent name="worker"/>']) {
+	for (const tag of [
+		"",
+		'<active_agent name="worker"/ malformed>',
+		'quoted: <active_agent name="worker"/>',
+	]) {
 		assert.equal(selectAgentName(`${CHILD_PREFIXES[0]}\n${tag}`, "subagent"), undefined);
 	}
 });
@@ -446,7 +785,9 @@ test("root metadata cannot classify children; unknown/unsafe names and absent ta
 test("role and main/child transitions replace one owned section and preserve unmarked prose", (t) => {
 	const runtime = harness(t);
 	const root = runtime.before().systemPrompt;
-	const worker = runtime.before(`${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\n${root}`).systemPrompt;
+	const worker = runtime.before(
+		`${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\n${root}`,
+	).systemPrompt;
 	assert.doesNotMatch(worker, /MAIN draft/);
 	const reviewer = runtime.before(worker.replace('name="worker"', 'name="reviewer"')).systemPrompt;
 	assert.doesNotMatch(reviewer, /worker overlay/);
@@ -459,14 +800,26 @@ test("role and main/child transitions replace one owned section and preserve unm
 	assert.equal(blocks(main), 1);
 });
 
-for (const filename of ["common.md", "main.md", "child.md", "worker.md", "reviewer.md", "scout.md"]) {
+for (const filename of [
+	"common.md",
+	"main.md",
+	"child.md",
+	"worker.md",
+	"reviewer.md",
+	"scout.md",
+]) {
 	test(`missing configured ${filename} warns before prompt, preserves siblings, and blanks omit quietly`, (t) => {
-		const runtime = harness(t, { configure(directory) { unlinkSync(join(directory, filename)); } });
+		const runtime = harness(t, {
+			configure(directory) {
+				unlinkSync(join(directory, filename));
+			},
+		});
 		runtime.emit("session_start");
 		assert.equal(runtime.notices.length, 1);
 		assert.ok(runtime.notices[0].includes(filename));
 		assert.match(runtime.notices[0], /ENOENT/);
-		const role = filename.endsWith("er.md") || filename === "scout.md" ? filename.slice(0, -3) : "worker";
+		const role =
+			filename.endsWith("er.md") || filename === "scout.md" ? filename.slice(0, -3) : "worker";
 		const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>`;
 		const output = runtime.before(prompt).systemPrompt;
 		assert.ok(output.startsWith(prompt));
@@ -475,16 +828,23 @@ for (const filename of ["common.md", "main.md", "child.md", "worker.md", "review
 		runtime.emit("session_start", { reason: "resume" });
 		runtime.before();
 		assert.equal(runtime.notices.length, 1);
-		const blank = harness(t, { configure(directory) { writeFileSync(join(directory, filename), " \n"); } });
+		const blank = harness(t, {
+			configure(directory) {
+				writeFileSync(join(directory, filename), " \n");
+			},
+		});
 		blank.before(prompt);
 		assert.deepEqual(blank.notices, []);
 	});
 }
 
 test("unreadable source warns rather than aborting runtime creation", (t) => {
-	const runtime = harness(t, { configure(directory) {
-		unlinkSync(join(directory, "scout.md")); mkdirSync(join(directory, "scout.md"));
-	} });
+	const runtime = harness(t, {
+		configure(directory) {
+			unlinkSync(join(directory, "scout.md"));
+			mkdirSync(join(directory, "scout.md"));
+		},
+	});
 	runtime.before();
 	assert.match(runtime.notices[0], /agents\["scout"\]\[0\].*EISDIR/);
 	assert.match(runtime.before().systemPrompt, /MAIN draft/);
@@ -492,19 +852,28 @@ test("unreadable source warns rather than aborting runtime creation", (t) => {
 
 test("config and all unique sources are read once at initialization, never on runs or session/tree events", (t) => {
 	const originalRead = fs.readFileSync;
-	const reads = t.mock.method(fs, "readFileSync", (...args: any[]) => Reflect.apply(originalRead, fs, args));
+	const reads = t.mock.method(fs, "readFileSync", (...args: any[]) =>
+		Reflect.apply(originalRead, fs, args),
+	);
 	syncBuiltinESMExports();
 	try {
 		const runtime = harness(t);
 		assert.equal(reads.mock.callCount(), 8);
-		for (const call of reads.mock.calls.filter((call: any) => !String(call.arguments[0]).endsWith("config.json"))) writeFileSync(call.arguments[0], "edited before first prompt");
-		for (const reason of ["startup", "resume", "fork", "reload"]) runtime.emit("session_start", { reason });
+		for (const call of reads.mock.calls.filter(
+			(call: any) => !String(call.arguments[0]).endsWith("config.json"),
+		))
+			writeFileSync(call.arguments[0], "edited before first prompt");
+		for (const reason of ["startup", "resume", "fork", "reload"])
+			runtime.emit("session_start", { reason });
 		runtime.emit("session_tree");
 		assert.match(runtime.before().systemPrompt, /MAIN draft/);
 		for (const role of ["worker", "reviewer", "scout"]) {
 			const prompt = `${CHILD_PREFIXES[0]}\n<active_agent name="${role}"/>`;
 			const output = runtime.before(prompt);
-			assert.equal(output.systemPrompt, runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+			assert.equal(
+				output.systemPrompt,
+				runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`),
+			);
 			assert.equal(runtime.before(prompt).systemPrompt, output.systemPrompt);
 		}
 		assert.equal(reads.mock.callCount(), 8);
@@ -518,12 +887,21 @@ test("config and all unique sources are read once at initialization, never on ru
 		assert.equal(runtime.section(), undefined);
 		assert.equal(runtime.before().systemPrompt, runtime.base("root role"));
 		assert.match(runtime.notices[0], /config.json.*ENOENT/);
-	} finally { reads.mock.restore(); syncBuiltinESMExports(); }
+	} finally {
+		reads.mock.restore();
+		syncBuiltinESMExports();
+	}
 });
 
-const bbTuple = { PI_AGENT_POLICY_BB_PROFILE: "workflow-worker:v1", BB_THREAD_ID: "bb-thread", PI_AGENT_POLICY_BB_THREAD_ID: "bb-thread" };
+const bbTuple = {
+	PI_AGENT_POLICY_BB_PROFILE: "workflow-worker:v1",
+	BB_THREAD_ID: "bb-thread",
+	PI_AGENT_POLICY_BB_THREAD_ID: "bb-thread",
+};
 const bbStates = [
-	{}, { BB_THREAD_ID: "bb-thread" }, bbTuple,
+	{},
+	{ BB_THREAD_ID: "bb-thread" },
+	bbTuple,
 	{ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "none:v1" },
 	{ ...bbTuple, PI_AGENT_POLICY_BB_PROFILE: "unknown" },
 	{ ...bbTuple, PI_AGENT_POLICY_BB_THREAD_ID: undefined },
@@ -535,13 +913,19 @@ test("BB-only tuple composes generic child, never arbitrary/inherited named sour
 	for (const role of ["worker", "reviewer", "scout", "custom"]) {
 		const prompt = `<active_agent name="${role}"/>\nBB instructions\nquoted: ${CHILD_PREFIXES[0]}`;
 		const output = runtime.before(prompt);
-		assert.equal(output.systemPrompt, runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft"));
+		assert.equal(
+			output.systemPrompt,
+			runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft"),
+		);
 		assert.deepEqual(output.returns, []);
 		assert.equal(runtime.before(prompt).systemPrompt, output.systemPrompt);
 	}
 	assert.deepEqual(runtime.notices, []);
 	assert.equal(runtime.registrations.length, 1);
-	assert.deepEqual(runtime.registrations[0], { sessionId: "uuid-parent", extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }] });
+	assert.deepEqual(runtime.registrations[0], {
+		sessionId: "uuid-parent",
+		extensions: [{ id: POLICY_ID, path: join(runtime.directory, "index.ts") }],
+	});
 });
 
 test("all own marker states preserve native named sources, while roots follow the BB-origin main layer", (t) => {
@@ -555,13 +939,19 @@ test("all own marker states preserve native named sources, while roots follow th
 				layer = "subagent";
 				body = "CHILD draft";
 			}
-			assert.equal(root.before().systemPrompt, root.expected("root role", layer, `COMMON draft\n\n${body}`));
+			assert.equal(
+				root.before().systemPrompt,
+				root.expected("root role", layer, `COMMON draft\n\n${body}`),
+			);
 			for (const backgroundChild of [true, false]) {
 				const native = harness(t, { backgroundChild, bbSignal, bbOrigin });
 				for (const prefix of backgroundChild ? [""] : CHILD_PREFIXES) {
 					for (const role of ["worker", "reviewer", "scout"]) {
 						const prompt = `${prefix}\n<active_agent name="${role}"/>\nbody`;
-						assert.equal(native.before(prompt).systemPrompt, native.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`));
+						assert.equal(
+							native.before(prompt).systemPrompt,
+							native.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft\n\n${role} overlay`),
+						);
 					}
 				}
 			}
@@ -585,21 +975,48 @@ test("malformed own signal warns once per runtime, including headless; absence a
 	const handlers = new Map<string, Handler>();
 	const calls: string[] = [];
 	t.mock.method(console, "error", (message: string) => calls.push(message));
-	installAgentPolicy({ on(event: string, handler: Handler) { handlers.set(event, handler); } } as any, {
-		policyDir: harness(t).directory, extensionPath: "fixture", backgroundChild: false, bbSignal: diagnostic,
-		register: () => ({ dispose() {} }) as any,
-	});
-	const ctx = { hasUI: false, mode: "print", sessionManager: { getSessionId: () => "headless" }, ui: { notify() { assert.fail("headless warning must log instead"); } } };
+	installAgentPolicy(
+		{
+			on(event: string, handler: Handler) {
+				handlers.set(event, handler);
+			},
+		} as any,
+		{
+			policyDir: harness(t).directory,
+			extensionPath: "fixture",
+			backgroundChild: false,
+			bbSignal: diagnostic,
+			register: () => ({ dispose() {} }) as any,
+		},
+	);
+	const ctx = {
+		hasUI: false,
+		mode: "print",
+		sessionManager: { getSessionId: () => "headless" },
+		ui: {
+			notify() {
+				assert.fail("headless warning must log instead");
+			},
+		},
+	};
 	handlers.get("session_start")!({}, ctx);
-	handlers.get("before_agent_start")!({ systemPrompt: "root", systemPromptOptions: { sections: {} } }, ctx);
+	handlers.get("before_agent_start")!(
+		{ systemPrompt: "root", systemPromptOptions: { sections: {} } },
+		ctx,
+	);
 	assert.deepEqual(calls, [diagnostic.diagnostic]);
 });
 
 test("a UI host outside the TUI reports diagnostics on stderr too, once per runtime", (t) => {
 	// BB runs RPC: ctx.hasUI is true but its notify is dropped, so stderr is the channel that survives.
-	const runtime = harness(t, { configure(directory) {
-		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], typo: [] }));
-	} });
+	const runtime = harness(t, {
+		configure(directory) {
+			writeFileSync(
+				join(directory, "config.json"),
+				JSON.stringify({ common: ["common.md"], typo: [] }),
+			);
+		},
+	});
 	const errors: string[] = [];
 	t.mock.method(console, "error", (message: string) => errors.push(message));
 	runtime.ctx.mode = "rpc";
@@ -627,17 +1044,28 @@ test("BB worker clears complete stale main/role blocks even with deployed empty 
 	const staleRole = `<agent_policy>\n${policySection("subagent", "stale worker overlay")}\n</agent_policy>`;
 	const cleaned = runtime.before(`${prompt}\n${staleMain}\n${staleRole}\ninherited unmarked prose`);
 	assert.equal(runtime.section(prompt), undefined);
-	assert.equal(cleaned.options.forceSystemPrompt, undefined, "an empty composition forces nothing either");
+	assert.equal(
+		cleaned.options.forceSystemPrompt,
+		undefined,
+		"an empty composition forces nothing either",
+	);
 	assert.equal(cleaned.systemPrompt, runtime.base(`${prompt}\ninherited unmarked prose`));
 	assert.equal(runtime.before(prompt).systemPrompt, runtime.base(prompt));
-	assert.equal(runtime.before(prompt).systemPrompt, runtime.base(prompt), "a repeated run composes nothing again");
+	assert.equal(
+		runtime.before(prompt).systemPrompt,
+		runtime.base(prompt),
+		"a repeated run composes nothing again",
+	);
 	assert.equal(blocks(cleaned.systemPrompt), 0);
 });
 
 test("BB env/prompt/history lookalikes alone cannot classify a root", (t) => {
 	const runtime = harness(t, { bbSignal: parseBBPolicySignal({ BB_THREAD_ID: "bb-thread" }) });
 	const prompt = `ROOT\nPI_AGENT_POLICY_BB_PROFILE=workflow-worker:v1\nPI_AGENT_POLICY_BB_THREAD_ID=bb-thread\n<active_agent name="worker"/>\nquoted: ${CHILD_PREFIXES[0]}`;
-	assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"));
+	assert.equal(
+		runtime.before(prompt).systemPrompt,
+		runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"),
+	);
 });
 
 test("BB-origin roots replace the main layer, mark it distinctly and reject stale blocks", (t) => {
@@ -653,61 +1081,106 @@ test("BB-origin roots replace the main layer, mark it distinctly and reject stal
 	const replaced = runtime.before(`root role\n\n${stale}`);
 	assert.equal(replaced.systemPrompt, runtime.expected(`root role`, "main-bb", bbBodies));
 	assert.doesNotMatch(replaced.systemPrompt, /stale ordinary main/);
-	assert.equal(runtime.before(`root role\n\n${stale}`).sections[POLICY_SECTION], first.sections[POLICY_SECTION]);
+	assert.equal(
+		runtime.before(`root role\n\n${stale}`).sections[POLICY_SECTION],
+		first.sections[POLICY_SECTION],
+	);
 	// A BB worker keeps child composition and never receives the BB main layer.
 	const worker = `${CHILD_PREFIXES[0]}\nworker role`;
-	assert.equal(runtime.before(worker).systemPrompt, runtime.expected(worker, "subagent", "COMMON draft\n\nCHILD draft"));
+	assert.equal(
+		runtime.before(worker).systemPrompt,
+		runtime.expected(worker, "subagent", "COMMON draft\n\nCHILD draft"),
+	);
 });
 
 test("empty mainBb stays empty for BB roots: no fallback to the ordinary main layer", (t) => {
-	const runtime = harness(t, { bbOrigin: true, configure(directory) {
-		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], main: ["main.md"], child: ["child.md"], agents: {} }));
-	} });
+	const runtime = harness(t, {
+		bbOrigin: true,
+		configure(directory) {
+			writeFileSync(
+				join(directory, "config.json"),
+				JSON.stringify({
+					common: ["common.md"],
+					main: ["main.md"],
+					child: ["child.md"],
+					agents: {},
+				}),
+			);
+		},
+	});
 	const output = runtime.before();
 	assert.match(output.systemPrompt, /COMMON draft/);
 	assert.match(output.systemPrompt, /<!-- agent-policy:v1:main-bb -->/);
 	assert.doesNotMatch(output.systemPrompt, /MAIN draft|<!-- agent-policy:v1:main -->/);
 	// Ordinary hosts are unaffected by the additional layer.
 	const plain = harness(t);
-	assert.equal(plain.before().systemPrompt, plain.expected("root role", "main", "COMMON draft\n\nMAIN draft"));
+	assert.equal(
+		plain.before().systemPrompt,
+		plain.expected("root role", "main", "COMMON draft\n\nMAIN draft"),
+	);
 	const deployed = harness(t, { deployed: true, bbOrigin: true });
 	const deployedBbHeader = `## Policy source: ${join(deployed.directory, "main-bb.md")}`;
 	const deployedRoot = deployed.before().systemPrompt;
 	assert.ok(deployedRoot.includes(deployedBbHeader), "shipped BB main prompt must load non-empty");
 	assert.match(deployedRoot, /<!-- agent-policy:v1:main-bb -->/);
-	assert.ok(!deployedRoot.includes(`## Policy source: ${join(deployed.directory, "main.md")}`), "BB roots never fall back to the ordinary main prompt");
+	assert.ok(
+		!deployedRoot.includes(`## Policy source: ${join(deployed.directory, "main.md")}`),
+		"BB roots never fall back to the ordinary main prompt",
+	);
 });
 
 test("missing main and mainBb prompt files warn, skip only that layer, and keep siblings plus the extension working", (t) => {
-	const ordinary = harness(t, { configure(directory) { unlinkSync(join(directory, "main.md")); } });
+	const ordinary = harness(t, {
+		configure(directory) {
+			unlinkSync(join(directory, "main.md"));
+		},
+	});
 	ordinary.emit("session_start");
 	assert.equal(ordinary.notices.length, 1);
 	assert.match(ordinary.notices[0], /main\[0\].*main\.md.*ENOENT/);
 	const root = ordinary.before().systemPrompt;
 	assert.match(root, /COMMON draft/);
-	assert.ok(!root.includes(`## Policy source: ${join(ordinary.directory, "main.md")}`), "the missing main prompt is skipped, not synthesized");
+	assert.ok(
+		!root.includes(`## Policy source: ${join(ordinary.directory, "main.md")}`),
+		"the missing main prompt is skipped, not synthesized",
+	);
 	assert.match(root, /<!-- agent-policy:v1:main -->/);
 	assert.equal(ordinary.registrations.length, 1, "the extension still registers for children");
-	const child = ordinary.before(`${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nworker role`).systemPrompt;
+	const child = ordinary.before(
+		`${CHILD_PREFIXES[0]}\n<active_agent name="worker"/>\nworker role`,
+	).systemPrompt;
 	assert.match(child, /COMMON draft[\s\S]*CHILD draft/);
 	assert.match(child, /worker overlay/);
 	assert.equal(ordinary.notices.length, 1, "the warning is reported once per runtime");
 
-	const bb = harness(t, { bbOrigin: true, configure(directory) { unlinkSync(join(directory, "main-bb.md")); } });
+	const bb = harness(t, {
+		bbOrigin: true,
+		configure(directory) {
+			unlinkSync(join(directory, "main-bb.md"));
+		},
+	});
 	bb.emit("session_start");
 	assert.equal(bb.notices.length, 1);
 	assert.match(bb.notices[0], /mainBb\[0\].*main-bb\.md.*ENOENT/);
 	const bbRoot = bb.before().systemPrompt;
 	assert.match(bbRoot, /COMMON draft/);
-	assert.ok(!bbRoot.includes(`## Policy source: ${join(bb.directory, "main-bb.md")}`), "the missing BB prompt is skipped, not synthesized");
-	assert.ok(!bbRoot.includes(`## Policy source: ${join(bb.directory, "main.md")}`), "no fallback to the ordinary main prompt");
+	assert.ok(
+		!bbRoot.includes(`## Policy source: ${join(bb.directory, "main-bb.md")}`),
+		"the missing BB prompt is skipped, not synthesized",
+	);
+	assert.ok(
+		!bbRoot.includes(`## Policy source: ${join(bb.directory, "main.md")}`),
+		"no fallback to the ordinary main prompt",
+	);
 	assert.match(bbRoot, /<!-- agent-policy:v1:main-bb -->/);
 	assert.equal(bb.registrations.length, 1);
 });
 
 function nativeLayout(role: string, boundary: string, append = false, structured = false): string {
 	const tagged = `<active_agent name="${role}"/>\n\nexisting ${role} role body`;
-	const base = append ? `Pi base\n\n<addendum>\n${tagged}\n</addendum>\n\n<cwd>\n/tmp/project\n</cwd>` : tagged;
+	const base = append
+		? `Pi base\n\n<addendum>\n${tagged}\n</addendum>\n\n<cwd>\n/tmp/project\n</cwd>`
+		: tagged;
 	return `${base}\n\n${boundary}${structured ? `\n\n${NATIVE_STRUCTURED_OUTPUT_SUFFIX}` : ""}`;
 }
 
@@ -717,12 +1190,24 @@ test("0.76.1 complete native ordinary/fanout replace/append layouts retain named
 		for (const boundary of NATIVE_CHILD_BOUNDARIES) {
 			for (const append of [false, true]) {
 				for (const structured of [false, true]) {
-					for (const role of ["worker", "reviewer", "scout", "custom", "../worker", "worker&amp;"]) {
+					for (const role of [
+						"worker",
+						"reviewer",
+						"scout",
+						"custom",
+						"../worker",
+						"worker&amp;",
+					]) {
 						const prompt = nativeLayout(role, boundary, append, structured);
 						assert.equal(selectProfile(prompt, false), "subagent");
-						const overlay = ["worker", "reviewer", "scout"].includes(role) ? `\n\n${role} overlay` : "";
+						const overlay = ["worker", "reviewer", "scout"].includes(role)
+							? `\n\n${role} overlay`
+							: "";
 						const output = runtime.before(prompt);
-						assert.equal(output.systemPrompt, runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft${overlay}`));
+						assert.equal(
+							output.systemPrompt,
+							runtime.expected(prompt, "subagent", `COMMON draft\n\nCHILD draft${overlay}`),
+						);
 						assert.equal(blocks(output.systemPrompt), 1);
 					}
 				}
@@ -740,12 +1225,15 @@ test("native routing rejects misplaced/root-only tags and malformed launch layou
 			`ROOT\n\n<active_agent name="worker"/>\n\nrole\n\n${boundary}`,
 			valid.replace('name="worker"/>', "name='worker'/>"),
 			valid.replace('name="worker"/>', 'name="worker" extra="yes"/>'),
-			valid.replace('/>\n\n', '/>\n'),
-			nativeLayout("worker", boundary, true).replace('<addendum>\n', '<addendum>\nquoted text\n'),
+			valid.replace("/>\n\n", "/>\n"),
+			nativeLayout("worker", boundary, true).replace("<addendum>\n", "<addendum>\nquoted text\n"),
 			nativeLayout("worker", boundary, true).replace("\n</addendum>", ""),
 		]) {
 			assert.equal(selectProfile(prompt, false), "main", prompt);
-			assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"));
+			assert.equal(
+				runtime.before(prompt).systemPrompt,
+				runtime.expected(prompt, "main", "COMMON draft\n\nMAIN draft"),
+			);
 		}
 	}
 });
@@ -756,7 +1244,10 @@ test("appended native layout cleans inherited main blocks with empty policy and 
 			const runtime = harness(t, { legacy: true, legacyFirst, deployed });
 			runtime.emit("session_start");
 			const parent = `<agent_policy>\n${policySection("main", "stale main")}\n</agent_policy>`;
-			const prompt = nativeLayout("worker", NATIVE_CHILD_BOUNDARIES[0]).replace("existing worker role body", `existing worker role body\n${parent}`);
+			const prompt = nativeLayout("worker", NATIVE_CHILD_BOUNDARIES[0]).replace(
+				"existing worker role body",
+				`existing worker role body\n${parent}`,
+			);
 			const output = runtime.before(prompt);
 			assert.doesNotMatch(output.systemPrompt, /stale main|MAIN draft/);
 			assert.match(output.systemPrompt, /inherited parent prose|existing worker role body/);
@@ -776,9 +1267,15 @@ test("complete appended layout routes its launch tag rather than quoted preamble
 	const runtime = harness(t, { bbSignal: parseBBPolicySignal(bbTuple) });
 	const prompt = nativeLayout("reviewer", NATIVE_CHILD_BOUNDARIES[0], true)
 		.replace("Pi base", 'Pi base\n<active_agent name="scout"/>\nquoted preamble')
-		.replace("existing reviewer role body", 'existing reviewer role body\n<active_agent name="worker"/>\nquoted role tag');
+		.replace(
+			"existing reviewer role body",
+			'existing reviewer role body\n<active_agent name="worker"/>\nquoted role tag',
+		);
 	assert.equal(selectAgentName(prompt, "subagent"), "reviewer");
-	assert.equal(runtime.before(prompt).systemPrompt, runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"));
+	assert.equal(
+		runtime.before(prompt).systemPrompt,
+		runtime.expected(prompt, "subagent", "COMMON draft\n\nCHILD draft\n\nreviewer overlay"),
+	);
 });
 
 test("0.77.0 pre-boundary launch headers route strict replace/append layouts; exact root lookalikes are deliberately ambiguous", (t) => {
@@ -786,37 +1283,93 @@ test("0.77.0 pre-boundary launch headers route strict replace/append layouts; ex
 	for (const append of [false, true]) {
 		const complete = nativeLayout("reviewer", NATIVE_CHILD_BOUNDARIES[0], append);
 		const prompt = complete.slice(0, -NATIVE_CHILD_BOUNDARIES[0].length - 2);
-		assert.equal(selectProfile(prompt, false), "subagent", "boundary is not yet installed at the ordinary hook");
+		assert.equal(
+			selectProfile(prompt, false),
+			"subagent",
+			"boundary is not yet installed at the ordinary hook",
+		);
 		assert.match(runtime.before(prompt).systemPrompt, /CHILD draft[\s\S]*reviewer overlay/);
 		assert.doesNotMatch(runtime.before(prompt).systemPrompt, /MAIN draft/);
 		if (append) {
-			assert.equal(selectProfile(prompt.replace("\n</addendum>", "\n</addendum> malformed"), false), "main");
-			assert.equal(selectProfile('Pi base\n\n```xml\n\n<addendum>\n<active_agent name="reviewer"/>\n\nquoted body\n</addendum>\n```', false), "main");
+			assert.equal(
+				selectProfile(prompt.replace("\n</addendum>", "\n</addendum> malformed"), false),
+				"main",
+			);
+			assert.equal(
+				selectProfile(
+					'Pi base\n\n```xml\n\n<addendum>\n<active_agent name="reviewer"/>\n\nquoted body\n</addendum>\n```',
+					false,
+				),
+				"main",
+			);
 		}
 		// A root intentionally using this exact SYSTEM layout also routes as child.
 		assert.equal(selectProfile(prompt, false), "subagent", "routing is not authentication");
-		for (const suffix of ["quoted boundary", NATIVE_CHILD_BOUNDARIES[0].slice(0, -1), "more root instructions"]) {
-			assert.equal(selectProfile(`${prompt}\n\n${suffix}`, false), "subagent", "valid launch header does not wait for/validate a later boundary");
+		for (const suffix of [
+			"quoted boundary",
+			NATIVE_CHILD_BOUNDARIES[0].slice(0, -1),
+			"more root instructions",
+		]) {
+			assert.equal(
+				selectProfile(`${prompt}\n\n${suffix}`, false),
+				"subagent",
+				"valid launch header does not wait for/validate a later boundary",
+			);
 		}
 	}
-	for (const prompt of ['<active_agent name="worker"/>', '<active_agent name="worker"/>\nroot', 'quoted: <active_agent name="worker"/>\n\nroot', '> <active_agent name="worker"/>\n\nroot', '<active_agent name=""/>\n\nroot', '<active_agent name="worker" extra="yes"/>\n\nroot', "<active_agent name='worker'/>\n\nroot", 'ROOT\n<active_agent name="worker"/>\n\nroot', 'Pi base\n\n<addendum>\nquoted\n<active_agent name="worker"/>\n\nroot\n</addendum>']) {
+	for (const prompt of [
+		'<active_agent name="worker"/>',
+		'<active_agent name="worker"/>\nroot',
+		'quoted: <active_agent name="worker"/>\n\nroot',
+		'> <active_agent name="worker"/>\n\nroot',
+		'<active_agent name=""/>\n\nroot',
+		'<active_agent name="worker" extra="yes"/>\n\nroot',
+		"<active_agent name='worker'/>\n\nroot",
+		'ROOT\n<active_agent name="worker"/>\n\nroot',
+		'Pi base\n\n<addendum>\nquoted\n<active_agent name="worker"/>\n\nroot\n</addendum>',
+	]) {
 		assert.equal(selectProfile(prompt, false), "main", prompt);
 	}
 });
 
 function configureSkills(directory: string) {
-	writeFileSync(join(directory, "first.md"), "---\nname: first\n---\nFIRST full body\n[reference](refs/check.md)\n");
+	writeFileSync(
+		join(directory, "first.md"),
+		"---\nname: first\n---\nFIRST full body\n[reference](refs/check.md)\n",
+	);
 	writeFileSync(join(directory, "second.md"), "SECOND full body\n");
-	writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], child: ["child.md"], main: ["main.md", "first.md", "second.md"], agents: JSON.parse('{"worker":["worker.md","second.md"],"reviewer":["reviewer.md","first.md"],"security-reviewer":["first.md","second.md"],"__proto__":["first.md"],"constructor":["second.md"],"special&name":["second.md"]}') }));
+	writeFileSync(
+		join(directory, "config.json"),
+		JSON.stringify({
+			common: ["common.md"],
+			child: ["child.md"],
+			main: ["main.md", "first.md", "second.md"],
+			agents: JSON.parse(
+				'{"worker":["worker.md","second.md"],"reviewer":["reviewer.md","first.md"],"security-reviewer":["first.md","second.md"],"__proto__":["first.md"],"constructor":["second.md"],"special&name":["second.md"]}',
+			),
+		}),
+	);
 }
 
 test("runtime appends ordered full skills after policy layers, routes exact independent names, and replaces stale role blocks", (t) => {
 	const runtime = harness(t, { configure: configureSkills });
 	const root = runtime.before().systemPrompt;
 	assert.match(root, /COMMON draft[\s\S]*MAIN draft[\s\S]*FIRST full body[\s\S]*SECOND full body/);
-	assert.ok(root.includes(`Resolve this source's relative file references against ${runtime.directory}.`));
+	assert.ok(
+		root.includes(`Resolve this source's relative file references against ${runtime.directory}.`),
+	);
 	assert.doesNotMatch(root, /name: first/);
-	for (const [name, first, second, overlay] of [["worker", false, true, true], ["reviewer", true, false, true], ["security-reviewer", true, true, false], ["unknown", false, false, false], ["developer", false, false, false], ["__proto__", true, false, false], ["constructor", false, true, false], ["toString", false, false, false], ["special&amp;name", false, true, false]] as const) {
+	for (const [name, first, second, overlay] of [
+		["worker", false, true, true],
+		["reviewer", true, false, true],
+		["security-reviewer", true, true, false],
+		["unknown", false, false, false],
+		["developer", false, false, false],
+		["__proto__", true, false, false],
+		["constructor", false, true, false],
+		["toString", false, false, false],
+		["special&amp;name", false, true, false],
+	] as const) {
 		const prompt = `<active_agent name="${name}"/>\n\noriginal ${name} role\n${root}`;
 		const output = runtime.before(prompt).systemPrompt;
 		assert.equal(output.includes("FIRST full body"), first, name);
@@ -838,7 +1391,10 @@ test("skills and config, including unused mappings, are eagerly frozen before fi
 	const runtime = harness(t, { configure: configureSkills });
 	writeFileSync(join(runtime.directory, "first.md"), "CHANGED FIRST");
 	writeFileSync(join(runtime.directory, "second.md"), "CHANGED SECOND");
-	writeFileSync(join(runtime.directory, "config.json"), JSON.stringify({ main: ["second.md"], agents: { "security-reviewer": ["first.md"] } }));
+	writeFileSync(
+		join(runtime.directory, "config.json"),
+		JSON.stringify({ main: ["second.md"], agents: { "security-reviewer": ["first.md"] } }),
+	);
 	runtime.emit("session_start", { reason: "reload" });
 	runtime.emit("session_tree");
 	assert.match(runtime.before().systemPrompt, /FIRST full body[\s\S]*SECOND full body/);
@@ -850,11 +1406,18 @@ test("skills and config, including unused mappings, are eagerly frozen before fi
 	assert.match(runtime.before(prompt).systemPrompt, /CHANGED FIRST/);
 	assert.doesNotMatch(runtime.before(prompt).systemPrompt, /CHANGED SECOND/);
 	rmSync(runtime.directory, { recursive: true });
-	assert.match(runtime.before(prompt).systemPrompt, /CHANGED FIRST/, "hooks perform no filesystem reads");
+	assert.match(
+		runtime.before(prompt).systemPrompt,
+		/CHANGED FIRST/,
+		"hooks perform no filesystem reads",
+	);
 });
 
 test("BB-only workers get no main or named skills; native pre-boundary launch takes precedence", (t) => {
-	const runtime = harness(t, { configure: configureSkills, bbSignal: parseBBPolicySignal(bbTuple) });
+	const runtime = harness(t, {
+		configure: configureSkills,
+		bbSignal: parseBBPolicySignal(bbTuple),
+	});
 	const generic = runtime.before('<active_agent name="worker"/>\nBB body').systemPrompt;
 	assert.doesNotMatch(generic, /full body|worker overlay|MAIN draft/);
 	const native = runtime.before('<active_agent name="worker"/>\n\nnative body').systemPrompt;
@@ -864,7 +1427,12 @@ test("BB-only workers get no main or named skills; native pre-boundary launch ta
 
 for (const legacyFirst of [true, false]) {
 	test(`skill-only child composition preserves Chadineer strip/skip in ${legacyFirst ? "legacy-first" : "policy-first"} order`, (t) => {
-		const runtime = harness(t, { deployed: true, legacy: true, legacyFirst, configure: configureSkills });
+		const runtime = harness(t, {
+			deployed: true,
+			legacy: true,
+			legacyFirst,
+			configure: configureSkills,
+		});
 		runtime.emit("session_start");
 		const prompt = '<active_agent name="worker"/>\n\noriginal worker body';
 		const child = runtime.before(prompt).systemPrompt;
@@ -876,9 +1444,13 @@ for (const legacyFirst of [true, false]) {
 	});
 }
 
-
 test("canonical names decode only upstream XML escapes; older complete boundaries retain blank-body routing", () => {
-	for (const [encoded, name] of [["special&amp;name", "special&name"], ["quoted&quot;name", 'quoted"name'], ["less&lt;greater&gt;", "less<greater>"], ["literal&amp;quot;", "literal&quot;"]] as const) {
+	for (const [encoded, name] of [
+		["special&amp;name", "special&name"],
+		["quoted&quot;name", 'quoted"name'],
+		["less&lt;greater&gt;", "less<greater>"],
+		["literal&amp;quot;", "literal&quot;"],
+	] as const) {
 		const prompt = `<active_agent name="${encoded}"/>\n\nbody`;
 		assert.equal(selectProfile(prompt, false), "subagent");
 		assert.equal(selectAgentName(prompt, "subagent"), name);
@@ -889,33 +1461,78 @@ test("canonical names decode only upstream XML escapes; older complete boundarie
 	}
 	for (const role of ["", "worker"]) {
 		const prompt = `<active_agent name="${role}"/>\n\n\n\n${NATIVE_CHILD_BOUNDARIES[0]}`;
-		assert.equal(selectProfile(prompt, false), "subagent", "old complete-boundary layout still works without a nonblank role body");
+		assert.equal(
+			selectProfile(prompt, false),
+			"subagent",
+			"old complete-boundary layout still works without a nonblank role body",
+		);
 	}
 });
 
 test("manifest layers compose common then main or child then exact name, deduplicating first occurrences", (t) => {
-	const runtime = harness(t, { configure(directory) {
-		for (const name of ["a", "b", "c", "d"]) writeFileSync(join(directory, `${name}.md`), `${name.toUpperCase()} layer body`);
-		writeFileSync(join(directory, "config.json"), JSON.stringify({ all: ["b.md", "a.md", "./b.md"], orchestrator: ["d.md", "a.md"], child: ["c.md", "a.md"], agents: { "security-reviewer": ["a.md", "d.md", "c.md"] } }));
-	} });
-	const bodies = (prompt: string) => [...prompt.matchAll(/([A-D]) layer body/g)].map((match) => match[1]);
+	const runtime = harness(t, {
+		configure(directory) {
+			for (const name of ["a", "b", "c", "d"])
+				writeFileSync(join(directory, `${name}.md`), `${name.toUpperCase()} layer body`);
+			writeFileSync(
+				join(directory, "config.json"),
+				JSON.stringify({
+					all: ["b.md", "a.md", "./b.md"],
+					orchestrator: ["d.md", "a.md"],
+					child: ["c.md", "a.md"],
+					agents: { "security-reviewer": ["a.md", "d.md", "c.md"] },
+				}),
+			);
+		},
+	});
+	const bodies = (prompt: string) =>
+		[...prompt.matchAll(/([A-D]) layer body/g)].map((match) => match[1]);
 	assert.deepEqual(bodies(runtime.before().systemPrompt), ["B", "A", "D"]);
-	assert.deepEqual(bodies(runtime.before('<active_agent name="security-reviewer"/>\n\nNative persona').systemPrompt), ["B", "A", "C", "D"]);
-	for (const prompt of [`${CHILD_PREFIXES[0]}\nunnamed persona`, '<active_agent name="unknown"/>\n\nNative persona']) {
+	assert.deepEqual(
+		bodies(
+			runtime.before('<active_agent name="security-reviewer"/>\n\nNative persona').systemPrompt,
+		),
+		["B", "A", "C", "D"],
+	);
+	for (const prompt of [
+		`${CHILD_PREFIXES[0]}\nunnamed persona`,
+		'<active_agent name="unknown"/>\n\nNative persona',
+	]) {
 		assert.deepEqual(bodies(runtime.before(prompt).systemPrompt), ["B", "A", "C"]);
 	}
 	assert.deepEqual(runtime.notices, []);
-	const generic = harness(t, { bbSignal: parseBBPolicySignal(bbTuple), configure(directory) {
-		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], child: ["child.md"], agents: { worker: ["worker.md"] } }));
-	} });
-	assert.match(generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt, /COMMON draft[\s\S]*CHILD draft/);
-	assert.doesNotMatch(generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt, /worker overlay/);
+	const generic = harness(t, {
+		bbSignal: parseBBPolicySignal(bbTuple),
+		configure(directory) {
+			writeFileSync(
+				join(directory, "config.json"),
+				JSON.stringify({
+					common: ["common.md"],
+					child: ["child.md"],
+					agents: { worker: ["worker.md"] },
+				}),
+			);
+		},
+	});
+	assert.match(
+		generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt,
+		/COMMON draft[\s\S]*CHILD draft/,
+	);
+	assert.doesNotMatch(
+		generic.before('<active_agent name="worker"/>\nBB persona').systemPrompt,
+		/worker overlay/,
+	);
 });
 
 test("file diagnostics reach UI once before first prompt and refresh only with a new runtime", (t) => {
-	const runtime = harness(t, { configure(directory) {
-		writeFileSync(join(directory, "config.json"), JSON.stringify({ common: ["common.md"], agents: { unused: ["missing.md"] }, typo: [] }));
-	} });
+	const runtime = harness(t, {
+		configure(directory) {
+			writeFileSync(
+				join(directory, "config.json"),
+				JSON.stringify({ common: ["common.md"], agents: { unused: ["missing.md"] }, typo: [] }),
+			);
+		},
+	});
 	runtime.emit("session_start");
 	assert.equal(runtime.notices.length, 2, "warnings precede the first prompt");
 	assert.deepEqual(runtime.noticeTypes, ["warning", "warning"]);
@@ -937,17 +1554,43 @@ test("config diagnostics report on first before hook without session_start, head
 	const handlers = new Map<string, Handler>();
 	const warnings: string[] = [];
 	t.mock.method(console, "error", (message: string) => warnings.push(message));
-	installAgentPolicy({ on(event: string, handler: Handler) { handlers.set(event, handler); } } as any, {
-		policyDir: directory, extensionPath: "fixture", backgroundChild: false, bbSignal: diagnostic,
-		register: () => ({ dispose() {} }) as any,
-	});
-	const ctx = { hasUI: false, mode: "print", sessionManager: { getSessionId: () => "headless-config" }, ui: { notify() { assert.fail("headless warning must log instead"); } } };
+	installAgentPolicy(
+		{
+			on(event: string, handler: Handler) {
+				handlers.set(event, handler);
+			},
+		} as any,
+		{
+			policyDir: directory,
+			extensionPath: "fixture",
+			backgroundChild: false,
+			bbSignal: diagnostic,
+			register: () => ({ dispose() {} }) as any,
+		},
+	);
+	const ctx = {
+		hasUI: false,
+		mode: "print",
+		sessionManager: { getSessionId: () => "headless-config" },
+		ui: {
+			notify() {
+				assert.fail("headless warning must log instead");
+			},
+		},
+	};
 	const options: any = { sections: {} };
-	assert.deepEqual(handlers.get("before_agent_start")!({ systemPrompt: "root", systemPromptOptions: options }, ctx), undefined);
+	assert.deepEqual(
+		handlers.get("before_agent_start")!(
+			{ systemPrompt: "root", systemPromptOptions: options },
+			ctx,
+		),
+		undefined,
+	);
 	assert.deepEqual(options.sections, {});
 	assert.equal(warnings.length, 2);
 	assert.match(warnings[0], /config.json.*JSON/);
 	assert.equal(warnings[1], diagnostic.diagnostic);
-	for (const event of ["session_start", "before_agent_start", "session_start"]) handlers.get(event)!({ systemPrompt: "root", systemPromptOptions: { sections: {} } }, ctx);
+	for (const event of ["session_start", "before_agent_start", "session_start"])
+		handlers.get(event)!({ systemPrompt: "root", systemPromptOptions: { sections: {} } }, ctx);
 	assert.equal(warnings.length, 2);
 });

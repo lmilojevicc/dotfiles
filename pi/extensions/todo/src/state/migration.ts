@@ -8,21 +8,26 @@ export interface MigrationResult {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: undefined;
 }
 
 /** Decode the installed rpiv-todo `{tasks,nextId}` result details into schema v1. */
 export function migrateLegacySnapshot(value: unknown): MigrationResult | undefined {
 	const source = record(value);
-	if (!source || !Array.isArray(source.tasks) || !Number.isSafeInteger(source.nextId)) return undefined;
+	if (!source || !Array.isArray(source.tasks) || !Number.isSafeInteger(source.nextId))
+		return undefined;
 	const rawTasks = source.tasks.map(record);
 	if (rawTasks.some((task) => !task)) return undefined;
 	const tasks: Task[] = [];
 	for (const raw of rawTasks as Record<string, unknown>[]) {
 		if (!Number.isSafeInteger(raw.id) || typeof raw.subject !== "string") return undefined;
-		if (!["pending", "in_progress", "completed", "deleted"].includes(String(raw.status))) return undefined;
+		if (!["pending", "in_progress", "completed", "deleted"].includes(String(raw.status)))
+			return undefined;
 		const blockedBy = raw.blockedBy === undefined ? [] : raw.blockedBy;
-		if (!Array.isArray(blockedBy) || blockedBy.some((id) => !Number.isSafeInteger(id))) return undefined;
+		if (!Array.isArray(blockedBy) || blockedBy.some((id) => !Number.isSafeInteger(id)))
+			return undefined;
 		const metadata = raw.metadata === undefined ? {} : record(raw.metadata);
 		if (!metadata) return undefined;
 		const task: Task = {
@@ -47,7 +52,11 @@ export function migrateLegacySnapshot(value: unknown): MigrationResult | undefin
 	for (let index = 0; index < tasks.length; index++) {
 		const task = tasks[index]!;
 		for (const dependency of task.status === "deleted" ? [] : rawEdges[index]!) {
-			if (dependency === task.id || !liveIds.has(dependency) || task.blockedBy.includes(dependency)) {
+			if (
+				dependency === task.id ||
+				!liveIds.has(dependency) ||
+				task.blockedBy.includes(dependency)
+			) {
 				repairedDependencies++;
 				continue;
 			}
@@ -81,8 +90,15 @@ export function migrateLegacySnapshot(value: unknown): MigrationResult | undefin
 	};
 	if (validateSnapshot(snapshot)) return undefined;
 	const repairs = [
-		demoted ? `kept the first eligible active task and paused ${demoted} extra active task${demoted === 1 ? "" : "s"}, including blocked tasks` : "",
-		repairedDependencies ? `removed ${repairedDependencies} invalid dependency edge${repairedDependencies === 1 ? "" : "s"}` : "",
+		demoted
+			? `kept the first eligible active task and paused ${demoted} extra active task${demoted === 1 ? "" : "s"}, including blocked tasks`
+			: "",
+		repairedDependencies
+			? `removed ${repairedDependencies} invalid dependency edge${repairedDependencies === 1 ? "" : "s"}`
+			: "",
 	].filter(Boolean);
-	return { snapshot, ...(repairs.length ? { warning: `Migrated legacy tasks: ${repairs.join("; ")}.` } : {}) };
+	return {
+		snapshot,
+		...(repairs.length ? { warning: `Migrated legacy tasks: ${repairs.join("; ")}.` } : {}),
+	};
 }

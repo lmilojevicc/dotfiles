@@ -6,7 +6,8 @@ import type { TestContext } from "node:test";
 import type { AdapterContext } from "../core.ts";
 
 export const theme: any = {
-	fg: (color: string, text: string) => `\x1b[${color === "accent" ? "36" : color === "warning" ? "33" : color === "error" ? "31" : "37"}m${text}\x1b[0m`,
+	fg: (color: string, text: string) =>
+		`\x1b[${color === "accent" ? "36" : color === "warning" ? "33" : color === "error" ? "31" : "37"}m${text}\x1b[0m`,
 	bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
 };
 export const widths = [32, 39, 40, 41, 59, 60, 61, 64, 65, 66, 79, 80, 81];
@@ -16,10 +17,19 @@ export function plain(lines: string[]): string[] {
 }
 
 export function jsonResponse(body: unknown, status = 200, statusText = ""): Response {
-	return new Response(typeof body === "string" ? body : JSON.stringify(body), { status, statusText });
+	return new Response(typeof body === "string" ? body : JSON.stringify(body), {
+		status,
+		statusText,
+	});
 }
 
-export type RecordedRequest = { url: string; method: string; headers: Headers; redirect?: RequestRedirect; body?: string };
+export type RecordedRequest = {
+	url: string;
+	method: string;
+	headers: Headers;
+	redirect?: RequestRedirect;
+	body?: string;
+};
 
 /** Fake fetch that records every request; no real network I/O. */
 export function fakeFetch(route: (request: RecordedRequest) => Response | Promise<Response>) {
@@ -63,7 +73,9 @@ export function adapterContext(overrides: Partial<AdapterContext> = {}): Adapter
 }
 
 export function jwt(accountId: string): string {
-	const payload = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } })).toString("base64url");
+	const payload = Buffer.from(
+		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
+	).toString("base64url");
 	return `header.${payload}.signature`;
 }
 

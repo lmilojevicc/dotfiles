@@ -18,17 +18,25 @@ export function normalizeTitle(textParts: readonly string[]): string | undefined
 	const withoutReasoning = textParts.join("").replace(REASONING_BLOCK, "");
 	const firstLine = withoutReasoning
 		.split(LINE_BREAK)
-		.map((line) => line
-			.replace(CONTROL_OR_FORMAT, (character) => PRESERVED_JOIN_CONTROLS.has(character) ? character : " ")
-			.replace(/\s+/gu, " ")
-			.trim()
-			.replace(EDGE_JOIN_CONTROLS, ""))
+		.map((line) =>
+			line
+				.replace(CONTROL_OR_FORMAT, (character) =>
+					PRESERVED_JOIN_CONTROLS.has(character) ? character : " ",
+				)
+				.replace(/\s+/gu, " ")
+				.trim()
+				.replace(EDGE_JOIN_CONTROLS, ""),
+		)
 		.find(Boolean);
 	if (!firstLine) return undefined;
 
 	let title = firstLine;
 	for (const [opening, closing] of SURROUNDING_PAIRS) {
-		if (title.startsWith(opening) && title.endsWith(closing) && title.length >= opening.length + closing.length) {
+		if (
+			title.startsWith(opening) &&
+			title.endsWith(closing) &&
+			title.length >= opening.length + closing.length
+		) {
 			title = title.slice(opening.length, -closing.length);
 			break;
 		}

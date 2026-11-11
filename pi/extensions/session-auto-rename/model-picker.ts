@@ -110,7 +110,11 @@ export class ModelPickerComponent implements Component, Focusable {
 	render(width: number): string[] {
 		const safeWidth = Math.max(1, width);
 		const lines = [
-			truncateToWidth(this.theme.fg("accent", this.theme.bold("Session auto-rename model")), safeWidth, ""),
+			truncateToWidth(
+				this.theme.fg("accent", this.theme.bold("Session auto-rename model")),
+				safeWidth,
+				"",
+			),
 		];
 		const searchPrefix = this.theme.fg("muted", "Search: ");
 		const prefixWidth = visibleWidth(searchPrefix);
@@ -130,14 +134,14 @@ export class ModelPickerComponent implements Component, Focusable {
 				const entry = this.filtered[index];
 				if (!entry) continue;
 				const selected = index === this.selectedIndex;
-				const displayName = entry.name && entry.name !== entry.id.split("/").at(-1)
-					? ` — ${entry.name}`
-					: "";
-				const marker = entry.id === this.configuredId
-					? " [configured]"
-					: entry.id === this.defaultId
-						? " [default]"
-						: "";
+				const displayName =
+					entry.name && entry.name !== entry.id.split("/").at(-1) ? ` — ${entry.name}` : "";
+				const marker =
+					entry.id === this.configuredId
+						? " [configured]"
+						: entry.id === this.defaultId
+							? " [default]"
+							: "";
 				const text = `${selected ? "→ " : "  "}${entry.id}${displayName}${marker}`;
 				const styled = selected
 					? this.theme.bg("selectedBg", this.theme.fg("accent", text))
@@ -147,14 +151,22 @@ export class ModelPickerComponent implements Component, Focusable {
 				lines.push(truncateToWidth(styled, safeWidth, ""));
 			}
 			if (start > 0 || end < this.filtered.length) {
-				lines.push(truncateToWidth(
-					this.theme.fg("dim", `  (${this.selectedIndex + 1}/${this.filtered.length})`),
-					safeWidth,
-					"",
-				));
+				lines.push(
+					truncateToWidth(
+						this.theme.fg("dim", `  (${this.selectedIndex + 1}/${this.filtered.length})`),
+						safeWidth,
+						"",
+					),
+				);
 			}
 		}
-		lines.push(truncateToWidth(this.theme.fg("dim", "↑↓ navigate • enter select • esc cancel"), safeWidth, ""));
+		lines.push(
+			truncateToWidth(
+				this.theme.fg("dim", "↑↓ navigate • enter select • esc cancel"),
+				safeWidth,
+				"",
+			),
+		);
 		return lines;
 	}
 
@@ -166,7 +178,9 @@ export class ModelPickerComponent implements Component, Focusable {
 		this.filtered = query
 			? fuzzyFilter([...this.entries], query, ({ id, name }) => `${id} ${name ?? ""}`)
 			: this.entries;
-		this.selectedIndex = query ? 0 : Math.min(this.selectedIndex, Math.max(0, this.filtered.length - 1));
+		this.selectedIndex = query
+			? 0
+			: Math.min(this.selectedIndex, Math.max(0, this.filtered.length - 1));
 	}
 
 	private moveSelection(offset: number): void {
@@ -177,13 +191,19 @@ export class ModelPickerComponent implements Component, Focusable {
 
 	private movePage(offset: number): void {
 		if (this.filtered.length === 0) return;
-		this.selectedIndex = Math.max(0, Math.min(this.selectedIndex + offset, this.filtered.length - 1));
+		this.selectedIndex = Math.max(
+			0,
+			Math.min(this.selectedIndex + offset, this.filtered.length - 1),
+		);
 	}
 
 	private visibleRange(): { start: number; end: number } {
 		const start = Math.max(
 			0,
-			Math.min(this.selectedIndex - Math.floor(MAX_VISIBLE / 2), this.filtered.length - MAX_VISIBLE),
+			Math.min(
+				this.selectedIndex - Math.floor(MAX_VISIBLE / 2),
+				this.filtered.length - MAX_VISIBLE,
+			),
 		);
 		return { start, end: Math.min(start + MAX_VISIBLE, this.filtered.length) };
 	}

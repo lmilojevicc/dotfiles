@@ -8,7 +8,12 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { type FauxResponseStep, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+	type FauxResponseStep,
+	fauxAssistantMessage,
+	fauxProvider,
+	fauxToolCall,
+} from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -49,16 +54,25 @@ function structuredResultCapture(results: unknown[]): (pi: ExtensionAPI) => void
 	};
 }
 
-async function harness(responses: FauxResponseStep[], options: HarnessOptions = {}): Promise<Harness> {
+async function harness(
+	responses: FauxResponseStep[],
+	options: HarnessOptions = {},
+): Promise<Harness> {
 	const dir = options.dir ?? mkdtempSync(join(tmpdir(), "session-"));
 	const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1" }] });
 	faux.setResponses(responses);
-	const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: join(dir, "models.json") });
+	const modelRuntime = await ModelRuntime.create({
+		authPath: join(dir, "auth.json"),
+		modelsPath: join(dir, "models.json"),
+	});
 	modelRuntime.registerNativeProvider(faux.provider);
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: dir,
 		agentDir: dir,
-		extensionFactories: [bashImproved, ...(options.structuredResults ? [structuredResultCapture(options.structuredResults)] : [])],
+		extensionFactories: [
+			bashImproved,
+			...(options.structuredResults ? [structuredResultCapture(options.structuredResults)] : []),
+		],
 	});
 	await resourceLoader.reload();
 	const { session } = await createAgentSession({
@@ -69,7 +83,10 @@ async function harness(responses: FauxResponseStep[], options: HarnessOptions = 
 		modelRuntime,
 		resourceLoader,
 		sessionManager: options.sessionManager ?? SessionManager.inMemory(dir),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
+		settingsManager: SettingsManager.inMemory({
+			compaction: { enabled: false },
+			retry: { enabled: false },
+		}),
 		tools: ["bash"],
 	});
 	await session.bindExtensions({ mode: options.mode ?? "rpc", uiContext: options.ui as never });
@@ -97,13 +114,19 @@ function text(message: { content: unknown }): string {
 	return typeof content === "string" ? content : content.map((part) => part.text ?? "").join("");
 }
 
-function toolResults(session: AgentSession): Array<{ content: unknown; isError?: boolean; details?: any }> {
+function toolResults(
+	session: AgentSession,
+): Array<{ content: unknown; isError?: boolean; details?: any }> {
 	return session.messages.filter((message) => message.role === "toolResult") as never;
 }
 
 function notices(session: AgentSession): string[] {
 	return session.messages
-		.filter((message) => message.role === "custom" && (message as { customType?: string }).customType === "background-task")
+		.filter(
+			(message) =>
+				message.role === "custom" &&
+				(message as { customType?: string }).customType === "background-task",
+		)
 		.map(text);
 }
 
@@ -127,14 +150,19 @@ function fakeTui(answers: Array<string | undefined> = []) {
 		widgets,
 		dialogs,
 		ui: {
-			theme: { fg: (_color: string, value: string) => value, bg: (_color: string, value: string) => value },
+			theme: {
+				fg: (_color: string, value: string) => value,
+				bg: (_color: string, value: string) => value,
+			},
 			notify: (message: string) => notified.push(message),
 			setStatus: () => {},
 			setWidget: (_key: string, lines: string[] | undefined) => widgets.push(lines),
 			select: async (title: string, options: string[]) => {
 				dialogs.push({ kind: "select", title, options });
 				const answer = answers.shift();
-				return answer === undefined ? undefined : (options.find((option) => option.startsWith(answer)) ?? answer);
+				return answer === undefined
+					? undefined
+					: (options.find((option) => option.startsWith(answer)) ?? answer);
 			},
 			editor: async (title: string, prefill?: string) => {
 				dialogs.push({ kind: "editor", title, text: prefill });
@@ -164,7 +192,10 @@ test("a long command returns after the wait, and its exit wakes the agent with t
 
 		await until(() => h.calls() === 3 && h.session.isStreaming === false);
 		const [notice] = notices(h.session);
-		assert.match(notice, /^Background task 1 `echo begin; sleep 2; echo finish` exited with code 0 after 2s\.\nLast output:\nbegin\nfinish\nFull output: .*task-1\.log$/);
+		assert.match(
+			notice,
+			/^Background task 1 `echo begin; sleep 2; echo finish` exited with code 0 after 2s\.\nLast output:\nbegin\nfinish\nFull output: .*task-1\.log$/,
+		);
 	} finally {
 		await h.close();
 	}
@@ -174,7 +205,11 @@ test("run_in_background returns at once; `tasks` lists, reads, waits and stops, 
 	const structured: unknown[] = [];
 	const h = await harness(
 		[
-			bash({ command: "echo ready; sleep 1; echo tick; sleep 30", description: "Start the dev server", run_in_background: "true" }),
+			bash({
+				command: "echo ready; sleep 1; echo tick; sleep 30",
+				description: "Start the dev server",
+				run_in_background: "true",
+			}),
 			tasks(""),
 			tasks("wait 1 --timeout 1.5"),
 			tasks("output %1"),
@@ -195,9 +230,15 @@ test("run_in_background returns at once; `tasks` lists, reads, waits and stops, 
 		const results = toolResults(h.session).map(text);
 		assert.match(results[0], /^ready\n\nCommand running in the background as task 1 \(pid \d+\)\./);
 		assert.deepEqual(structured[0], { ...(structured[0] as object), task_id: "1", running: true });
-		assert.match(results[1], /^1 {2}Start the dev server {2}running for \d+s {2}\(pid \d+, output .*task-1\.log\)\n$/);
+		assert.match(
+			results[1],
+			/^1 {2}Start the dev server {2}running for \d+s {2}\(pid \d+, output .*task-1\.log\)\n$/,
+		);
 		// A wait that runs out says so and shows what is new; `ready` was already in the bash result.
-		assert.match(results[2], /^Waited 1\.5s; it keeps running and you get a message when it exits\.\n\nTask 1 Start the dev server is still running \(for \d+s\)\.\nNew output:\ntick\nFull output: /);
+		assert.match(
+			results[2],
+			/^Waited 1\.5s; it keeps running and you get a message when it exits\.\n\nTask 1 Start the dev server is still running \(for \d+s\)\.\nNew output:\ntick\nFull output: /,
+		);
 		assert.match(results[3], /\nNo new output since you last saw its output\.\n/);
 		assert.equal(results[4], "Stopped task 1 Start the dev server.\n");
 		assert.match(results[5], /^1 {2}Start the dev server {2}was stopped after \d+s/);
@@ -228,7 +269,10 @@ test("a task waited for to its end sends no message, and its report names the co
 		await h.session.prompt("run it");
 		const results = toolResults(h.session).map(text);
 		assert.match(results[0], /task 1/);
-		assert.match(results[1], /^Background task 1 Check things exited with code 0 after 2s\.\nCommand: `sleep 1\.5; echo ok`\nLast output:\nok\n/);
+		assert.match(
+			results[1],
+			/^Background task 1 Check things exited with code 0 after 2s\.\nCommand: `sleep 1\.5; echo ok`\nLast output:\nok\n/,
+		);
 		await sleep(500);
 		assert.equal(h.calls(), 3);
 		assert.deepEqual(notices(h.session), []);
@@ -247,7 +291,10 @@ test("tasks wait exits with the task's own status, like the shell's wait", async
 		await h.session.prompt("go");
 		const [, waited] = toolResults(h.session);
 		assert.equal(waited.isError, true);
-		assert.match(text(waited), /^Background task 1 `sleep 1\.5; echo broken >&2; exit 3` exited with code 3 after \d+s\.\nLast output:\nbroken\n[\s\S]*Command exited with code 3$/);
+		assert.match(
+			text(waited),
+			/^Background task 1 `sleep 1\.5; echo broken >&2; exit 3` exited with code 3 after \d+s\.\nLast output:\nbroken\n[\s\S]*Command exited with code 3$/,
+		);
 		assert.deepEqual(notices(h.session), []);
 	} finally {
 		await h.close();
@@ -268,7 +315,10 @@ test("a wait that an aborted turn gives up on still lets the task's message arri
 		await turn;
 		assert.deepEqual(notices(h.session), []);
 		await until(() => notices(h.session).length === 1);
-		assert.match(notices(h.session)[0], /^Background task 1 `sleep 2; echo finished` exited with code 0 after \d+s\./);
+		assert.match(
+			notices(h.session)[0],
+			/^Background task 1 `sleep 2; echo finished` exited with code 0 after \d+s\./,
+		);
 	} finally {
 		await h.close();
 	}
@@ -291,11 +341,17 @@ test("a foreground sleep is refused, and the answer points at the running tasks"
 		const started = Date.now();
 		await h.session.prompt("wait for it");
 		const results = toolResults(h.session);
-		assert.match(text(results[0]), /^Not run: `sleep 30` would only hold you up\..*\nNone of your background tasks is still running\./);
+		assert.match(
+			text(results[0]),
+			/^Not run: `sleep 30` would only hold you up\..*\nNone of your background tasks is still running\./,
+		);
 		assert.equal(results[0].isError, true);
 		assert.equal((structured[0] as { exit_code?: number }).exit_code, 1);
 		assert.match(text(results[1]), /Command running in the background as task 1/);
-		assert.match(text(results[2]), /^Not run: `sleep 60`.*\nTo block until one is done, run `tasks wait <id>`.*Running: 1 `sleep 30`\./);
+		assert.match(
+			text(results[2]),
+			/^Not run: `sleep 60`.*\nTo block until one is done, run `tasks wait <id>`.*Running: 1 `sleep 30`\./,
+		);
 		assert.equal(text(results[3]), "short\n");
 		assert.equal(text(results[4]), "looped\n");
 		assert.ok(Date.now() - started < 5000);
@@ -321,16 +377,47 @@ test("the tool text says when a command moves to the background, what the flag s
 		await h.session.prompt("hi");
 		const bashTool = tools.find((tool) => tool.name === "bash");
 		const { run_in_background, timeout, description } = bashTool?.parameters?.properties ?? {};
-		assert.match(bashTool?.description ?? "", /still running after 1s is not killed: it keeps running as a background task.*run_in_background: true starts it in the background right away/s);
-		assert.match(run_in_background?.description ?? "", /right away \(returning after about 1s, with any startup error\) instead of after 1s/);
-		assert.match(timeout?.description ?? "", /also once it runs in the background .*leave it unset for servers/);
+		assert.match(
+			bashTool?.description ?? "",
+			/still running after 1s is not killed: it keeps running as a background task.*run_in_background: true starts it in the background right away/s,
+		);
+		assert.match(
+			run_in_background?.description ?? "",
+			/right away \(returning after about 1s, with any startup error\) instead of after 1s/,
+		);
+		assert.match(
+			timeout?.description ?? "",
+			/also once it runs in the background .*leave it unset for servers/,
+		);
 		assert.match(description?.description ?? "", /5-10 words/);
-		assert.deepEqual(Object.keys(bashTool?.parameters?.properties ?? {}), ["command", "timeout", "run_in_background", "description", "cwd", "ready"]);
-		assert.deepEqual(Object.keys(bashTool?.parameters?.properties?.ready?.properties ?? {}), ["port", "host", "log", "timeout"]);
-		assert.deepEqual(tools.map((tool) => tool.name).filter((name) => name !== "bash" && /task/.test(name)), [], "no extra tools");
-		assert.match(bashTool?.description ?? "", /`tasks` lists them, `tasks output <id>` shows new output, `tasks wait <id> \[--timeout <secs>\]` waits for one to exit, `tasks stop <id>` stops one/);
+		assert.deepEqual(Object.keys(bashTool?.parameters?.properties ?? {}), [
+			"command",
+			"timeout",
+			"run_in_background",
+			"description",
+			"cwd",
+			"ready",
+		]);
+		assert.deepEqual(Object.keys(bashTool?.parameters?.properties?.ready?.properties ?? {}), [
+			"port",
+			"host",
+			"log",
+			"timeout",
+		]);
+		assert.deepEqual(
+			tools.map((tool) => tool.name).filter((name) => name !== "bash" && /task/.test(name)),
+			[],
+			"no extra tools",
+		);
+		assert.match(
+			bashTool?.description ?? "",
+			/`tasks` lists them, `tasks output <id>` shows new output, `tasks wait <id> \[--timeout <secs>\]` waits for one to exit, `tasks stop <id>` stops one/,
+		);
 		assert.match(prompt, /Don't sleep or poll to wait for a background task/);
-		assert.match(prompt, /Start a server with `ready`, such as `ready: \{port: 3000\}`.*so you need no curl loop/);
+		assert.match(
+			prompt,
+			/Start a server with `ready`, such as `ready: \{port: 3000\}`.*so you need no curl loop/,
+		);
 		assert.match(prompt, /Use `cwd` to run a command in another directory/);
 		assert.match(prompt, /don't append `; echo \$\?`, `\|\| true`/);
 	} finally {
@@ -349,7 +436,9 @@ test("a failed task wakes the agent and reads as a failure", async () => {
 		await until(() => h.calls() === 3 && h.session.isStreaming === false);
 		const [notice] = notices(h.session);
 		assert.match(notice, /exited with code 2 after 1s\.\nLast output:\nboom\n/);
-		const message = h.session.messages.find((m) => m.role === "custom") as { details?: { failed?: boolean; status?: string } };
+		const message = h.session.messages.find((m) => m.role === "custom") as {
+			details?: { failed?: boolean; status?: string };
+		};
 		assert.equal(message.details?.failed, true);
 		assert.equal(message.details?.status, "failed");
 	} finally {
@@ -369,7 +458,10 @@ test("commands run without editors, pagers, credential prompts or stdin that nee
 	delete process.env.CI;
 	try {
 		await h.session.prompt("check");
-		assert.equal(text(toolResults(h.session)[0]), "true true true cat cat 0\ncat cat [] never false noninteractive 1 false\nunset\nno-stdin\n");
+		assert.equal(
+			text(toolResults(h.session)[0]),
+			"true true true cat cat 0\ncat cat [] never false noninteractive 1 false\nunset\nno-stdin\n",
+		);
 	} finally {
 		if (ci !== undefined) process.env.CI = ci;
 		await h.close();
@@ -377,7 +469,10 @@ test("commands run without editors, pagers, credential prompts or stdin that nee
 });
 
 test("an explicit timeout still kills the command", async () => {
-	const h = await harness([bash({ command: "tail -f /dev/null", timeout: "0.5" }), fauxAssistantMessage("Done.")]);
+	const h = await harness([
+		bash({ command: "tail -f /dev/null", timeout: "0.5" }),
+		fauxAssistantMessage("Done."),
+	]);
 	try {
 		await h.session.prompt("go");
 		const [result] = toolResults(h.session);
@@ -389,7 +484,10 @@ test("an explicit timeout still kills the command", async () => {
 });
 
 test("a one-shot run says that tasks stop when it ends, and shutdown stops them", async () => {
-	const h = await harness([bash({ command: "sleep 30", run_in_background: true }), fauxAssistantMessage("Done.")], { mode: "print" });
+	const h = await harness(
+		[bash({ command: "sleep 30", run_in_background: true }), fauxAssistantMessage("Done.")],
+		{ mode: "print" },
+	);
 	let pid: number | undefined;
 	try {
 		await h.session.prompt("go");
@@ -404,7 +502,10 @@ test("a one-shot run says that tasks stop when it ends, and shutdown stops them"
 });
 
 test("/tasks without a terminal answers in the transcript without waking the agent", async () => {
-	const h = await harness([bash({ command: "sleep 30", run_in_background: true }), fauxAssistantMessage("Started.")]);
+	const h = await harness([
+		bash({ command: "sleep 30", run_in_background: true }),
+		fauxAssistantMessage("Started."),
+	]);
 	try {
 		await h.session.prompt("/tasks");
 		assert.equal(notices(h.session).at(-1), "No background tasks.");
@@ -422,7 +523,10 @@ test("/tasks without a terminal answers in the transcript without waking the age
 		assert.match(text(listing), /^1 {2}`sleep 30` {2}running for \d+s/);
 		await h.session.prompt("/tasks stop 1");
 		assert.equal(h.calls(), calls);
-		assert.match(notices(h.session).at(-1) ?? "", /^The user stopped background task 1 `sleep 30`\./);
+		assert.match(
+			notices(h.session).at(-1) ?? "",
+			/^The user stopped background task 1 `sleep 30`\./,
+		);
 		await h.session.prompt("/tasks");
 		assert.match(notices(h.session).at(-1) ?? "", /^1 {2}`sleep 30` {2}was stopped after \d+s/);
 		assert.equal(h.calls(), calls);
@@ -434,12 +538,22 @@ test("/tasks without a terminal answers in the transcript without waking the age
 test("in the TUI a widget shows running tasks, and /tasks picks one to show its output or stop it", async () => {
 	const tui = fakeTui(["1", "Show output", "1", "Stop"]);
 	const h = await harness(
-		[bash({ command: "echo hello; sleep 30", description: "Serve the docs", run_in_background: true }), fauxAssistantMessage("Started.")],
+		[
+			bash({
+				command: "echo hello; sleep 30",
+				description: "Serve the docs",
+				run_in_background: true,
+			}),
+			fauxAssistantMessage("Started."),
+		],
 		{ mode: "tui", ui: tui.ui },
 	);
 	try {
 		await h.session.prompt("start the server");
-		assert.match(tui.widgets.at(-1)?.[0] ?? "", /^⏵ Running background command: Serve the docs \d+s$/);
+		assert.match(
+			tui.widgets.at(-1)?.[0] ?? "",
+			/^⏵ Running background command: Serve the docs \d+s$/,
+		);
 		assert.match(tui.widgets.at(-1)?.[1] ?? "", /\/tasks to manage/);
 
 		await h.session.prompt("/tasks");
@@ -460,7 +574,10 @@ test("in the TUI a widget shows running tasks, and /tasks picks one to show its 
 });
 
 test("quitting stops the tasks; a reload keeps them for the next runtime", async () => {
-	const h = await harness([bash({ command: "sleep 30", run_in_background: true }), fauxAssistantMessage("Started.")]);
+	const h = await harness([
+		bash({ command: "sleep 30", run_in_background: true }),
+		fauxAssistantMessage("Started."),
+	]);
 	let pid: number | undefined;
 	try {
 		await h.session.prompt("start the server");
@@ -507,7 +624,11 @@ test("state.json tells other programs about the tasks, and a stop-<id> file stop
 		assert.equal(state.bbThreadId, "thr_test");
 		assert.equal(state.piPid, process.pid);
 		assert.deepEqual(
-			state.tasks.map((task: { id: number; description: string; status: string }) => [task.id, task.description, task.status]),
+			state.tasks.map((task: { id: number; description: string; status: string }) => [
+				task.id,
+				task.description,
+				task.status,
+			]),
 			[[1, "Hold the port", "running"]],
 		);
 		const calls = h.calls();
@@ -520,7 +641,10 @@ test("state.json tells other programs about the tasks, and a stop-<id> file stop
 		// A wait on a task the user stopped is not an error.
 		const waited = toolResults(h.session).at(-1);
 		assert.equal(waited?.isError, false);
-		assert.match(text(waited as never), /^Background task 1 Hold the port was stopped after \d+s\./);
+		assert.match(
+			text(waited as never),
+			/^Background task 1 Hold the port was stopped after \d+s\./,
+		);
 		await until(() => notices(h.session).length === 1);
 		assert.match(notices(h.session)[0], /^The user stopped background task 1 Hold the port\./);
 	} finally {
@@ -560,7 +684,10 @@ test("a message from the user ends a foreground wait and a `tasks wait` early; t
 		await turn;
 		const first = toolResults(h.session)[0];
 		assert.ok(Date.now() - started < 2800, `the first call took ${Date.now() - started}ms`);
-		assert.match(text(first), /^Moved to the background early, as task 1 \(pid \d+\), to handle an incoming message; the command keeps running\./);
+		assert.match(
+			text(first),
+			/^Moved to the background early, as task 1 \(pid \d+\), to handle an incoming message; the command keeps running\./,
+		);
 		assert.equal(first.details.backgroundTask.status, "running");
 
 		started = Date.now();
@@ -571,7 +698,10 @@ test("a message from the user ends a foreground wait and a `tasks wait` early; t
 		await second;
 		const waited = toolResults(h.session)[2];
 		assert.ok(Date.now() - started < 2800, `the wait took ${Date.now() - started}ms`);
-		assert.match(text(waited), /^Stopped waiting to handle an incoming message; task 2 keeps running and you get a message when it exits\./);
+		assert.match(
+			text(waited),
+			/^Stopped waiting to handle an incoming message; task 2 keeps running and you get a message when it exits\./,
+		);
 		await until(() => notices(h.session).length > 0 && h.session.isStreaming === false);
 	} finally {
 		await h.close();
@@ -579,7 +709,10 @@ test("a message from the user ends a foreground wait and a `tasks wait` early; t
 });
 
 test("a command whose short timeout comes soon after the wait stays in the foreground", async () => {
-	const h = await harness([bash({ command: "sleep 1.5; echo done", timeout: 4 }), fauxAssistantMessage("Done.")]);
+	const h = await harness([
+		bash({ command: "sleep 1.5; echo done", timeout: 4 }),
+		fauxAssistantMessage("Done."),
+	]);
 	try {
 		await h.session.prompt("go");
 		const [result] = toolResults(h.session);
@@ -594,15 +727,21 @@ test("ready waits until a port accepts connections, and the server keeps running
 	const port = await freePort();
 	const structured: unknown[] = [];
 	const server = `setTimeout(() => require("net").createServer().listen(${port}, "127.0.0.1", () => console.log("up")), 1500)`;
-	const h = await harness([bash({ command: `node -e '${server}'`, ready: { port } }), fauxAssistantMessage("Up.")], {
-		structuredResults: structured,
-	});
+	const h = await harness(
+		[bash({ command: `node -e '${server}'`, ready: { port } }), fauxAssistantMessage("Up.")],
+		{
+			structuredResults: structured,
+		},
+	);
 	try {
 		const started = Date.now();
 		await h.session.prompt("start it");
 		const [result] = toolResults(h.session);
 		assert.ok(Date.now() - started >= 1400, "it waited for the port");
-		assert.match(text(result), new RegExp(`^up\\n\\nReady: port ${port}\\.\\nCommand running in the background as task 1 `));
+		assert.match(
+			text(result),
+			new RegExp(`^up\\n\\nReady: port ${port}\\.\\nCommand running in the background as task 1 `),
+		);
 		assert.equal(result.details.ready, "ready");
 		assert.equal((structured[0] as { ready?: boolean }).ready, true);
 		assert.equal(result.details.backgroundTask.status, "running");
@@ -614,8 +753,15 @@ test("ready waits until a port accepts connections, and the server keeps running
 test("ready waits for a log line; it says when the server never got ready or exited first", async () => {
 	const port = await freePort();
 	const h = await harness([
-		bash({ command: 'echo booting; sleep 1.5; printf "\\033[32mListening on 1234\\033[0m\\n"; sleep 30', ready: '{"log": "Listening on \\\\d+"}' }),
-		bash({ command: "echo starting; sleep 30", ready: { log: "never", timeout: 1.5 }, description: "Start the silent server" }),
+		bash({
+			command: 'echo booting; sleep 1.5; printf "\\033[32mListening on 1234\\033[0m\\n"; sleep 30',
+			ready: '{"log": "Listening on \\\\d+"}',
+		}),
+		bash({
+			command: "echo starting; sleep 30",
+			ready: { log: "never", timeout: 1.5 },
+			description: "Start the silent server",
+		}),
 		bash({ command: "echo bye", ready: { port } }),
 		bash({ command: "sleep 1.5; echo crashed >&2; exit 4", ready: { port, timeout: 10 } }),
 		bash({ command: "true", ready: { port: 70000 } }),
@@ -625,17 +771,38 @@ test("ready waits for a log line; it says when the server never got ready or exi
 	try {
 		await h.session.prompt("start them");
 		const results = toolResults(h.session);
-		assert.match(text(results[0]), /^booting\n.*Listening on 1234.*\n\nReady: the log matching \/Listening on \\d\+\/\.\n/);
-		assert.match(text(results[1]), /^starting\n\nNOT ready after 1\.5s: no output line matches \/never\/\. It keeps running\.\nCommand running in the background as task 2/);
+		assert.match(
+			text(results[0]),
+			/^booting\n.*Listening on 1234.*\n\nReady: the log matching \/Listening on \\d\+\/\.\n/,
+		);
+		assert.match(
+			text(results[1]),
+			/^starting\n\nNOT ready after 1\.5s: no output line matches \/never\/\. It keeps running\.\nCommand running in the background as task 2/,
+		);
 		assert.equal(results[1].isError, false);
-		assert.match(text(results[2]), new RegExp(`^bye\\n\\nNot ready: it exited before port ${port}\\.$`));
+		assert.match(
+			text(results[2]),
+			new RegExp(`^bye\\n\\nNot ready: it exited before port ${port}\\.$`),
+		);
 		assert.equal(results[2].isError, true);
-		assert.match(text(results[3]), new RegExp(`^crashed\\n\\nNot ready: it exited with code 4 after 2s before port ${port}\\.\\n\\nCommand exited with code 4$`));
+		assert.match(
+			text(results[3]),
+			new RegExp(
+				`^crashed\\n\\nNot ready: it exited with code 4 after 2s before port ${port}\\.\\n\\nCommand exited with code 4$`,
+			),
+		);
 		assert.equal(results[3].isError, true);
 		assert.match(text(results[4]), /^Not run: ready\.port must be a TCP port, not 70000\.$/);
-		assert.match(text(results[5]), new RegExp(`^string port\\n\\nNot ready: it exited before port ${port}\\.$`));
+		assert.match(
+			text(results[5]),
+			new RegExp(`^string port\\n\\nNot ready: it exited before port ${port}\\.$`),
+		);
 		await sleep(700);
-		assert.deepEqual(notices(h.session), [], "a task that exited while the call waited for it sends no message");
+		assert.deepEqual(
+			notices(h.session),
+			[],
+			"a task that exited while the call waited for it sends no message",
+		);
 	} finally {
 		await h.close();
 	}
@@ -681,8 +848,13 @@ test("tasks that end close together are reported in one message", async () => {
 		await until(() => h.calls() === 4 && h.session.isStreaming === false);
 		const all = notices(h.session);
 		assert.equal(all.length, 1);
-		assert.match(all[0], /^2 background tasks ended \(1 failed\)\.\n\nBackground task 1 `sleep 2\.2; echo one` exited with code 0[\s\S]*\n\nBackground task 2 `sleep 1\.3; echo two >&2; exit 1` exited with code 1/);
-		const message = h.session.messages.find((m) => m.role === "custom") as { details?: { failed?: boolean; tasks?: unknown[] } };
+		assert.match(
+			all[0],
+			/^2 background tasks ended \(1 failed\)\.\n\nBackground task 1 `sleep 2\.2; echo one` exited with code 0[\s\S]*\n\nBackground task 2 `sleep 1\.3; echo two >&2; exit 1` exited with code 1/,
+		);
+		const message = h.session.messages.find((m) => m.role === "custom") as {
+			details?: { failed?: boolean; tasks?: unknown[] };
+		};
 		assert.equal(message.details?.failed, true);
 		assert.equal(message.details?.tasks?.length, 2);
 	} finally {

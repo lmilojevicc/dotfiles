@@ -8,8 +8,12 @@ const accountKey = process.argv[4] ?? "account:synthetic";
 const paths = resetPaths(agentDir, accountKey);
 if (mode === "old-mkdir") {
 	fs.mkdirSync(paths.directory, { recursive: true, mode: 0o700 });
-	try { fs.mkdirSync(paths.lock, { mode: 0o700 }); process.send?.("old-created"); }
-	catch { process.send?.("old-blocked"); }
+	try {
+		fs.mkdirSync(paths.lock, { mode: 0o700 });
+		process.send?.("old-created");
+	} catch {
+		process.send?.("old-blocked");
+	}
 	process.disconnect?.();
 	// This owned fixture has no background work. Never runs the new coordinator.
 	await new Promise<void>((resolve) => setImmediate(resolve));
@@ -37,12 +41,16 @@ os.write(4, b"helper-released-copy")
 	}) as any;
 	syncBuiltinESMExports();
 }
-if (mode === "acquired") await withResetAccountLock(agentDir, accountKey, async () => checkpoint("acquired"));
-const write = fs.writeFileSync, rename = fs.renameSync, unlink = fs.unlinkSync;
-if (mode === "temp") fs.writeFileSync = ((path: any, ...args: any[]) => {
-	(write as any)(path, ...args);
-	if (typeof path === "number") checkpoint("temp");
-}) as any;
+if (mode === "acquired")
+	await withResetAccountLock(agentDir, accountKey, async () => checkpoint("acquired"));
+const write = fs.writeFileSync,
+	rename = fs.renameSync,
+	unlink = fs.unlinkSync;
+if (mode === "temp")
+	fs.writeFileSync = ((path: any, ...args: any[]) => {
+		(write as any)(path, ...args);
+		if (typeof path === "number") checkpoint("temp");
+	}) as any;
 if (mode === "terminal" || mode === "recovery") {
 	let renames = 0;
 	fs.renameSync = ((...args: any[]) => {
@@ -50,18 +58,35 @@ if (mode === "terminal" || mode === "recovery") {
 		if (++renames === (mode === "terminal" ? 2 : 1)) checkpoint(mode);
 	}) as any;
 }
-if (mode === "rollback") fs.unlinkSync = ((path: any) => {
-	if (path === paths.journal) checkpoint("rollback");
-	unlink(path);
-}) as any;
+if (mode === "rollback")
+	fs.unlinkSync = ((path: any) => {
+		if (path === paths.journal) checkpoint("rollback");
+		unlink(path);
+	}) as any;
 syncBuiltinESMExports();
-let posted = false, checks = 0;
+let posted = false,
+	checks = 0;
 await coordinateReset({
-	agentDir, accountKey, mode: mode === "manual" ? "manual" : "auto", manualAction: { kind: "spend" },
-	validate: async () => {}, checkBeforePost: () => { if (mode === "rollback" && ++checks === 2) throw new Error("cancelled"); },
-	readUsage: async () => ({ limits: [{ limitId: "codex", secondary: {
-		usedPercent: mode === "recovery" ? 50 : 100, windowMinutes: 10080, resetsAt: Date.now() / 1000 + 3600,
-	} }] }),
+	agentDir,
+	accountKey,
+	mode: mode === "manual" ? "manual" : "auto",
+	manualAction: { kind: "spend" },
+	validate: async () => {},
+	checkBeforePost: () => {
+		if (mode === "rollback" && ++checks === 2) throw new Error("cancelled");
+	},
+	readUsage: async () => ({
+		limits: [
+			{
+				limitId: "codex",
+				secondary: {
+					usedPercent: mode === "recovery" ? 50 : 100,
+					windowMinutes: 10080,
+					resetsAt: Date.now() / 1000 + 3600,
+				},
+			},
+		],
+	}),
 	readCredits: async () => ({ availableCount: 1, credits: [{ id: "synthetic-credit" }] }),
 	consume: async () => {
 		if (mode === "before-post") checkpoint("intent"); // Durable, definitely not mock-dispatched yet.

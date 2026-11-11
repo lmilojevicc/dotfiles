@@ -19,7 +19,10 @@ export interface ApplicationReport {
  * every provider that is currently stored. `providerIds` is undefined when the
  * store cannot be read, and then nothing is claimed about presence.
  */
-export function describeApplication(rules: CompiledRules, providerIds: readonly string[] | undefined): ApplicationReport {
+export function describeApplication(
+	rules: CompiledRules,
+	providerIds: readonly string[] | undefined,
+): ApplicationReport {
 	if (!providerIds) return { known: false, applied: [], missing: [] };
 
 	const present = new Set(providerIds);
@@ -51,8 +54,10 @@ export function formatReport(rules: CompiledRules, report: ApplicationReport): s
 		if (globalOnly.includes(providerId)) continue;
 		lines.push(`  ${providerId}: ${rules.patternsFor(providerId).join(", ")}`);
 	}
-	if (globalOnly.length > 0) lines.push(`  all other providers: ${rules.globalPatterns.join(", ")}`);
-	if (report.missing.length > 0) lines.push(`Unknown providers (ignored): ${report.missing.join(", ")}`);
+	if (globalOnly.length > 0)
+		lines.push(`  all other providers: ${rules.globalPatterns.join(", ")}`);
+	if (report.missing.length > 0)
+		lines.push(`Unknown providers (ignored): ${report.missing.join(", ")}`);
 	if (report.known && report.applied.length === 0 && report.missing.length === 0)
 		lines.push("No providers configured; no models are hidden");
 	return lines;

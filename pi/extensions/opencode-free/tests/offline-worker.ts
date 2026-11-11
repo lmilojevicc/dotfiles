@@ -9,7 +9,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const requested: string[] = [];
 
 function json(value: unknown): Response {
-	return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 function urlOf(input: string | URL | Request): string {
@@ -35,7 +38,8 @@ globalThis.fetch = (async (input: string | URL | Request) => {
 		]);
 	}
 	if (url.includes("models.dev")) return json({});
-	if (url.includes("homebrew")) return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
+	if (url.includes("homebrew"))
+		return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
 	throw new Error(`unexpected fetch: ${url}`);
 }) as typeof fetch;
 

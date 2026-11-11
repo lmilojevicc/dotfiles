@@ -38,30 +38,31 @@ test("context breakdown separates tools, results, and conversation without infla
 		}),
 		getSystemPrompt: () => "s".repeat(200),
 		sessionManager: {
-			buildSessionProjection: () => projectionOf([
-				{ type: "message", message: { role: "user", content: "uuuuuuuu", timestamp: 0 } },
-				{
-					type: "message",
-					message: {
-						role: "assistant",
-						content: [
-							{ type: "text", text: "aaaa" },
-							{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
-						],
+			buildSessionProjection: () =>
+				projectionOf([
+					{ type: "message", message: { role: "user", content: "uuuuuuuu", timestamp: 0 } },
+					{
+						type: "message",
+						message: {
+							role: "assistant",
+							content: [
+								{ type: "text", text: "aaaa" },
+								{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
+							],
+						},
 					},
-				},
-				{
-					type: "message",
-					message: {
-						role: "toolResult",
-						toolCallId: "1",
-						toolName: "read",
-						content: "rrrrrrrr",
-						timestamp: 0,
+					{
+						type: "message",
+						message: {
+							role: "toolResult",
+							toolCallId: "1",
+							toolName: "read",
+							content: "rrrrrrrr",
+							timestamp: 0,
+						},
 					},
-				},
-				{ type: "compaction", summary: "ssss" },
-			]),
+					{ type: "compaction", summary: "ssss" },
+				]),
 		},
 	} as any;
 	const tools = [
@@ -97,7 +98,11 @@ test("context breakdown separates tools, results, and conversation without infla
 	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
 	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
 	assert.equal(breakdown.previews.systemPrompt(), "s".repeat(200));
-	assert.equal(typeof breakdown.previews.toolResults, "function", "aggregate previews are assembled on demand");
+	assert.equal(
+		typeof breakdown.previews.toolResults,
+		"function",
+		"aggregate previews are assembled on demand",
+	);
 	assert.match(breakdown.previews.tools(), /Definition: read/);
 	assert.match(breakdown.previews.tools(), /"parameters"/);
 	assert.doesNotMatch(breakdown.previews.tools(), /Call: read/);
@@ -243,21 +248,21 @@ test("showTextPreview highlights and closes from the [esc] mouse hitbox", async 
 });
 
 test("raw leaf preview wraps a long single line without losing its end", async () => {
- const ui = textPreviewHarness();
- const content = "x".repeat(900) + "🙂TAIL";
- const expected = wrapRawLines(content, 60);
- assert.equal(expected.join(""), content);
- const preview = showTextPreview({ ui } as any, "Raw schema", content, true);
- const first = ui.component.render(64);
- assert.ok(first.every((line: string) => visibleWidth(line) === 64));
- assert.match(first.at(-2), /1-15 \/ 16 lines/);
- ui.component.handleInput("G");
- const last = ui.component.render(64);
- assert.ok(last.every((line: string) => visibleWidth(line) === 64));
- assert.match(last.at(-2), /2-16 \/ 16 lines/);
- assert.match(last.join("\n"), /🙂TAIL/);
- ui.component.handleInput("\x1b");
- await preview;
+	const ui = textPreviewHarness();
+	const content = "x".repeat(900) + "🙂TAIL";
+	const expected = wrapRawLines(content, 60);
+	assert.equal(expected.join(""), content);
+	const preview = showTextPreview({ ui } as any, "Raw schema", content, true);
+	const first = ui.component.render(64);
+	assert.ok(first.every((line: string) => visibleWidth(line) === 64));
+	assert.match(first.at(-2), /1-15 \/ 16 lines/);
+	ui.component.handleInput("G");
+	const last = ui.component.render(64);
+	assert.ok(last.every((line: string) => visibleWidth(line) === 64));
+	assert.match(last.at(-2), /2-16 \/ 16 lines/);
+	assert.match(last.join("\n"), /🙂TAIL/);
+	ui.component.handleInput("\x1b");
+	await preview;
 });
 
 test("showTextPreview scrollbar supports press and drag", async () => {
@@ -279,35 +284,42 @@ test("showTextPreview scrollbar supports press and drag", async () => {
 test("fullscreen routes normalized mouse to /context overlays before viewport scrolling", async () => {
 	const writes: string[] = [];
 	const terminal = {
-		columns: 80, rows: 24,
-		write: (data: string) => { writes.push(data); },
-		hideCursor() {}, showCursor() {},
+		columns: 80,
+		rows: 24,
+		write: (data: string) => {
+			writes.push(data);
+		},
+		hideCursor() {},
+		showCursor() {},
 	};
 	const tui = new TuiAltScreen(terminal as any, false);
 	(tui as any).stopped = false;
 	tui.beforeTerminalStart();
 	const theme = {
-		fg: (color: string, text: string) => color === "text" && text === "[esc]" ? "{hover esc}" : text,
+		fg: (color: string, text: string) =>
+			color === "text" && text === "[esc]" ? "{hover esc}" : text,
 		bg: (_color: string, text: string) => text,
 		bold: (text: string) => text,
 	};
 	const components: any[] = [];
 	const ctx = {
-		mode: "tui", model: { contextWindow: 1000 },
+		mode: "tui",
+		model: { contextWindow: 1000 },
 		getContextUsage: () => ({ tokens: 50, percent: 5, contextWindow: 1000 }),
 		getSystemPrompt: () => Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n"),
 		getSystemPromptOptions: () => ({ selectedTools: [], contextFiles: [], skills: [] }),
 		sessionManager: { buildSessionProjection: () => projectionOf([]) },
 		ui: {
-			custom: (factory: any, options: any) => new Promise((resolve) => {
-				const component = factory(tui, theme, null, (value: unknown) => {
-					handle.hide();
-					resolve(value);
-				});
-				components.push(component);
-				const handle = tui.showOverlay(component, options.overlayOptions);
-				tui.renderNow();
-			}),
+			custom: (factory: any, options: any) =>
+				new Promise((resolve) => {
+					const component = factory(tui, theme, null, (value: unknown) => {
+						handle.hide();
+						resolve(value);
+					});
+					components.push(component);
+					const handle = tui.showOverlay(component, options.overlayOptions);
+					tui.renderNow();
+				}),
 		},
 	};
 	let command: any;
@@ -326,16 +338,16 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 	assert.equal(components.length, 1);
 	// All dialogs: 78 columns, 21 rows centered at (1,1), first category on row 8.
 	send(35, 20, 8);
-	assert.equal((components[0].render(78).join("\n")).includes("{hover esc}"), false);
+	assert.equal(components[0].render(78).join("\n").includes("{hover esc}"), false);
 	send(0, 20, 8);
 	send(0, 20, 8, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(components.length, 2, "category press opens the second menu via fullscreen host");
-    assert.match(components[1].render(78).join("\n"), /System prompt · unattri/);
-    send(0, 20, 8);
-    send(0, 20, 8, true);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.equal(components.length, 3, "submenu press opens a leaf");
+	assert.match(components[1].render(78).join("\n"), /System prompt · unattri/);
+	send(0, 20, 8);
+	send(0, 20, 8, true);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(components.length, 3, "submenu press opens a leaf");
 	const preview = components[2];
 	assert.match(preview.render(78).join("\n"), /1-15 \/ 100 lines/);
 	const top = tui.viewportTop;
@@ -355,26 +367,32 @@ test("fullscreen routes normalized mouse to /context overlays before viewport sc
 	send(0, 75, 3, true);
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(components.length, 4, "preview esc returns to submenu");
-    send(0, 75, 3);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    assert.equal(components.length, 5, "submenu esc returns to main dialog");
+	send(0, 75, 3);
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(components.length, 5, "submenu esc returns to main dialog");
 	const main = components[4];
 	tui.handleTerminalInput("\x1b[B"); // keyboard navigation still works
 	tui.renderNow();
 	assert.match(main.render(78).join("\n"), /Context Usage/);
 	main.handleMouse({ type: "move", screenX: 74, screenY: 2 });
-    assert.match(main.render(78).join("\n"), /\{hover esc\}/);
-    main.handleInput("\x1b");
+	assert.match(main.render(78).join("\n"), /\{hover esc\}/);
+	main.handleInput("\x1b");
 	await run;
 	assert.equal(hasActiveTextPreview(), false);
-	assert.equal(writes.filter((write) => write === "\x1b[?1003h").length, 0,
-		"native fullscreen tracking is not overwritten by the overlay");
+	assert.equal(
+		writes.filter((write) => write === "\x1b[?1003h").length,
+		0,
+		"native fullscreen tracking is not overwritten by the overlay",
+	);
 });
 
 test("showTextPreview normalized mouse handles wheel and captured scrollbar independently of raw input", async () => {
 	const ui = textPreviewHarness();
-	const preview = showTextPreview({ ui } as any, "Output",
-		Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n"));
+	const preview = showTextPreview(
+		{ ui } as any,
+		"Output",
+		Array.from({ length: 100 }, (_, i) => `line ${i + 1}`).join("\n"),
+	);
 	ui.component.render(64);
 	const mouse = (type: string, screenX: number, screenY: number, wheelDelta?: number) =>
 		ui.component.handleMouse({ type, button: "left", screenX, screenY, wheelDelta });
@@ -392,12 +410,20 @@ async function hoverWrites(tui: Record<string, unknown>): Promise<string[]> {
 	const writes: string[] = [];
 	let component: any;
 	const ui = {
-		custom: (factory: any) => new Promise<void>((resolve) => {
-			component = factory({ terminal: { rows: 24, columns: 80, write: (data: string) => writes.push(data) },
-				requestRender() {}, ...tui }, { fg: (_color: string, text: string) => text,
-				bold: (text: string) => text }, null, resolve);
-			component.render(64);
-		}),
+		custom: (factory: any) =>
+			new Promise<void>((resolve) => {
+				component = factory(
+					{
+						terminal: { rows: 24, columns: 80, write: (data: string) => writes.push(data) },
+						requestRender() {},
+						...tui,
+					},
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					null,
+					resolve,
+				);
+				component.render(64);
+			}),
 	};
 	const preview = showTextPreview({ ui } as any, "Output", "hello");
 	component.handleInput("\x1b");
@@ -409,12 +435,20 @@ test("showTextPreview restores multiplexed fullscreen hover tracking on close", 
 	const previousTmux = process.env.TMUX;
 	process.env.TMUX = "test";
 	try {
-		assert.deepEqual(await hoverWrites({ mode: "fullscreen", mouseEnabled: true }),
-			["\x1b[?1003h", "\x1b[?1003l"]);
-		assert.deepEqual(await hoverWrites({ mode: "fullscreen", mouseEnabled: false }), [],
-			"a host that disabled mouse tracking keeps it disabled");
-		assert.deepEqual(await hoverWrites({ mode: "regular", mouseEnabled: true }), [],
-			"the regular screen never enables mouse reporting");
+		assert.deepEqual(await hoverWrites({ mode: "fullscreen", mouseEnabled: true }), [
+			"\x1b[?1003h",
+			"\x1b[?1003l",
+		]);
+		assert.deepEqual(
+			await hoverWrites({ mode: "fullscreen", mouseEnabled: false }),
+			[],
+			"a host that disabled mouse tracking keeps it disabled",
+		);
+		assert.deepEqual(
+			await hoverWrites({ mode: "regular", mouseEnabled: true }),
+			[],
+			"the regular screen never enables mouse reporting",
+		);
 	} finally {
 		if (previousTmux === undefined) delete process.env.TMUX;
 		else process.env.TMUX = previousTmux;
@@ -427,7 +461,16 @@ test("context breakdown follows context_edit omissions and replacements, not raw
 	const raw = [
 		{ type: "message", message: { role: "user", content: "kept question", timestamp: 0 } },
 		{ type: "message", message: { role: "assistant", content: [{ type: "text", text: omitted }] } },
-		{ type: "message", message: { role: "toolResult", toolCallId: "1", toolName: "bash", content: omitted, timestamp: 0 } },
+		{
+			type: "message",
+			message: {
+				role: "toolResult",
+				toolCallId: "1",
+				toolName: "bash",
+				content: omitted,
+				timestamp: 0,
+			},
+		},
 		{ type: "message", message: { role: "user", content: beforeEdit, timestamp: 0 } },
 	];
 	const ctx = {
@@ -443,7 +486,14 @@ test("context breakdown follows context_edit omissions and replacements, not raw
 					{ sourceEntry: raw[1], messages: [] },
 					{ sourceEntry: raw[2], messages: [] },
 					{ sourceEntry: raw[3], messages: [{ ...raw[3].message, content: "replacement text" }] },
-					{ sourceEntry: { type: "context_edit", targetId: "4", replacement: { content: "replacement text" } }, messages: [] },
+					{
+						sourceEntry: {
+							type: "context_edit",
+							targetId: "4",
+							replacement: { content: "replacement text" },
+						},
+						messages: [],
+					},
 				],
 				messages: [],
 			}),
@@ -455,8 +505,14 @@ test("context breakdown follows context_edit omissions and replacements, not raw
 	const contents = breakdown.items.contextFiles.map((item) => item.content);
 	assert.ok(contents.includes("kept question"));
 	assert.ok(contents.includes("replacement text"), "the replacement is what the model receives");
-	assert.ok(!contents.some((content) => content.includes(omitted)), "omitted content is not counted or previewed");
-	assert.ok(!contents.some((content) => content.includes(beforeEdit)), "replaced content is not counted or previewed");
+	assert.ok(
+		!contents.some((content) => content.includes(omitted)),
+		"omitted content is not counted or previewed",
+	);
+	assert.ok(
+		!contents.some((content) => content.includes(beforeEdit)),
+		"replaced content is not counted or previewed",
+	);
 });
 
 test("context breakdown keeps !! bash output out of tool results", () => {
@@ -466,10 +522,29 @@ test("context breakdown keeps !! bash output out of tool results", () => {
 		getSystemPromptOptions: () => ({ selectedTools: [], contextFiles: [], skills: [] }),
 		getSystemPrompt: () => "",
 		sessionManager: {
-			buildSessionProjection: () => projectionOf([
-				{ type: "message", message: { role: "bashExecution", command: "echo visible", output: visible, excludeFromContext: false, timestamp: 0 } },
-				{ type: "message", message: { role: "bashExecution", command: "cat secret", output: hidden, excludeFromContext: true, timestamp: 0 } },
-			]),
+			buildSessionProjection: () =>
+				projectionOf([
+					{
+						type: "message",
+						message: {
+							role: "bashExecution",
+							command: "echo visible",
+							output: visible,
+							excludeFromContext: false,
+							timestamp: 0,
+						},
+					},
+					{
+						type: "message",
+						message: {
+							role: "bashExecution",
+							command: "cat secret",
+							output: hidden,
+							excludeFromContext: true,
+							timestamp: 0,
+						},
+					},
+				]),
 		},
 	} as any;
 	const breakdown = collectContextBreakdown(ctx, []);
@@ -489,20 +564,24 @@ test("overlays act only on normalized mouse events, not raw SGR bytes in handleI
 	let closed = false;
 	let closedByRawPacket = true;
 	const ui = {
-		custom: async (factory: any) => new Promise<void>((resolve) => {
-			const component = factory(
-				{ terminal: { rows: 24, columns: 80 }, requestRender() {} },
-				{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
-				null,
-				() => { closed = true; resolve(); },
-			);
-			component.render(64);
-			// Pi enables mouse reporting only in the fullscreen TUI and consumes SGR packets there
-			// before any component sees them, so a raw packet never arrives as keyboard input.
-			component.handleInput("\x1b[<0;67;3M");
-			closedByRawPacket = closed;
-			component.handleInput("\x1b");
-		}),
+		custom: async (factory: any) =>
+			new Promise<void>((resolve) => {
+				const component = factory(
+					{ terminal: { rows: 24, columns: 80 }, requestRender() {} },
+					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
+					null,
+					() => {
+						closed = true;
+						resolve();
+					},
+				);
+				component.render(64);
+				// Pi enables mouse reporting only in the fullscreen TUI and consumes SGR packets there
+				// before any component sees them, so a raw packet never arrives as keyboard input.
+				component.handleInput("\x1b[<0;67;3M");
+				closedByRawPacket = closed;
+				component.handleInput("\x1b");
+			}),
 	};
 	await showTextPreview({ ui } as any, "Output", "hello");
 	assert.equal(closedByRawPacket, false, "a raw escape packet is not a click on [esc]");
@@ -517,17 +596,36 @@ test("image blocks stay out of /context leaves and previews, replaced by their s
 		getSystemPromptOptions: () => ({ selectedTools: [] }),
 		getSystemPrompt: () => "",
 		sessionManager: {
-			buildSessionProjection: () => projectionOf([
-				{ type: "message", message: { role: "toolResult", toolCallId: "1", toolName: "read", content: [{ type: "image", mimeType: "image/png", data }], timestamp: 0 } },
-				{ type: "custom_message", customType: "attachment", content: [{ type: "image", mimeType: "image/jpeg", data }, { type: "text", text: "caption" }] },
-			]),
+			buildSessionProjection: () =>
+				projectionOf([
+					{
+						type: "message",
+						message: {
+							role: "toolResult",
+							toolCallId: "1",
+							toolName: "read",
+							content: [{ type: "image", mimeType: "image/png", data }],
+							timestamp: 0,
+						},
+					},
+					{
+						type: "custom_message",
+						customType: "attachment",
+						content: [
+							{ type: "image", mimeType: "image/jpeg", data },
+							{ type: "text", text: "caption" },
+						],
+					},
+				]),
 		},
 	} as any;
 	const breakdown = collectContextBreakdown(ctx, []);
 	const result = breakdown.items.toolResults[0].content;
 	assert.doesNotMatch(result, /A{100}/, "the base64 payload is not kept in the leaf");
 	assert.match(result, /\[image image\/png, 1\.0 MB\]/);
-	const attachment = breakdown.items.contextFiles.find((item) => item.label === "Custom: attachment")!;
+	const attachment = breakdown.items.contextFiles.find(
+		(item) => item.label === "Custom: attachment",
+	)!;
 	assert.match(attachment.content, /\[image image\/jpeg, 1\.0 MB\]/);
 	assert.match(attachment.content, /caption/, "text blocks next to an image are untouched");
 	const previews = breakdown.previews.toolResults() + breakdown.previews.contextFiles();

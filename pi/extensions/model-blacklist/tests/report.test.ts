@@ -21,11 +21,18 @@ test("global patterns target every stored provider, configured ones first", () =
 test("an unreadable store claims nothing", () => {
 	const rules = compileRules({ providers: { alpha: ["drop"] }, global: ["*-preview"] });
 
-	assert.deepEqual(describeApplication(rules, undefined), { known: false, applied: [], missing: [] });
+	assert.deepEqual(describeApplication(rules, undefined), {
+		known: false,
+		applied: [],
+		missing: [],
+	});
 });
 
 test("the report lists patterns, unknown providers, and the empty configuration", () => {
-	const rules = compileRules({ providers: { alpha: ["drop"], ghost: ["x"] }, global: ["*-preview"] });
+	const rules = compileRules({
+		providers: { alpha: ["drop"], ghost: ["x"] },
+		global: ["*-preview"],
+	});
 	const lines = formatReport(rules, describeApplication(rules, ["alpha"]));
 
 	assert.deepEqual(lines, [
@@ -53,5 +60,7 @@ test("an empty configuration says so instead of an unknown-store line", () => {
 		"Model blacklist: 0 pattern(s)",
 		"No providers configured; no models are hidden",
 	]);
-	assert.deepEqual(formatReport(rules, describeApplication(rules, undefined)), ["Model blacklist: 0 pattern(s)"]);
+	assert.deepEqual(formatReport(rules, describeApplication(rules, undefined)), [
+		"Model blacklist: 0 pattern(s)",
+	]);
 });

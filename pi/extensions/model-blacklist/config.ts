@@ -22,7 +22,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * malformed container discards the whole array so a typo cannot hide nothing
  * while looking configured.
  */
-function readPatterns(value: unknown, where: string, report: (detail: string) => void): string[] | undefined {
+function readPatterns(
+	value: unknown,
+	where: string,
+	report: (detail: string) => void,
+): string[] | undefined {
 	if (value === undefined) return [];
 	if (!Array.isArray(value)) {
 		report(`"${where}" must be an array of model-id patterns; ignored`);
@@ -73,7 +77,9 @@ export function readBlacklistConfig(
 		raw = readFileSync(path, "utf8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			const reason = (error as NodeJS.ErrnoException).code ?? (error instanceof Error ? error.message : "cannot read");
+			const reason =
+				(error as NodeJS.ErrnoException).code ??
+				(error instanceof Error ? error.message : "cannot read");
 			report(`${reason}; no models are hidden`);
 		}
 		return EMPTY_CONFIG;

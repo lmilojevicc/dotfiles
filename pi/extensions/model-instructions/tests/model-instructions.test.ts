@@ -4,7 +4,12 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import modelInstructionsExtension, { instructionsFor, PROMPT_SECTION, parseConfig, resolveDefaultConfigPath } from "../index.ts";
+import modelInstructionsExtension, {
+	instructionsFor,
+	PROMPT_SECTION,
+	parseConfig,
+	resolveDefaultConfigPath,
+} from "../index.ts";
 
 // Tests set this override themselves; ignore one exported by the developer's shell.
 delete process.env.PI_MODEL_INSTRUCTIONS_CONFIG;
@@ -17,20 +22,33 @@ function runtime(t: test.TestContext) {
 	const path = join(dir, "instructions.json");
 	const handlers = new Map<string, Handler>();
 	const notifications: Array<{ message: string; level: string }> = [];
-	modelInstructionsExtension({
-		on: (name: string, handler: Handler) => handlers.set(name, handler),
-	} as any, pathToFileURL(path));
+	modelInstructionsExtension(
+		{
+			on: (name: string, handler: Handler) => handlers.set(name, handler),
+		} as any,
+		pathToFileURL(path),
+	);
 	const ctx = {
-		model: { provider: "openai-codex", id: "gpt-6-astra" } as { provider: string; id: string } | undefined,
+		model: { provider: "openai-codex", id: "gpt-6-astra" } as
+			| { provider: string; id: string }
+			| undefined,
 		hasUI: true,
 		mode: "rpc" as string,
 		ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
 	};
 	return {
-		ctx, handlers, notifications,
-		write(models: Record<string, unknown>) { writeFileSync(path, JSON.stringify({ models })); },
-		raw(text: string) { writeFileSync(path, text); },
-		remove() { unlinkSync(path); },
+		ctx,
+		handlers,
+		notifications,
+		write(models: Record<string, unknown>) {
+			writeFileSync(path, JSON.stringify({ models }));
+		},
+		raw(text: string) {
+			writeFileSync(path, text);
+		},
+		remove() {
+			unlinkSync(path);
+		},
 		/** One run: Pi starts from fresh base options, so only this run's mutation is observed. */
 		before(sections: Record<string, string> = {}) {
 			const options = { sections, systemPrompt: "Shared baseline\nEarlier extension instructions" };
@@ -45,13 +63,19 @@ function runtime(t: test.TestContext) {
 }
 
 test("exact model matching, provider override, and explicit empty override", () => {
-	const config = parseConfig({ models: {
-		"gpt-6-astra": [" Base rule "],
-		"openai-codex/gpt-6-astra": ["Specific rule"],
-		"disabled/gpt-6-astra": [],
-	} });
-	assert.deepEqual(instructionsFor(config, { provider: "openai", id: "gpt-6-astra" }), ["Base rule"]);
-	assert.deepEqual(instructionsFor(config, { provider: "openai-codex", id: "gpt-6-astra" }), ["Specific rule"]);
+	const config = parseConfig({
+		models: {
+			"gpt-6-astra": [" Base rule "],
+			"openai-codex/gpt-6-astra": ["Specific rule"],
+			"disabled/gpt-6-astra": [],
+		},
+	});
+	assert.deepEqual(instructionsFor(config, { provider: "openai", id: "gpt-6-astra" }), [
+		"Base rule",
+	]);
+	assert.deepEqual(instructionsFor(config, { provider: "openai-codex", id: "gpt-6-astra" }), [
+		"Specific rule",
+	]);
 	assert.deepEqual(instructionsFor(config, { provider: "disabled", id: "gpt-6-astra" }), []);
 	for (const id of ["gpt-6-astra-mini", "GPT-6-ASTRA", "gpt-6", "constructor", "toString"]) {
 		assert.deepEqual(instructionsFor(config, { provider: "openai", id }), []);
@@ -59,20 +83,42 @@ test("exact model matching, provider override, and explicit empty override", () 
 });
 
 test("supports namespaced model IDs and prototype-like keys as ordinary data", () => {
-	const config = parseConfig(JSON.parse('{"models":{"vendor/model":["General"],"router/vendor/model":["Specific"],"__proto__":["Plain data"]}}'));
-	assert.deepEqual(instructionsFor(config, { provider: "router", id: "vendor/model" }), ["Specific"]);
-	assert.deepEqual(instructionsFor(config, { provider: "different", id: "vendor/model" }), ["General"]);
-	assert.deepEqual(instructionsFor(config, { provider: "different", id: "__proto__" }), ["Plain data"]);
+	const config = parseConfig(
+		JSON.parse(
+			'{"models":{"vendor/model":["General"],"router/vendor/model":["Specific"],"__proto__":["Plain data"]}}',
+		),
+	);
+	assert.deepEqual(instructionsFor(config, { provider: "router", id: "vendor/model" }), [
+		"Specific",
+	]);
+	assert.deepEqual(instructionsFor(config, { provider: "different", id: "vendor/model" }), [
+		"General",
+	]);
+	assert.deepEqual(instructionsFor(config, { provider: "different", id: "__proto__" }), [
+		"Plain data",
+	]);
 });
 
 test("rejects malformed schema rather than partially applying rules", () => {
 	for (const value of [
-		null, [], "text", {}, { models: [] }, { models: null }, { models: {}, typo: true },
-		{ models: { "": [] } }, { models: { " model": [] } }, { models: { "model ": [] } },
-		{ models: { model: "text" } }, { models: { model: [null] } },
-		{ models: { model: [1] } }, { models: { model: [""] } }, { models: { model: [" "] } },
+		null,
+		[],
+		"text",
+		{},
+		{ models: [] },
+		{ models: null },
+		{ models: {}, typo: true },
+		{ models: { "": [] } },
+		{ models: { " model": [] } },
+		{ models: { "model ": [] } },
+		{ models: { model: "text" } },
+		{ models: { model: [null] } },
+		{ models: { model: [1] } },
+		{ models: { model: [""] } },
+		{ models: { model: [" "] } },
 		{ models: { valid: ["Rule"], invalid: false } },
-	]) assert.throws(() => parseConfig(value));
+	])
+		assert.throws(() => parseConfig(value));
 	assert.equal(parseConfig({ models: {} }).size, 0);
 	assert.deepEqual(parseConfig({ models: { model: [] } }).get("model"), []);
 });
@@ -81,7 +127,8 @@ test("sets its own prompt section quietly without registering tools or persisten
 	const r = runtime(t);
 	assert.deepEqual([...r.handlers.keys()], ["before_agent_start"]);
 	r.write({ "gpt-6-astra": ["First rule", "Second rule\nwith another line"] });
-	const expected = "## Model-specific instructions\n\n- First rule\n- Second rule\nwith another line";
+	const expected =
+		"## Model-specific instructions\n\n- First rule\n- Second rule\nwith another line";
 	assert.equal(r.before(), expected);
 	assert.equal(r.before(), expected, "a new run receives the same base, not accumulated rules");
 	assert.deepEqual(r.notifications, []);
@@ -110,7 +157,11 @@ test("deletes a stale section when the active model has no instructions", (t) =>
 	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined);
 	r.ctx.model = { provider: "openai-codex", id: "gpt-6-astra" };
 	r.write({ "gpt-6-astra": [] });
-	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined, "an explicit empty entry removes the section");
+	assert.equal(
+		r.before({ [PROMPT_SECTION]: "stale rules" }),
+		undefined,
+		"an explicit empty entry removes the section",
+	);
 });
 
 test("config edits, empty entries, and deletions take effect on the next run", (t) => {
@@ -125,7 +176,11 @@ test("config edits, empty entries, and deletions take effect on the next run", (
 	assert.equal(r.before(), undefined);
 	r.write({ "gpt-6-astra": ["Restored rule"] });
 	r.remove();
-	assert.equal(r.before({ [PROMPT_SECTION]: "stale rules" }), undefined, "a removed config clears the section too");
+	assert.equal(
+		r.before({ [PROMPT_SECTION]: "stale rules" }),
+		undefined,
+		"a removed config clears the section too",
+	);
 	assert.deepEqual(r.notifications, []);
 });
 
@@ -176,9 +231,17 @@ test("warnings reach a non-terminal host on stderr, a TUI through notify only, a
 
 test("bundled Astra rules target UI copy without removing essential information", () => {
 	// The shipped config now lives at the unified dotfiles pi/ root.
-	const config = parseConfig(JSON.parse(readFileSync(new URL("../../../model-instructions.json", import.meta.url), "utf8")));
+	const config = parseConfig(
+		JSON.parse(readFileSync(new URL("../../../model-instructions.json", import.meta.url), "utf8")),
+	);
 	const rules = instructionsFor(config, { provider: "openai-codex", id: "gpt-6-astra" }).join("\n");
-	for (const text of ["UI/TUI", "redundant subtitles", "validation errors", "accessible names", "explicitly requested"]) {
+	for (const text of [
+		"UI/TUI",
+		"redundant subtitles",
+		"validation errors",
+		"accessible names",
+		"explicitly requested",
+	]) {
 		assert.ok(rules.includes(text), text);
 	}
 	assert.deepEqual(instructionsFor(config, { provider: "anthropic", id: "claude-sonnet-4-6" }), []);
@@ -193,10 +256,26 @@ test("default config path: env override, unified agent-dir location, legacy fall
 	const unifiedAgentDir = join(root, "agent");
 	mkdirSync(unifiedAgentDir);
 	writeFileSync(join(unifiedAgentDir, "model-instructions.json"), "{}");
-	assert.equal(resolveDefaultConfigPath(undefined, unifiedAgentDir, legacy), join(unifiedAgentDir, "model-instructions.json"), "unified location wins when present");
-	assert.equal(resolveDefaultConfigPath(undefined, emptyAgentDir, legacy), legacy, "legacy fallback without a unified file");
-	assert.equal(resolveDefaultConfigPath(join(root, "custom.json"), unifiedAgentDir, legacy), join(root, "custom.json"), "env override always wins");
-	assert.deepEqual(resolveDefaultConfigPath("~/rules.json", emptyAgentDir, legacy), resolve(homedir(), "rules.json"), "env home path expands");
+	assert.equal(
+		resolveDefaultConfigPath(undefined, unifiedAgentDir, legacy),
+		join(unifiedAgentDir, "model-instructions.json"),
+		"unified location wins when present",
+	);
+	assert.equal(
+		resolveDefaultConfigPath(undefined, emptyAgentDir, legacy),
+		legacy,
+		"legacy fallback without a unified file",
+	);
+	assert.equal(
+		resolveDefaultConfigPath(join(root, "custom.json"), unifiedAgentDir, legacy),
+		join(root, "custom.json"),
+		"env override always wins",
+	);
+	assert.deepEqual(
+		resolveDefaultConfigPath("~/rules.json", emptyAgentDir, legacy),
+		resolve(homedir(), "rules.json"),
+		"env home path expands",
+	);
 });
 
 test("string configPath behaves like the URL variant and failure messages report it verbatim", (t) => {
@@ -206,11 +285,23 @@ test("string configPath behaves like the URL variant and failure messages report
 	writeFileSync(path, "not json");
 	const handlers = new Map<string, Handler>();
 	const notifications: Array<{ message: string; level: string }> = [];
-	modelInstructionsExtension({ on: (name: string, handler: Handler) => handlers.set(name, handler) } as any, path);
+	modelInstructionsExtension(
+		{ on: (name: string, handler: Handler) => handlers.set(name, handler) } as any,
+		path,
+	);
 	const before = handlers.get("before_agent_start")!;
-	before({ systemPromptOptions: { sections: {} } }, {
-		model: undefined as any, hasUI: true, mode: "rpc",
-		ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
-	});
-	assert.match(notifications[0].message, new RegExp(`^Model instructions skipped \\(${path}\\): `), "string paths are reported as-is");
+	before(
+		{ systemPromptOptions: { sections: {} } },
+		{
+			model: undefined as any,
+			hasUI: true,
+			mode: "rpc",
+			ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+		},
+	);
+	assert.match(
+		notifications[0].message,
+		new RegExp(`^Model instructions skipped \\(${path}\\): `),
+		"string paths are reported as-is",
+	);
 });

@@ -23,7 +23,11 @@ const PERCENT_FIELDS = ["percent", "used_percent", "usedPercent", "usage_percent
 const RESET_FIELDS = ["resetsAt", "resets_at", "reset_at", "resetAt"] as const;
 const DISPLAYED_STATUSES = new Set(["ok", "rate-limited"]);
 
-function firstValue<T>(raw: Record<string, unknown>, fields: readonly string[], parse: (value: unknown) => T | undefined): T | undefined {
+function firstValue<T>(
+	raw: Record<string, unknown>,
+	fields: readonly string[],
+	parse: (value: unknown) => T | undefined,
+): T | undefined {
 	for (const field of fields) {
 		const value = parse(raw[field]);
 		if (value !== undefined) return value;
@@ -32,7 +36,10 @@ function firstValue<T>(raw: Record<string, unknown>, fields: readonly string[], 
 }
 
 /** Always yields the three plan windows; unknown shapes degrade to `?%` plus a note, never a throw. */
-export function parseOpencodeGoPayload(payload: unknown, observedAt = Date.now() / 1000): ProviderSnapshot {
+export function parseOpencodeGoPayload(
+	payload: unknown,
+	observedAt = Date.now() / 1000,
+): ProviderSnapshot {
 	const root = isRecord(payload) ? (isRecord(payload.usage) ? payload.usage : payload) : {};
 	const notes: string[] = [];
 	const windows: UsageWindow[] = WINDOWS.map(({ key, label }) => {
@@ -41,9 +48,14 @@ export function parseOpencodeGoPayload(payload: unknown, observedAt = Date.now()
 		const usedPercent = firstValue(raw, PERCENT_FIELDS, numberValue);
 		const resetsAt = firstValue(raw, RESET_FIELDS, epochSeconds);
 		const status = displayText(raw.status, 32);
-		const note = status && !DISPLAYED_STATUSES.has(status) ? `status: ${status}`
-			: status === "rate-limited" ? "rate-limited"
-			: usedPercent === undefined ? "unrecognized fields" : undefined;
+		const note =
+			status && !DISPLAYED_STATUSES.has(status)
+				? `status: ${status}`
+				: status === "rate-limited"
+					? "rate-limited"
+					: usedPercent === undefined
+						? "unrecognized fields"
+						: undefined;
 		return {
 			label,
 			...(usedPercent !== undefined ? { usedPercent } : {}),
@@ -51,7 +63,8 @@ export function parseOpencodeGoPayload(payload: unknown, observedAt = Date.now()
 			...(note ? { note } : {}),
 		};
 	});
-	if (windows.every((window) => window.usedPercent === undefined)) notes.push("OpenCode Go returned no recognizable usage percentages.");
+	if (windows.every((window) => window.usedPercent === undefined))
+		notes.push("OpenCode Go returned no recognizable usage percentages.");
 	return {
 		providerId: PROVIDER_ID,
 		title: "OpenCode Go",
@@ -79,12 +92,20 @@ export const opencodeGoAdapter: ProviderAdapter = {
 	async fetch(ctx, signal) {
 		const auth = await requireProviderAuth(ctx, PROVIDER_ID);
 		// The key is only ever sent to the official origin.
-		if (!isOfficialOrigin(auth.baseUrl)) throw new ProviderStateError("setup", "OpenCode Go usage requires the official https://opencode.ai origin.");
-		const payload = await fetchBoundedJson(USAGE_URL, {
-			method: "GET",
-			headers: { accept: "application/json", authorization: `Bearer ${auth.apiKey}` },
-			signal,
-		}, { fetch: ctx.fetch, label: "OpenCode Go" });
+		if (!isOfficialOrigin(auth.baseUrl))
+			throw new ProviderStateError(
+				"setup",
+				"OpenCode Go usage requires the official https://opencode.ai origin.",
+			);
+		const payload = await fetchBoundedJson(
+			USAGE_URL,
+			{
+				method: "GET",
+				headers: { accept: "application/json", authorization: `Bearer ${auth.apiKey}` },
+				signal,
+			},
+			{ fetch: ctx.fetch, label: "OpenCode Go" },
+		);
 		return parseOpencodeGoPayload(payload);
 	},
 };

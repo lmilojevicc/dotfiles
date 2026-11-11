@@ -14,13 +14,13 @@ The boundary stays last, after the single policy block, in ordinary/fanout, repl
 
 **Extension-local `config.json` is the only supplemental source manifest.** One loader treats ordinary Markdown policy files and `SKILL.md` identically. Optional keys:
 
-| Key | Applies to | Value |
-| --- | --- | --- |
-| `common` (alias `all`) | Every session | Ordered file-path array |
-| `child` | Every subagent, including generic BB-only workers | Ordered file-path array |
-| `main` (alias `orchestrator`) | Main/root sessions on ordinary hosts | Ordered file-path array |
-| `mainBb` | Main/root sessions in a BB-origin host (nonblank `BB_THREAD_ID`) | Ordered file-path array |
-| `agents` | Exact native child names | Object of name → ordered file-path array |
+| Key                           | Applies to                                                       | Value                                    |
+| ----------------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
+| `common` (alias `all`)        | Every session                                                    | Ordered file-path array                  |
+| `child`                       | Every subagent, including generic BB-only workers                | Ordered file-path array                  |
+| `main` (alias `orchestrator`) | Main/root sessions on ordinary hosts                             | Ordered file-path array                  |
+| `mainBb`                      | Main/root sessions in a BB-origin host (nonblank `BB_THREAD_ID`) | Ordered file-path array                  |
+| `agents`                      | Exact native child names                                         | Object of name → ordered file-path array |
 
 `common`, `main` and `mainBb` are canonical. `main`/`mainBb` are alternatives, not
 layers: a BB root composes `common → mainBb`, an ordinary root composes
@@ -36,14 +36,14 @@ Initial checked-in configuration:
 
 ```json
 {
-  "common": [],
-  "child": [],
-  "main": ["./prompts/main.md"],
-  "mainBb": ["./prompts/main-bb.md"],
-  "agents": {
-    "worker": ["~/.agents/skills/chadineer/SKILL.md"],
-    "reviewer": ["~/.agents/skills/chadineer/SKILL.md"]
-  }
+	"common": [],
+	"child": [],
+	"main": ["./prompts/main.md"],
+	"mainBb": ["./prompts/main-bb.md"],
+	"agents": {
+		"worker": ["~/.agents/skills/chadineer/SKILL.md"],
+		"reviewer": ["~/.agents/skills/chadineer/SKILL.md"]
+	}
 }
 ```
 
@@ -53,12 +53,12 @@ For example, aliases and arbitrary exact names can use ordinary policy and skill
 
 ```json
 {
-  "all": ["./policies/shared.md"],
-  "child": ["./policies/child.md"],
-  "orchestrator": ["./prompts/main.md"],
-  "agents": {
-    "security-reviewer": ["./skills/my-security-review/SKILL.md", "/absolute/path/to/checklist.md"]
-  }
+	"all": ["./policies/shared.md"],
+	"child": ["./policies/child.md"],
+	"orchestrator": ["./prompts/main.md"],
+	"agents": {
+		"security-reviewer": ["./skills/my-security-review/SKILL.md", "/absolute/path/to/checklist.md"]
+	}
 }
 ```
 

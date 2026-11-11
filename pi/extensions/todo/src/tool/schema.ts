@@ -17,7 +17,9 @@ const NullableDescription = Type.Union([Description, Type.Null()]);
 const NullableActiveForm = Type.Union([ActiveForm, Type.Null()]);
 const NullableOwner = Type.Union([Owner, Type.Null()]);
 const Metadata = Type.Record(Type.String(), Type.Unknown(), { maxProperties: MAX_METADATA_KEYS });
-const NullableMetadata = Type.Record(Type.String(), Type.Union([Type.Unknown(), Type.Null()]), { maxProperties: MAX_METADATA_KEYS });
+const NullableMetadata = Type.Record(Type.String(), Type.Union([Type.Unknown(), Type.Null()]), {
+	maxProperties: MAX_METADATA_KEYS,
+});
 const BatchTarget = Type.Union([
 	Id,
 	Type.Object({ ref: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
@@ -60,7 +62,13 @@ const BatchDelete = Type.Object(
 export const TodoRuntimeParameters = Type.Object(
 	{
 		action: StringEnum(["create", "update", "batch", "list", "get", "delete", "clear"] as const),
-		expectedRevision: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Mutations only; must match current revision" })),
+		expectedRevision: Type.Optional(
+			Type.Integer({
+				minimum: 0,
+				maximum: Number.MAX_SAFE_INTEGER,
+				description: "Mutations only; must match current revision",
+			}),
+		),
 		id: Type.Optional(Id),
 		subject: Type.Optional(Subject),
 		description: Type.Optional(NullableDescription),
@@ -72,7 +80,12 @@ export const TodoRuntimeParameters = Type.Object(
 		owner: Type.Optional(NullableOwner),
 		metadata: Type.Optional(NullableMetadata),
 		includeDeleted: Type.Optional(Type.Boolean()),
-		operations: Type.Optional(Type.Array(Type.Union([BatchCreate, BatchUpdate, BatchDelete]), { minItems: 1, maxItems: 50 })),
+		operations: Type.Optional(
+			Type.Array(Type.Union([BatchCreate, BatchUpdate, BatchDelete]), {
+				minItems: 1,
+				maxItems: 50,
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -82,10 +95,19 @@ export const TodoParameters = Type.Object(
 		...TodoRuntimeParameters.properties,
 		// Typed optional batch fields would change Pi's null/coercion behavior
 		// before the original strict schema can validate them in execute().
-		operations: Type.Optional(Type.Array(Type.Object({}, {
-			additionalProperties: true,
-			description: 'Batch shapes (? = optional): {op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}; {op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}; {op:"delete",target}. Task fields follow top-level types/limits; create strings cannot be null. ref is a nonempty string. target and dependency array entries are IDs or {ref:"name"} naming preceding creates. No other fields.',
-		}), { minItems: 1, maxItems: 50 })),
+		operations: Type.Optional(
+			Type.Array(
+				Type.Object(
+					{},
+					{
+						additionalProperties: true,
+						description:
+							'Batch shapes (? = optional): {op:"create",subject,ref?,description?,activeForm?,blockedBy?,owner?,metadata?}; {op:"update",target,subject?,description?,activeForm?,status?,addBlockedBy?,removeBlockedBy?,owner?,metadata?}; {op:"delete",target}. Task fields follow top-level types/limits; create strings cannot be null. ref is a nonempty string. target and dependency array entries are IDs or {ref:"name"} naming preceding creates. No other fields.',
+					},
+				),
+				{ minItems: 1, maxItems: 50 },
+			),
+		),
 	},
 	{ additionalProperties: false },
 );

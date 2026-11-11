@@ -21,9 +21,14 @@ async function loadIndex() {
 	return jiti.import(fileURLToPath(new URL("../index.ts", import.meta.url)));
 }
 
-function harness(module: Awaited<ReturnType<typeof loadIndex>>, env: Record<string, string | undefined>) {
+function harness(
+	module: Awaited<ReturnType<typeof loadIndex>>,
+	env: Record<string, string | undefined>,
+) {
 	const handlers = new Map<string, (...args: any[]) => void>();
-	const pi = { on: (event: string, handler: (...args: any[]) => void) => handlers.set(event, handler) };
+	const pi = {
+		on: (event: string, handler: (...args: any[]) => void) => handlers.set(event, handler),
+	};
 	const stdin = new EventEmitter();
 	const writes: string[] = [];
 	let nextTimer = 0;
@@ -74,8 +79,14 @@ function harness(module: Awaited<ReturnType<typeof loadIndex>>, env: Record<stri
 
 test("platform selection gives Herdr precedence and requires TUI mode", async () => {
 	const { selectPlatform } = await loadIndex();
-	assert.equal(selectPlatform({ mode: "tui", hasUI: true }, { HERDR_ENV: "1", TMUX: "yes" }), "herdr");
-	assert.equal(selectPlatform({ mode: "rpc", hasUI: true }, { HERDR_ENV: "1", TMUX: "yes" }), undefined);
+	assert.equal(
+		selectPlatform({ mode: "tui", hasUI: true }, { HERDR_ENV: "1", TMUX: "yes" }),
+		"herdr",
+	);
+	assert.equal(
+		selectPlatform({ mode: "rpc", hasUI: true }, { HERDR_ENV: "1", TMUX: "yes" }),
+		undefined,
+	);
 	assert.equal(selectPlatform({ mode: "tui", hasUI: true }, { TMUX: "yes" }), "tmux");
 	assert.equal(selectPlatform({ mode: "rpc", hasUI: true }, { TMUX: "yes" }), undefined);
 	assert.equal(selectPlatform({ mode: "tui", hasUI: false }, { TMUX: "yes" }), undefined);
@@ -112,7 +123,15 @@ test("injected lifecycle switches authority, cancels timers, and never writes to
 
 test("the fallback editor keeps Pi's default editor options", async () => {
 	const { createPiDefaultEditor } = await loadIndex();
-	const editor = createPiDefaultEditor({ requestRender() {} } as never, { borderColor: (text: string) => text } as never, {} as never);
-	assert.equal(editor.embedWorkingStatus, true, "the Working indicator stays inside the editor's top border");
+	const editor = createPiDefaultEditor(
+		{ requestRender() {} } as never,
+		{ borderColor: (text: string) => text } as never,
+		{} as never,
+	);
+	assert.equal(
+		editor.embedWorkingStatus,
+		true,
+		"the Working indicator stays inside the editor's top border",
+	);
 	assert.equal(typeof editor.setWorkingStatusIndicator, "function");
 });

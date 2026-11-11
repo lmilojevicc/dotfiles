@@ -23,9 +23,16 @@ const canonical = {
 		secondary_window: { used_percent: 40, window_minutes: 10_080, reset_at: secondaryReset },
 	},
 	additional_rate_limits: [
-		{ metered_feature: "review", limit_name: "Code review", rate_limit: { primary: { used_percent: 10, window_minutes: 60 } } },
+		{
+			metered_feature: "review",
+			limit_name: "Code review",
+			rate_limit: { primary: { used_percent: 10, window_minutes: 60 } },
+		},
 	],
-	rate_limit_reset_credits: { available_count: "2", credits: [{ id: "credit-1", status: "available", expires_at: "2030-01-01T00:00:00Z" }, null] },
+	rate_limit_reset_credits: {
+		available_count: "2",
+		credits: [{ id: "credit-1", status: "available", expires_at: "2030-01-01T00:00:00Z" }, null],
+	},
 };
 
 test("parses the canonical codex quota payload", () => {
@@ -49,10 +56,13 @@ test("codex snapshot is one row per limit with used percentages, window labels a
 	assert.equal(snapshot.subtitle, "plus");
 	assert.equal(snapshot.observedAt, 1234);
 	assert.deepEqual(snapshot.rows, [
-		{ label: "codex", windows: [
-			{ label: "5h", usedPercent: 25, resetsAt: primaryReset },
-			{ label: "weekly", usedPercent: 40, resetsAt: secondaryReset },
-		] },
+		{
+			label: "codex",
+			windows: [
+				{ label: "5h", usedPercent: 25, resetsAt: primaryReset },
+				{ label: "weekly", usedPercent: 40, resetsAt: secondaryReset },
+			],
+		},
 		{ label: "Code review", windows: [{ label: "1h", usedPercent: 10 }] },
 	]);
 	assert.doesNotMatch(JSON.stringify(snapshot), /credit/i);
@@ -68,11 +78,16 @@ test("numeric parsing is strict and disagreeing durations become unknown", () =>
 	assert.equal(usage.limits[0]?.primary?.usedPercent, undefined);
 	assert.equal(usage.limits[0]?.secondary?.windowMinutes, undefined);
 	const rows = codexSnapshot(usage).rows;
-	assert.deepEqual(rows[0]?.windows.map((window) => window.label), ["5h", "secondary"]);
+	assert.deepEqual(
+		rows[0]?.windows.map((window) => window.label),
+		["5h", "secondary"],
+	);
 });
 
 test("a lone weekly window normalizes into the secondary slot", () => {
-	const usage = parseCodexUsagePayload({ rate_limit: { primary_window: { used_percent: 70, window_minutes: 10_080 } } });
+	const usage = parseCodexUsagePayload({
+		rate_limit: { primary_window: { used_percent: 70, window_minutes: 10_080 } },
+	});
 	assert.equal(usage.limits[0]?.primary, undefined);
 	assert.equal(usage.limits[0]?.secondary?.usedPercent, 70);
 	assert.deepEqual(codexSnapshot(usage).rows[0]?.windows, [{ label: "weekly", usedPercent: 70 }]);
@@ -88,8 +103,15 @@ test("provider text (plan_type, limit_name, metered_feature) is sanitized to one
 	const usage = parseCodexUsagePayload({
 		plan_type: "plus\n\x1b[2Jpwned",
 		additional_rate_limits: [
-			{ metered_feature: "rev\x1b]0;title\x07iew", rate_limit: { primary: { used_percent: 10, window_minutes: 60 } } },
-			{ metered_feature: "x", limit_name: "Code\r\nreview\u009b", rate_limit: { primary: { used_percent: 20, window_minutes: 60 } } },
+			{
+				metered_feature: "rev\x1b]0;title\x07iew",
+				rate_limit: { primary: { used_percent: 10, window_minutes: 60 } },
+			},
+			{
+				metered_feature: "x",
+				limit_name: "Code\r\nreview\u009b",
+				rate_limit: { primary: { used_percent: 20, window_minutes: 60 } },
+			},
 		],
 	});
 	assert.equal(usage.planType, "plus [2Jpwned");
@@ -97,10 +119,22 @@ test("provider text (plan_type, limit_name, metered_feature) is sanitized to one
 	assert.equal(usage.limits[2]?.limitName, "Code review");
 	const snapshot = codexSnapshot(usage, 0);
 	for (const width of widths) {
-		const lines = formatFrame(theme, { titles: ["Codex"], active: 0, body: formatProviderLines(theme, "Codex", { snapshot, loading: false }, width, 0) }, width);
+		const lines = formatFrame(
+			theme,
+			{
+				titles: ["Codex"],
+				active: 0,
+				body: formatProviderLines(theme, "Codex", { snapshot, loading: false }, width, 0),
+			},
+			width,
+		);
 		for (const line of lines) {
 			const unstyled = line.replace(/\x1b\[[0-9;]*m/g, "");
-			assert.doesNotMatch(unstyled, /[\u0000-\u001f\u007f-\u009f]/, "no control characters beyond theme styling");
+			assert.doesNotMatch(
+				unstyled,
+				/[\u0000-\u001f\u007f-\u009f]/,
+				"no control characters beyond theme styling",
+			);
 			assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
 		}
 	}
@@ -124,7 +158,10 @@ test("codex adapter sends the codex-enhanced headers to /wham/usage", async () =
 	const ctx = adapterContext({
 		fetch,
 		hasProviderCredentials: (id) => id === "openai-codex",
-		getProviderAuth: async (id) => id === "openai-codex" ? { apiKey: token, baseUrl: "https://chatgpt.com/backend-api" } : undefined,
+		getProviderAuth: async (id) =>
+			id === "openai-codex"
+				? { apiKey: token, baseUrl: "https://chatgpt.com/backend-api" }
+				: undefined,
 	});
 	assert.equal(await openaiCodexAdapter.hasCredentials(ctx), true);
 	const snapshot = await openaiCodexAdapter.fetch(ctx);
@@ -149,14 +186,25 @@ test("codex adapter refuses unresolved auth, noncanonical endpoints and tokens w
 		{ auth: { apiKey: "opaque-token" }, state: "setup" },
 	] as const;
 	for (const item of cases) {
-		const ctx = adapterContext({ fetch, hasProviderCredentials: () => true, getProviderAuth: async () => item.auth });
-		await assert.rejects(openaiCodexAdapter.fetch(ctx), (error: unknown) => error instanceof ProviderStateError && error.state === item.state);
+		const ctx = adapterContext({
+			fetch,
+			hasProviderCredentials: () => true,
+			getProviderAuth: async () => item.auth,
+		});
+		await assert.rejects(
+			openaiCodexAdapter.fetch(ctx),
+			(error: unknown) => error instanceof ProviderStateError && error.state === item.state,
+		);
 	}
 	assert.equal(requests.length, 0);
 });
 
 test("codex HTTP failures carry a short message without the response body", async () => {
-	const { fetch } = fakeFetch(() => jsonResponse({ detail: "token sk-SECRET" }, 429, "Too Many Requests"));
+	const { fetch } = fakeFetch(() =>
+		jsonResponse({ detail: "token sk-SECRET" }, 429, "Too Many Requests"),
+	);
 	const ctx = adapterContext({ fetch, getProviderAuth: async () => ({ apiKey: jwt("a") }) });
-	await assert.rejects(openaiCodexAdapter.fetch(ctx), { message: "Codex request failed (429 Too Many Requests)" });
+	await assert.rejects(openaiCodexAdapter.fetch(ctx), {
+		message: "Codex request failed (429 Too Many Requests)",
+	});
 });

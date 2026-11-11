@@ -54,13 +54,21 @@ function cancelAndRelease(reader: ReadableStreamDefaultReader<Uint8Array>): void
 	} catch {
 		// Cleanup failures are intentionally opaque.
 	} finally {
-		try { reader.releaseLock(); } catch { /* pending reads release after cancellation */ }
+		try {
+			reader.releaseLock();
+		} catch {
+			/* pending reads release after cancellation */
+		}
 	}
 }
 
 export function cancelBody(body: ReadableStream<Uint8Array> | null): void {
 	if (!body) return;
-	try { void body.cancel().catch(() => undefined); } catch { /* opaque cleanup failure */ }
+	try {
+		void body.cancel().catch(() => undefined);
+	} catch {
+		/* opaque cleanup failure */
+	}
 }
 
 async function readWithSignal(
@@ -71,11 +79,20 @@ async function readWithSignal(
 	return await new Promise((resolve, reject) => {
 		const onAbort = () => reject(signal.reason);
 		signal.addEventListener("abort", onAbort, { once: true });
-		reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+		reader
+			.read()
+			.then(resolve, reject)
+			.finally(() => signal.removeEventListener("abort", onAbort));
 	});
 }
 
-async function readBoundedText(response: Response, signal: AbortSignal, maxBytes: number, truncate: boolean, label: string): Promise<string> {
+async function readBoundedText(
+	response: Response,
+	signal: AbortSignal,
+	maxBytes: number,
+	truncate: boolean,
+	label: string,
+): Promise<string> {
 	if (!response.body) throw new Error(`${label} returned an empty response.`);
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder();
@@ -105,7 +122,12 @@ async function readBoundedText(response: Response, signal: AbortSignal, maxBytes
 	return text;
 }
 
-export async function readBoundedJson(response: Response, signal: AbortSignal, maxBytes = RESPONSE_LIMIT_BYTES, label = "Provider"): Promise<unknown> {
+export async function readBoundedJson(
+	response: Response,
+	signal: AbortSignal,
+	maxBytes = RESPONSE_LIMIT_BYTES,
+	label = "Provider",
+): Promise<unknown> {
 	const text = await readBoundedText(response, signal, maxBytes, false, label);
 	try {
 		return JSON.parse(text) as unknown;
@@ -129,15 +151,23 @@ export async function fetchBoundedJson(
 	const response = await withAbort(fetch(url, { ...options, redirect: "error", signal }), signal);
 	if (!response.ok) {
 		let body = "";
-		try { body = await readBoundedText(response, signal, ERROR_BODY_LIMIT_BYTES, true, label); }
-		catch { cancelBody(response.body); }
+		try {
+			body = await readBoundedText(response, signal, ERROR_BODY_LIMIT_BYTES, true, label);
+		} catch {
+			cancelBody(response.body);
+		}
 		throw new HttpError(label, response.status, response.statusText, body);
 	}
 	return await readBoundedJson(response, signal, dependencies.maxBytes, label);
 }
 
 /** Status code of a GET whose body is discarded; undefined on network failure or timeout. */
-export async function fetchStatus(url: string, fetch: FetchLike, timeoutMs: number, signal?: AbortSignal): Promise<number | undefined> {
+export async function fetchStatus(
+	url: string,
+	fetch: FetchLike,
+	timeoutMs: number,
+	signal?: AbortSignal,
+): Promise<number | undefined> {
 	const combined = requestSignal(signal, timeoutMs);
 	try {
 		const response = await withAbort(fetch(url, { method: "GET", signal: combined }), combined);

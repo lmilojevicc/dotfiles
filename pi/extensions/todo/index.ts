@@ -8,15 +8,25 @@ import { TaskWidget } from "./src/ui/widget.js";
 export default function todoExtension(pi: ExtensionAPI): void {
 	const widget = new TaskWidget();
 	registerTodoTool(pi);
-	const handler = async (_args: string, ctx: Parameters<typeof openTaskManager>[1]) => openTaskManager(pi, ctx, {
-		refresh: () => widget.refresh(),
-		getConfig: () => widget.getConfig(),
-		setConfig: (config) => widget.setConfig(config),
+	const handler = async (_args: string, ctx: Parameters<typeof openTaskManager>[1]) =>
+		openTaskManager(pi, ctx, {
+			refresh: () => widget.refresh(),
+			getConfig: () => widget.getConfig(),
+			setConfig: (config) => widget.setConfig(config),
+		});
+	pi.registerCommand("todo", {
+		description: "Manage todos — view, create, clear completed",
+		handler,
 	});
-	pi.registerCommand("todo", { description: "Manage todos — view, create, clear completed", handler });
 	pi.registerCommand("todo-board", {
 		description: "Inspect todos and confirm deletions in a live board",
-		handler: async (_args, ctx) => openTasksBoard(pi, ctx, () => widget.getConfig(), () => widget.refresh()),
+		handler: async (_args, ctx) =>
+			openTasksBoard(
+				pi,
+				ctx,
+				() => widget.getConfig(),
+				() => widget.refresh(),
+			),
 	});
 	pi.registerShortcut("ctrl+shift+t", {
 		description: "Toggle the todo widget between compact and expanded",

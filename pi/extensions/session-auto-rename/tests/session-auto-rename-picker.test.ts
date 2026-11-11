@@ -40,14 +40,24 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	const configuredId = fullId(entries[18]);
-	writeFileSync(join(agentDir, "session-auto-rename.json"), `${JSON.stringify({ model: configuredId })}\n`);
+	writeFileSync(
+		join(agentDir, "session-auto-rename.json"),
+		`${JSON.stringify({ model: configuredId })}\n`,
+	);
 
 	try {
 		// Pi's extension loader is not an exported subpath, so load it from the package the shared loader resolved.
-		const { createExtensionRuntime, loadExtensions } = await import(piModuleUrl("dist/core/extensions/loader.js"));
+		const { createExtensionRuntime, loadExtensions } = await import(
+			piModuleUrl("dist/core/extensions/loader.js")
+		);
 		const runtime = createExtensionRuntime();
 		const extensionPath = fileURLToPath(new URL("../index.ts", import.meta.url));
-		const loaded = await loadExtensions([extensionPath], dirname(extensionPath), undefined, runtime);
+		const loaded = await loadExtensions(
+			[extensionPath],
+			dirname(extensionPath),
+			undefined,
+			runtime,
+		);
 		assert.deepEqual(loaded.errors, []);
 		const command = loaded.extensions[0]?.commands.get("session-auto-rename");
 		assert.ok(command);
@@ -58,14 +68,19 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		let refreshCalls = 0;
 		const keybindings = {
 			matches(data: string, id: string) {
-				return data === ({
-					"tui.select.up": UP,
-					"tui.select.down": DOWN,
-					"tui.select.pageUp": PAGE_UP,
-					"tui.select.pageDown": PAGE_DOWN,
-					"tui.select.confirm": ENTER,
-					"tui.select.cancel": ESCAPE,
-				} as Record<string, string>)[id];
+				return (
+					data ===
+					(
+						{
+							"tui.select.up": UP,
+							"tui.select.down": DOWN,
+							"tui.select.pageUp": PAGE_UP,
+							"tui.select.pageDown": PAGE_DOWN,
+							"tui.select.confirm": ENTER,
+							"tui.select.cancel": ESCAPE,
+						} as Record<string, string>
+					)[id]
+				);
 			},
 		};
 		const theme = {
@@ -86,10 +101,11 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 				},
 			},
 			ui: {
-				custom: (factory: Function) => new Promise((resolve) => {
-					customCalls += 1;
-					picker = factory({ requestRender() {} }, theme, keybindings, resolve);
-				}),
+				custom: (factory: Function) =>
+					new Promise((resolve) => {
+						customCalls += 1;
+						picker = factory({ requestRender() {} }, theme, keybindings, resolve);
+					}),
 				notify: (message: string) => notifications.push(message),
 			},
 		};
@@ -107,7 +123,10 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		assert.match(plain(picker.render(100).join("\n")), /→ .* \[configured\]/u);
 		picker.handleInput(ESCAPE);
 		await pending;
-		assert.equal(JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model, configuredId);
+		assert.equal(
+			JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model,
+			configuredId,
+		);
 
 		({ pending } = await openPicker());
 		for (let index = 0; index < 16; index += 1) picker.handleInput(DOWN);
@@ -140,7 +159,11 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		picker.handleInput("a");
 		picker.handleInput(END);
 		picker.handleInput("d");
-		assert.equal(picker.getQuery(), "abcd", "Home and End edit the search input instead of navigating the list");
+		assert.equal(
+			picker.getQuery(),
+			"abcd",
+			"Home and End edit the search input instead of navigating the list",
+		);
 		for (let index = 0; index < 4; index += 1) picker.handleInput(BACKSPACE);
 		picker.handleInput("display 19");
 		assert.deepEqual(picker.getFilteredIds(), [fullId(entries[19])]);
@@ -169,11 +192,15 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		picker.handleInput("provider-b/shared");
 		for (const width of [1, 2, 5, 10]) {
 			// Measure terminal cells, not UTF-16 units: the rows use box/arrow glyphs and styled segments.
-			for (const line of picker.render(width)) assert.ok(visibleWidth(line) <= width, `${JSON.stringify(plain(line))} fits ${width}`);
+			for (const line of picker.render(width))
+				assert.ok(visibleWidth(line) <= width, `${JSON.stringify(plain(line))} fits ${width}`);
 		}
 		picker.handleInput(ENTER);
 		await pending;
-		assert.equal(JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model, "provider-b/shared");
+		assert.equal(
+			JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model,
+			"provider-b/shared",
+		);
 		assert.match(notifications.at(-1) ?? "", /first prompt in a new \/new session/u);
 
 		const callsBeforeRpc = customCalls;
@@ -181,9 +208,19 @@ test("searchable picker scrolls, filters, cancels, and preserves model identity"
 		ctx.modelRegistry.getAvailable = () => [];
 		await command.handler("", { ...ctx, mode: "rpc" } as never);
 		assert.equal(customCalls, callsBeforeRpc, "non-TUI mode does not open the custom picker");
-		assert.equal(refreshCalls, refreshesBeforeRpc, "argumentless non-TUI mode does not refresh models");
-		assert.match(notifications.at(-1) ?? "", /explicit model: \/session-auto-rename provider\/model/u);
-		assert.equal(JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model, "provider-b/shared");
+		assert.equal(
+			refreshCalls,
+			refreshesBeforeRpc,
+			"argumentless non-TUI mode does not refresh models",
+		);
+		assert.match(
+			notifications.at(-1) ?? "",
+			/explicit model: \/session-auto-rename provider\/model/u,
+		);
+		assert.equal(
+			JSON.parse(readFileSync(join(agentDir, "session-auto-rename.json"), "utf8")).model,
+			"provider-b/shared",
+		);
 
 		ctx.modelRegistry.getAvailable = () => duplicateModels;
 		await command.handler("provider-a/shared", { ...ctx, mode: "rpc" } as never);

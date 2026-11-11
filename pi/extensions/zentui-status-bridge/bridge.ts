@@ -41,10 +41,7 @@ export function fitStatusText(text: string, maxTextLength: number): string {
 	return `${flat.slice(0, Math.max(0, maxTextLength - 1))}…`;
 }
 
-function probe(
-	events: BridgeEvents,
-	targetKey: string,
-): boolean {
+function probe(events: BridgeEvents, targetKey: string): boolean {
 	const capability = { supported: false, active: false, key: targetKey };
 	try {
 		events.emit(ZENTUI_CAPABILITY_EVENT, capability);
@@ -95,7 +92,9 @@ export function createStatusBridge(options: {
 			}
 
 			const nextText =
-				text === undefined || text.length === 0 ? undefined : fitStatusText(text, config.maxTextLength);
+				text === undefined || text.length === 0
+					? undefined
+					: fitStatusText(text, config.maxTextLength);
 
 			if (previous && previous.targetKey !== targetKey) {
 				publish(options.events, previous.targetKey, undefined);

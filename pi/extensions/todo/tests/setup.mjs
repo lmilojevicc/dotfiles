@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 
 registerHooks({
 	resolve(specifier, context, nextResolve) {
-		if (specifier.startsWith(".") && specifier.endsWith(".js") && context.parentURL?.startsWith("file:")) {
+		if (
+			specifier.startsWith(".") &&
+			specifier.endsWith(".js") &&
+			context.parentURL?.startsWith("file:")
+		) {
 			const candidate = new URL(specifier.replace(/\.js$/, ".ts"), context.parentURL);
 			if (existsSync(fileURLToPath(candidate))) return { url: candidate.href, shortCircuit: true };
 		}

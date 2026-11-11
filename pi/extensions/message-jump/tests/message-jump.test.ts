@@ -2,18 +2,28 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { InteractiveMode, VERSION } from "@earendil-works/pi-coding-agent";
-import { Container, Text, ScrollView, VStack, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Container,
+	Text,
+	ScrollView,
+	VStack,
+	KeybindingsManager,
+	TUI_KEYBINDINGS,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import extension from "../index.ts";
 import { installBridge } from "../bridge.ts";
 import { collectMessages, filterMessages } from "../messages.ts";
 import { MessagePicker } from "../picker.ts";
 
-const entry = (id: string, content: any = "same") => ({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
+const entry = (id: string, content: any = "same") =>
+	({ type: "message", id, message: { role: "user", content, timestamp: 100 } }) as any;
 const theme = { fg: (_: string, s: string) => s, bold: (s: string) => s } as any;
 // Pi draws its soft cursor as zero-width APC markers around the character under the caret
 // (pi-tui dist/tui.js FAKE_CURSOR_START/FAKE_CURSOR_END, emitted by components/input.js:406-408),
 // which stripVTControlCharacters leaves in the line and so splits the text under the caret.
-const plain = (line: string): string => stripVTControlCharacters(line).replace(/\x1b_pi:[^\x07]*\x07/g, "");
+const plain = (line: string): string =>
+	stripVTControlCharacters(line).replace(/\x1b_pi:[^\x07]*\x07/g, "");
 function host(mode = "fullscreen", version = VERSION, componentCount = 7) {
 	const instance = new InteractiveMode() as any;
 	instance.version = version;
@@ -21,26 +31,63 @@ function host(mode = "fullscreen", version = VERSION, componentCount = 7) {
 	instance.documentContainer = new Container();
 	instance.documentContainer.addChild(new Text("header\nsecond", 0, 0));
 	instance.documentContainer.addChild(instance.chatContainer);
-	instance.transcriptScrollView = new ScrollView(instance.documentContainer, { follow: "end", scrollbar: "always" });
+	instance.transcriptScrollView = new ScrollView(instance.documentContainer, {
+		follow: "end",
+		scrollbar: "always",
+	});
 	instance.fullscreenLayoutRoot = new VStack([instance.transcriptScrollView, new Container()]);
-	instance.renderer = { mode, terminal: { columns: 30, rows: 20 }, layoutRoot: instance.fullscreenLayoutRoot,
-		renders: 0, renderNow() {
+	instance.renderer = {
+		mode,
+		terminal: { columns: 30, rows: 20 },
+		layoutRoot: instance.fullscreenLayoutRoot,
+		renders: 0,
+		renderNow() {
 			const scroll = instance.transcriptScrollView;
-			scroll.updateLayout(instance.documentContainer.render(scroll.getContentWidth(this.terminal.columns)).length, 4, () => {});
-		}, requestRender() { this.renders++; } };
-	instance.mountInteractiveTui(instance.renderer, [instance.documentContainer, ...Array.from({ length: componentCount - 1 }, () => new Container())]);
+			scroll.updateLayout(
+				instance.documentContainer.render(scroll.getContentWidth(this.terminal.columns)).length,
+				4,
+				() => {},
+			);
+		},
+		requestRender() {
+			this.renders++;
+		},
+	};
+	instance.mountInteractiveTui(instance.renderer, [
+		instance.documentContainer,
+		...Array.from({ length: componentCount - 1 }, () => new Container()),
+	]);
 	return instance;
 }
 const item = (e: any) => collectMessages([e])[0];
 
- test("collectMessages: chronological active-branch IDs, duplicates, multiline Unicode, image/empty previews and safe controls", () => {
-	const a = entry("a", "same\n世界 long tail"); const b = entry("b", "same\n世界 long tail");
+test("collectMessages: chronological active-branch IDs, duplicates, multiline Unicode, image/empty previews and safe controls", () => {
+	const a = entry("a", "same\n世界 long tail");
+	const b = entry("b", "same\n世界 long tail");
 	const image = entry("i", [{ type: "image", data: "secret", mimeType: "image/png" }]);
-	const mixed = entry("mix", [{ type: "text", text: "text" }, { type: "image", data: "abc" }]);
-	const result = collectMessages([a, { type: "message", id: "assistant", message: { role: "assistant" } } as any, b, image, entry("empty", null), mixed]);
-	assert.deepEqual(result.map(i => i.id), ["a", "b", "i", "empty", "mix"]);
-	assert.equal(result[4].preview, "text [1 image]"); assert.equal(result[3].preview, "[Empty prompt]"); assert.equal(result[2].preview, "[1 image]");
-	assert.deepEqual(filterMessages(result, "TAIL 世界").map(i => i.id), ["a", "b"]);
+	const mixed = entry("mix", [
+		{ type: "text", text: "text" },
+		{ type: "image", data: "abc" },
+	]);
+	const result = collectMessages([
+		a,
+		{ type: "message", id: "assistant", message: { role: "assistant" } } as any,
+		b,
+		image,
+		entry("empty", null),
+		mixed,
+	]);
+	assert.deepEqual(
+		result.map((i) => i.id),
+		["a", "b", "i", "empty", "mix"],
+	);
+	assert.equal(result[4].preview, "text [1 image]");
+	assert.equal(result[3].preview, "[Empty prompt]");
+	assert.equal(result[2].preview, "[1 image]");
+	assert.deepEqual(
+		filterMessages(result, "TAIL 世界").map((i) => i.id),
+		["a", "b"],
+	);
 	assert.equal(item(entry("ctl", "x\x1b[2J\nnext")).preview.includes("\x1b"), false);
 	assert.equal(filterMessages(result, "secret").length, 0);
 });
@@ -48,53 +95,83 @@ const item = (e: any) => collectMessages([e])[0];
 test("bridge: stable object identity, header/spacers/skills, scrollbar width, resize and disabled follow", () => {
 	const bridge = installBridge(Symbol());
 	try {
-		const h = host(); const a = entry("a", "same"); const b = entry("b", "same");
+		const h = host();
+		const a = entry("a", "same");
+		const b = entry("b", "same");
 		h.addMessageToChat(a.message, { skill: true });
 		h.chatContainer.addChild(new Text("z".repeat(180), 0, 0));
 		h.addMessageToChat(b.message);
 		h.chatContainer.addChild(new Text("trailing\n".repeat(20), 0, 0));
-		assert.equal(h.mountCalls, 1); assert.equal(h.addCalls, 2);
+		assert.equal(h.mountCalls, 1);
+		assert.equal(h.addCalls, 2);
 		for (const width of [30, 12, 80]) {
 			h.renderer.terminal.columns = width;
 			const target = h.chatContainer.children[6];
-			const row = h.documentContainer.children[0].render(width - 1).length + h.chatContainer.children.slice(0, 6).reduce((n: number, c: any) => n + c.render(width - 1).length, 0);
-			assert.ok(target); assert.equal(bridge.jump(item(b)), undefined);
+			const row =
+				h.documentContainer.children[0].render(width - 1).length +
+				h.chatContainer.children
+					.slice(0, 6)
+					.reduce((n: number, c: any) => n + c.render(width - 1).length, 0);
+			assert.ok(target);
+			assert.equal(bridge.jump(item(b)), undefined);
 			assert.equal(h.transcriptScrollView.scrollTop, row);
 			assert.equal(h.transcriptScrollView.isFollowingEnd, false);
 		}
-		assert.equal(bridge.jump(item(a)), undefined); assert.equal(h.transcriptScrollView.scrollTop, 3);
+		assert.equal(bridge.jump(item(a)), undefined);
+		assert.equal(h.transcriptScrollView.scrollTop, 3);
 		assert.match(bridge.jump(item(entry("copied", "same")))!, /Not rendered/);
-	} finally { bridge.release(true); }
+	} finally {
+		bridge.release(true);
+	}
 });
 
 test("bridge: near-end clamping succeeds, compaction/removal and image-only fail closed", () => {
 	const bridge = installBridge(Symbol());
 	try {
-		const h = host(); const a = entry("a"); const image = entry("image", [{ type: "image" }]);
-		h.addMessageToChat(a.message); h.addMessageToChat(image.message);
-		assert.equal(bridge.jump(item(a)), undefined); assert.equal(h.transcriptScrollView.scrollTop, 0);
+		const h = host();
+		const a = entry("a");
+		const image = entry("image", [{ type: "image" }]);
+		h.addMessageToChat(a.message);
+		h.addMessageToChat(image.message);
+		assert.equal(bridge.jump(item(a)), undefined);
+		assert.equal(h.transcriptScrollView.scrollTop, 0);
 		assert.equal(h.transcriptScrollView.isFollowingEnd, false);
 		assert.match(bridge.unavailable(item(image))!, /Not rendered/);
-		const target = h.chatContainer.children[1]; h.chatContainer.children.push(target);
-		assert.match(bridge.jump(item(a))!, /Not rendered/, "duplicate component ownership is not a destination");
-		h.chatContainer.clear(); assert.match(bridge.jump(item(a))!, /Not rendered/);
-	} finally { bridge.release(true); }
+		const target = h.chatContainer.children[1];
+		h.chatContainer.children.push(target);
+		assert.match(
+			bridge.jump(item(a))!,
+			/Not rendered/,
+			"duplicate component ownership is not a destination",
+		);
+		h.chatContainer.clear();
+		assert.match(bridge.jump(item(a))!, /Not rendered/);
+	} finally {
+		bridge.release(true);
+	}
 });
 
 test("bridge: regular mode, altered-width wrapper, missing layout capability and late loading", () => {
 	const bridge = installBridge(Symbol());
 	try {
 		assert.match(bridge.error()!, /Restart Pi/);
-		const h = host("regular"); assert.match(bridge.error()!, /fullscreen/);
+		const h = host("regular");
+		assert.match(bridge.error()!, /fullscreen/);
 		h.renderer.mode = "fullscreen";
 		const original = h.documentContainer.render;
-		h.documentContainer.render = function (width: number) { return original.call(this, Math.min(width, 10)); };
+		h.documentContainer.render = function (width: number) {
+			return original.call(this, Math.min(width, 10));
+		};
 		assert.match(bridge.error()!, /Unsupported transcript layout/);
 		h.documentContainer.render = original;
-		h.fullscreenLayoutRoot.align = "center"; assert.match(bridge.error()!, /Unsupported transcript layout/);
-		h.fullscreenLayoutRoot.align = "stretch"; h.transcriptScrollView.getContentWidth = undefined;
+		h.fullscreenLayoutRoot.align = "center";
 		assert.match(bridge.error()!, /Unsupported transcript layout/);
-	} finally { bridge.release(true); }
+		h.fullscreenLayoutRoot.align = "stretch";
+		h.transcriptScrollView.getContentWidth = undefined;
+		assert.match(bridge.error()!, /Unsupported transcript layout/);
+	} finally {
+		bridge.release(true);
+	}
 });
 
 test("bridge: capability-equivalent patch/minor/major/prerelease fixtures jump without version or dock-count gates", () => {
@@ -103,60 +180,95 @@ test("bridge: capability-equivalent patch/minor/major/prerelease fixtures jump w
 		for (const count of [5, 7, 9]) {
 			const bridge = installBridge(Symbol(), version);
 			try {
-				const h = host("fullscreen", version, count); const e = entry(version);
-				h.addMessageToChat(e.message); h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
+				const h = host("fullscreen", version, count);
+				const e = entry(version);
+				h.addMessageToChat(e.message);
+				h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
 				assert.equal(bridge.jump(item(e)), undefined);
 				assert.equal(h.transcriptScrollView.scrollTop, 3);
 				assert.equal(h.transcriptScrollView.isFollowingEnd, false);
-				h.version = "99.0.0"; assert.equal(bridge.error(), undefined);
-			} finally { bridge.release(true); }
+				h.version = "99.0.0";
+				assert.equal(bridge.error(), undefined);
+			} finally {
+				bridge.release(true);
+			}
 		}
 	}
 });
 
 test("bridge: absent/malformed required methods reject before either prototype is patched", () => {
 	const prototype = InteractiveMode.prototype as any;
-	const mount = prototype.mountInteractiveTui; const add = prototype.addMessageToChat;
-	for (const method of ["mountInteractiveTui", "addMessageToChat"]) for (const value of [undefined, null, 42, {}]) {
-		try {
-			prototype[method] = value;
-			const beforeMount = prototype.mountInteractiveTui; const beforeAdd = prototype.addMessageToChat;
-			const bridge = installBridge(Symbol(), "2.0.0");
-			assert.match(bridge.error()!, /callable mountInteractiveTui and addMessageToChat required/);
-			assert.equal(prototype.mountInteractiveTui, beforeMount); assert.equal(prototype.addMessageToChat, beforeAdd);
-			bridge.release(true);
-		} finally { prototype.mountInteractiveTui = mount; prototype.addMessageToChat = add; }
-	}
+	const mount = prototype.mountInteractiveTui;
+	const add = prototype.addMessageToChat;
+	for (const method of ["mountInteractiveTui", "addMessageToChat"])
+		for (const value of [undefined, null, 42, {}]) {
+			try {
+				prototype[method] = value;
+				const beforeMount = prototype.mountInteractiveTui;
+				const beforeAdd = prototype.addMessageToChat;
+				const bridge = installBridge(Symbol(), "2.0.0");
+				assert.match(bridge.error()!, /callable mountInteractiveTui and addMessageToChat required/);
+				assert.equal(prototype.mountInteractiveTui, beforeMount);
+				assert.equal(prototype.addMessageToChat, beforeAdd);
+				bridge.release(true);
+			} finally {
+				prototype.mountInteractiveTui = mount;
+				prototype.addMessageToChat = add;
+			}
+		}
 });
 
 test("bridge: default/rest arity preserves this, every argument, result and exceptions exactly once", () => {
 	const prototype = InteractiveMode.prototype as any;
-	const mount = prototype.mountInteractiveTui; const add = prototype.addMessageToChat;
-	const mountCalls: any[] = []; const addCalls: any[] = []; const result = {}; const failure = new Error("original failure");
+	const mount = prototype.mountInteractiveTui;
+	const add = prototype.addMessageToChat;
+	const mountCalls: any[] = [];
+	const addCalls: any[] = [];
+	const result = {};
+	const failure = new Error("original failure");
 	prototype.mountInteractiveTui = function (tui: any, components = [], ...extra: any[]) {
-		mountCalls.push({ receiver: this, args: [...arguments] }); if (tui === failure) throw failure;
-		mount.call(this, tui, components); return result;
+		mountCalls.push({ receiver: this, args: [...arguments] });
+		if (tui === failure) throw failure;
+		mount.call(this, tui, components);
+		return result;
 	};
 	prototype.addMessageToChat = function (...args: any[]) {
-		addCalls.push({ receiver: this, args }); if (args[0] === failure) throw failure;
-		add.apply(this, args); return result;
+		addCalls.push({ receiver: this, args });
+		if (args[0] === failure) throw failure;
+		add.apply(this, args);
+		return result;
 	};
 	const bridge = installBridge(Symbol(), "2.0.0");
 	try {
-		const h = host(); const components = [h.documentContainer, new Container()]; const extra = {};
+		const h = host();
+		const components = [h.documentContainer, new Container()];
+		const extra = {};
 		assert.equal(h.mountInteractiveTui(h.renderer, components, undefined, extra), result);
-		assert.equal(mountCalls.length, 2); assert.equal(mountCalls[1].receiver, h);
+		assert.equal(mountCalls.length, 2);
+		assert.equal(mountCalls[1].receiver, h);
 		assert.deepEqual(mountCalls[1].args, [h.renderer, components, undefined, extra]);
-		assert.throws(() => h.mountInteractiveTui(failure, components, extra), error => error === failure);
+		assert.throws(
+			() => h.mountInteractiveTui(failure, components, extra),
+			(error) => error === failure,
+		);
 		assert.equal(mountCalls.length, 3);
-		const e = entry("forwarded"); const options = {};
+		const e = entry("forwarded");
+		const options = {};
 		assert.equal(h.addMessageToChat(e.message, options, extra, undefined), result);
-		assert.equal(addCalls.length, 1); assert.equal(addCalls[0].receiver, h);
+		assert.equal(addCalls.length, 1);
+		assert.equal(addCalls[0].receiver, h);
 		assert.deepEqual(addCalls[0].args, [e.message, options, extra, undefined]);
 		assert.equal(bridge.unavailable(item(e)), undefined);
-		assert.throws(() => h.addMessageToChat(failure, undefined, extra), error => error === failure);
+		assert.throws(
+			() => h.addMessageToChat(failure, undefined, extra),
+			(error) => error === failure,
+		);
 		assert.equal(addCalls.length, 2);
-	} finally { bridge.release(true); prototype.mountInteractiveTui = mount; prototype.addMessageToChat = add; }
+	} finally {
+		bridge.release(true);
+		prototype.mountInteractiveTui = mount;
+		prototype.addMessageToChat = add;
+	}
 });
 
 test("bridge: incompatible observed mount rejects even a future-version fixture", () => {
@@ -170,43 +282,90 @@ test("bridge: incompatible observed mount rejects even a future-version fixture"
 			if (change === "component") components.push({});
 			h.mountInteractiveTui(change === "renderer" ? {} : h.renderer, components);
 			assert.match(bridge.error()!, /Unsupported Pi mount shape.*renderer and document-first/);
-		} finally { bridge.release(true); }
+		} finally {
+			bridge.release(true);
+		}
 	}
 });
 
 test("bridge: missing or altered container/width/scroll/renderer/root capabilities fail closed", () => {
 	const changes: [string, (h: any) => void, RegExp][] = [
-		["document", h => h.documentContainer = undefined, /document\/chat Containers/],
-		["chat", h => h.chatContainer = undefined, /document\/chat Containers/],
-		["chat renderer", h => h.chatContainer.render = () => [], /document\/chat Containers/],
-		["chat children", h => h.chatContainer.children = {}, /document\/chat Containers/],
-		["duplicate chat", h => h.documentContainer.children.push(h.chatContainer), /document\/chat Containers/],
-		["scroll children", h => h.transcriptScrollView.children = {}, /single-document ScrollView/],
-		["extra scroll child", h => h.transcriptScrollView.children.push(new Container()), /single-document ScrollView/],
-		["width", h => h.transcriptScrollView.getContentWidth = undefined, /getContentWidth\/scrollTo/],
-		["invalid width", h => h.transcriptScrollView.getContentWidth = () => NaN, /getContentWidth\/scrollTo/],
-		["scroll", h => h.transcriptScrollView.scrollTo = () => {}, /getContentWidth\/scrollTo/],
-		["renderNow", h => h.renderer.renderNow = null, /renderNow\/requestRender/],
-		["requestRender", h => h.renderer.requestRender = undefined, /renderNow\/requestRender/],
-		["root mismatch", h => h.renderer.layoutRoot = new Container(), /terminal-wide stretch VStack/],
-		["root entries", h => h.fullscreenLayoutRoot.entries = {}, /terminal-wide stretch VStack/],
-		["sparse root entries", h => h.fullscreenLayoutRoot.entries = new Array(2), /terminal-wide stretch VStack/],
-		["duplicate root scroll", h => {
-			h.fullscreenLayoutRoot.children[1] = h.transcriptScrollView;
-			h.fullscreenLayoutRoot.entries[1].component = h.transcriptScrollView;
-		}, /terminal-wide stretch VStack/],
-		["malformed root entry", h => h.fullscreenLayoutRoot.entries[0] = null, /terminal-wide stretch VStack/],
-		["root gap", h => h.fullscreenLayoutRoot.gap = 1, /terminal-wide stretch VStack/],
-		["root visibility", h => h.fullscreenLayoutRoot.entries[0].visible = () => false, /terminal-wide stretch VStack/],
+		["document", (h) => (h.documentContainer = undefined), /document\/chat Containers/],
+		["chat", (h) => (h.chatContainer = undefined), /document\/chat Containers/],
+		["chat renderer", (h) => (h.chatContainer.render = () => []), /document\/chat Containers/],
+		["chat children", (h) => (h.chatContainer.children = {}), /document\/chat Containers/],
+		[
+			"duplicate chat",
+			(h) => h.documentContainer.children.push(h.chatContainer),
+			/document\/chat Containers/,
+		],
+		[
+			"scroll children",
+			(h) => (h.transcriptScrollView.children = {}),
+			/single-document ScrollView/,
+		],
+		[
+			"extra scroll child",
+			(h) => h.transcriptScrollView.children.push(new Container()),
+			/single-document ScrollView/,
+		],
+		[
+			"width",
+			(h) => (h.transcriptScrollView.getContentWidth = undefined),
+			/getContentWidth\/scrollTo/,
+		],
+		[
+			"invalid width",
+			(h) => (h.transcriptScrollView.getContentWidth = () => NaN),
+			/getContentWidth\/scrollTo/,
+		],
+		["scroll", (h) => (h.transcriptScrollView.scrollTo = () => {}), /getContentWidth\/scrollTo/],
+		["renderNow", (h) => (h.renderer.renderNow = null), /renderNow\/requestRender/],
+		["requestRender", (h) => (h.renderer.requestRender = undefined), /renderNow\/requestRender/],
+		[
+			"root mismatch",
+			(h) => (h.renderer.layoutRoot = new Container()),
+			/terminal-wide stretch VStack/,
+		],
+		["root entries", (h) => (h.fullscreenLayoutRoot.entries = {}), /terminal-wide stretch VStack/],
+		[
+			"sparse root entries",
+			(h) => (h.fullscreenLayoutRoot.entries = new Array(2)),
+			/terminal-wide stretch VStack/,
+		],
+		[
+			"duplicate root scroll",
+			(h) => {
+				h.fullscreenLayoutRoot.children[1] = h.transcriptScrollView;
+				h.fullscreenLayoutRoot.entries[1].component = h.transcriptScrollView;
+			},
+			/terminal-wide stretch VStack/,
+		],
+		[
+			"malformed root entry",
+			(h) => (h.fullscreenLayoutRoot.entries[0] = null),
+			/terminal-wide stretch VStack/,
+		],
+		["root gap", (h) => (h.fullscreenLayoutRoot.gap = 1), /terminal-wide stretch VStack/],
+		[
+			"root visibility",
+			(h) => (h.fullscreenLayoutRoot.entries[0].visible = () => false),
+			/terminal-wide stretch VStack/,
+		],
 	];
 	for (const [name, change, expected] of changes) {
 		const bridge = installBridge(Symbol(), "2.0.0");
 		try {
-			const h = host("fullscreen", "2.0.0"); const e = entry(name); h.addMessageToChat(e.message);
-			const before = h.transcriptScrollView.scrollTop; change(h);
+			const h = host("fullscreen", "2.0.0");
+			const e = entry(name);
+			h.addMessageToChat(e.message);
+			const before = h.transcriptScrollView.scrollTop;
+			change(h);
 			assert.match(bridge.jump(item(e))!, expected, name);
 			assert.equal(h.transcriptScrollView.scrollTop, before, name);
-		} finally { bridge.release(true); }
+		} finally {
+			bridge.release(true);
+		}
 	}
 });
 
@@ -215,7 +374,9 @@ test("bridge: invalid numeric terminal and scroll metrics never scroll", () => {
 		for (const value of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, "10", undefined]) {
 			const bridge = installBridge(Symbol());
 			try {
-				const h = host(); const e = entry("metric"); h.addMessageToChat(e.message);
+				const h = host();
+				const e = entry("metric");
+				h.addMessageToChat(e.message);
 				// Keep the mutation from being refreshed away by renderNow, without changing its callable contract.
 				h.renderer.renderNow = () => {};
 				if (field === "columns") h.renderer.terminal.columns = value;
@@ -223,83 +384,169 @@ test("bridge: invalid numeric terminal and scroll metrics never scroll", () => {
 				const before = h.transcriptScrollView.currentScrollTop;
 				assert.match(bridge.jump(item(e))!, /terminal columns|scroll metrics/);
 				assert.equal(h.transcriptScrollView.currentScrollTop, before);
-			} finally { bridge.release(true); }
+			} finally {
+				bridge.release(true);
+			}
 		}
 	}
 });
 
 test("bridge: zero viewport, out-of-range scroll, invalid row measurement and measurement-time removal fail safely", () => {
-	for (const change of ["zero viewport", "out-of-range scroll", "invalid row", "removed", "changed metrics"]) {
+	for (const change of [
+		"zero viewport",
+		"out-of-range scroll",
+		"invalid row",
+		"removed",
+		"changed metrics",
+	]) {
 		const bridge = installBridge(Symbol());
 		try {
-			const h = host(); const e = entry("measure"); h.addMessageToChat(e.message);
+			const h = host();
+			const e = entry("measure");
+			h.addMessageToChat(e.message);
 			h.chatContainer.addChild(new Text("tail\n".repeat(20), 0, 0));
-			h.renderer.renderNow(); h.transcriptScrollView.scrollToStart(); h.renderer.renderNow = () => {};
+			h.renderer.renderNow();
+			h.transcriptScrollView.scrollToStart();
+			h.renderer.renderNow = () => {};
 			if (change === "zero viewport") h.transcriptScrollView.currentViewportHeight = 0;
-			if (change === "out-of-range scroll") h.transcriptScrollView.currentScrollTop = h.transcriptScrollView.contentHeight;
-			const header = h.documentContainer.children[0]; const render = header.render.bind(header);
+			if (change === "out-of-range scroll")
+				h.transcriptScrollView.currentScrollTop = h.transcriptScrollView.contentHeight;
+			const header = h.documentContainer.children[0];
+			const render = header.render.bind(header);
 			if (change === "invalid row") header.render = () => ({ length: NaN });
-			if (change === "removed") header.render = (width: number) => { h.chatContainer.clear(); return render(width); };
-			if (change === "changed metrics") header.render = (width: number) => { h.transcriptScrollView.contentHeight = NaN; return render(width); };
+			if (change === "removed")
+				header.render = (width: number) => {
+					h.chatContainer.clear();
+					return render(width);
+				};
+			if (change === "changed metrics")
+				header.render = (width: number) => {
+					h.transcriptScrollView.contentHeight = NaN;
+					return render(width);
+				};
 			const before = h.transcriptScrollView.currentScrollTop;
-			assert.match(bridge.jump(item(e))!, /no visible rows|scroll metrics|row measurement|Not rendered/);
+			assert.match(
+				bridge.jump(item(e))!,
+				/no visible rows|scroll metrics|row measurement|Not rendered/,
+			);
 			assert.equal(h.transcriptScrollView.currentScrollTop, before);
-		} finally { bridge.release(true); }
+		} finally {
+			bridge.release(true);
+		}
 	}
 });
 
 test("bridge: ownership, inert reload handoff, old cleanup, quit restoration, conflicts and multiple instances", () => {
 	const original = InteractiveMode.prototype.mountInteractiveTui;
-	const a = installBridge(Symbol()); const h = host(); const e = entry("e"); h.addMessageToChat(e.message);
+	const a = installBridge(Symbol());
+	const h = host();
+	const e = entry("e");
+	h.addMessageToChat(e.message);
 	assert.match(installBridge(Symbol()).error()!, /already owns/);
-	a.release(false); assert.match(a.error()!, /no longer active/);
-	const b = installBridge(Symbol()); assert.equal(b.unavailable(item(e)), undefined);
-	a.release(true); assert.notEqual(InteractiveMode.prototype.mountInteractiveTui, original);
-	b.release(true); assert.equal(InteractiveMode.prototype.mountInteractiveTui, original);
+	a.release(false);
+	assert.match(a.error()!, /no longer active/);
+	const b = installBridge(Symbol());
+	assert.equal(b.unavailable(item(e)), undefined);
+	a.release(true);
+	assert.notEqual(InteractiveMode.prototype.mountInteractiveTui, original);
+	b.release(true);
+	assert.equal(InteractiveMode.prototype.mountInteractiveTui, original);
 	const c = installBridge(Symbol());
 	const ownWrapper = InteractiveMode.prototype.mountInteractiveTui;
-	const conflicting = function (this: any, ...args: any[]) { return ownWrapper.apply(this, args as any); };
+	const conflicting = function (this: any, ...args: any[]) {
+		return ownWrapper.apply(this, args as any);
+	};
 	InteractiveMode.prototype.mountInteractiveTui = conflicting;
-	assert.match(c.error()!, /replaced/); c.release(true);
+	assert.match(c.error()!, /replaced/);
+	c.release(true);
 	assert.equal(InteractiveMode.prototype.mountInteractiveTui, conflicting);
 	InteractiveMode.prototype.mountInteractiveTui = original;
 	const d = installBridge(Symbol());
-	try { host(); host(); assert.match(d.error()!, /Multiple interactive/); } finally { d.release(true); }
+	try {
+		host();
+		host();
+		assert.match(d.error()!, /Multiple interactive/);
+	} finally {
+		d.release(true);
+	}
 });
 
 test("picker: full-text filter, configurable keys, Escape, focus, Unicode widths, no-result Enter and resize", () => {
-	const values = collectMessages([entry("old", "duplicate"), entry("new", "duplicate"), entry("unicode", "世界\nend needle")]);
-	const kb = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+n", "tui.select.up": "ctrl+p", "tui.select.confirm": "ctrl+o", "tui.select.cancel": "ctrl+x" });
+	const values = collectMessages([
+		entry("old", "duplicate"),
+		entry("new", "duplicate"),
+		entry("unicode", "世界\nend needle"),
+	]);
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS, {
+		"tui.select.down": "ctrl+n",
+		"tui.select.up": "ctrl+p",
+		"tui.select.confirm": "ctrl+o",
+		"tui.select.cancel": "ctrl+x",
+	});
 	const tui = { terminal: { rows: 20 }, requestRender() {} } as any;
 	const results: any[] = [];
-	const picker = new MessagePicker(values, tui, theme, kb, id => results.push(id), "duplicate");
-	picker.focused = true; assert.equal(picker.focused, true);
-	for (const width of [1, 2, 4, 10, 40, 90]) assert.ok(picker.render(width).every(line => visibleWidth(line) <= width));
-	tui.terminal.rows = 8; picker.render(10);
-	picker.handleInput("\x0e"); picker.handleInput("\x0f"); assert.deepEqual(results, ["old"]);
-	picker.handleInput("\x0f"); assert.equal(results.length, 1);
-	const filtered = new MessagePicker(values, tui, theme, kb, id => results.push(id), "needle 世界");
-	filtered.handleInput("\x0f"); assert.equal(results[1], "unicode");
-	const empty = new MessagePicker(values, tui, theme, kb, id => results.push(id), "absent");
-	empty.handleInput("\x0f"); assert.equal(results.length, 2);
-	empty.handleInput("\x1b"); assert.equal(results[2], undefined);
-	const cancel = new MessagePicker(values, tui, theme, kb, id => results.push(id)); cancel.handleInput("\x18"); assert.equal(results[3], undefined);
-	const paging = new MessagePicker(values, tui, theme, kb, id => results.push(id));
-	paging.render(80); paging.handleInput("\x1b[5~"); paging.handleInput("\x0f"); assert.equal(results[4], "new");
+	const picker = new MessagePicker(values, tui, theme, kb, (id) => results.push(id), "duplicate");
+	picker.focused = true;
+	assert.equal(picker.focused, true);
+	for (const width of [1, 2, 4, 10, 40, 90])
+		assert.ok(picker.render(width).every((line) => visibleWidth(line) <= width));
+	tui.terminal.rows = 8;
+	picker.render(10);
+	picker.handleInput("\x0e");
+	picker.handleInput("\x0f");
+	assert.deepEqual(results, ["old"]);
+	picker.handleInput("\x0f");
+	assert.equal(results.length, 1);
+	const filtered = new MessagePicker(
+		values,
+		tui,
+		theme,
+		kb,
+		(id) => results.push(id),
+		"needle 世界",
+	);
+	filtered.handleInput("\x0f");
+	assert.equal(results[1], "unicode");
+	const empty = new MessagePicker(values, tui, theme, kb, (id) => results.push(id), "absent");
+	empty.handleInput("\x0f");
+	assert.equal(results.length, 2);
+	empty.handleInput("\x1b");
+	assert.equal(results[2], undefined);
+	const cancel = new MessagePicker(values, tui, theme, kb, (id) => results.push(id));
+	cancel.handleInput("\x18");
+	assert.equal(results[3], undefined);
+	const paging = new MessagePicker(values, tui, theme, kb, (id) => results.push(id));
+	paging.render(80);
+	paging.handleInput("\x1b[5~");
+	paging.handleInput("\x0f");
+	assert.equal(results[4], "new");
 });
 
 test("picker: native-shaped inline snapshot, chronological metadata, latest defaults, wrapping and live search", () => {
-	const values = collectMessages(Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)));
+	const values = collectMessages(
+		Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)),
+	);
 	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
 	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
 	const results: any[] = [];
-	const picker = new MessagePicker(values, tui, theme, kb, id => results.push(id));
-	const lines = picker.render(80).map(line => line.trimEnd());
-	assert.deepEqual(lines.slice(0, 3), ["", " Jump to Message", " Select a user message to scroll to in the current transcript"]);
+	const picker = new MessagePicker(values, tui, theme, kb, (id) => results.push(id));
+	const lines = picker.render(80).map((line) => line.trimEnd());
+	assert.deepEqual(lines.slice(0, 3), [
+		"",
+		" Jump to Message",
+		" Select a user message to scroll to in the current transcript",
+	]);
 	assert.ok(lines[3].startsWith(" Search: "));
 	assert.deepEqual(lines.slice(4, 7), [" Ctrl+Y copy highlighted message", "─".repeat(80), ""]);
 	assert.deepEqual(lines.slice(7, 10), ["  prompt 3", "  Message 3 of 12", ""]);
-	assert.deepEqual(lines.slice(-6), ["› prompt 12", "  Message 12 of 12", "", "  (12/12)", "", "─".repeat(80)]);
+	assert.deepEqual(lines.slice(-6), [
+		"› prompt 12",
+		"  Message 12 of 12",
+		"",
+		"  (12/12)",
+		"",
+		"─".repeat(80),
+	]);
 	picker.handleInput("\x1b[B"); // Newest wraps to oldest.
 	assert.ok(picker.render(80).includes("› prompt 1"));
 	picker.handleInput("\x1b[A"); // Oldest wraps to newest.
@@ -310,39 +557,74 @@ test("picker: native-shaped inline snapshot, chronological metadata, latest defa
 	const filtered = picker.render(80);
 	assert.ok(filtered.includes("› prompt 12"), "changed query defaults to latest match");
 	assert.ok(filtered.includes("  Message 12 of 12"), "filtered metadata retains branch ordinals");
-	picker.handleInput("\r"); assert.deepEqual(results, ["id-11"]);
-	const marked = new MessagePicker([{ ...values[11], unavailable: "not rendered" }], tui, theme, kb, () => {});
+	picker.handleInput("\r");
+	assert.deepEqual(results, ["id-11"]);
+	const marked = new MessagePicker(
+		[{ ...values[11], unavailable: "not rendered" }],
+		tui,
+		theme,
+		kb,
+		() => {},
+	);
 	assert.ok(marked.render(80).includes("› [unavailable] prompt 12"));
-	const styled = { fg: (token: string, text: string) => `<${token}>${text}</${token}>`, bold: (text: string) => `<bold>${text}</bold>` } as any;
+	const styled = {
+		fg: (token: string, text: string) => `<${token}>${text}</${token}>`,
+		bold: (text: string) => `<bold>${text}</bold>`,
+	} as any;
 	const colored = new MessagePicker(values.slice(0, 1), tui, styled, kb, () => {}).render(200);
-	assert.ok(colored.includes("<accent>› </accent><bold>prompt 1</bold>"), "only the caret is accent, only the selected prompt is bold");
-	for (const width of [20, 30, 40, 65, 80]) for (const rows of [20, 24, 32, 40, 50]) {
-		tui.terminal.rows = rows;
-		const resized = new MessagePicker(values, tui, theme, kb, () => {}).render(width);
-		assert.ok(resized.length <= rows - 4, "height leaves room for the host footer");
-		assert.ok(resized.includes("› prompt 12"), "resize preserves latest selection");
-	}
+	assert.ok(
+		colored.includes("<accent>› </accent><bold>prompt 1</bold>"),
+		"only the caret is accent, only the selected prompt is bold",
+	);
+	for (const width of [20, 30, 40, 65, 80])
+		for (const rows of [20, 24, 32, 40, 50]) {
+			tui.terminal.rows = rows;
+			const resized = new MessagePicker(values, tui, theme, kb, () => {}).render(width);
+			assert.ok(resized.length <= rows - 4, "height leaves room for the host footer");
+			assert.ok(resized.includes("› prompt 12"), "resize preserves latest selection");
+		}
 });
 
 test("picker: Ctrl+Y copies full highlighted text, keeps search/selection open, and takes precedence over confirm", async () => {
 	const oldText = `duplicate\nneedle 世界\t${"long tail ".repeat(30)}`;
-	const values = collectMessages([entry("old", oldText), entry("new", "duplicate\nneedle 世界 new")]);
+	const values = collectMessages([
+		entry("old", oldText),
+		entry("new", "duplicate\nneedle 世界 new"),
+	]);
 	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
 	const kb = new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.confirm": "ctrl+y" });
-	const done: any[] = []; const copied: string[] = [];
-	const picker = new MessagePicker(values, tui, theme, kb, id => done.push(id), "needle");
-	picker.onCopy = (text) => { copied.push(text); };
-	picker.handleInput("\x19"); await Promise.resolve();
-	assert.deepEqual(copied, [values[1].text]); assert.deepEqual(done, []);
-	assert.ok(picker.render(80).some(line => line.includes("Copied message 2 to clipboard")));
-	picker.handleInput("\x1b[A"); picker.handleInput("\x19"); await Promise.resolve();
-	assert.equal(copied[1], oldText, "copy original multiline text, never truncated preview or metadata");
-	assert.ok(picker.render(80).some(line => line.startsWith("› duplicate needle 世界")));
-	assert.equal(plain(picker.render(80)[3]).trimEnd(), " Search: needle", "Ctrl+Y does not yank into the search field");
+	const done: any[] = [];
+	const copied: string[] = [];
+	const picker = new MessagePicker(values, tui, theme, kb, (id) => done.push(id), "needle");
+	picker.onCopy = (text) => {
+		copied.push(text);
+	};
+	picker.handleInput("\x19");
+	await Promise.resolve();
+	assert.deepEqual(copied, [values[1].text]);
 	assert.deepEqual(done, []);
-	for (const width of [1, 2, 10, 40, 80]) assert.ok(picker.render(width).every(line => visibleWidth(line) <= width));
-	picker.handleInput("\x1b"); assert.deepEqual(done, [undefined]);
-	picker.handleInput("\x19"); assert.equal(copied.length, 2, "closed picker ignores copy");
+	assert.ok(picker.render(80).some((line) => line.includes("Copied message 2 to clipboard")));
+	picker.handleInput("\x1b[A");
+	picker.handleInput("\x19");
+	await Promise.resolve();
+	assert.equal(
+		copied[1],
+		oldText,
+		"copy original multiline text, never truncated preview or metadata",
+	);
+	assert.ok(picker.render(80).some((line) => line.startsWith("› duplicate needle 世界")));
+	assert.equal(
+		plain(picker.render(80)[3]).trimEnd(),
+		" Search: needle",
+		"Ctrl+Y does not yank into the search field",
+	);
+	assert.deepEqual(done, []);
+	for (const width of [1, 2, 10, 40, 80])
+		assert.ok(picker.render(width).every((line) => visibleWidth(line) <= width));
+	picker.handleInput("\x1b");
+	assert.deepEqual(done, [undefined]);
+	picker.handleInput("\x19");
+	assert.equal(copied.length, 2, "closed picker ignores copy");
 });
 
 test("picker: prefilled query leaves the caret after it, so typing appends and Backspace refines", () => {
@@ -353,15 +635,31 @@ test("picker: prefilled query leaves the caret after it, so typing appends and B
 	const search = () => plain(picker.render(80)[3]).trimEnd();
 	assert.equal(search(), " Search: needle");
 	picker.handleInput("x");
-	assert.equal(search(), " Search: needlex", "typing appends to the prefilled query instead of prepending");
-	assert.ok(picker.render(80).some(line => line.includes("No matching messages")), "the appended character filters the list");
+	assert.equal(
+		search(),
+		" Search: needlex",
+		"typing appends to the prefilled query instead of prepending",
+	);
+	assert.ok(
+		picker.render(80).some((line) => line.includes("No matching messages")),
+		"the appended character filters the list",
+	);
 	picker.handleInput("\x7f");
-	assert.equal(search(), " Search: needle", "Backspace deletes the appended character, not nothing");
-	assert.ok(picker.render(80).includes("› needle beta"), "the restored query filters and selects the latest match");
+	assert.equal(
+		search(),
+		" Search: needle",
+		"Backspace deletes the appended character, not nothing",
+	);
+	assert.ok(
+		picker.render(80).includes("› needle beta"),
+		"the restored query filters and selects the latest match",
+	);
 });
 
 test("picker: alt+up/alt+down page the list where the fullscreen viewport owns PageUp/PageDown", () => {
-	const values = collectMessages(Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)));
+	const values = collectMessages(
+		Array.from({ length: 12 }, (_, i) => entry(`id-${i}`, `prompt ${i + 1}`)),
+	);
 	const tui = { terminal: { rows: 50 }, requestRender() {} } as any;
 	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
 	// Why the picker needs its own paging keys: the viewport listener consumes these before the
@@ -376,70 +674,189 @@ test("picker: alt+up/alt+down page the list where the fullscreen viewport owns P
 });
 
 test("picker: copying unavailable text works; empty/no-result/failure/pending copies are safe", async () => {
-	let renders = 0; const tui = { terminal: { rows: 50 }, requestRender() { renders++; } } as any;
-	const kb = new KeybindingsManager(TUI_KEYBINDINGS); const copied: string[] = [];
-	const values = collectMessages([entry("text", "compacted text"), entry("image", [{ type: "image" }])]);
-	const unavailable = new MessagePicker([{ ...values[0], unavailable: "compacted" }], tui, theme, kb, () => {});
-	unavailable.onCopy = text => { copied.push(text); };
-	unavailable.handleInput("\x19"); await Promise.resolve(); assert.deepEqual(copied, ["compacted text"]);
+	let renders = 0;
+	const tui = {
+		terminal: { rows: 50 },
+		requestRender() {
+			renders++;
+		},
+	} as any;
+	const kb = new KeybindingsManager(TUI_KEYBINDINGS);
+	const copied: string[] = [];
+	const values = collectMessages([
+		entry("text", "compacted text"),
+		entry("image", [{ type: "image" }]),
+	]);
+	const unavailable = new MessagePicker(
+		[{ ...values[0], unavailable: "compacted" }],
+		tui,
+		theme,
+		kb,
+		() => {},
+	);
+	unavailable.onCopy = (text) => {
+		copied.push(text);
+	};
+	unavailable.handleInput("\x19");
+	await Promise.resolve();
+	assert.deepEqual(copied, ["compacted text"]);
 	const image = new MessagePicker([values[1]], tui, theme, kb, () => {});
-	image.onCopy = () => { throw new Error("must not copy image placeholders"); };
-	image.handleInput("\x19"); await Promise.resolve();
-	assert.ok(image.render(80).some(line => line.includes("no text to copy")));
+	image.onCopy = () => {
+		throw new Error("must not copy image placeholders");
+	};
+	image.handleInput("\x19");
+	await Promise.resolve();
+	assert.ok(image.render(80).some((line) => line.includes("no text to copy")));
 	const empty = new MessagePicker(values, tui, theme, kb, () => {}, "absent");
-	empty.onCopy = () => { throw new Error("must not copy without a match"); };
-	empty.handleInput("\x19"); await Promise.resolve();
-	assert.ok(empty.render(80).some(line => line.includes("No matching messages")));
+	empty.onCopy = () => {
+		throw new Error("must not copy without a match");
+	};
+	empty.handleInput("\x19");
+	await Promise.resolve();
+	assert.ok(empty.render(80).some((line) => line.includes("No matching messages")));
 	const failure = new MessagePicker([values[0]], tui, theme, kb, () => {});
-	failure.onCopy = async () => { throw new Error("clipboard denied\x1b[2J"); };
-	failure.handleInput("\x19"); await Promise.resolve();
-	const feedback = failure.render(80).find(line => line.includes("Copy failed"))!;
-	assert.ok(feedback.includes("clipboard denied")); assert.equal(feedback.includes("\x1b"), false);
-	const done: any[] = []; let resolveCopy!: () => void; let calls = 0;
-	const pending = new MessagePicker([values[0]], tui, theme, kb, id => done.push(id));
-	pending.onCopy = () => { calls++; return new Promise<void>(resolve => { resolveCopy = resolve; }); };
-	pending.handleInput("\x19"); pending.handleInput("\x19"); assert.equal(calls, 1);
-	pending.handleInput("\x1b"); assert.deepEqual(done, [undefined]);
-	const before = renders; resolveCopy(); await Promise.resolve();
+	failure.onCopy = async () => {
+		throw new Error("clipboard denied\x1b[2J");
+	};
+	failure.handleInput("\x19");
+	await Promise.resolve();
+	const feedback = failure.render(80).find((line) => line.includes("Copy failed"))!;
+	assert.ok(feedback.includes("clipboard denied"));
+	assert.equal(feedback.includes("\x1b"), false);
+	const done: any[] = [];
+	let resolveCopy!: () => void;
+	let calls = 0;
+	const pending = new MessagePicker([values[0]], tui, theme, kb, (id) => done.push(id));
+	pending.onCopy = () => {
+		calls++;
+		return new Promise<void>((resolve) => {
+			resolveCopy = resolve;
+		});
+	};
+	pending.handleInput("\x19");
+	pending.handleInput("\x19");
+	assert.equal(calls, 1);
+	pending.handleInput("\x1b");
+	assert.deepEqual(done, [undefined]);
+	const before = renders;
+	resolveCopy();
+	await Promise.resolve();
 	assert.equal(renders, before, "late clipboard completion does not render a closed picker");
 });
 
 function runtime() {
-	const events = new Map<string, any>(); const commands = new Map<string, any>();
-	extension({ on: (n: string, f: any) => events.set(n, f), registerCommand: (n: string, c: any) => commands.set(n, c) } as any);
+	const events = new Map<string, any>();
+	const commands = new Map<string, any>();
+	extension({
+		on: (n: string, f: any) => events.set(n, f),
+		registerCommand: (n: string, c: any) => commands.set(n, c),
+	} as any);
 	return { events, jump: commands.get("jump").handler };
 }
 test("command: only active branch, inline cancellation preserves draft/scroll/context; commit rechecks stale IDs", async () => {
-	const r = runtime(); const h = host(); const a = entry("a"); const b = entry("b");
-	h.addMessageToChat(a.message); h.addMessageToChat(b.message);
-	let branch = [a, b]; let session = "one"; let draft = "untouched";
-	const notifications: string[] = []; let choose: any;
-	const forbidden = () => { throw new Error("session/draft mutation forbidden"); };
-	const ctx = { mode: "tui", hasUI: true, sessionManager: { getBranch: () => branch, getSessionId: () => session },
-		fork: forbidden, navigateTree: forbidden, ui: { notify: (s: string) => notifications.push(s), setEditorText: forbidden,
-			custom: async (factory: any, options: any) => { assert.equal(options, undefined); const picker = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, new KeybindingsManager(TUI_KEYBINDINGS), (id: any) => {}); picker.dispose(); return choose?.(); } } } as any;
+	const r = runtime();
+	const h = host();
+	const a = entry("a");
+	const b = entry("b");
+	h.addMessageToChat(a.message);
+	h.addMessageToChat(b.message);
+	let branch = [a, b];
+	let session = "one";
+	let draft = "untouched";
+	const notifications: string[] = [];
+	let choose: any;
+	const forbidden = () => {
+		throw new Error("session/draft mutation forbidden");
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		sessionManager: { getBranch: () => branch, getSessionId: () => session },
+		fork: forbidden,
+		navigateTree: forbidden,
+		ui: {
+			notify: (s: string) => notifications.push(s),
+			setEditorText: forbidden,
+			custom: async (factory: any, options: any) => {
+				assert.equal(options, undefined);
+				const picker = factory(
+					{ terminal: { rows: 20 }, requestRender() {} },
+					theme,
+					new KeybindingsManager(TUI_KEYBINDINGS),
+					(id: any) => {},
+				);
+				picker.dispose();
+				return choose?.();
+			},
+		},
+	} as any;
 	try {
 		const before = h.transcriptScrollView.scrollTop;
-		await r.jump("", ctx); assert.equal(h.transcriptScrollView.scrollTop, before); assert.equal(draft, "untouched"); assert.deepEqual(branch, [a,b]);
-		choose = () => { branch = [a]; return "b"; }; await r.jump("", ctx); assert.match(notifications.pop()!, /no longer on/);
-		choose = () => { session = "two"; return "a"; }; await r.jump("", ctx); assert.match(notifications.pop()!, /Session changed/);
-		choose = () => "a"; await r.jump("", ctx); assert.equal(notifications.length, 0);
-		choose = () => { h.chatContainer.clear(); return "a"; }; await r.jump("", ctx); assert.match(notifications.pop()!, /Not rendered/);
-		ctx.mode = "rpc"; await r.jump("", ctx); assert.match(notifications.pop()!, /interactive fullscreen/);
-	} finally { r.events.get("session_shutdown")({ reason: "quit" }); }
+		await r.jump("", ctx);
+		assert.equal(h.transcriptScrollView.scrollTop, before);
+		assert.equal(draft, "untouched");
+		assert.deepEqual(branch, [a, b]);
+		choose = () => {
+			branch = [a];
+			return "b";
+		};
+		await r.jump("", ctx);
+		assert.match(notifications.pop()!, /no longer on/);
+		choose = () => {
+			session = "two";
+			return "a";
+		};
+		await r.jump("", ctx);
+		assert.match(notifications.pop()!, /Session changed/);
+		choose = () => "a";
+		await r.jump("", ctx);
+		assert.equal(notifications.length, 0);
+		choose = () => {
+			h.chatContainer.clear();
+			return "a";
+		};
+		await r.jump("", ctx);
+		assert.match(notifications.pop()!, /Not rendered/);
+		ctx.mode = "rpc";
+		await r.jump("", ctx);
+		assert.match(notifications.pop()!, /interactive fullscreen/);
+	} finally {
+		r.events.get("session_shutdown")({ reason: "quit" });
+	}
 });
 
 test("command: session replacement shutdown closes a live inline picker, lifecycle resources released", async () => {
-	const r = runtime(); const h = host(); const a = entry("a"); h.addMessageToChat(a.message);
-	let picker: any; let result: any;
-	const ctx = { mode: "tui", hasUI: true, sessionManager: { getBranch: () => [a], getSessionId: () => "one" }, ui: {
-		notify: () => {}, custom: (factory: any) => new Promise(resolve => { picker = factory({ terminal: { rows: 20 }, requestRender() {} }, theme, new KeybindingsManager(TUI_KEYBINDINGS), resolve); }) } } as any;
+	const r = runtime();
+	const h = host();
+	const a = entry("a");
+	h.addMessageToChat(a.message);
+	let picker: any;
+	let result: any;
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		sessionManager: { getBranch: () => [a], getSessionId: () => "one" },
+		ui: {
+			notify: () => {},
+			custom: (factory: any) =>
+				new Promise((resolve) => {
+					picker = factory(
+						{ terminal: { rows: 20 }, requestRender() {} },
+						theme,
+						new KeybindingsManager(TUI_KEYBINDINGS),
+						resolve,
+					);
+				}),
+		},
+	} as any;
 	try {
 		assert.equal(r.events.has("session_switch"), false);
-		result = r.jump("", ctx); assert.ok(picker);
+		result = r.jump("", ctx);
+		assert.ok(picker);
 		// Pi emits session_shutdown before replacing the extension runtime during /new.
 		r.events.get("session_shutdown")({ reason: "new" });
-		await result; assert.equal(h.transcriptScrollView.scrollTop, 0);
+		await result;
+		assert.equal(h.transcriptScrollView.scrollTop, 0);
 	} finally {
 		r.events.get("session_shutdown")({ reason: "quit" });
 		// Replacement shutdown releases ownership; the next runtime can reclaim and clean up.

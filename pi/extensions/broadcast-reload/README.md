@@ -13,6 +13,7 @@ Sessions **without** this plugin used to be unreachable. They no longer are: und
 ## Safety Guarantee
 
 When a broadcast reload is triggered:
+
 - **Idle plugin sessions** (`ctx.isIdle()` is true, no pending messages or active runs) reload immediately over the socket.
 - **Busy plugin sessions** (agent actively streaming, executing tools, waiting for background processes, or running multi-turn tasks) will **not** be interrupted. Instead, the reload is safely deferred. As soon as the current agent task completes and settles (`agent_settled`), the session applies the reload automatically. This also applies to `/broadcast-reload --force`: Pi itself refuses to reload while a session is streaming or compacting, so a forced reload of a busy session is queued rather than lost — it is never reported as "reloaded" before it actually ran.
 - **Idle plugin-less sessions under Herdr** (no socket, but visible as an `idle` pi pane) get `/reload` typed into their pane via `herdr pane send-text` + `send-keys Enter`. The pane's status is re-checked immediately before each injection, so a session that started working after the scan is skipped instead of polluted.
@@ -27,6 +28,7 @@ In any active Pi session:
 ```text
 /broadcast-reload
 ```
+
 Safely broadcasts the reload to all other active Pi sessions (deferring busy ones), then reloads the current session — or queues that reload if this session turned busy meanwhile.
 
 ### Options

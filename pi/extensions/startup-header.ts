@@ -30,7 +30,12 @@ function clampChannel(value: number): number {
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-function animatedRow(row: string, progress: number, colorMode: TerminalColorMode, rowOffset = 0): string {
+function animatedRow(
+	row: string,
+	progress: number,
+	colorMode: TerminalColorMode,
+	rowOffset = 0,
+): string {
 	const rowWidth = visibleWidth(row);
 	if (rowWidth <= 0) return row;
 	const offset = rowOffset * 0.3;
@@ -42,12 +47,21 @@ function animatedRow(row: string, progress: number, colorMode: TerminalColorMode
 			const cellWidth = visibleWidth(cell);
 			column += cellWidth;
 			if (cell === " " || cellWidth === 0) return cell;
-			const position = ((currentColumn / rowWidth) * 1.6 + progress * 2.2 + rowOffset * 0.15) % palette.length;
+			const position =
+				((currentColumn / rowWidth) * 1.6 + progress * 2.2 + rowOffset * 0.15) % palette.length;
 			const first = Math.floor(position);
-			const color = mixColors(palette[first], palette[(first + 1) % palette.length], position - first, "srgb");
+			const color = mixColors(
+				palette[first],
+				palette[(first + 1) % palette.length],
+				position - first,
+				"srgb",
+			);
 			const shine = Math.max(0, 1 - Math.abs(currentColumn - shinePosition) / 2);
 			const lit = colorToRgb(mixColors(color, white, shine * 0.45, "srgb"));
-			const ansi = foregroundAnsi(rgbColor(clampChannel(lit.r), clampChannel(lit.g), clampChannel(lit.b)), colorMode);
+			const ansi = foregroundAnsi(
+				rgbColor(clampChannel(lit.r), clampChannel(lit.g), clampChannel(lit.b)),
+				colorMode,
+			);
 			return `${ansi}${cell}\x1b[39m`;
 		})
 		.join("");
@@ -73,14 +87,21 @@ function center(line: string, width: number): string {
 
 function stripTerminalControls(text: string): string {
 	return text
-		.replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x9d[^\x07\x9c]*(?:\x07|\x9c)/g, "")
+		.replace(
+			/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x9d[^\x07\x9c]*(?:\x07|\x9c)/g,
+			"",
+		)
 		.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "");
 }
 
 function displayCwd(cwd: string): string {
 	const path = stripTerminalControls(cwd);
 	const home = stripTerminalControls(homedir());
-	return home && path === home ? "~" : home && path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path;
+	return home && path === home
+		? "~"
+		: home && path.startsWith(home + sep)
+			? `~${path.slice(home.length)}`
+			: path;
 }
 
 export default function startupHeader(pi: ExtensionAPI): void {
@@ -123,7 +144,10 @@ export default function startupHeader(pi: ExtensionAPI): void {
 					const renderRow = (text: string, rowOffset: number, colored = animate): string => {
 						const clipped = clipPlainText(text, width);
 						if (!clipped) return center("", width);
-						return center(colored ? animatedRow(clipped, progress, colorMode, rowOffset) : blue(clipped), width);
+						return center(
+							colored ? animatedRow(clipped, progress, colorMode, rowOffset) : blue(clipped),
+							width,
+						);
 					};
 					return [
 						"",

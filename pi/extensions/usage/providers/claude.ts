@@ -62,7 +62,9 @@ export function resetClaudeCredentialCache(): void {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-	return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: undefined;
 }
 
 function text(value: unknown): string | undefined {
@@ -82,11 +84,13 @@ function headerNumber(value: string | undefined): number | undefined {
 
 /** ISO timestamp or epoch (seconds/ms) to epoch seconds. */
 function epochSeconds(value: unknown): number | undefined {
-	if (typeof value === "number" && Number.isFinite(value)) return value > 1e11 ? value / 1000 : value;
+	if (typeof value === "number" && Number.isFinite(value))
+		return value > 1e11 ? value / 1000 : value;
 	const raw = text(value);
 	if (!raw) return undefined;
 	const numeric = Number(raw);
-	if (Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(raw)) return numeric > 1e11 ? numeric / 1000 : numeric;
+	if (Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(raw))
+		return numeric > 1e11 ? numeric / 1000 : numeric;
 	const parsed = Date.parse(raw);
 	return Number.isFinite(parsed) ? parsed / 1000 : undefined;
 }
@@ -96,7 +100,10 @@ function epochSeconds(value: unknown): number | undefined {
  * headers use fractions. Values above 1 are unambiguous; a value at or below 1 could be either, so
  * callers pass `limits[].percent` when the response carries it and this stays the fallback.
  */
-function normalizeUtilization(value: number | undefined, treatAtMostOneAsFraction: boolean): number | undefined {
+function normalizeUtilization(
+	value: number | undefined,
+	treatAtMostOneAsFraction: boolean,
+): number | undefined {
 	if (value === undefined) return undefined;
 	if (value > 1) return value;
 	if (value === 1) return treatAtMostOneAsFraction ? 100 : 1;
@@ -106,10 +113,14 @@ function normalizeUtilization(value: number | undefined, treatAtMostOneAsFractio
 /** macOS keychain read; disabled by the injectable seam so tests never touch the real login. */
 async function readDarwinKeychain(service: string): Promise<string | undefined> {
 	try {
-		const { stdout } = await execFileAsync("security", ["find-generic-password", "-s", service, "-w"], {
-			timeout: 5_000,
-			maxBuffer: 64 * 1024,
-		});
+		const { stdout } = await execFileAsync(
+			"security",
+			["find-generic-password", "-s", service, "-w"],
+			{
+				timeout: 5_000,
+				maxBuffer: 64 * 1024,
+			},
+		);
 		return stdout;
 	} catch {
 		return undefined;
@@ -125,7 +136,9 @@ async function readCredentialFile(path: string): Promise<ClaudeCredential | unde
 		return {
 			token,
 			expiresAtMs: number(oauth?.expiresAt),
-			...(text(oauth?.subscriptionType) === undefined ? {} : { subscriptionType: text(oauth?.subscriptionType)! }),
+			...(text(oauth?.subscriptionType) === undefined
+				? {}
+				: { subscriptionType: text(oauth?.subscriptionType)! }),
 		};
 	} catch {
 		return undefined;
@@ -152,7 +165,9 @@ async function readCredential(ctx: AdapterContext): Promise<ClaudeCredential | u
 				return {
 					token,
 					expiresAtMs: number(oauth?.expiresAt),
-					...(text(oauth?.subscriptionType) === undefined ? {} : { subscriptionType: text(oauth?.subscriptionType)! }),
+					...(text(oauth?.subscriptionType) === undefined
+						? {}
+						: { subscriptionType: text(oauth?.subscriptionType)! }),
 				};
 			}
 		} catch {
@@ -170,7 +185,10 @@ async function credential(ctx: AdapterContext): Promise<ClaudeCredential | undef
 }
 
 function expired(credential: ClaudeCredential): boolean {
-	return credential.expiresAtMs !== undefined && credential.expiresAtMs - Date.now() < TOKEN_MIN_VALIDITY_MS;
+	return (
+		credential.expiresAtMs !== undefined &&
+		credential.expiresAtMs - Date.now() < TOKEN_MIN_VALIDITY_MS
+	);
 }
 
 /** Rows from the normalized `limits[]` array, which is the endpoint's clearest statement of quota. */
@@ -186,17 +204,24 @@ function limitRows(payload: Record<string, unknown>): { rows: UsageRow[]; worst?
 		const resetsAt = epochSeconds(limit.resets_at);
 		const severity = text(limit.severity);
 		const scope = text(limit.scope);
-		const label = kind === "session"
-			? "5h session"
-			: kind === "weekly_all"
-				? "weekly · all models"
-				: kind.startsWith("weekly")
-					? `weekly · ${scope ?? kind.replace(/^weekly_?/, "")}`.replace(/·\s*$/, "· scoped")
-					: kind;
+		const label =
+			kind === "session"
+				? "5h session"
+				: kind === "weekly_all"
+					? "weekly · all models"
+					: kind.startsWith("weekly")
+						? `weekly · ${scope ?? kind.replace(/^weekly_?/, "")}`.replace(/·\s*$/, "· scoped")
+						: kind;
 		const window = kind === "session" ? "5h" : kind.startsWith("weekly") ? "weekly" : "limit";
 		rows.push({
 			label,
-			windows: [{ label: window, ...(percent === undefined ? {} : { usedPercent: percent }), ...(resetsAt === undefined ? {} : { resetsAt }) }],
+			windows: [
+				{
+					label: window,
+					...(percent === undefined ? {} : { usedPercent: percent }),
+					...(resetsAt === undefined ? {} : { resetsAt }),
+				},
+			],
 			...(severity && severity !== "normal" ? { state: severity } : {}),
 		});
 		if (severity && severity !== "normal") worst = severity;
@@ -221,7 +246,13 @@ function bucketRows(payload: Record<string, unknown>): UsageRow[] {
 		if (percent === undefined && resetsAt === undefined) continue;
 		rows.push({
 			label,
-			windows: [{ label: key === "five_hour" ? "5h" : "weekly", ...(percent === undefined ? {} : { usedPercent: percent }), ...(resetsAt === undefined ? {} : { resetsAt }) }],
+			windows: [
+				{
+					label: key === "five_hour" ? "5h" : "weekly",
+					...(percent === undefined ? {} : { usedPercent: percent }),
+					...(resetsAt === undefined ? {} : { resetsAt }),
+				},
+			],
 			...(text(bucket.locked_reason) ? { state: text(bucket.locked_reason)! } : {}),
 		});
 	}
@@ -230,7 +261,9 @@ function bucketRows(payload: Record<string, unknown>): UsageRow[] {
 
 /** App-level share of weekly usage; labelled as a share so it is not read as a limit. */
 function breakdownRows(payload: Record<string, unknown>): UsageRow[] {
-	const rows = Array.isArray(record(payload.seven_day_breakdown)?.rows) ? (record(payload.seven_day_breakdown)!.rows as unknown[]) : [];
+	const rows = Array.isArray(record(payload.seven_day_breakdown)?.rows)
+		? (record(payload.seven_day_breakdown)!.rows as unknown[])
+		: [];
 	const out: UsageRow[] = [];
 	for (const entry of rows) {
 		const row = record(entry);
@@ -238,7 +271,11 @@ function breakdownRows(payload: Record<string, unknown>): UsageRow[] {
 		const name = displayText(row.display_name ?? row.key, 24);
 		const percent = number(row.percent);
 		if (!name || percent === undefined) continue;
-		out.push({ group: "Weekly usage share", label: name, windows: [{ label: "share", usedPercent: percent, note: "of weekly usage" }] });
+		out.push({
+			group: "Weekly usage share",
+			label: name,
+			windows: [{ label: "share", usedPercent: percent, note: "of weekly usage" }],
+		});
 	}
 	return out;
 }
@@ -255,7 +292,9 @@ function creditRows(payload: Record<string, unknown>): UsageRow[] {
 			const amount = number(value?.amount_minor);
 			const exponent = number(value?.exponent) ?? 2;
 			const currency = text(value?.currency) ?? "USD";
-			return amount === undefined ? undefined : `${currency} ${(amount / 10 ** exponent).toFixed(exponent)}`;
+			return amount === undefined
+				? undefined
+				: `${currency} ${(amount / 10 ** exponent).toFixed(exponent)}`;
 		};
 		const usedText = money(used);
 		const limitText = money(limit);
@@ -263,7 +302,9 @@ function creditRows(payload: Record<string, unknown>): UsageRow[] {
 			group: "Credits",
 			label: "extra usage",
 			windows: [{ label: "spend", ...(percent === undefined ? {} : { usedPercent: percent }) }],
-			...(usedText || limitText ? { state: [usedText, limitText].filter(Boolean).join(" / ") } : {}),
+			...(usedText || limitText
+				? { state: [usedText, limitText].filter(Boolean).join(" / ") }
+				: {}),
 		});
 	}
 	const extra = record(payload.extra_usage);
@@ -292,7 +333,9 @@ export function parseClaudeUsagePayload(payload: unknown): ProviderSnapshot {
 	if (!rows.length) notes.push("Claude returned no usage windows.");
 	if (limits.worst !== undefined) notes.push(`severity: ${displayText(limits.worst, 24)}`);
 	const subscription = text(root.subscription_type);
-	const known = quotaRows.map((row) => row.windows[0]?.usedPercent).filter((value): value is number => value !== undefined && Number.isFinite(value));
+	const known = quotaRows
+		.map((row) => row.windows[0]?.usedPercent)
+		.filter((value): value is number => value !== undefined && Number.isFinite(value));
 	const statusPercent = known.length ? Math.max(...known) : undefined;
 	return {
 		providerId: "claude",
@@ -309,7 +352,9 @@ export function parseClaudeUsagePayload(payload: unknown): ProviderSnapshot {
  * Build a snapshot from the unified rate-limit headers. Returns undefined when the response carries
  * no Claude rate-limit headers (any other provider, or a response before Claude Code reported one).
  */
-export function parseClaudeHeaders(headers: Readonly<Record<string, string>> | undefined): ProviderSnapshot | undefined {
+export function parseClaudeHeaders(
+	headers: Readonly<Record<string, string>> | undefined,
+): ProviderSnapshot | undefined {
 	if (!headers) return undefined;
 	const lookup = new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
 	const rows: UsageRow[] = [];
@@ -322,7 +367,13 @@ export function parseClaudeHeaders(headers: Readonly<Record<string, string>> | u
 		if (usedPercent === undefined && resetsAt === undefined) continue;
 		rows.push({
 			label,
-			windows: [{ label, ...(usedPercent === undefined ? {} : { usedPercent }), ...(resetsAt === undefined ? {} : { resetsAt }) }],
+			windows: [
+				{
+					label,
+					...(usedPercent === undefined ? {} : { usedPercent }),
+					...(resetsAt === undefined ? {} : { resetsAt }),
+				},
+			],
 		});
 	}
 	if (!rows.length) return undefined;
@@ -332,7 +383,9 @@ export function parseClaudeHeaders(headers: Readonly<Record<string, string>> | u
 	const notes: string[] = ["Live from Claude rate-limit headers"];
 	if (status && status !== "allowed") notes.push(`limit status: ${displayText(status, 24)}`);
 	if (overage && overage !== "allowed") notes.push(`overage: ${displayText(overage, 24)}`);
-	const statusPercent = Math.max(...rows.map((row) => row.windows[0]?.usedPercent ?? Number.NEGATIVE_INFINITY));
+	const statusPercent = Math.max(
+		...rows.map((row) => row.windows[0]?.usedPercent ?? Number.NEGATIVE_INFINITY),
+	);
 	return {
 		providerId: "claude",
 		title: "Claude",
@@ -356,17 +409,22 @@ export const claudeAdapter: ProviderAdapter = {
 	async fetch(ctx: AdapterContext, signal?: AbortSignal): Promise<ProviderSnapshot> {
 		const found = await credential(ctx);
 		if (!found) throw new ProviderStateError("setup", "No Claude login found · run claude");
-		if (expired(found)) throw new ProviderStateError("auth-refresh", "Claude token expired · run claude to refresh");
-		const payload = await fetchBoundedJson(USAGE_URL, {
-			method: "GET",
-			headers: {
-				authorization: `Bearer ${found.token}`,
-				accept: "application/json",
-				"anthropic-beta": "oauth-2025-04-20",
-				"user-agent": "claude-code/usage-extension",
+		if (expired(found))
+			throw new ProviderStateError("auth-refresh", "Claude token expired · run claude to refresh");
+		const payload = await fetchBoundedJson(
+			USAGE_URL,
+			{
+				method: "GET",
+				headers: {
+					authorization: `Bearer ${found.token}`,
+					accept: "application/json",
+					"anthropic-beta": "oauth-2025-04-20",
+					"user-agent": "claude-code/usage-extension",
+				},
+				...(signal === undefined ? {} : { signal }),
 			},
-			...(signal === undefined ? {} : { signal }),
-		}, { fetch: ctx.fetch, label: "Claude" });
+			{ fetch: ctx.fetch, label: "Claude" },
+		);
 		const snapshot = parseClaudeUsagePayload(payload);
 		return found.subscriptionType === undefined || snapshot.subtitle !== undefined
 			? snapshot

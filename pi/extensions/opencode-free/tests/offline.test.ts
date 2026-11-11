@@ -30,7 +30,14 @@ function requestsUnder(flags: Record<string, string>): Promise<string[]> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(
 			process.execPath,
-			["--experimental-strip-types", "--import", new URL("../../_test-support/register-loader.mjs", import.meta.url).href, "--import", new URL("./setup.mjs", import.meta.url).href, "./tests/offline-worker.ts"],
+			[
+				"--experimental-strip-types",
+				"--import",
+				new URL("../../_test-support/register-loader.mjs", import.meta.url).href,
+				"--import",
+				new URL("./setup.mjs", import.meta.url).href,
+				"./tests/offline-worker.ts",
+			],
 			{ cwd: extensionDir, env, stdio: ["ignore", "pipe", "pipe"] },
 		);
 		let stdout = "";

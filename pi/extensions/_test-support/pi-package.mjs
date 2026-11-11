@@ -26,7 +26,9 @@ export function piPackageRoot() {
 		}
 		directory = dirname(directory);
 	}
-	throw new Error(`Cannot find ${packageName}; load _test-support/register-loader.mjs with --import first.`);
+	throw new Error(
+		`Cannot find ${packageName}; load _test-support/register-loader.mjs with --import first.`,
+	);
 }
 
 /** File URL of a path inside the installed Pi package, including non-exported dist/ internals. */

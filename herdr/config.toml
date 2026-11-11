@@ -1,92 +1,92 @@
 onboarding = false
 
 [terminal]
-  default_shell = "zsh"
+default_shell = "zsh"
 
 [experimental]
-  kitty_graphics = true
+kitty_graphics = true
 
 [keys]
-  [[keys.command]]
-    key = "ctrl+h"
-    type = "plugin_action"
-    command = "herdr-splits.nav-left"
-    description = "Navigate left (vim/herdr)"
+[[keys.command]]
+key = "ctrl+h"
+type = "plugin_action"
+command = "herdr-splits.nav-left"
+description = "Navigate left (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+j"
-    type = "plugin_action"
-    command = "herdr-splits.nav-down"
-    description = "Navigate down (vim/herdr)"
+[[keys.command]]
+key = "ctrl+j"
+type = "plugin_action"
+command = "herdr-splits.nav-down"
+description = "Navigate down (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+k"
-    type = "plugin_action"
-    command = "herdr-splits.nav-up"
-    description = "Navigate up (vim/herdr)"
+[[keys.command]]
+key = "ctrl+k"
+type = "plugin_action"
+command = "herdr-splits.nav-up"
+description = "Navigate up (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+l"
-    type = "plugin_action"
-    command = "herdr-splits.nav-right"
-    description = "Navigate right (vim/herdr)"
+[[keys.command]]
+key = "ctrl+l"
+type = "plugin_action"
+command = "herdr-splits.nav-right"
+description = "Navigate right (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+left"
-    type = "plugin_action"
-    command = "herdr-splits.resize-left"
-    description = "Resize left (vim/herdr)"
+[[keys.command]]
+key = "ctrl+left"
+type = "plugin_action"
+command = "herdr-splits.resize-left"
+description = "Resize left (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+down"
-    type = "plugin_action"
-    command = "herdr-splits.resize-down"
-    description = "Resize down (vim/herdr)"
+[[keys.command]]
+key = "ctrl+down"
+type = "plugin_action"
+command = "herdr-splits.resize-down"
+description = "Resize down (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+up"
-    type = "plugin_action"
-    command = "herdr-splits.resize-up"
-    description = "Resize up (vim/herdr)"
+[[keys.command]]
+key = "ctrl+up"
+type = "plugin_action"
+command = "herdr-splits.resize-up"
+description = "Resize up (vim/herdr)"
 
-  [[keys.command]]
-    key = "ctrl+right"
-    type = "plugin_action"
-    command = "herdr-splits.resize-right"
-    description = "Resize right (vim/herdr)"
+[[keys.command]]
+key = "ctrl+right"
+type = "plugin_action"
+command = "herdr-splits.resize-right"
+description = "Resize right (vim/herdr)"
 
-  [[keys.command]]
-    key = "prefix+f"
-    type = "popup"
-    width = "75%"
-    height = "75%"
-    command = "seshagy --ephemeral"
+[[keys.command]]
+key = "prefix+f"
+type = "popup"
+width = "75%"
+height = "75%"
+command = "seshagy --ephemeral"
 
-  [[keys.command]]
-    key = "prefix+,"
-    type = "plugin_action"
-    command = "herdr-last.toggle-workspace"
-    description = "Toggle to last workspace"
+[[keys.command]]
+key = "prefix+,"
+type = "plugin_action"
+command = "herdr-last.toggle-workspace"
+description = "Toggle to last workspace"
 
-  [[keys.command]]
-    key = "prefix+."
-    type = "plugin_action"
-    command = "herdr-last.toggle-tab"
-    description = "Toggle to last tab"
+[[keys.command]]
+key = "prefix+."
+type = "plugin_action"
+command = "herdr-last.toggle-tab"
+description = "Toggle to last tab"
 
 [worktrees]
-  directory = "~/worktrees"
+directory = "~/worktrees"
 
 [ui]
-  agent_panel_sort = "spaces"
-  prompt_new_tab_name = false
-  sidebar_collapsed_mode = "hidden"
+agent_panel_sort = "spaces"
+prompt_new_tab_name = false
+sidebar_collapsed_mode = "hidden"
 
 
 [theme]
-  name = "catppuccin"
-  auto_switch = false
+name = "catppuccin"
+auto_switch = false
 
-  [theme.custom]
-    panel_bg = "transparent"
-    active_row_bg = "transparent"
+[theme.custom]
+panel_bg = "transparent"
+active_row_bg = "transparent"

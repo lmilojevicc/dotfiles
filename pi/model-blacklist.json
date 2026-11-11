@@ -1,24 +1,25 @@
 {
-	"providers": {
-		"openai-codex": ["*"],
-		"claude-bridge": ["!claude-{opus,sonnet,haiku}->=5.5*", "!claude-{fable,mythos}-*"],
-		"commandcode": ["claude-*", "gpt-*", "*gemini-<4*"],
-		"opencode-go": ["claude-*", "gpt-*"]
-	},
-	"global": [
-		"*claude-{opus,sonnet,haiku}-<5.5*",
-		"*gpt-<6*", "*gpt-oss*",
-		"*gemini-<3.8*",
-		"*deepseek-v<4.1-flash*",
-		"*grok-<4.7*",
-		"*kimi-k<3*",
-		"*glm-<5.3*",
-		"*mimo-v<2.6*",
-		"*minimax*-m<3*",
-		"*muse-spark-<1.3*",
-		"*qwen<3.8*",
-		"*step-<3.7*",
-		"*nemotron*",
-		"*-disabled"
-	]
+  "providers": {
+    "openai-codex": ["*"],
+    "claude-bridge": ["!claude-{opus,sonnet,haiku}->=5.5*", "!claude-{fable,mythos}-*"],
+    "commandcode": ["claude-*", "gpt-*", "*gemini-<4*"],
+    "opencode-go": ["claude-*", "gpt-*"]
+  },
+  "global": [
+    "*claude-{opus,sonnet,haiku}-<5.5*",
+    "*gpt-<6*",
+    "*gpt-oss*",
+    "*gemini-<3.8*",
+    "*deepseek-v<4.1-flash*",
+    "*grok-<4.7*",
+    "*kimi-k<3*",
+    "*glm-<5.3*",
+    "*mimo-v<2.6*",
+    "*minimax*-m<3*",
+    "*muse-spark-<1.3*",
+    "*qwen<3.8*",
+    "*step-<3.7*",
+    "*nemotron*",
+    "*-disabled"
+  ]
 }

@@ -5,7 +5,10 @@ local snacks = dofile(root .. "/lua/plugins/snacks.lua")
 local specs = dofile(root .. "/lua/plugins/snacks-fff.lua")
 
 local function equal(expected, actual, label)
-  assert(vim.deep_equal(expected, actual), label .. ": expected " .. vim.inspect(expected) .. ", got " .. vim.inspect(actual))
+  assert(
+    vim.deep_equal(expected, actual),
+    label .. ": expected " .. vim.inspect(expected) .. ", got " .. vim.inspect(actual)
+  )
 end
 
 local calls = {}
@@ -90,7 +93,15 @@ integration.opts(nil, empty_opts)
 assert(empty_opts.picker.sources.fff_files, "registration without existing picker opts")
 equal(false, sources.fff_grep_word.live, "word picker matches non-live Snacks default")
 for _, selection in ipairs({ "cursor_word", ".foo+", "[a](b)\\c^$|?*{}", "two words" }) do
-  equal(selection, sources.fff_grep_word.search({ word = function() return selection end }), "original input word/selection")
+  equal(
+    selection,
+    sources.fff_grep_word.search({
+      word = function()
+        return selection
+      end,
+    }),
+    "original input word/selection"
+  )
 end
 
 equal("fff files", sources.fff_files.title, "exact lowercase file title")
@@ -101,10 +112,16 @@ for _, name in ipairs({ "fff_files", "fff_grep", "fff_grep_word" }) do
   for _, win in ipairs({ "input", "list" }) do
     local keys = sources[name].win[win].keys
     equal(false, keys["<a-h>"], name .. " no inherited Option-H")
-    equal(win == "input" and { "fff_toggle_hidden", mode = { "i", "n" } } or "fff_toggle_hidden",
-      keys["<a-e>"], name .. " Option-E " .. win)
-    equal(win == "input" and { "fff_toggle_ignored", mode = { "i", "n" } } or "fff_toggle_ignored",
-      keys["<a-i>"], name .. " Option-I " .. win)
+    equal(
+      win == "input" and { "fff_toggle_hidden", mode = { "i", "n" } } or "fff_toggle_hidden",
+      keys["<a-e>"],
+      name .. " Option-E " .. win
+    )
+    equal(
+      win == "input" and { "fff_toggle_ignored", mode = { "i", "n" } } or "fff_toggle_ignored",
+      keys["<a-i>"],
+      name .. " Option-I " .. win
+    )
   end
 end
 equal(false, sources.fff_grep.hidden, "original workspace grep hidden default")
@@ -116,16 +133,26 @@ local native_configs = {
   grep = { finder = "grep", live = true, matcher = { sort = true }, sort = { fields = { "score:desc" } } },
   grep_word = { finder = "grep", live = false, matcher = { sort = true }, sort = { fields = { "score:desc" } } },
 }
-Snacks.git = { get_root = function() return is_git and "/fixture" or nil end }
+Snacks.git = {
+  get_root = function()
+    return is_git and "/fixture" or nil
+  end,
+}
 Snacks.picker.config = {
-  get = function(config) return vim.deepcopy(native_configs[config.source]) end,
+  get = function(config)
+    return vim.deepcopy(native_configs[config.source])
+  end,
   finder = function()
-    return function(fopts, ctx) return { opts = fopts, search = ctx.filter.search } end
+    return function(fopts, ctx)
+      return { opts = fopts, search = ctx.filter.search }
+    end
   end,
 }
 local function configure_source(name, overrides)
   local config = vim.tbl_deep_extend("force", vim.deepcopy(sources[name]), {
-    source = name, cwd = "/fixture", toggles = { hidden = "h", ignored = "i" },
+    source = name,
+    cwd = "/fixture",
+    toggles = { hidden = "h", ignored = "i" },
   }, overrides or {})
   return config.config(config)
 end
@@ -164,10 +191,16 @@ local function toggle(config, flag, query)
     init_opts = { layout = { preset = "telescope" }, arbitrary = "retained" },
     input = {
       filter = { cwd = "/fixture/subdir", pattern = config.pattern or "", search = config.search or "" },
-      get = function() return query end,
+      get = function()
+        return query
+      end,
     },
-    current_win = function() return "list" end,
-    close = function() closed = true end,
+    current_win = function()
+      return "list"
+    end,
+    close = function()
+      closed = true
+    end,
   }
   config.actions["fff_toggle_" .. flag](picker_stub)
   assert(closed, "toggle closes old backend")
@@ -195,25 +228,38 @@ equal(true, toggled.native, "non-Git hidden on requires native")
 equal("keep query", toggled.pattern, "hidden toggle retains query")
 local word_native = configure_source("fff_grep_word", { ignored = true })
 local cloneable = {}
-function cloneable:clone() return setmetatable({}, { __index = self }) end
-local native_word = word_native.finder(word_native, setmetatable({
-  filter = setmetatable({ search = "two -- words {a,b}" }, { __index = cloneable }),
-}, { __index = cloneable }))
-equal("\\b{start-half}two\\x20--\\x20words\\x20\\{a\\x2cb\\}\\b{end-half}", native_word.search,
-  "native word selection escapes literals and prevents Snacks argument parsing")
+function cloneable:clone()
+  return setmetatable({}, { __index = self })
+end
+local native_word = word_native.finder(
+  word_native,
+  setmetatable({
+    filter = setmetatable({ search = "two -- words {a,b}" }, { __index = cloneable }),
+  }, { __index = cloneable })
+)
+equal(
+  "\\b{start-half}two\\x20--\\x20words\\x20\\{a\\x2cb\\}\\b{end-half}",
+  native_word.search,
+  "native word selection escapes literals and prevents Snacks argument parsing"
+)
 equal(true, native_word.opts.regex, "native word literal-boundary regex")
 equal({}, native_word.opts.args, "no conflicting native word-regexp boundaries")
-local empty_native_word = word_native.finder(word_native, setmetatable({
-  filter = setmetatable({ search = "" }, { __index = cloneable }),
-}, { __index = cloneable }))
+local empty_native_word = word_native.finder(
+  word_native,
+  setmetatable({
+    filter = setmetatable({ search = "" }, { __index = cloneable }),
+  }, { __index = cloneable })
+)
 equal("", empty_native_word.search, "native empty word search remains empty")
 
 local scheduled, bootstrap_count, api_calls = false, 0, {}
 local file_search, content_search
-package.loaded["fff.file_picker"] = { setup = function()
-  assert(scheduled, "bootstrap scheduled on main thread")
-  bootstrap_count = bootstrap_count + 1
-end }
+package.loaded["fff.file_picker"] = {
+  setup = function()
+    assert(scheduled, "bootstrap scheduled on main thread")
+    bootstrap_count = bootstrap_count + 1
+  end,
+}
 package.loaded.fff = {
   file_search = function(query, search_opts)
     assert(scheduled, "file API scheduled on main thread")
@@ -232,28 +278,40 @@ local function run(name, query, control)
   local items, schedules, aborted = {}, 0, control.aborted or false
   local ctx = {
     filter = { search = query },
-    cwd = function() return "/fixture" end,
+    cwd = function()
+      return "/fixture"
+    end,
     async = {
-      aborted = function() return aborted end,
+      aborted = function()
+        return aborted
+      end,
       schedule = function(_, fn)
         schedules = schedules + 1
-        if control.before == schedules then aborted = true end
+        if control.before == schedules then
+          aborted = true
+        end
         scheduled = true
         local result = fn()
         scheduled = false
-        if control.after == schedules then aborted = true end
+        if control.after == schedules then
+          aborted = true
+        end
         return result
       end,
     },
   }
   local finder_opts = vim.deepcopy(sources[name])
-  if control.hidden ~= nil then finder_opts.hidden = control.hidden end
+  if control.hidden ~= nil then
+    finder_opts.hidden = control.hidden
+  end
   local stream = sources[name].finder(finder_opts, ctx)
   equal("function", type(stream), name .. " async streaming finder")
   equal({}, api_calls, "finder defers API until streaming")
   stream(function(item)
     items[#items + 1] = item
-    if #items == control.emissions then aborted = true end
+    if #items == control.emissions then
+      aborted = true
+    end
   end)
   return items
 end
@@ -304,27 +362,43 @@ for _, total_matched in ipairs({ 0, 10 }) do
   equal(1, #run("fff_files", "inconsistent"), "file emission ignores inconsistent metadata")
   equal(1, #api_calls, "inconsistent metadata does not retry file query")
 end
-file_search = function() return { items = {}, total_matched = 10 } end
+file_search = function()
+  return { items = {}, total_matched = 10 }
+end
 equal(0, #run("fff_files", "none"), "empty file result terminates")
 equal(1, #api_calls, "no endless empty file paging")
 
 file_search = function()
-  return { items = {
-    { relative_path = ".env" }, { relative_path = ".config/nvim/init.lua" },
-    { relative_path = "src/.cache/file.lua" }, { relative_path = "src/visible.lua" },
-    { relative_path = "./visible.lua" }, { relative_path = "some.name/file.lua" },
-  } }
+  return {
+    items = {
+      { relative_path = ".env" },
+      { relative_path = ".config/nvim/init.lua" },
+      { relative_path = "src/.cache/file.lua" },
+      { relative_path = "src/visible.lua" },
+      { relative_path = "./visible.lua" },
+      { relative_path = "some.name/file.lua" },
+    },
+  }
 end
 equal(6, #run("fff_files", "", { hidden = true }), "Git hidden-on emits indexed hidden files")
 local visible = run("fff_files", "", { hidden = false })
-equal({ "src/visible.lua", "./visible.lua", "some.name/file.lua" },
-  vim.tbl_map(function(item) return item.file end, visible), "hidden-off filters every dot-prefixed component")
+equal(
+  { "src/visible.lua", "./visible.lua", "some.name/file.lua" },
+  vim.tbl_map(function(item)
+    return item.file
+  end, visible),
+  "hidden-off filters every dot-prefixed component"
+)
 equal(1, #api_calls, "hidden filtering retains one-call file API")
 
 local function match(i)
   return {
-    relative_path = "same.lua", name = "same.lua", line_number = i,
-    line_content = "  foo foo", col = 2, match_ranges = { { 2, 5 }, { 6, 9 } },
+    relative_path = "same.lua",
+    name = "same.lua",
+    line_number = i,
+    line_content = "  foo foo",
+    col = 2,
+    match_ranges = { { 2, 5 }, { 6, 9 } },
   }
 end
 content_search = function(query, search_opts)
@@ -339,7 +413,9 @@ content_search = function(query, search_opts)
   equal("/fixture", search_opts.cwd, "grep index cwd")
   if search_opts.file_offset == 0 then
     local items = {}
-    for i = 1, 320 do items[i] = match(i) end
+    for i = 1, 320 do
+      items[i] = match(i)
+    end
     return { items = items, next_file_offset = 1 }
   elseif search_opts.file_offset == 1 then
     return { items = {}, next_file_offset = 7 }
@@ -349,7 +425,13 @@ content_search = function(query, search_opts)
 end
 local matches = run("fff_grep", "foo.*")
 equal(321, #matches, "all grep pages, including >page_size from one file")
-equal({ 0, 1, 7 }, vim.tbl_map(function(call) return call.opts.file_offset end, api_calls), "file-offset grep pagination")
+equal(
+  { 0, 1, 7 },
+  vim.tbl_map(function(call)
+    return call.opts.file_offset
+  end, api_calls),
+  "file-offset grep pagination"
+)
 for i, item in ipairs(matches) do
   equal({ i, 2 }, item.pos, "exact backend grep order and coordinates")
   equal("  foo foo", item.line, "preserve leading whitespace")
@@ -361,7 +443,9 @@ equal(0, #api_calls, "no empty grep request")
 equal(0, #run("fff_grep", "foo.*", { after = 1 }), "cancel scheduled grep results")
 equal(51, #run("fff_grep", "foo.*", { emissions = 51 }), "cancel grep emissions")
 equal(1, #api_calls, "no subsequent grep pages after cancellation")
-content_search = function() return { items = {}, next_file_offset = 4 } end
+content_search = function()
+  return { items = {}, next_file_offset = 4 }
+end
 equal(0, #run("fff_grep", "none"), "non-progress grep offset guard")
 equal(2, #api_calls, "repeated offset terminates")
 content_search = function(_, search_opts)
@@ -369,10 +453,15 @@ content_search = function(_, search_opts)
 end
 run("fff_grep", "none")
 equal(2, #api_calls, "backwards offset terminates")
-content_search = function() return { items = {}, next_file_offset = 0 } end
+content_search = function()
+  return { items = {}, next_file_offset = 0 }
+end
 run("fff_grep_word", ".foo+[a](b)\\c^$|?*{} two words")
-equal("\\b{start-half}\\.foo\\+\\[a\\]\\(b\\)\\\\c\\^\\$\\|\\?\\*\\{\\}\\x20two\\x20words\\b{end-half}", api_calls[1].query,
-  "literal Rust escaping and punctuation-safe whole-word boundaries")
+equal(
+  "\\b{start-half}\\.foo\\+\\[a\\]\\(b\\)\\\\c\\^\\$\\|\\?\\*\\{\\}\\x20two\\x20words\\b{end-half}",
+  api_calls[1].query,
+  "literal Rust escaping and punctuation-safe whole-word boundaries"
+)
 equal("regex", api_calls[1].opts.mode, "literal boundaries use regex backend only")
 for _, case in ipairs({
   { "foo  bar", "foo\\x20\\x20bar", "foo bar" },
@@ -381,7 +470,11 @@ for _, case in ipairs({
   { "{a,b}", "\\{a\\x2cb\\}", "{axb}" },
   { "foo, bar", "foo\\x2c\\x20bar", "foo bar" },
 }) do
-  local input = sources.fff_grep_word.search({ word = function() return case[1] end })
+  local input = sources.fff_grep_word.search({
+    word = function()
+      return case[1]
+    end,
+  })
   equal(case[1], input, "selection input remains original")
   run("fff_grep_word", input)
   local escaped = api_calls[1].query
@@ -465,8 +558,11 @@ if vim.env.SNACKS_RTP then
               equal(mapping[2], type(action) == "table" and action[1] or action, "resolved inclusion binding")
               equal("function", type(config.actions[mapping[2]]), "custom action survives generated Snacks toggles")
             end
-            equal("list_down", keys[Snacks.util.normkey("<c-j>")][1] or keys[Snacks.util.normkey("<c-j>")],
-              "native fallback preserves default navigation")
+            equal(
+              "list_down",
+              keys[Snacks.util.normkey("<c-j>")][1] or keys[Snacks.util.normkey("<c-j>")],
+              "native fallback preserves default navigation"
+            )
           end
           equal("telescope", config.layout.preset, "resolved layout unchanged")
           equal(original.picker.layouts.telescope, config.layouts.telescope, "resolved custom layout unchanged")
@@ -478,10 +574,12 @@ if vim.env.SNACKS_RTP then
       end
     end
   end
-  equal(true, Snacks.picker.config.get({ source = "fff_files", cwd = plain_cwd }).native,
-    "default hidden-on non-Git/home-style picker chooses native")
-  equal(false, Snacks.picker.config.get({ source = "fff_files", cwd = git_cwd }).native,
-    "default Git files keeps fff")
+  equal(
+    true,
+    Snacks.picker.config.get({ source = "fff_files", cwd = plain_cwd }).native,
+    "default hidden-on non-Git/home-style picker chooses native"
+  )
+  equal(false, Snacks.picker.config.get({ source = "fff_files", cwd = git_cwd }).native, "default Git files keeps fff")
   local total, backend_calls = 10005, 0
   package.loaded.fff.file_search = function(_, search_opts)
     backend_calls = backend_calls + 1
@@ -496,9 +594,12 @@ if vim.env.SNACKS_RTP then
   local resolved = Snacks.picker.config.get({ source = "fff_files", cwd = git_cwd })
   equal(math.huge, resolved.limit_live, "resolved config overrides Snacks default cap")
   local real_picker = Snacks.picker.fff_files({ cwd = git_cwd, layout = { preset = "select", preview = false } })
-  assert(vim.wait(15000, function()
-    return not real_picker.finder:running() and not real_picker.matcher:running()
-  end, 10), "real Snacks finder timed out")
+  assert(
+    vim.wait(15000, function()
+      return not real_picker.finder:running() and not real_picker.matcher:running()
+    end, 10),
+    "real Snacks finder timed out"
+  )
   equal(total, #real_picker:items(), "real Snacks finder streams more than 10000 items")
   equal(1, backend_calls, "real Snacks file query invokes backend once")
   real_picker:close()
@@ -526,12 +627,18 @@ if vim.env.SNACKS_RTP then
     show_calls = show_calls + 1
   end
   local native_picker = Snacks.picker.fff_files({
-    cwd = plain_cwd, ignored = true, search = "fl", layout = { preset = "select", preview = false },
+    cwd = plain_cwd,
+    ignored = true,
+    search = "fl",
+    layout = { preset = "select", preview = false },
     on_show = original_on_show,
   })
-  assert(vim.wait(15000, function()
-    return not native_picker.finder:running() and not native_picker.matcher:running()
-  end, 10), "native Snacks finder timed out")
+  assert(
+    vim.wait(15000, function()
+      return not native_picker.finder:running() and not native_picker.matcher:running()
+    end, 10),
+    "native Snacks finder timed out"
+  )
   equal("fff files", native_picker.title, "native UI exact title")
   equal(true, native_picker.opts.native, "native UI backend hint enabled")
   equal("fl", native_picker.input.filter.pattern, "native UI query uses fuzzy pattern")
@@ -547,21 +654,30 @@ if vim.env.SNACKS_RTP then
     local callback = current.opts.on_show
     local next_picker = current.opts.actions["fff_toggle_" .. flag](current)
     assert(current.closed, "real toggle closes previous backend")
-    assert(vim.wait(15000, function()
-      return not next_picker.finder:running() and not next_picker.matcher:running()
-    end, 10), "real toggled picker timed out")
+    assert(
+      vim.wait(15000, function()
+        return not next_picker.finder:running() and not next_picker.matcher:running()
+      end, 10),
+      "real toggled picker timed out"
+    )
     equal(native, next_picker.opts.native, "real toggled backend")
     equal(hidden, next_picker.opts.hidden, "real toggled hidden state")
     equal(ignored, next_picker.opts.ignored, "real toggled ignored state")
     equal(plain_cwd, next_picker.input.filter.cwd, "real toggle preserves cwd")
-    equal("fl", native and next_picker.input.filter.pattern or next_picker.input.filter.search,
-      "real toggle preserves query across live/pattern transitions")
+    equal(
+      "fl",
+      native and next_picker.input.filter.pattern or next_picker.input.filter.search,
+      "real toggle preserves query across live/pattern transitions"
+    )
     equal(native and "" or "fl", next_picker.input.filter.search, "real file finder query mode")
     equal("fff files", next_picker.title, "real toggle preserves exact title")
-    assert(vim.wait(1000, function()
-      return vim.fn.mode():sub(1, 1) == "n"
-        and vim.deep_equal({ 1, 0 }, vim.api.nvim_win_get_cursor(next_picker.input.win.win))
-    end, 10), "real toggle preserves input normal mode and caret")
+    assert(
+      vim.wait(1000, function()
+        return vim.fn.mode():sub(1, 1) == "n"
+          and vim.deep_equal({ 1, 0 }, vim.api.nvim_win_get_cursor(next_picker.input.win.win))
+      end, 10),
+      "real toggle preserves input normal mode and caret"
+    )
     equal("input", next_picker:current_win(), "real toggle preserves input focus")
     equal(callback, next_picker.opts.on_show, "one-shot on_show wrapper removed")
     equal(callback, next_picker.init_opts.on_show, "original on_show retained without wrapper accumulation")
@@ -575,11 +691,17 @@ if vim.env.SNACKS_RTP then
   native_picker = real_toggle(native_picker, "hidden", true, true, false)
   native_picker:close()
   local no_callback_picker = Snacks.picker.fff_files({
-    cwd = plain_cwd, ignored = true, search = "fl", layout = { preset = "select", preview = false },
+    cwd = plain_cwd,
+    ignored = true,
+    search = "fl",
+    layout = { preset = "select", preview = false },
   })
-  assert(vim.wait(15000, function()
-    return not no_callback_picker.finder:running() and not no_callback_picker.matcher:running()
-  end, 10), "no-callback picker timed out")
+  assert(
+    vim.wait(15000, function()
+      return not no_callback_picker.finder:running() and not no_callback_picker.matcher:running()
+    end, 10),
+    "no-callback picker timed out"
+  )
   no_callback_picker = real_toggle(no_callback_picker, "ignored", true, true, false)
   no_callback_picker = real_toggle(no_callback_picker, "hidden", false, false, false)
   no_callback_picker:close()

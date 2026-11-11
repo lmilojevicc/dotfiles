@@ -10,7 +10,7 @@ export PATH="$HOME/bin:$PATH"
 mkdir -p "$HOME/bin" "$HOME/dotfiles/"{herdr,ghostty,nvim/lua/plugins}
 
 # Never contact the real Herdr server during tests.
-cat > "$HOME/bin/herdr" <<'EOF'
+cat >"$HOME/bin/herdr" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$HOME/reloads"
 exit "${RELOAD_EXIT:-0}"
@@ -46,13 +46,13 @@ assert_off() {
 }
 
 for borders in absent '"auto"' '"always"' '"off"' true false; do
-  printf '[ui]\n  agent_panel_sort = "spaces"\n' > "$HERDR_CONF"
+  printf '[ui]\n  agent_panel_sort = "spaces"\n' >"$HERDR_CONF"
   if [[ "$borders" != absent ]]; then
-    printf '\tpane_borders= %s # existing override\n' "$borders" >> "$HERDR_CONF"
+    printf '\tpane_borders= %s # existing override\n' "$borders" >>"$HERDR_CONF"
   fi
-  printf '# Cursor settings\ncursor-style = block\n' > "$GHOSTTY_CONF"
-  printf 'a = { fg = colors.blue, bg = colors.base }\n' > "$NVIM_CONF"
-  : > "$HOME/reloads"
+  printf '# Cursor settings\ncursor-style = block\n' >"$GHOSTTY_CONF"
+  printf 'a = { fg = colors.blue, bg = colors.base }\n' >"$NVIM_CONF"
+  : >"$HOME/reloads"
 
   bash "$SCRIPT" on >/dev/null
   assert_on

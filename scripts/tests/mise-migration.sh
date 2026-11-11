@@ -61,8 +61,8 @@ PY
 mkdir -p "$TEST_HOME/bin" "$TEST_HOME/project" "$TEST_HOME/.local/share/mise/shims"
 cp "$ROOT/zsh/.zprofile" "$TEST_HOME/.zprofile"
 # Skip system login startup files (e.g. macOS path_helper); load the real profile.
-printf 'unsetopt GLOBAL_RCS\n' > "$TEST_HOME/.zshenv"
-cat > "$TEST_HOME/bin/mise" <<'SH'
+printf 'unsetopt GLOBAL_RCS\n' >"$TEST_HOME/.zshenv"
+cat >"$TEST_HOME/bin/mise" <<'SH'
 #!/bin/sh
 printf '%s|%s|%s\n' "$0" "$*" "${LOCAL_LOGIN:-missing}" >> "$HOME/mise-calls"
 case "$*" in
@@ -74,7 +74,7 @@ case "$*" in
   *) exit 99 ;;
 esac
 SH
-cat > "$TEST_HOME/.local/share/mise/shims/node" <<'SH'
+cat >"$TEST_HOME/.local/share/mise/shims/node" <<'SH'
 #!/bin/sh
 printf 'shim-node\n'
 SH
@@ -86,7 +86,7 @@ print -r -- "${LOCAL_LOGIN:-missing}"
 print -r -- "${mise_bin-unset}"
 node'
 
-: > "$TEST_HOME/mise-calls"
+: >"$TEST_HOME/mise-calls"
 output="$(env -i HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" PATH="$TEST_HOME/bin:/usr/bin:/bin" \
   "$ZSH" -l -c "$login_probe")"
 expected="$(printf '%s\n' "$TEST_HOME/.local/share/mise/shims:$TEST_HOME/bin:/usr/bin:/bin" missing unset shim-node)"
@@ -96,11 +96,11 @@ printf 'PASS: clean noninteractive login initializes shims without .zprofile.loc
 
 mkdir -p "$TEST_HOME/local-bin"
 cp "$TEST_HOME/bin/mise" "$TEST_HOME/local-bin/mise"
-cat > "$TEST_HOME/.zprofile.local" <<'SH'
+cat >"$TEST_HOME/.zprofile.local" <<'SH'
 export LOCAL_LOGIN=preserved
 export PATH="$HOME/local-bin:$PATH"
 SH
-: > "$TEST_HOME/mise-calls"
+: >"$TEST_HOME/mise-calls"
 output="$(env -i HOME="$TEST_HOME" ZDOTDIR="$TEST_HOME" PATH="$TEST_HOME/bin:/usr/bin:/bin" \
   "$ZSH" -l -c "$login_probe")"
 expected="$(printf '%s\n' "$TEST_HOME/.local/share/mise/shims:$TEST_HOME/local-bin:$TEST_HOME/bin:/usr/bin:/bin" preserved unset shim-node)"
@@ -109,14 +109,14 @@ expected="$(printf '%s\n' "$TEST_HOME/.local/share/mise/shims:$TEST_HOME/local-b
 printf 'PASS: local exports/PATH precede shim init and command -v mise is preferred\n'
 
 # The custom command must remain global even when launched inside a project.
-printf '[tools]\nnode = "1"\n' > "$TEST_HOME/project/mise.toml"
+printf '[tools]\nnode = "1"\n' >"$TEST_HOME/project/mise.toml"
 upgrade_command="$(cat "$TEST_HOME/upgrade-command")"
-: > "$TEST_HOME/mise-calls"
+: >"$TEST_HOME/mise-calls"
 (cd "$TEST_HOME/project" && env -i HOME="$TEST_HOME" PATH="$TEST_HOME/bin:/usr/bin:/bin" \
   /bin/sh -c "$upgrade_command")
 expected="$(printf '%s\n' "$TEST_HOME/bin/mise|plugins update|missing" "$TEST_HOME/bin/mise|upgrade --global --yes --no-prune|missing")"
 [[ "$(cat "$TEST_HOME/mise-calls")" == "$expected" ]]
-: > "$TEST_HOME/mise-calls"
+: >"$TEST_HOME/mise-calls"
 if (cd "$TEST_HOME/project" && env -i HOME="$TEST_HOME" PATH="$TEST_HOME/bin:/usr/bin:/bin" PLUGIN_EXIT=1 \
   /bin/sh -c "$upgrade_command"); then
   printf 'FAIL: failed plugin update should stop upgrade\n' >&2

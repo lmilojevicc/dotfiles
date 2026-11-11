@@ -15,9 +15,9 @@ test("removes reasoning blocks and keeps the first nonblank title line", () => {
 test("sanitizes candidates before selecting a line or stripping quotes", () => {
 	assert.equal(normalizeTitle(["\u200B\nValid title"]), "Valid title");
 	assert.equal(normalizeTitle(["\u200D\nValid title"]), "Valid title");
-	assert.equal(normalizeTitle(["\u200B\"Quoted title\"\u200B"]), "Quoted title");
-	assert.equal(normalizeTitle(["\u200D\"Quoted title\"\u200C"]), "Quoted title");
-	assert.equal(normalizeTitle(["\"\u200DQuoted title\u200C\""]), "Quoted title");
+	assert.equal(normalizeTitle(['\u200B"Quoted title"\u200B']), "Quoted title");
+	assert.equal(normalizeTitle(['\u200D"Quoted title"\u200C']), "Quoted title");
+	assert.equal(normalizeTitle(['"\u200DQuoted title\u200C"']), "Quoted title");
 	assert.equal(normalizeTitle(["`Code title`"]), "Code title");
 });
 

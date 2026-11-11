@@ -13,7 +13,10 @@ type Handler = ExtensionHandler<ExtensionEvent, unknown>;
 
 function fakePi() {
 	const handlers = new Map<string, Handler>();
-	const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
+	const commands = new Map<
+		string,
+		{ handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }
+	>();
 	const variables: Array<{ key: string; text: string | undefined }> = [];
 	const pi = {
 		events: {
@@ -33,7 +36,10 @@ function fakePi() {
 			handlers.set(event, handler);
 			return () => handlers.delete(event);
 		},
-		registerCommand(name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }) {
+		registerCommand(
+			name: string,
+			options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void },
+		) {
 			commands.set(name, options);
 		},
 	} as unknown as ExtensionAPI;

@@ -50,7 +50,10 @@ const requested: string[] = [];
 const originalFetch = globalThis.fetch;
 
 function json(value: unknown): Response {
-	return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 function urlOf(input: string | URL | Request): string {
@@ -62,7 +65,8 @@ function urlOf(input: string | URL | Request): string {
 globalThis.fetch = (async (input: string | URL | Request) => {
 	const url = urlOf(input);
 	requested.push(url);
-	if (url.includes("/zen/v1/models")) return json({ data: [{ id: "fresh-free" }, { id: "second-free" }] });
+	if (url.includes("/zen/v1/models"))
+		return json({ data: [{ id: "fresh-free" }, { id: "second-free" }] });
 	if (url.includes("/api/models/providers/opencode")) {
 		return json(
 			["fresh-free", "second-free"].map((id) => ({
@@ -76,7 +80,8 @@ globalThis.fetch = (async (input: string | URL | Request) => {
 			})),
 		);
 	}
-	if (url.includes("homebrew")) return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
+	if (url.includes("homebrew"))
+		return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
 	throw new Error(`unexpected fetch: ${url}`);
 }) as typeof fetch;
 
@@ -160,11 +165,14 @@ test("refreshModels refreshes the version and publishes the discovered catalogue
 	});
 	const cache = JSON.parse(readFileSync(cachePath, "utf8"));
 	assert.equal(cache.version, "2.0.99", "the version refresh also runs during a catalog refresh");
-	assert.deepEqual(
-		cache.models.map((model: Model<"openai-completions">) => model.id).sort(),
-		["fresh-free", "second-free"],
+	assert.deepEqual(cache.models.map((model: Model<"openai-completions">) => model.id).sort(), [
+		"fresh-free",
+		"second-free",
+	]);
+	assert.ok(
+		cache.discoveredIds.includes("cached-free"),
+		"ids discovery has seen survive a restart",
 	);
-	assert.ok(cache.discoveredIds.includes("cached-free"), "ids discovery has seen survive a restart");
 	assert.ok(cache.discoveredIds.includes("fresh-free"));
 });
 

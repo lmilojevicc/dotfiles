@@ -63,7 +63,8 @@ export function foregroundSnapshot(): TaskSnapshot {
 export function markAnnounced(id: string, revision: number): void {
 	const slot = slots.get(id) ?? freshSlot();
 	slot.announcedRevision = Math.max(slot.announcedRevision, revision);
-	if ((slot.pendingHumanRevision ?? 0) <= slot.announcedRevision) slot.pendingHumanRevision = undefined;
+	if ((slot.pendingHumanRevision ?? 0) <= slot.announcedRevision)
+		slot.pendingHumanRevision = undefined;
 	slots.set(id, slot);
 }
 

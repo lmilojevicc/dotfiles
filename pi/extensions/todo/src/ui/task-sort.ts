@@ -3,7 +3,11 @@ import type { Task, TaskStatus } from "../domain/types.js";
 
 export type SortField = "id" | "status" | "updatedAt";
 export type SortDirection = "asc" | "desc";
-export interface SortKey { field: SortField; direction?: SortDirection; rank?: TaskStatus[] }
+export interface SortKey {
+	field: SortField;
+	direction?: SortDirection;
+	rank?: TaskStatus[];
+}
 export type SortSpec = SortKey[];
 export type BuiltInSortOrder = "id" | "status" | "active" | "recent" | "oldest";
 export type TaskSortOrder = BuiltInSortOrder | SortSpec;
@@ -15,7 +19,10 @@ const PRESETS: Record<BuiltInSortOrder, SortSpec> = {
 	id: [{ field: "id" }],
 	status: [{ field: "status", rank: DEFAULT_STATUS_RANK }, { field: "id" }],
 	active: [{ field: "status", rank: ["in_progress", "pending", "completed"] }, { field: "id" }],
-	recent: [{ field: "updatedAt", direction: "desc" }, { field: "id", direction: "desc" }],
+	recent: [
+		{ field: "updatedAt", direction: "desc" },
+		{ field: "id", direction: "desc" },
+	],
 	oldest: [{ field: "updatedAt" }, { field: "id" }],
 };
 export const BUILT_IN_SORT_ORDERS = Object.keys(PRESETS) as BuiltInSortOrder[];
@@ -25,7 +32,11 @@ function isSortKey(value: unknown): value is SortKey {
 	const { field, direction, rank } = value as Record<string, unknown>;
 	if (!FIELDS.includes(field as SortField)) return false;
 	if (direction !== undefined && direction !== "asc" && direction !== "desc") return false;
-	if (rank !== undefined && (!Array.isArray(rank) || !rank.every((status) => STATUSES.includes(status as TaskStatus)))) return false;
+	if (
+		rank !== undefined &&
+		(!Array.isArray(rank) || !rank.every((status) => STATUSES.includes(status as TaskStatus)))
+	)
+		return false;
 	return true;
 }
 
@@ -36,7 +47,8 @@ export function isTaskSortOrder(value: unknown): value is TaskSortOrder {
 }
 
 function specFor(order: unknown): SortSpec {
-	if (typeof order === "string" && Object.hasOwn(PRESETS, order)) return PRESETS[order as BuiltInSortOrder];
+	if (typeof order === "string" && Object.hasOwn(PRESETS, order))
+		return PRESETS[order as BuiltInSortOrder];
 	if (Array.isArray(order) && order.length > 0 && order.every(isSortKey)) return order;
 	return PRESETS.id;
 }

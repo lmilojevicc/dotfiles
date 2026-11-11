@@ -52,7 +52,10 @@ const requested: string[] = [];
 const originalFetch = globalThis.fetch;
 
 function json(value: unknown): Response {
-	return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json" } });
+	return new Response(JSON.stringify(value), {
+		status: 200,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 function urlOf(input: string | URL | Request): string {
@@ -79,7 +82,8 @@ globalThis.fetch = (async (input: string | URL | Request) => {
 		]);
 	}
 	if (url.includes("models.dev")) return json({});
-	if (url.includes("homebrew")) return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
+	if (url.includes("homebrew"))
+		return new Response('url "https://example.test/opencode-2.0.99.tgz"', { status: 200 });
 	throw new Error(`unexpected fetch: ${url}`);
 }) as typeof fetch;
 
@@ -132,9 +136,16 @@ test("the session_start discovery publishes the live ids it learned", async () =
 
 	await until(() => requested.some((url) => url.includes("/zen/v1/models")));
 	await until(() => cachedLiveIds()?.join(",") === "fresh-free");
-	assert.deepEqual(cachedLiveIds(), ["fresh-free"], "the background discovery persists the live ids");
+	assert.deepEqual(
+		cachedLiveIds(),
+		["fresh-free"],
+		"the background discovery persists the live ids",
+	);
 
-	const candidates = [...provider.getModels(), model("fresh-free")] as Model<"openai-completions">[];
+	const candidates = [
+		...provider.getModels(),
+		model("fresh-free"),
+	] as Model<"openai-completions">[];
 	const filtered = provider.filterModels?.(candidates, undefined) ?? [];
 	assert.deepEqual(
 		filtered.map((entry) => entry.id),

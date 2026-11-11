@@ -40,19 +40,25 @@ export function parseReady(value: unknown): ReadySpec | string | undefined {
 		try {
 			value = JSON.parse(value);
 		} catch {
-			return "ready must be an object such as {\"port\": 3000} or {\"log\": \"listening on\"}";
+			return 'ready must be an object such as {"port": 3000} or {"log": "listening on"}';
 		}
 	}
-	if (typeof value !== "object" || Array.isArray(value)) return "ready must be an object such as {\"port\": 3000}";
+	if (typeof value !== "object" || Array.isArray(value))
+		return 'ready must be an object such as {"port": 3000}';
 	const input = value as Record<string, unknown>;
 	const blank = (field: unknown) => (typeof field === "string" ? field.trim() || undefined : field);
 	const rawPort = blank(input.port);
-	const port = rawPort === undefined || rawPort === null || Number(rawPort) === 0 ? undefined : Number(rawPort);
-	if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) return `ready.port must be a TCP port, not ${String(rawPort)}`;
+	const port =
+		rawPort === undefined || rawPort === null || Number(rawPort) === 0
+			? undefined
+			: Number(rawPort);
+	if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536))
+		return `ready.port must be a TCP port, not ${String(rawPort)}`;
 	const host = blank(input.host);
 	if (host !== undefined && typeof host !== "string") return "ready.host must be a string";
 	const pattern = blank(input.log);
-	if (pattern !== undefined && typeof pattern !== "string") return "ready.log must be a regular expression as a string";
+	if (pattern !== undefined && typeof pattern !== "string")
+		return "ready.log must be a regular expression as a string";
 	let log: RegExp | undefined;
 	if (pattern !== undefined) {
 		try {
@@ -62,12 +68,15 @@ export function parseReady(value: unknown): ReadySpec | string | undefined {
 		}
 	}
 	if (port === undefined && log === undefined) {
-		if (host !== undefined || blank(input.timeout) !== undefined) return "ready needs a port or a log pattern";
+		if (host !== undefined || blank(input.timeout) !== undefined)
+			return "ready needs a port or a log pattern";
 		return undefined;
 	}
 	const rawTimeout = blank(input.timeout);
-	const timeout = rawTimeout === undefined || rawTimeout === null ? DEFAULT_READY_SECONDS : Number(rawTimeout);
-	if (!Number.isFinite(timeout) || timeout <= 0) return `ready.timeout must be a number of seconds, not ${String(rawTimeout)}`;
+	const timeout =
+		rawTimeout === undefined || rawTimeout === null ? DEFAULT_READY_SECONDS : Number(rawTimeout);
+	if (!Number.isFinite(timeout) || timeout <= 0)
+		return `ready.timeout must be a number of seconds, not ${String(rawTimeout)}`;
 	return {
 		port,
 		hosts: host === undefined ? LOCAL_HOSTS : [host as string],
@@ -79,7 +88,8 @@ export function parseReady(value: unknown): ReadySpec | string | undefined {
 /** What the readiness condition is, for messages: `port 3000`, `the log matching /ready/`. */
 export function describeReady(spec: ReadySpec): string {
 	const parts: string[] = [];
-	if (spec.port !== undefined) parts.push(`port ${spec.port}${spec.hosts === LOCAL_HOSTS ? "" : ` on ${spec.hosts[0]}`}`);
+	if (spec.port !== undefined)
+		parts.push(`port ${spec.port}${spec.hosts === LOCAL_HOSTS ? "" : ` on ${spec.hosts[0]}`}`);
 	if (spec.log) parts.push(`the log matching ${spec.log}`);
 	return parts.join(" and ");
 }
@@ -158,7 +168,11 @@ export async function waitReady(
 			if (!task.running) return { kind: "exited" };
 			if (options.interrupt?.()) return { kind: "interrupted" };
 			if (Date.now() >= deadline) {
-				return { kind: "timeout", portOpen: spec.port !== undefined && open, logMatched: scanner?.matched ?? false };
+				return {
+					kind: "timeout",
+					portOpen: spec.port !== undefined && open,
+					logMatched: scanner?.matched ?? false,
+				};
 			}
 			await new Promise<void>((resolve) => {
 				const timer = setTimeout(resolve, POLL_MS);

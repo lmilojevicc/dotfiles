@@ -1,23 +1,52 @@
 [mgr]
 prepend_keymap = [
-  # Handy remaps
-{ on = "?", run = "help", desc = "Open help menu" },
-{ on = "Q", run = 'shell "$SHELL" --block', desc = "Open shell here" },
-{ on = "p", run = "plugin smart-paste", desc = "Paste into the hovered directory or CWD" },
-{ on = "O", run = 'shell "open \"$@\""', desc = "Open with default application"},
+	# Handy remaps
+	{ on = "?", run = "help", desc = "Open help menu" },
+	{ on = "Q", run = 'shell "$SHELL" --block', desc = "Open shell here" },
+	{ on = "p", run = "plugin smart-paste", desc = "Paste into the hovered directory or CWD" },
+	{ on = "O", run = 'shell "open \"$@\""', desc = "Open with default application" },
 
-  # Chage directories
-{ on = ["g", "r"], run = 'shell -- ya emit cd "$(git rev-parse --show-toplevel)"', desc = "Go back to root directory of git project" },
-{ on = ["g", "h"], run = 'cd ~', desc = "Go to home directory" },
-{ on = ["g", "d"], run = 'cd ~/Downloads', desc = "Go to Downloads" },
-{ on = ["g", "c"], run = 'cd ~/.config', desc = "Go to config directory" },
+	# Chage directories
+	{ on = [
+		"g",
+		"r",
+	], run = 'shell -- ya emit cd "$(git rev-parse --show-toplevel)"', desc = "Go back to root directory of git project" },
+	{ on = [
+		"g",
+		"h",
+	], run = 'cd ~', desc = "Go to home directory" },
+	{ on = [
+		"g",
+		"d",
+	], run = 'cd ~/Downloads', desc = "Go to Downloads" },
+	{ on = [
+		"g",
+		"c",
+	], run = 'cd ~/.config', desc = "Go to config directory" },
 
-  # Convert images
-{ on = [ "c", "j" ], run = "plugin convert --args='--extension=jpg'", desc = "Convert image to JPG" },
-{ on = [ "c", "p" ], run = "plugin convert --args='--extension=png'", desc = "Convert image to PNG" },
-{ on = [ "c", "w" ], run = "plugin convert --args='--extension=webp'", desc = "Convert image to WEBP" },
+	# Convert images
+	{ on = [
+		"c",
+		"j",
+	], run = "plugin convert --args='--extension=jpg'", desc = "Convert image to JPG" },
+	{ on = [
+		"c",
+		"p",
+	], run = "plugin convert --args='--extension=png'", desc = "Convert image to PNG" },
+	{ on = [
+		"c",
+		"w",
+	], run = "plugin convert --args='--extension=webp'", desc = "Convert image to WEBP" },
 
-{ on = ["space"], run = ["select", "arrow 1"], desc = "Select and move down" },
-{ on = [ ".", "s" ], run  = "plugin what-size", desc = "Calc size of selection or cwd" },
+	{ on = [
+		"space",
+	], run = [
+		"select",
+		"arrow 1",
+	], desc = "Select and move down" },
+	{ on = [
+		".",
+		"s",
+	], run = "plugin what-size", desc = "Calc size of selection or cwd" },
 ]
 

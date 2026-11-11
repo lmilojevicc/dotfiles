@@ -22,9 +22,8 @@ function packageSource(pkg: PackageSource): string {
 }
 
 function normalizePatternTarget(pattern: string): string {
-	const withoutDotPrefix = pattern.startsWith("./") || pattern.startsWith(".\\")
-		? pattern.slice(2)
-		: pattern;
+	const withoutDotPrefix =
+		pattern.startsWith("./") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
 	return withoutDotPrefix.replaceAll("\\", "/");
 }
 
@@ -51,11 +50,9 @@ function updateTopLevelPaths(
 	agentDir: string,
 ): string[] {
 	const pattern = topLevelPattern(resource, agentDir);
-	const matchingTargets = new Set([
-		pattern,
-		resource.path,
-		relative(agentDir, resource.path),
-	].map(normalizePatternTarget));
+	const matchingTargets = new Set(
+		[pattern, resource.path, relative(agentDir, resource.path)].map(normalizePatternTarget),
+	);
 	const updated = paths.filter((entry) => !targetsResource(entry, matchingTargets));
 	updated.push(`${enabled ? "+" : "-"}${pattern}`);
 	return updated;
@@ -71,9 +68,7 @@ function updatePackage(
 		throw new Error(`Package source is no longer configured globally: ${resource.metadata.source}`);
 	}
 
-	const updatedPackages = packages.map((pkg) =>
-		typeof pkg === "string" ? pkg : { ...pkg },
-	);
+	const updatedPackages = packages.map((pkg) => (typeof pkg === "string" ? pkg : { ...pkg }));
 	const existing = updatedPackages[packageIndex];
 	if (existing === undefined) return packages;
 	const pkg: PackageConfig = typeof existing === "string" ? { source: existing } : existing;

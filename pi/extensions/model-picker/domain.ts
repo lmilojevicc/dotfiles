@@ -10,7 +10,9 @@ export const modelLabel = (model: Pick<PickerModel, "provider" | "id">): string 
 	`${model.provider}/${model.id}`;
 
 /** A nonempty session scope is a constraint, not an ordering preference. */
-export function catalogue(ctx: Pick<ExtensionContext, "scopedModels" | "modelRegistry">): PickerModel[] {
+export function catalogue(
+	ctx: Pick<ExtensionContext, "scopedModels" | "modelRegistry">,
+): PickerModel[] {
 	const models = ctx.scopedModels.length
 		? ctx.scopedModels.map(({ model }) => model)
 		: ctx.modelRegistry.getAvailable();
@@ -27,17 +29,29 @@ export function searchTier(model: PickerModel, query: string): number {
 	return 2;
 }
 
-export function orderModels(models: readonly PickerModel[], favorites: readonly string[], current?: PickerModel): PickerModel[] {
+export function orderModels(
+	models: readonly PickerModel[],
+	favorites: readonly string[],
+	current?: PickerModel,
+): PickerModel[] {
 	const ranks = favoriteRanks(favorites, models);
-	return [...models].sort((a, b) => favoriteOrder(a, b, ranks) ||
-		Number(!!current && modelKey(b) === modelKey(current)) - Number(!!current && modelKey(a) === modelKey(current)) ||
-		a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id));
+	return [...models].sort(
+		(a, b) =>
+			favoriteOrder(a, b, ranks) ||
+			Number(!!current && modelKey(b) === modelKey(current)) -
+				Number(!!current && modelKey(a) === modelKey(current)) ||
+			a.provider.localeCompare(b.provider) ||
+			a.id.localeCompare(b.id),
+	);
 }
 
 /** Canonical favorite ranks plus the rank used for every model that is not a favorite. */
 type FavoriteRanks = { byKey: Map<string, number>; after: number };
 
-function favoriteRanks(favorites: readonly string[], models: readonly PickerModel[]): FavoriteRanks {
+function favoriteRanks(
+	favorites: readonly string[],
+	models: readonly PickerModel[],
+): FavoriteRanks {
 	// Stored order of first appearance; legacy `provider/id` entries resolve against the catalogue.
 	return { byKey: favoriteIdentities(favorites, models), after: new Set(favorites).size };
 }
@@ -46,7 +60,11 @@ function favoriteOrder(a: PickerModel, b: PickerModel, { byKey, after }: Favorit
 	return (byKey.get(favoriteKey(a)) ?? after) - (byKey.get(favoriteKey(b)) ?? after);
 }
 
-export function searchModels(models: readonly PickerModel[], query: string, favorites: readonly string[] = []): PickerModel[] {
+export function searchModels(
+	models: readonly PickerModel[],
+	query: string,
+	favorites: readonly string[] = [],
+): PickerModel[] {
 	if (!query.trim()) return [...models];
 	const ranks = favoriteRanks(favorites, models);
 	// Include punctuation-insensitive exact/substring matches even when raw fuzzy matching misses.
@@ -54,11 +72,18 @@ export function searchModels(models: readonly PickerModel[], query: string, favo
 	const matches = new Map(fuzzy.map((model) => [modelKey(model), model]));
 	for (const model of models) if (searchTier(model, query) < 2) matches.set(modelKey(model), model);
 	// Tiers stay primary; favorites use stored order within each tier. Preserve the fuzzy remainder.
-	return [...matches.values()].sort((a, b) => searchTier(a, query) - searchTier(b, query) || favoriteOrder(a, b, ranks));
+	return [...matches.values()].sort(
+		(a, b) => searchTier(a, query) - searchTier(b, query) || favoriteOrder(a, b, ranks),
+	);
 }
 
-export function providerCounts(models: readonly PickerModel[], matches: readonly PickerModel[]): Map<string, number> {
-	const counts = new Map([...new Set(models.map((model) => model.provider))].sort().map((provider) => [provider, 0]));
+export function providerCounts(
+	models: readonly PickerModel[],
+	matches: readonly PickerModel[],
+): Map<string, number> {
+	const counts = new Map(
+		[...new Set(models.map((model) => model.provider))].sort().map((provider) => [provider, 0]),
+	);
 	for (const model of matches) counts.set(model.provider, (counts.get(model.provider) ?? 0) + 1);
 	return counts;
 }

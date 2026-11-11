@@ -5,12 +5,12 @@
   "scripts": {
     "test": "node --experimental-strip-types --import ../_test-support/register-loader.mjs --test tests/*.test.ts"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
     ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
   }
 }

@@ -4,7 +4,8 @@
 // switches work (OPENCODE_FREE_TEST_OFFLINE=1).
 import { join } from "node:path";
 
-process.env.PI_CODING_AGENT_DIR = process.env.OPENCODE_FREE_TEST_AGENT_DIR ?? join(process.env.HOME, "agent");
+process.env.PI_CODING_AGENT_DIR =
+	process.env.OPENCODE_FREE_TEST_AGENT_DIR ?? join(process.env.HOME, "agent");
 if (!process.env.OPENCODE_FREE_TEST_OFFLINE) {
 	delete process.env.PI_OFFLINE;
 	delete process.env.OPENCODE_FREE_OFFLINE;

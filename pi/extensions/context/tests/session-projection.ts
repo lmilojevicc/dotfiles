@@ -7,7 +7,10 @@
  * themselves.
  */
 export function projectionOf(entries: any[]): { entries: any[]; messages: any[] } {
-	const projected = entries.map((sourceEntry) => ({ sourceEntry, messages: contextMessagesOf(sourceEntry) }));
+	const projected = entries.map((sourceEntry) => ({
+		sourceEntry,
+		messages: contextMessagesOf(sourceEntry),
+	}));
 	return { entries: projected, messages: projected.flatMap((entry) => entry.messages) };
 }
 
@@ -25,10 +28,24 @@ function contextMessagesOf(entry: any): any[] {
 		];
 	}
 	if (entry.type === "branch_summary") {
-		return [{ role: "branchSummary", summary: entry.summary, fromId: entry.fromId ?? null, timestamp: entry.timestamp ?? 0 }];
+		return [
+			{
+				role: "branchSummary",
+				summary: entry.summary,
+				fromId: entry.fromId ?? null,
+				timestamp: entry.timestamp ?? 0,
+			},
+		];
 	}
 	if (entry.type === "compaction") {
-		return [{ role: "compactionSummary", summary: entry.summary, tokensBefore: entry.tokensBefore ?? 0, timestamp: entry.timestamp ?? 0 }];
+		return [
+			{
+				role: "compactionSummary",
+				summary: entry.summary,
+				tokensBefore: entry.tokensBefore ?? 0,
+				timestamp: entry.timestamp ?? 0,
+			},
+		];
 	}
 	// State-only entries (labels, model/thinking changes, custom data) contribute no model context.
 	return [];

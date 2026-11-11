@@ -16,7 +16,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_TASKS_CONFIG, loadGlobalTasksConfig, saveGlobalTasksConfig, type TaskDisplayConfig } from "../src/config/tasks-config.ts";
+import {
+	DEFAULT_TASKS_CONFIG,
+	loadGlobalTasksConfig,
+	saveGlobalTasksConfig,
+	type TaskDisplayConfig,
+} from "../src/config/tasks-config.ts";
 
 function fixture(t: TestContext) {
 	const root = mkdtempSync(join(tmpdir(), "tasks-config-"));
@@ -25,12 +30,22 @@ function fixture(t: TestContext) {
 	const agent = join(root, "agent");
 	mkdirSync(join(cwd, ".pi"), { recursive: true });
 	mkdirSync(agent, { recursive: true });
-	return { root, cwd, agent, project: join(cwd, ".pi", "tasks-config.json"), global: join(agent, "todo-config.json") };
+	return {
+		root,
+		cwd,
+		agent,
+		project: join(cwd, ".pi", "tasks-config.json"),
+		global: join(agent, "todo-config.json"),
+	};
 }
 
 function symlink(t: TestContext, target: string, path: string, directory = false): boolean {
 	try {
-		symlinkSync(target, path, directory ? (process.platform === "win32" ? "junction" : "dir") : "file");
+		symlinkSync(
+			target,
+			path,
+			directory ? (process.platform === "win32" ? "junction" : "dir") : "file",
+		);
 		return true;
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code;
@@ -45,11 +60,22 @@ function symlink(t: TestContext, target: string, path: string, directory = false
 test("global defaults and independent invalid-value fallback are safe", (t) => {
 	const f = fixture(t);
 	assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
-	writeFileSync(f.global, JSON.stringify({
-		collapseCompleted: "yes", showAll: true, maxVisible: -1, sortOrder: "wat", hiddenAt: "side",
-		glyphs: { pending: "", completed: "C", spinner: [], header: "\u001b[31m" },
-	}));
-	assert.deepEqual(loadGlobalTasksConfig(f.agent), { ...DEFAULT_TASKS_CONFIG, showAll: true, glyphs: { completed: "C" } });
+	writeFileSync(
+		f.global,
+		JSON.stringify({
+			collapseCompleted: "yes",
+			showAll: true,
+			maxVisible: -1,
+			sortOrder: "wat",
+			hiddenAt: "side",
+			glyphs: { pending: "", completed: "C", spinner: [], header: "\u001b[31m" },
+		}),
+	);
+	assert.deepEqual(loadGlobalTasksConfig(f.agent), {
+		...DEFAULT_TASKS_CONFIG,
+		showAll: true,
+		glyphs: { completed: "C" },
+	});
 });
 
 test("global settings round-trip across cwd and respect PI_CODING_AGENT_DIR while legacy project settings stay untouched", (t) => {
@@ -72,7 +98,11 @@ test("global settings round-trip across cwd and respect PI_CODING_AGENT_DIR whil
 	// No global file: project preferences are neither loaded nor promoted.
 	assert.deepEqual(loadGlobalTasksConfig(), DEFAULT_TASKS_CONFIG);
 	const config: TaskDisplayConfig = {
-		collapseCompleted: true, showAll: true, maxVisible: 30, sortOrder: "active", hiddenAt: "top",
+		collapseCompleted: true,
+		showAll: true,
+		maxVisible: 30,
+		sortOrder: "active",
+		hiddenAt: "top",
 		glyphs: { pending: "P", completed: "C", spinner: ["1", "2"] },
 	};
 	saveGlobalTasksConfig(config);
@@ -90,26 +120,44 @@ test("global settings round-trip across cwd and respect PI_CODING_AGENT_DIR whil
 test("global save retains unknown keys, custom sorts and glyphs while persisting explicit default values", (t) => {
 	const f = fixture(t);
 	const existing = {
-		taskScope: "project", future: { keep: true }, showAll: true, maxVisible: 20,
+		taskScope: "project",
+		future: { keep: true },
+		showAll: true,
+		maxVisible: 20,
 		sortOrder: [{ field: "updatedAt", direction: "desc" }],
 		glyphs: { pending: "P", spinner: ["a", "b"], futureGlyph: { keep: true } },
 	};
 	writeFileSync(f.global, JSON.stringify(existing));
 	saveGlobalTasksConfig({ showAll: false, maxVisible: 10 }, f.agent);
-	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { ...existing, showAll: false, maxVisible: 10 });
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), {
+		...existing,
+		showAll: false,
+		maxVisible: 10,
+	});
 	assert.deepEqual(loadGlobalTasksConfig(f.agent), {
-		...DEFAULT_TASKS_CONFIG, sortOrder: existing.sortOrder, glyphs: { pending: "P", spinner: ["a", "b"] },
+		...DEFAULT_TASKS_CONFIG,
+		sortOrder: existing.sortOrder,
+		glyphs: { pending: "P", spinner: ["a", "b"] },
 	});
 	saveGlobalTasksConfig({ glyphs: { completed: "C" } }, f.agent);
-	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")).glyphs, { ...existing.glyphs, completed: "C" });
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")).glyphs, {
+		...existing.glyphs,
+		completed: "C",
+	});
 	saveGlobalTasksConfig({ collapseCompleted: true, hiddenAt: "top", sortOrder: "recent" }, f.agent);
 	saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent);
 	const saved = JSON.parse(readFileSync(f.global, "utf8"));
-	for (const key of ["collapseCompleted", "showAll", "maxVisible", "sortOrder", "hiddenAt"] as const) {
+	for (const key of [
+		"collapseCompleted",
+		"showAll",
+		"maxVisible",
+		"sortOrder",
+		"hiddenAt",
+	] as const) {
 		assert.deepEqual(saved[key], DEFAULT_TASKS_CONFIG[key]);
 	}
 	assert.deepEqual(saved.future, existing.future);
-	assert.equal(readFileSync(f.global, "utf8").includes("\n  \""), true);
+	assert.equal(readFileSync(f.global, "utf8").includes('\n  "'), true);
 	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 	if (process.platform !== "win32") assert.equal(lstatSync(f.global).mode & 0o777, 0o600);
 	assert.equal(existsSync(f.project), false);
@@ -120,28 +168,41 @@ for (const contents of ["{ not json\n", "null", "[]", "true", "42", '"text"']) {
 		const f = fixture(t);
 		writeFileSync(f.global, contents);
 		assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
-		assert.throws(() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent), /malformed JSON|must contain a JSON object/);
+		assert.throws(
+			() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent),
+			/malformed JSON|must contain a JSON object/,
+		);
 		assert.equal(readFileSync(f.global, "utf8"), contents);
 		assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
 	});
 }
 
-test("unreadable global config falls back and is unchanged when save is rejected", {
-	skip: process.platform === "win32" || process.getuid?.() === 0 ? "requires POSIX read permissions without root bypass" : false,
-}, (t) => {
-	const f = fixture(t);
-	const original = JSON.stringify({ future: { keep: true } });
-	writeFileSync(f.global, original);
-	chmodSync(f.global, 0o000);
-	try {
-		assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
-		assert.throws(() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent), /Could not read existing task config/);
-	} finally {
-		chmodSync(f.global, 0o600);
-	}
-	assert.equal(readFileSync(f.global, "utf8"), original);
-	assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
-});
+test(
+	"unreadable global config falls back and is unchanged when save is rejected",
+	{
+		skip:
+			process.platform === "win32" || process.getuid?.() === 0
+				? "requires POSIX read permissions without root bypass"
+				: false,
+	},
+	(t) => {
+		const f = fixture(t);
+		const original = JSON.stringify({ future: { keep: true } });
+		writeFileSync(f.global, original);
+		chmodSync(f.global, 0o000);
+		try {
+			assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
+			assert.throws(
+				() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent),
+				/Could not read existing task config/,
+			);
+		} finally {
+			chmodSync(f.global, 0o600);
+		}
+		assert.equal(readFileSync(f.global, "utf8"), original);
+		assert.deepEqual(readdirSync(f.agent), ["todo-config.json"]);
+	},
+);
 
 for (const targetKind of ["outside", "inside", "missing"] as const) {
 	test(`global config symlink to ${targetKind} target is ignored and never replaced or written through`, (t) => {
@@ -151,7 +212,10 @@ for (const targetKind of ["outside", "inside", "missing"] as const) {
 		if (targetKind !== "missing") writeFileSync(target, original);
 		if (!symlink(t, target, f.global)) return;
 		assert.deepEqual(loadGlobalTasksConfig(f.agent), DEFAULT_TASKS_CONFIG);
-		assert.throws(() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent), /symlinked task config/);
+		assert.throws(
+			() => saveGlobalTasksConfig(DEFAULT_TASKS_CONFIG, f.agent),
+			/symlinked task config/,
+		);
 		assert.ok(lstatSync(f.global).isSymbolicLink());
 		if (targetKind === "missing") assert.equal(existsSync(target), false);
 		else assert.equal(readFileSync(target, "utf8"), original);
@@ -234,7 +298,11 @@ unlinkSync(config + ".lock");
 test("a save waits for another session's lock and merges into the row that session committed", (t) => {
 	const f = fixture(t);
 	const marker = join(f.root, "peer-locked");
-	const peer = spawn(process.execPath, ["--input-type=module", "-e", PEER_SAVE, f.agent, marker, "500"], { stdio: "ignore" });
+	const peer = spawn(
+		process.execPath,
+		["--input-type=module", "-e", PEER_SAVE, f.agent, marker, "500"],
+		{ stdio: "ignore" },
+	);
 	t.after(() => peer.kill());
 	waitFor(marker);
 	const started = Date.now();
@@ -265,8 +333,15 @@ test("the pre-rename tasks-config.json is read while todo-config.json does not e
 
 	// The first save carries the old settings, unrelated keys included, into the new file and leaves the old one alone.
 	saveGlobalTasksConfig({ showAll: true }, f.agent);
-	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), { maxVisible: 4, future: { kept: true }, showAll: true });
-	assert.deepEqual(JSON.parse(readFileSync(legacy, "utf8")), { maxVisible: 4, future: { kept: true } });
+	assert.deepEqual(JSON.parse(readFileSync(f.global, "utf8")), {
+		maxVisible: 4,
+		future: { kept: true },
+		showAll: true,
+	});
+	assert.deepEqual(JSON.parse(readFileSync(legacy, "utf8")), {
+		maxVisible: 4,
+		future: { kept: true },
+	});
 
 	// From then on the old file is ignored.
 	writeFileSync(legacy, JSON.stringify({ maxVisible: 9 }));

@@ -10,7 +10,12 @@ export function snapshot(tasks: Task[] = [], revision = 0, nextId?: number): Tas
 	};
 }
 
-export function task(id: number, status: Task["status"] = "pending", blockedBy: number[] = [], subject = `Task ${id}`): Task {
+export function task(
+	id: number,
+	status: Task["status"] = "pending",
+	blockedBy: number[] = [],
+	subject = `Task ${id}`,
+): Task {
 	return { id, subject, status, blockedBy, metadata: {}, createdAt: id, updatedAt: id };
 }
 

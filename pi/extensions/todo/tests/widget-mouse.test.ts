@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Container, TuiAltScreen, visibleWidth, type Component, type Terminal, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import {
+	Container,
+	TuiAltScreen,
+	visibleWidth,
+	type Component,
+	type Terminal,
+	type TUI,
+	type TuiMouseEvent,
+} from "@earendil-works/pi-tui";
 import { DEFAULT_TASKS_CONFIG } from "../src/config/tasks-config.ts";
 import { registerLifecycle } from "../src/lifecycle.ts";
 import { STATE_ENTRY } from "../src/state/replay.ts";
@@ -20,17 +28,49 @@ function harness() {
 	const ui = {
 		theme: plainTheme,
 		notify() {},
-		onTerminalInput() { assert.fail("widget must not register raw input listeners"); },
+		onTerminalInput() {
+			assert.fail("widget must not register raw input listeners");
+		},
 		setWidget(_key: string, factory: WidgetFactory | undefined) {
 			component?.dispose?.();
-			component = factory?.({ requestRender: (force?: boolean) => { requests.push(force); } } as unknown as TUI, plainTheme);
+			component = factory?.(
+				{
+					requestRender: (force?: boolean) => {
+						requests.push(force);
+					},
+				} as unknown as TUI,
+				plainTheme,
+			);
 		},
 	} as unknown as ExtensionUIContext;
-	return { ui, requests, get component() { assert.ok(component); return component; }, get mounted() { return !!component; } };
+	return {
+		ui,
+		requests,
+		get component() {
+			assert.ok(component);
+			return component;
+		},
+		get mounted() {
+			return !!component;
+		},
+	};
 }
 
 function mouse(overrides: Partial<TuiMouseEvent> = {}): TuiMouseEvent {
-	return { type: "click", button: "left", x: 4, y: 0, screenX: 4, screenY: 0, width: 120, height: 5, shift: false, alt: false, ctrl: false, ...overrides };
+	return {
+		type: "click",
+		button: "left",
+		x: 4,
+		y: 0,
+		screenX: 4,
+		screenY: 0,
+		width: 120,
+		height: 5,
+		shift: false,
+		alt: false,
+		ctrl: false,
+		...overrides,
+	};
 }
 
 function mountedWidget() {
@@ -73,12 +113,21 @@ test("only unmodified primary headline clicks toggle; press/release, rows, space
 	const expanded = h.component.render(120);
 	root.render(120);
 	for (const overrides of [
-		{ type: "press" }, { type: "release" }, { type: "drag" }, { type: "move" }, { type: "wheel", wheelDelta: 1 },
-		{ button: "right" }, { button: "middle" }, { shift: true }, { alt: true }, { ctrl: true },
+		{ type: "press" },
+		{ type: "release" },
+		{ type: "drag" },
+		{ type: "move" },
+		{ type: "wheel", wheelDelta: 1 },
+		{ button: "right" },
+		{ button: "middle" },
+		{ shift: true },
+		{ alt: true },
+		{ ctrl: true },
 	] as Partial<TuiMouseEvent>[]) {
 		assert.equal(root.handleMouse(mouse({ y: 1, height: 6, ...overrides })), undefined);
 	}
-	for (const y of [-1, 0, 2, 3, 4, 5, 6]) assert.equal(root.handleMouse(mouse({ y, height: 6 })), undefined);
+	for (const y of [-1, 0, 2, 3, 4, 5, 6])
+		assert.equal(root.handleMouse(mouse({ y, height: 6 })), undefined);
 	assert.deepEqual(h.component.render(120), expanded);
 	assert.deepEqual(h.requests, []);
 	assert.equal(root.handleMouse(mouse({ y: 1, height: 6 }))?.handled, true);
@@ -92,12 +141,19 @@ test("only unmodified primary headline clicks toggle; press/release, rows, space
 test("collapsed state survives updates and preferences; the toggle shortcut expands it; reset/rebind/dispose restore defaults", () => {
 	const { h, widget } = mountedWidget();
 	h.component.handleMouse?.(mouse());
-	commitSnapshot("s", snapshot([task(1, "completed"), task(2, "completed"), task(3, "in_progress"), task(4)], 1));
+	commitSnapshot(
+		"s",
+		snapshot([task(1, "completed"), task(2, "completed"), task(3, "in_progress"), task(4)], 1),
+	);
 	widget.refresh();
 	widget.setConfig({ ...DEFAULT_TASKS_CONFIG, collapseCompleted: true, maxVisible: 1 });
 	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
 	widget.toggle();
-	assert.equal(h.component.render(120).length, 5, "the collapse shortcut expands a collapsed widget");
+	assert.equal(
+		h.component.render(120).length,
+		5,
+		"the collapse shortcut expands a collapsed widget",
+	);
 	h.component.handleMouse?.(mouse());
 	assert.deepEqual(h.component.render(120), ["● 4 tasks (2 done, 1 in progress, 1 open)", ""]);
 	const removed = h.component;
@@ -135,9 +191,17 @@ test("the toggle shortcut expands a collapsed widget instead of silently inverti
 	h.component.handleMouse?.(mouse());
 	assert.deepEqual(h.component.render(120), [limited[0], ""]);
 	widget.toggle();
-	assert.deepEqual(h.component.render(120), limited, "expanding restores the configured view, not a show-all view");
+	assert.deepEqual(
+		h.component.render(120),
+		limited,
+		"expanding restores the configured view, not a show-all view",
+	);
 	widget.toggle();
-	assert.equal(h.component.render(120).at(-2), "└─ ◻ #3 Task 3", "a second press flips show-all as before");
+	assert.equal(
+		h.component.render(120).at(-2),
+		"└─ ◻ #3 Task 3",
+		"a second press flips show-all as before",
+	);
 	widget.dispose();
 });
 
@@ -145,10 +209,17 @@ test("session compaction preserves collapse while tree/start reset it; backgroun
 	const h = harness();
 	const widget = new TaskWidget();
 	const handlers = new Map<string, Function>();
-	registerLifecycle({ on: (name: string, handler: Function) => handlers.set(name, handler) } as any, widget);
+	registerLifecycle(
+		{ on: (name: string, handler: Function) => handlers.set(name, handler) } as any,
+		widget,
+	);
 	const context = (id: string) => ({
-		mode: "tui", ui: h.ui,
-		sessionManager: { getSessionId: () => id, getBranch: () => [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)]) }] },
+		mode: "tui",
+		ui: h.ui,
+		sessionManager: {
+			getSessionId: () => id,
+			getBranch: () => [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)]) }],
+		},
 	});
 	const ctx = context("s");
 	await handlers.get("session_start")!({}, ctx);
@@ -176,10 +247,26 @@ test("installed fullscreen TUI turns a press/release into one toggle and ignores
 	let input = (_data: string) => {};
 	const writes: string[] = [];
 	const terminal: Terminal = {
-		columns: 120, rows: 24, kittyProtocolActive: false,
-		start: (onInput) => { input = onInput; }, stop() {}, drainInput: async () => {},
-		write: (data) => { writes.push(data); }, moveBy() {}, hideCursor() {}, showCursor() {},
-		clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
+		columns: 120,
+		rows: 24,
+		kittyProtocolActive: false,
+		start: (onInput) => {
+			input = onInput;
+		},
+		stop() {},
+		drainInput: async () => {},
+		write: (data) => {
+			writes.push(data);
+		},
+		moveBy() {},
+		hideCursor() {},
+		showCursor() {},
+		clearLine() {},
+		clearFromCursor() {},
+		clearScreen() {},
+		setTitle() {},
+		setProgress() {},
+		setProgramStatus() {},
 	};
 	const tui = new TuiAltScreen(terminal, false, undefined, { copyOnSelect: false });
 	const root = new Container();
@@ -187,9 +274,14 @@ test("installed fullscreen TUI turns a press/release into one toggle and ignores
 	let component: WidgetComponent | undefined;
 	const ui = {
 		theme: plainTheme,
-		onTerminalInput() { assert.fail("widget must not register raw input listeners"); },
+		onTerminalInput() {
+			assert.fail("widget must not register raw input listeners");
+		},
 		setWidget(_key: string, factory: WidgetFactory | undefined) {
-			if (component) { root.removeChild(component); component.dispose?.(); }
+			if (component) {
+				root.removeChild(component);
+				component.dispose?.();
+			}
 			component = factory?.(tui, plainTheme);
 			if (component) root.addChild(component);
 		},
@@ -208,21 +300,32 @@ test("installed fullscreen TUI turns a press/release into one toggle and ignores
 		input("\x1b[<0;5;2m");
 		assert.deepEqual(component.render(120), [expanded[0], ""]);
 		tui.renderNow();
-		input("\x1b[<0;5;1M"); input("\x1b[<0;5;1m");
+		input("\x1b[<0;5;1M");
+		input("\x1b[<0;5;1m");
 		assert.deepEqual(component.render(120), [expanded[0], ""]);
-		input("\x1b[<0;5;2M"); input("\x1b[<32;6;2M"); input("\x1b[<0;6;2m");
+		input("\x1b[<0;5;2M");
+		input("\x1b[<32;6;2M");
+		input("\x1b[<0;6;2m");
 		assert.deepEqual(component.render(120), [expanded[0], ""]);
-		input("\x1b[<0;5;2M"); input("\x1b[<0;5;2m");
+		input("\x1b[<0;5;2M");
+		input("\x1b[<0;5;2m");
 		assert.deepEqual(component.render(120), expanded);
 		widget.dispose();
 		tui.renderNow();
 		const afterRemoval = writes.length;
-		input("\x1b[<0;5;2M"); input("\x1b[<0;5;2m");
+		input("\x1b[<0;5;2M");
+		input("\x1b[<0;5;2m");
 		assert.equal(component, undefined);
-		assert.equal(writes.slice(afterRemoval).some((write) => /\[\?100[026]/.test(write)), false);
+		assert.equal(
+			writes.slice(afterRemoval).some((write) => /\[\?100[026]/.test(write)),
+			false,
+		);
 	} finally {
 		widget.dispose();
 		tui.stop();
 	}
-	assert.ok(writes.some((write) => write.includes("\x1b[?1006l")), "TUI tears down its own mouse tracking");
+	assert.ok(
+		writes.some((write) => write.includes("\x1b[?1006l")),
+		"TUI tears down its own mouse tracking",
+	);
 });

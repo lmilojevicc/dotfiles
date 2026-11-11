@@ -39,7 +39,12 @@ function isFileNotFound(error: unknown): boolean {
 function readConfig(): ConfigState {
 	try {
 		const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as unknown;
-		if (!isRecord(parsed) || typeof parsed.model !== "string" || parsed.model.trim() !== parsed.model || !parsed.model) {
+		if (
+			!isRecord(parsed) ||
+			typeof parsed.model !== "string" ||
+			parsed.model.trim() !== parsed.model ||
+			!parsed.model
+		) {
 			return { kind: "invalid" };
 		}
 		return { kind: "configured", model: parsed.model };
@@ -100,15 +105,16 @@ function resolveNamingModel(ctx: ExtensionContext, config: ConfigState) {
 	if (config.kind === "configured") {
 		const model = available.find((candidate) => fullModelId(candidate) === config.model);
 		if (!model) {
-			notifyWarning(ctx, `Session auto-rename model ${config.model} is not authenticated or available.`);
+			notifyWarning(
+				ctx,
+				`Session auto-rename model ${config.model} is not authenticated or available.`,
+			);
 		}
 		return model;
 	}
 
 	const activeId = ctx.model ? fullModelId(ctx.model) : undefined;
-	return activeId
-		? available.find((candidate) => fullModelId(candidate) === activeId)
-		: undefined;
+	return activeId ? available.find((candidate) => fullModelId(candidate) === activeId) : undefined;
 }
 
 async function generateTitle(
@@ -142,7 +148,7 @@ async function generateTitle(
 
 	if (response.stopReason !== "stop" && response.stopReason !== "length") return;
 	const title = normalizeTitle(
-		response.content.flatMap((part) => part.type === "text" ? [part.text] : []),
+		response.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
 	);
 	if (!title) return;
 
@@ -159,7 +165,10 @@ async function configureModel(
 ): Promise<void> {
 	const selectedArgument = args.trim();
 	if (!selectedArgument && ctx.mode !== "tui") {
-		notifyWarning(ctx, "Outside TUI mode, specify an explicit model: /session-auto-rename provider/model.");
+		notifyWarning(
+			ctx,
+			"Outside TUI mode, specify an explicit model: /session-auto-rename provider/model.",
+		);
 		return;
 	}
 
@@ -205,17 +214,18 @@ async function configureModel(
 		const configuredId = config.kind === "configured" ? config.model : undefined;
 		const activeId = config.kind === "missing" && ctx.model ? fullModelId(ctx.model) : undefined;
 		const entries = models.map((model) => ({ id: fullModelId(model), name: model.name }));
-		const choice = await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) =>
-			new ModelPickerComponent({
-				entries,
-				configuredId,
-				defaultId: activeId,
-				theme,
-				keybindings,
-				onSelect: done,
-				onCancel: () => done(undefined),
-				onChange: () => tui.requestRender(),
-			}),
+		const choice = await ctx.ui.custom<string | undefined>(
+			(tui, theme, keybindings, done) =>
+				new ModelPickerComponent({
+					entries,
+					configuredId,
+					defaultId: activeId,
+					theme,
+					keybindings,
+					onSelect: done,
+					onCancel: () => done(undefined),
+					onChange: () => tui.requestRender(),
+				}),
 		);
 		if (!choice) return;
 		selectedId = choice;
@@ -252,16 +262,24 @@ export default function sessionAutoRename(pi: ExtensionAPI): void {
 
 	pi.registerCommand("session-auto-rename", {
 		description: "Choose the authenticated model used to name new sessions",
-		handler: async (args, ctx) => configureModel(args, ctx, () => config, (next) => {
-			config = next;
-		}),
+		handler: async (args, ctx) =>
+			configureModel(
+				args,
+				ctx,
+				() => config,
+				(next) => {
+					config = next;
+				},
+			),
 	});
 
 	pi.on("session_start", (_event, ctx) => {
 		invalidate();
-		eligible = !pi.getSessionName() && !ctx.sessionManager.getBranch().some(
-			(entry) => entry.type === "message" && entry.message.role === "user",
-		);
+		eligible =
+			!pi.getSessionName() &&
+			!ctx.sessionManager
+				.getBranch()
+				.some((entry) => entry.type === "message" && entry.message.role === "user");
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {

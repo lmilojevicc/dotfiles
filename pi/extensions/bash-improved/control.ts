@@ -39,9 +39,13 @@ export function parseControl(command: string): Control | undefined {
 	}
 	if (verb === "kill") verb = "stop";
 	if (verb === "ls") verb = "list";
-	if (verb === "list") return words.length === 0 ? { verb } : { verb: "usage", error: `tasks list takes no arguments` };
+	if (verb === "list")
+		return words.length === 0
+			? { verb }
+			: { verb: "usage", error: `tasks list takes no arguments` };
 	if (verb === "help" || verb === "--help" || verb === "-h") return { verb: "usage" };
-	if (verb !== "output" && verb !== "wait" && verb !== "stop") return { verb: "usage", error: `tasks: unknown command ${verb}` };
+	if (verb !== "output" && verb !== "wait" && verb !== "stop")
+		return { verb: "usage", error: `tasks: unknown command ${verb}` };
 
 	let id: string | undefined;
 	let timeout: number | undefined;
@@ -52,7 +56,10 @@ export function parseControl(command: string): Control | undefined {
 			const value = flag[1] ?? words[++i];
 			timeout = Number(value);
 			if (verb !== "wait" || value === undefined || !Number.isFinite(timeout) || timeout <= 0) {
-				return { verb: "usage", error: `tasks ${verb}: bad option ${word}${flag[1] === undefined && value !== undefined ? ` ${value}` : ""}` };
+				return {
+					verb: "usage",
+					error: `tasks ${verb}: bad option ${word}${flag[1] === undefined && value !== undefined ? ` ${value}` : ""}`,
+				};
 			}
 		} else if (id === undefined) {
 			id = word;

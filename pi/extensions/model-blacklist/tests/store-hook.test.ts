@@ -44,7 +44,11 @@ test("a recomposed provider that re-adds a hidden id is filtered again, not nest
 	runtime.models!.setProvider!(first);
 	assert.deepEqual(ids(runtime.providers.get("cliproxyapi")!.getModels()), ["claude-opus-5-5"]);
 
-	const second = fakeProvider("cliproxyapi", ["claude-opus-4-6-thinking", "claude-opus-5-5", "gemini-3.1-pro-low"]);
+	const second = fakeProvider("cliproxyapi", [
+		"claude-opus-4-6-thinking",
+		"claude-opus-5-5",
+		"gemini-3.1-pro-low",
+	]);
 	runtime.models!.setProvider!(second);
 	const stored = runtime.providers.get("cliproxyapi")!;
 	assert.equal(unwrapProvider(stored), second);
@@ -99,7 +103,10 @@ test("the hook installs once per store and keeps reading that store's state", ()
 
 test("a store without Pi's shape is reported unsupported and left alone", () => {
 	const runtime = runtimeWithoutStore();
-	assert.equal(installStoreHook(runtime, stateFor(compileRules({ providers: {}, global: ["*"] }))), "unsupported");
+	assert.equal(
+		installStoreHook(runtime, stateFor(compileRules({ providers: {}, global: ["*"] }))),
+		"unsupported",
+	);
 	assert.equal(runtime.models, undefined);
 	assert.equal(storedProviderIds(runtime), undefined);
 

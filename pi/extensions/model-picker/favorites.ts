@@ -1,4 +1,14 @@
-import { accessSync, chmodSync, constants, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	accessSync,
+	chmodSync,
+	constants,
+	lstatSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 type ModelIdentity = { provider: string; id: string };
@@ -8,16 +18,24 @@ type FavoriteStore = { data: Record<string, unknown>; favorites: string[]; mode?
  * Persisted identity: a JSON tuple, so a slash inside the provider or the ID can never
  * make two catalogue models share one stored favorite. `domain.modelKey` uses it too.
  */
-export const favoriteKey = (model: ModelIdentity): string => JSON.stringify([model.provider, model.id]);
+export const favoriteKey = (model: ModelIdentity): string =>
+	JSON.stringify([model.provider, model.id]);
 /** Pre-tuple on-disk identity. Only unambiguous while no provider name contains a slash. */
 export const legacyFavoriteKey = (model: ModelIdentity): string => `${model.provider}/${model.id}`;
 
 const tuple = (entry: string): string | undefined => {
 	if (!entry.startsWith("[")) return undefined;
 	let value: unknown;
-	try { value = JSON.parse(entry); } catch { return undefined; }
-	return Array.isArray(value) && value.length === 2 && value.every((part) => typeof part === "string" && part.length)
-		? JSON.stringify(value) : undefined;
+	try {
+		value = JSON.parse(entry);
+	} catch {
+		return undefined;
+	}
+	return Array.isArray(value) &&
+		value.length === 2 &&
+		value.every((part) => typeof part === "string" && part.length)
+		? JSON.stringify(value)
+		: undefined;
 };
 
 /**
@@ -26,14 +44,21 @@ const tuple = (entry: string): string | undefined => {
  * cannot be split) names every catalogue model whose legacy join equals it. Unresolvable
  * entries are preserved in the file but rank nothing.
  */
-export function favoriteIdentities(favorites: readonly string[], models: readonly ModelIdentity[]): Map<string, number> {
+export function favoriteIdentities(
+	favorites: readonly string[],
+	models: readonly ModelIdentity[],
+): Map<string, number> {
 	const identities = new Map<string, number>();
 	[...new Set(favorites)].forEach((entry, index) => {
 		const key = tuple(entry);
-		if (key !== undefined) { if (!identities.has(key)) identities.set(key, index); return; }
+		if (key !== undefined) {
+			if (!identities.has(key)) identities.set(key, index);
+			return;
+		}
 		for (const model of models) {
 			const modelIdentity = favoriteKey(model);
-			if (legacyFavoriteKey(model) === entry && !identities.has(modelIdentity)) identities.set(modelIdentity, index);
+			if (legacyFavoriteKey(model) === entry && !identities.has(modelIdentity))
+				identities.set(modelIdentity, index);
 		}
 	});
 	return identities;
@@ -43,19 +68,22 @@ export function favoriteIdentities(favorites: readonly string[], models: readonl
 export function readFavorites(agentDir: string): FavoriteStore {
 	const path = join(agentDir, "model-favorites.json");
 	let stat;
-	try { stat = lstatSync(path); }
-	catch (error) {
+	try {
+		stat = lstatSync(path);
+	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return { data: {}, favorites: [] };
 		throw error;
 	}
 	if (!stat.isFile()) throw new Error("Use a regular model-favorites.json file");
 	let data: unknown;
-	try { data = JSON.parse(readFileSync(path, "utf8")); }
-	catch (error) {
+	try {
+		data = JSON.parse(readFileSync(path, "utf8"));
+	} catch (error) {
 		if (error instanceof SyntaxError) throw new Error("Fix JSON in model-favorites.json");
 		throw error;
 	}
-	if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("model-favorites.json must be an object");
+	if (!data || typeof data !== "object" || Array.isArray(data))
+		throw new Error("model-favorites.json must be an object");
 	const root = data as Record<string, unknown>;
 	const favorites = Object.hasOwn(root, "favorites") ? root.favorites : [];
 	if (!Array.isArray(favorites) || favorites.some((id) => typeof id !== "string" || !id.length)) {
@@ -65,7 +93,11 @@ export function readFavorites(agentDir: string): FavoriteStore {
 }
 
 /** Fresh read + atomic replacement, not a multi-process lock. Only explicit toggles write. */
-export function toggleFavorite(model: ModelIdentity, agentDir: string, models: readonly ModelIdentity[] = [model]): string[] {
+export function toggleFavorite(
+	model: ModelIdentity,
+	agentDir: string,
+	models: readonly ModelIdentity[] = [model],
+): string[] {
 	const store = readFavorites(agentDir);
 	const path = join(agentDir, "model-favorites.json");
 	if (store.mode !== undefined) {
@@ -83,19 +115,32 @@ export function toggleFavorite(model: ModelIdentity, agentDir: string, models: r
 		favorites = store.favorites.filter((saved) => !removed.has(saved));
 		for (const other of models) {
 			const otherKey = favoriteKey(other);
-			if (otherKey !== key && legacyFavoriteKey(other) === legacy && identities.has(otherKey) &&
-				!favorites.includes(otherKey)) favorites.push(otherKey);
+			if (
+				otherKey !== key &&
+				legacyFavoriteKey(other) === legacy &&
+				identities.has(otherKey) &&
+				!favorites.includes(otherKey)
+			)
+				favorites.push(otherKey);
 		}
 	} else favorites = [...store.favorites, key];
 	const temporaryPath = `${path}.${process.pid}.${globalThis.crypto.randomUUID()}.tmp`;
 	try {
 		mkdirSync(agentDir, { recursive: true });
-		writeFileSync(temporaryPath, `${JSON.stringify({ ...store.data, favorites }, null, "\t")}\n`, { encoding: "utf8", flag: "wx", mode: store.mode ?? 0o666 });
+		writeFileSync(temporaryPath, `${JSON.stringify({ ...store.data, favorites }, null, "\t")}\n`, {
+			encoding: "utf8",
+			flag: "wx",
+			mode: store.mode ?? 0o666,
+		});
 		// Creation is subject to umask; preserve an existing file's exact permissions.
 		if (store.mode !== undefined) chmodSync(temporaryPath, store.mode);
 		renameSync(temporaryPath, path);
 	} catch (error) {
-		try { unlinkSync(temporaryPath); } catch { /* Creation may have failed. */ }
+		try {
+			unlinkSync(temporaryPath);
+		} catch {
+			/* Creation may have failed. */
+		}
 		throw error;
 	}
 	return favorites;

@@ -17,7 +17,9 @@ const extensionDir = fileURLToPath(new URL("..", import.meta.url));
 
 function tempFiles(directory = agentDir): string[] {
 	try {
-		return readdirSync(directory).filter((name) => name.startsWith(".opencode-free.") && name.endsWith(".tmp"));
+		return readdirSync(directory).filter(
+			(name) => name.startsWith(".opencode-free.") && name.endsWith(".tmp"),
+		);
 	} catch {
 		return [];
 	}
@@ -30,8 +32,21 @@ function runWorker({ prefix, iterations, agentDir: dir }: Worker): Promise<void>
 		const child = spawn(
 			process.execPath,
 			// Workers must load the shared test loader too: it resolves Pi and gives them an agent dir.
-			["--experimental-strip-types", "--import", new URL("../../_test-support/register-loader.mjs", import.meta.url).href, "--import", new URL("./setup.mjs", import.meta.url).href, "./tests/write-cache-worker.ts", prefix, String(iterations)],
-			{ cwd: extensionDir, env: { ...process.env, OPENCODE_FREE_TEST_AGENT_DIR: dir }, stdio: ["ignore", "pipe", "pipe"] },
+			[
+				"--experimental-strip-types",
+				"--import",
+				new URL("../../_test-support/register-loader.mjs", import.meta.url).href,
+				"--import",
+				new URL("./setup.mjs", import.meta.url).href,
+				"./tests/write-cache-worker.ts",
+				prefix,
+				String(iterations),
+			],
+			{
+				cwd: extensionDir,
+				env: { ...process.env, OPENCODE_FREE_TEST_AGENT_DIR: dir },
+				stdio: ["ignore", "pipe", "pipe"],
+			},
 		);
 		let output = "";
 		child.stdout.on("data", (chunk) => {
@@ -64,7 +79,11 @@ test("writeCache tolerates a truncated cache from an older writer", () => {
 	writeCache({ versionSource: "tap" });
 	const cache = JSON.parse(readFileSync(CACHE_PATH, "utf8"));
 	assert.equal(cache.versionSource, "tap");
-	assert.equal(cache.version, undefined, "unparseable content is discarded instead of failing the provider");
+	assert.equal(
+		cache.version,
+		undefined,
+		"unparseable content is discarded instead of failing the provider",
+	);
 	assert.deepEqual(tempFiles(), []);
 });
 
@@ -85,7 +104,9 @@ test("an unwritable agent directory does not fail and leaves no temporary file",
 
 test("concurrent writers never expose a truncated file", async () => {
 	writeCache({ versionSource: "seed" });
-	const workers = ["alpha", "beta", "gamma"].map((prefix) => runWorker({ prefix, iterations: 25, agentDir }));
+	const workers = ["alpha", "beta", "gamma"].map((prefix) =>
+		runWorker({ prefix, iterations: 25, agentDir }),
+	);
 
 	let running = true;
 	let reads = 0;
@@ -98,7 +119,9 @@ test("concurrent writers never expose a truncated file", async () => {
 				reads += 1;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					failure = new Error(`a concurrent reader saw an incomplete cache: ${(error as Error).message}`);
+					failure = new Error(
+						`a concurrent reader saw an incomplete cache: ${(error as Error).message}`,
+					);
 					return;
 				}
 			}
@@ -113,6 +136,10 @@ test("concurrent writers never expose a truncated file", async () => {
 	assert.ok(reads > 0, "the reader observed the file while it was being written");
 
 	const cache = JSON.parse(readFileSync(CACHE_PATH, "utf8"));
-	assert.match(String(cache.versionSource), /^(alpha|beta|gamma)-\d+$/, "the last complete write wins");
+	assert.match(
+		String(cache.versionSource),
+		/^(alpha|beta|gamma)-\d+$/,
+		"the last complete write wins",
+	);
 	assert.deepEqual(tempFiles(), []);
 });

@@ -6,9 +6,9 @@ loader here instead of copying it:
 
 ```json
 {
-  "scripts": {
-    "test": "node --experimental-strip-types --import ../_test-support/register-loader.mjs --test ./tests/*.test.ts"
-  }
+	"scripts": {
+		"test": "node --experimental-strip-types --import ../_test-support/register-loader.mjs --test ./tests/*.test.ts"
+	}
 }
 ```
 

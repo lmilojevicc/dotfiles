@@ -23,7 +23,10 @@ export function unwrapProvider(provider: Provider): Provider {
  * availability. Authentication, streaming, discovery, and refresh stay bound
  * to the original provider object.
  */
-export function wrapProvider(base: Provider, isBlocked: (model: { id: string }) => boolean): Provider {
+export function wrapProvider(
+	base: Provider,
+	isBlocked: (model: { id: string }) => boolean,
+): Provider {
 	const baseGetModels = base.getModels.bind(base);
 	const baseGetAllModels = base.getAllModels?.bind(base);
 	const baseFilterModels = base.filterModels?.bind(base);
@@ -33,12 +36,19 @@ export function wrapProvider(base: Provider, isBlocked: (model: { id: string }) 
 		...base,
 		getModels: () => baseGetModels().filter((model) => !isBlocked(model)),
 		...(baseGetAllModels
-			? { getAllModels: () => (baseGetAllModels() as readonly AnyModel[]).filter((model) => !isBlocked(model)) }
+			? {
+					getAllModels: () =>
+						(baseGetAllModels() as readonly AnyModel[]).filter((model) => !isBlocked(model)),
+				}
 			: {}),
 		filterModels: (models: readonly Model<Api>[], credential: Credential | undefined) =>
-			(baseFilterModels ? baseFilterModels(models, credential) : models).filter((model) => !isBlocked(model)),
+			(baseFilterModels ? baseFilterModels(models, credential) : models).filter(
+				(model) => !isBlocked(model),
+			),
 		filterAllModels: (models: readonly AnyModel[], credential: Credential | undefined) =>
-			(baseFilterAllModels ? baseFilterAllModels(models, credential) : models).filter((model) => !isBlocked(model)),
+			(baseFilterAllModels ? baseFilterAllModels(models, credential) : models).filter(
+				(model) => !isBlocked(model),
+			),
 	};
 
 	Object.defineProperty(wrapper, BLACKLIST_MARKER, { value: { base }, enumerable: false });

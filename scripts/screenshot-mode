@@ -53,8 +53,8 @@ set_state() {
       s/^background-opacity[[:space:]]*=.*\n//mg;
       s/\n+(# Cursor settings)/\n\n# Screenshot setting\nbackground-opacity = 0.8\n\n$1/;
     ' "$GHOSTTY_CONF"
-    grep -q '^background-opacity = 0.8$' "$GHOSTTY_CONF" || \
-      printf '\n# Screenshot setting\nbackground-opacity = 0.8\n' >> "$GHOSTTY_CONF"
+    grep -q '^background-opacity = 0.8$' "$GHOSTTY_CONF" ||
+      printf '\n# Screenshot setting\nbackground-opacity = 0.8\n' >>"$GHOSTTY_CONF"
   else
     perl -0pi -e '
       s/\n# Screenshot setting\n/\n/g;
@@ -82,9 +82,15 @@ main() {
   local target
 
   case "$arg" in
-    on|off) target="$arg" ;;
-    "")     target="$(state)"; [[ "$target" == on ]] && target=off || target=on ;;
-    *)      echo "usage: screenshot-mode [on|off]" >&2; exit 1 ;;
+  on | off) target="$arg" ;;
+  "")
+    target="$(state)"
+    [[ "$target" == on ]] && target=off || target=on
+    ;;
+  *)
+    echo "usage: screenshot-mode [on|off]" >&2
+    exit 1
+    ;;
   esac
 
   set_state "$target"

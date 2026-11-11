@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getAgentDir, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	SettingsManager,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { PickerModel } from "./domain.ts";
 
 type SelectionResult =
@@ -23,7 +28,8 @@ function validateGlobalRoot(agentDir: string): void {
 	}
 }
 
-const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
+const message = (error: unknown): string =>
+	error instanceof Error ? error.message : String(error);
 
 /**
  * Only global-scope load errors block this extension: they are the file it reads and
@@ -32,8 +38,11 @@ const message = (error: unknown): string => error instanceof Error ? error.messa
  * make model switching less robust than the native selector. Draining still clears both.
  */
 const globalErrors = (settings: SettingsManager): string =>
-	settings.drainErrors().filter(({ scope }) => scope === "global")
-		.map(({ scope, error }) => `${scope}: ${error.message}`).join("; ");
+	settings
+		.drainErrors()
+		.filter(({ scope }) => scope === "global")
+		.map(({ scope, error }) => `${scope}: ${error.message}`)
+		.join("; ");
 
 export async function switchAndSave(
 	pi: Pick<ExtensionAPI, "setModel">,
@@ -44,14 +53,17 @@ export async function switchAndSave(
 	let settings: SettingsManager;
 	try {
 		validateGlobalRoot(agentDir);
-		settings = SettingsManager.create(ctx.cwd, agentDir, { projectTrusted: ctx.isProjectTrusted() });
+		settings = SettingsManager.create(ctx.cwd, agentDir, {
+			projectTrusted: ctx.isProjectTrusted(),
+		});
 		const errors = globalErrors(settings);
 		if (errors) throw new Error(errors);
 	} catch (error) {
 		return { status: "not-switched", error: `Cannot load settings: ${message(error)}` };
 	}
 	try {
-		if (!(await pi.setModel(model))) return { status: "not-switched", error: "No API key available for this model" };
+		if (!(await pi.setModel(model)))
+			return { status: "not-switched", error: "No API key available for this model" };
 	} catch (error) {
 		// Pi can assign the live model before a later transcript write throws.
 		return { status: "switch-failed", error: message(error) };

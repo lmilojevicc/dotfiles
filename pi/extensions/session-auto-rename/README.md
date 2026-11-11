@@ -22,7 +22,7 @@ The selection is stored with mode `0600` at `$PI_CODING_AGENT_DIR/session-auto-r
 
 ```json
 {
-  "model": "provider/model"
+	"model": "provider/model"
 }
 ```
 

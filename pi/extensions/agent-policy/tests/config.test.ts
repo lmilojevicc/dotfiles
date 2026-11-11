@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import os, { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -16,16 +23,36 @@ function fixture(t: any) {
 	const skill = join(root, "SKILL.md");
 	writeFileSync(skill, "body\n");
 	const configPath = join(directory, "config.json");
-	return { root, directory, skill, configPath, config(value: unknown) { writeFileSync(configPath, JSON.stringify(value)); } };
+	return {
+		root,
+		directory,
+		skill,
+		configPath,
+		config(value: unknown) {
+			writeFileSync(configPath, JSON.stringify(value));
+		},
+	};
 }
 
 test("config snapshot resolves relative, absolute and home paths; reads each normalized source once", (t) => {
 	const f = fixture(t);
-	const body = "\n# Full instruction body\r\nRead [reference](references/check.md).\r\n---\r\nKeep this later delimiter.\r\n";
-	writeFileSync(f.skill, `\uFEFF---\r\nname: fixture\r\ndisable-model-invocation: true\r\n---\r\n${body}`);
-	f.config({ common: ["../SKILL.md"], main: [f.skill, `~/${relative(os.homedir(), f.skill)}`], agents: JSON.parse('{"__proto__":["../SKILL.md"],"constructor":[],"security-reviewer":["../SKILL.md"]}') });
+	const body =
+		"\n# Full instruction body\r\nRead [reference](references/check.md).\r\n---\r\nKeep this later delimiter.\r\n";
+	writeFileSync(
+		f.skill,
+		`\uFEFF---\r\nname: fixture\r\ndisable-model-invocation: true\r\n---\r\n${body}`,
+	);
+	f.config({
+		common: ["../SKILL.md"],
+		main: [f.skill, `~/${relative(os.homedir(), f.skill)}`],
+		agents: JSON.parse(
+			'{"__proto__":["../SKILL.md"],"constructor":[],"security-reviewer":["../SKILL.md"]}',
+		),
+	});
 	const original = fs.readFileSync;
-	const reads = t.mock.method(fs, "readFileSync", (...args: any[]) => Reflect.apply(original, fs, args));
+	const reads = t.mock.method(fs, "readFileSync", (...args: any[]) =>
+		Reflect.apply(original, fs, args),
+	);
 	syncBuiltinESMExports();
 	try {
 		const snapshot = readConfigSnapshot(f.directory);
@@ -37,13 +64,23 @@ test("config snapshot resolves relative, absolute and home paths; reads each nor
 		assert.equal(snapshot.agents.get("toString"), undefined);
 		assert.deepEqual(snapshot.agents.get("security-reviewer"), snapshot.common);
 		assert.deepEqual(snapshot.warnings, []);
-	} finally { reads.mock.restore(); syncBuiltinESMExports(); }
+	} finally {
+		reads.mock.restore();
+		syncBuiltinESMExports();
+	}
 });
 
 test("optional fields and aliases produce equivalent snapshots; canonical collisions warn and win", (t) => {
 	const f = fixture(t);
 	f.config({});
-	assert.deepEqual(readConfigSnapshot(f.directory), { common: [], child: [], main: [], mainBb: [], agents: new Map(), warnings: [] });
+	assert.deepEqual(readConfigSnapshot(f.directory), {
+		common: [],
+		child: [],
+		main: [],
+		mainBb: [],
+		agents: new Map(),
+		warnings: [],
+	});
 	f.config({ common: [f.skill], main: [f.skill], child: [], agents: {} });
 	const canonical = readConfigSnapshot(f.directory);
 	f.config({ all: [f.skill], orchestrator: [f.skill] });
@@ -56,24 +93,47 @@ test("optional fields and aliases produce equivalent snapshots; canonical collis
 	assert.match(collision.warnings.join("\n"), /canonical common wins/);
 	assert.match(collision.warnings.join("\n"), /canonical main wins/);
 	f.config({ common: null, all: [f.skill] });
-	assert.deepEqual(readConfigSnapshot(f.directory).common, [], "invalid canonical never falls back to alias");
+	assert.deepEqual(
+		readConfigSnapshot(f.directory).common,
+		[],
+		"invalid canonical never falls back to alias",
+	);
 });
 
 test("dedup is first occurrence in assembled layer order then path order", (t) => {
 	const f = fixture(t);
-	for (const name of ["a", "b", "c", "d"]) writeFileSync(join(f.directory, `${name}.md`), name.toUpperCase());
-	f.config({ common: ["b.md", "a.md", "b.md"], child: ["c.md", "a.md"], main: ["d.md", "a.md"], agents: { worker: ["a.md", "d.md", "c.md"] } });
+	for (const name of ["a", "b", "c", "d"])
+		writeFileSync(join(f.directory, `${name}.md`), name.toUpperCase());
+	f.config({
+		common: ["b.md", "a.md", "b.md"],
+		child: ["c.md", "a.md"],
+		main: ["d.md", "a.md"],
+		agents: { worker: ["a.md", "d.md", "c.md"] },
+	});
 	const s = readConfigSnapshot(f.directory);
 	const paths = (text: string) => [...text.matchAll(/## Policy source: (.+)/g)].map((m) => m[1]);
-	assert.deepEqual(paths(composeSources(s.common, s.child, s.agents.get("worker")!)), ["b", "a", "c", "d"].map((n) => join(f.directory, `${n}.md`)));
-	assert.deepEqual(paths(composeSources(s.common, s.main)), ["b", "a", "d"].map((n) => join(f.directory, `${n}.md`)));
+	assert.deepEqual(
+		paths(composeSources(s.common, s.child, s.agents.get("worker")!)),
+		["b", "a", "c", "d"].map((n) => join(f.directory, `${n}.md`)),
+	);
+	assert.deepEqual(
+		paths(composeSources(s.common, s.main)),
+		["b", "a", "d"].map((n) => join(f.directory, `${n}.md`)),
+	);
 });
 
 test("missing/unreadable config and malformed JSON warn with empty supplemental composition and no legacy fallback", (t) => {
 	const f = fixture(t);
 	writeFileSync(join(f.directory, "ORCHESTRATOR_APPEND_SYSTEM.md"), "legacy ignored");
 	writeFileSync(join(f.directory, "injections.json"), '{"main":["../SKILL.md"]}');
-	for (const action of [() => {}, () => writeFileSync(f.configPath, "{bad JSON"), () => { rmSync(f.configPath); mkdirSync(f.configPath); }]) {
+	for (const action of [
+		() => {},
+		() => writeFileSync(f.configPath, "{bad JSON"),
+		() => {
+			rmSync(f.configPath);
+			mkdirSync(f.configPath);
+		},
+	]) {
 		action();
 		const snapshot = readConfigSnapshot(f.directory);
 		assert.equal(composeSources(snapshot.common, snapshot.main), "");
@@ -95,7 +155,11 @@ test("invalid config types, unknown fields and bad path/mapping entries warn wit
 		assert.equal(s.main.length, 1);
 		assert.equal(s.warnings.length, typeof invalid === "object" && invalid !== null ? 1 : 2);
 	}
-	f.config({ typo: [], common: [1, " ", null, "bad\u0000path", f.skill], agents: { worker: "file", unused: [false, f.skill], "": [f.skill], "bad\nname": [] } });
+	f.config({
+		typo: [],
+		common: [1, " ", null, "bad\u0000path", f.skill],
+		agents: { worker: "file", unused: [false, f.skill], "": [f.skill], "bad\nname": [] },
+	});
 	const s = readConfigSnapshot(f.directory);
 	assert.equal(s.common.length, 1);
 	assert.equal(s.agents.get("unused")!.length, 1);
@@ -109,11 +173,19 @@ test("mainBb is an independent optional layer with no alias and no fallback to m
 	const f = fixture(t);
 	writeFileSync(join(f.directory, "bb.md"), "bb main");
 	f.config({ main: [f.skill] });
-	assert.deepEqual(readConfigSnapshot(f.directory).mainBb, [], "absent mainBb stays empty, never a main copy");
+	assert.deepEqual(
+		readConfigSnapshot(f.directory).mainBb,
+		[],
+		"absent mainBb stays empty, never a main copy",
+	);
 	f.config({ main: [f.skill], mainBb: ["bb.md"] });
 	const s = readConfigSnapshot(f.directory);
 	assert.match(composeSources(s.mainBb), /bb main/);
-	assert.equal(composeSources(s.common, s.mainBb).includes("SKILL.md"), false, "main does not leak into the BB layer");
+	assert.equal(
+		composeSources(s.common, s.mainBb).includes("SKILL.md"),
+		false,
+		"main does not leak into the BB layer",
+	);
 	assert.deepEqual(s.warnings, []);
 	f.config({ mainBB: ["bb.md"] });
 	const typo = readConfigSnapshot(f.directory);
@@ -142,7 +214,13 @@ test("frontmatter delimiters must be complete and exact; blank bodies omit, plai
 	const f = fixture(t);
 	writeFileSync(join(f.directory, "sibling.md"), "valid sibling");
 	f.config({ main: [f.skill, "sibling.md"] });
-	for (const malformed of ["---\nname: x", "---", "--- \nname: x\n---\nbody", "---\nname: x\n--- \nbody", "---\nname: x\n---broken\nbody"]) {
+	for (const malformed of [
+		"---\nname: x",
+		"---",
+		"--- \nname: x\n---\nbody",
+		"---\nname: x\n--- \nbody",
+		"---\nname: x\n---broken\nbody",
+	]) {
 		writeFileSync(f.skill, malformed);
 		const s = readConfigSnapshot(f.directory);
 		assert.match(s.warnings[0], /main\[0\].*SKILL.md.*frontmatter/);
@@ -163,7 +241,9 @@ test("frontmatter delimiters must be complete and exact; blank bodies omit, plai
 test("path-resolution failure warns and skips instead of aborting the snapshot", (t) => {
 	const f = fixture(t);
 	f.config({ main: [f.skill], child: ["~/broken.md"] });
-	const home = t.mock.method(os, "homedir", () => { throw new Error("home unavailable"); });
+	const home = t.mock.method(os, "homedir", () => {
+		throw new Error("home unavailable");
+	});
 	syncBuiltinESMExports();
 	try {
 		const s = readConfigSnapshot(f.directory);
@@ -171,7 +251,10 @@ test("path-resolution failure warns and skips instead of aborting the snapshot",
 		assert.equal(s.child.length, 0);
 		assert.equal(s.warnings.length, 1);
 		assert.match(s.warnings[0], /child\[0\].*home unavailable/);
-	} finally { home.mock.restore(); syncBuiltinESMExports(); }
+	} finally {
+		home.mock.restore();
+		syncBuiltinESMExports();
+	}
 });
 
 test("deployed config smoke keeps its shape and loads the user-editable prompt files", () => {
@@ -179,8 +262,21 @@ test("deployed config smoke keeps its shape and loads the user-editable prompt f
 	// (extension asset) directory still resolves its relative entries.
 	const directory = fileURLToPath(new URL("../", import.meta.url));
 	const configPath = fileURLToPath(new URL("../../../agent-policy.json", import.meta.url));
-	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), { common: [], child: [], main: ["./prompts/main.md"], mainBb: ["./prompts/main-bb.md"], agents: { worker: ["~/.agents/skills/chadineer/SKILL.md"], reviewer: ["~/.agents/skills/chadineer/SKILL.md"] } });
-	assert.equal(resolvePolicyConfigPath(undefined, join(dirname(directory), ".virtual-agent-dir"), directory), join(directory, "config.json"), "resolver falls back to the legacy bundled location");
+	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+		common: [],
+		child: [],
+		main: ["./prompts/main.md"],
+		mainBb: ["./prompts/main-bb.md"],
+		agents: {
+			worker: ["~/.agents/skills/chadineer/SKILL.md"],
+			reviewer: ["~/.agents/skills/chadineer/SKILL.md"],
+		},
+	});
+	assert.equal(
+		resolvePolicyConfigPath(undefined, join(dirname(directory), ".virtual-agent-dir"), directory),
+		join(directory, "config.json"),
+		"resolver falls back to the legacy bundled location",
+	);
 	const s = readConfigSnapshot(directory, configPath);
 	assert.equal(s.main.length, 1, "shipped main prompt must load");
 	assert.equal(s.mainBb.length, 1, "shipped BB main prompt must load");
@@ -202,7 +298,11 @@ test("explicit configPath override keeps relative sources anchored to the policy
 	const f = fixture(t);
 	writeFileSync(join(f.root, "external.json"), JSON.stringify({ main: ["../SKILL.md"] }));
 	const snapshot = readConfigSnapshot(f.directory, join(f.root, "external.json"));
-	assert.deepEqual(snapshot.warnings, [], "override path reads its JSON, relative entries stay bundled");
+	assert.deepEqual(
+		snapshot.warnings,
+		[],
+		"override path reads its JSON, relative entries stay bundled",
+	);
 	const text = `## Policy source: ${f.skill}\nResolve this source's relative file references against ${dirname(f.skill)}.\n\nbody\n`;
 	assert.equal(composeSources(snapshot.main), text);
 });
@@ -216,11 +316,39 @@ test("policy config path resolution: env override, unified agent-dir location, l
 	const emptyAgentDir = join(root, "empty-agent");
 	mkdirSync(emptyAgentDir);
 	const legacyDir = join(root, "legacy");
-	assert.equal(resolvePolicyConfigPath(undefined, unifiedAgentDir, legacyDir), join(unifiedAgentDir, "agent-policy.json"), "unified location wins when present");
-	assert.equal(resolvePolicyConfigPath(undefined, emptyAgentDir, legacyDir), join(legacyDir, "config.json"), "legacy fallback without a unified file");
-	assert.equal(resolvePolicyConfigPath(join(legacyDir, "custom.json"), unifiedAgentDir, legacyDir), join(legacyDir, "custom.json"), "env override always wins");
-	assert.equal(resolvePolicyConfigPath("~/custom/policy.json", unifiedAgentDir, legacyDir), resolve(os.homedir(), "custom/policy.json"), "env home path expands");
-	assert.equal(resolvePolicyConfigPath("relative.json", unifiedAgentDir, legacyDir), resolve("relative.json"), "env relative path resolves against cwd");
-	assert.equal(resolvePolicyConfigPath("", unifiedAgentDir, legacyDir), join(unifiedAgentDir, "agent-policy.json"), "blank env value counts as unset");
-	assert.equal(resolvePolicyConfigPath("", emptyAgentDir, legacyDir), join(legacyDir, "config.json"), "blank env value falls through");
+	assert.equal(
+		resolvePolicyConfigPath(undefined, unifiedAgentDir, legacyDir),
+		join(unifiedAgentDir, "agent-policy.json"),
+		"unified location wins when present",
+	);
+	assert.equal(
+		resolvePolicyConfigPath(undefined, emptyAgentDir, legacyDir),
+		join(legacyDir, "config.json"),
+		"legacy fallback without a unified file",
+	);
+	assert.equal(
+		resolvePolicyConfigPath(join(legacyDir, "custom.json"), unifiedAgentDir, legacyDir),
+		join(legacyDir, "custom.json"),
+		"env override always wins",
+	);
+	assert.equal(
+		resolvePolicyConfigPath("~/custom/policy.json", unifiedAgentDir, legacyDir),
+		resolve(os.homedir(), "custom/policy.json"),
+		"env home path expands",
+	);
+	assert.equal(
+		resolvePolicyConfigPath("relative.json", unifiedAgentDir, legacyDir),
+		resolve("relative.json"),
+		"env relative path resolves against cwd",
+	);
+	assert.equal(
+		resolvePolicyConfigPath("", unifiedAgentDir, legacyDir),
+		join(unifiedAgentDir, "agent-policy.json"),
+		"blank env value counts as unset",
+	);
+	assert.equal(
+		resolvePolicyConfigPath("", emptyAgentDir, legacyDir),
+		join(legacyDir, "config.json"),
+		"blank env value falls through",
+	);
 });

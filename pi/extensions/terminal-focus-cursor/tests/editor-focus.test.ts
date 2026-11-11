@@ -9,7 +9,13 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 
-import { createEditorFocus, type EditorFactory, FOCUS_IN, FOCUS_OUT, type Scheduler } from "../editor-focus.ts";
+import {
+	createEditorFocus,
+	type EditorFactory,
+	FOCUS_IN,
+	FOCUS_OUT,
+	type Scheduler,
+} from "../editor-focus.ts";
 
 function manualScheduler() {
 	let nextId = 0;
@@ -57,7 +63,13 @@ function fakeEditor(lines: string[]) {
 			disposed += 1;
 		},
 	};
-	return { editor, inputs, renderFocused, invalidations: () => invalidations, disposed: () => disposed };
+	return {
+		editor,
+		inputs,
+		renderFocused,
+		invalidations: () => invalidations,
+		disposed: () => disposed,
+	};
 }
 
 test("deferred install composes the editor factory present when the timer fires", () => {
@@ -128,23 +140,36 @@ function installObservedEditor(render: (width: number) => string[], initiallyFoc
 	let focused = initiallyFocused;
 	const writes: boolean[] = [];
 	const editor = {
-		get focused() { return focused; },
-		set focused(value: boolean) { writes.push(value); focused = value; },
+		get focused() {
+			return focused;
+		},
+		set focused(value: boolean) {
+			writes.push(value);
+			focused = value;
+		},
 		render,
 		handleInput(_data: string) {},
 		invalidate() {},
 	};
 	let factory = () => editor;
 	const focus = createEditorFocus({
-		createDefaultEditor: () => { throw new Error("must use predecessor"); },
+		createDefaultEditor: () => {
+			throw new Error("must use predecessor");
+		},
 		scheduler: clock.scheduler,
 	});
 	focus.install({
 		getEditorComponent: () => factory as never,
-		setEditorComponent: (next) => { factory = next as never; },
+		setEditorComponent: (next) => {
+			factory = next as never;
+		},
 	});
 	clock.runAll();
-	const installed = (factory as (...args: unknown[]) => typeof editor)({ requestRender() {} }, {}, {});
+	const installed = (factory as (...args: unknown[]) => typeof editor)(
+		{ requestRender() {} },
+		{},
+		{},
+	);
 	assert.equal(installed, editor, "cursor decoration retains editor identity");
 	return { editor, focus, writes };
 }
@@ -152,7 +177,10 @@ function installObservedEditor(render: (width: number) => string[], initiallyFoc
 test("host blur/refocus hides native markers and inverse cursor without any focus writes", () => {
 	const source = [`draft 界 ${CURSOR_MARKER}\x1b[7m \x1b[27m`, `other ${CURSOR_MARKER}`];
 	const widths: number[] = [];
-	const h = installObservedEditor((width) => { widths.push(width); return source; });
+	const h = installObservedEditor((width) => {
+		widths.push(width);
+		return source;
+	});
 	assert.equal(h.editor.render(40), source, "focused render passes through unchanged");
 	h.focus.handleTerminalInput(FOCUS_OUT);
 	const unfocused = h.editor.render(40);
@@ -169,10 +197,15 @@ test("host blur/refocus hides native markers and inverse cursor without any focu
 
 test("throwing render keeps exception identity and makes no host focus writes", () => {
 	const failure = new Error("render failed");
-	const h = installObservedEditor(() => { throw failure; });
+	const h = installObservedEditor(() => {
+		throw failure;
+	});
 	for (const event of [FOCUS_OUT, FOCUS_IN]) {
 		h.focus.handleTerminalInput(event);
-		assert.throws(() => h.editor.render(40), (error) => error === failure);
+		assert.throws(
+			() => h.editor.render(40),
+			(error) => error === failure,
+		);
 		assert.equal(h.editor.focused, true);
 	}
 	assert.deepEqual(h.writes, []);
@@ -207,7 +240,10 @@ test("throwing predecessor's genuine ownership transfer is not restored", () => 
 		throw failure;
 	});
 	h.focus.handleTerminalInput(FOCUS_OUT);
-	assert.throws(() => h.editor.render(40), (error) => error === failure);
+	assert.throws(
+		() => h.editor.render(40),
+		(error) => error === failure,
+	);
 	assert.equal(h.editor.focused, false);
 	assert.deepEqual(h.writes, [false]);
 	h.focus.cleanup();
@@ -276,7 +312,11 @@ test("blur removes the real editor's inverse-video cursor and refocus restores i
 		[],
 		"the blurred editor draws no inverse-video cursor",
 	);
-	assert.equal(blurred.lines.join("").includes("\x1b_pi:"), false, "no cursor marker row survives the blur");
+	assert.equal(
+		blurred.lines.join("").includes("\x1b_pi:"),
+		false,
+		"no cursor marker row survives the blur",
+	);
 	assert.deepEqual(
 		blurred.lines.map(visibleWidth),
 		focused.lines.map(visibleWidth),
@@ -291,11 +331,21 @@ test("blur removes the real editor's inverse-video cursor and refocus restores i
 
 test("blur hides the hardware cursor of a real editor", () => {
 	const h = renderedEditor(true);
-	assert.ok(h.render().writes.includes("<show>"), "the focused editor positions the hardware cursor");
+	assert.ok(
+		h.render().writes.includes("<show>"),
+		"the focused editor positions the hardware cursor",
+	);
 	h.focus.handleTerminalInput(FOCUS_OUT);
 	const blurred = h.render();
-	assert.equal(blurred.lines.some((line) => line.includes("\x1b[7m")), false);
-	assert.equal(blurred.writes.includes("<show>"), false, "a blurred editor shows no hardware cursor");
+	assert.equal(
+		blurred.lines.some((line) => line.includes("\x1b[7m")),
+		false,
+	);
+	assert.equal(
+		blurred.writes.includes("<show>"),
+		false,
+		"a blurred editor shows no hardware cursor",
+	);
 	assert.ok(blurred.writes.includes("<hide>"));
 	h.focus.cleanup();
 });
@@ -345,9 +395,17 @@ test("reinstall through Pi's editor reset reuses the fallback editor and its in-
 		["first prompt"],
 		"prompt history survives the reinstall",
 	);
-	assert.deepEqual(clearedStatus, [undefined], "reuse drops the previous session's working-status indicator");
+	assert.deepEqual(
+		clearedStatus,
+		[undefined],
+		"reuse drops the previous session's working-status indicator",
+	);
 
-	const other = (factory as (...args: unknown[]) => unknown)({ requestRender() {} }, editorTheme, {});
+	const other = (factory as (...args: unknown[]) => unknown)(
+		{ requestRender() {} },
+		editorTheme,
+		{},
+	);
 	assert.notEqual(other, first, "another TUI still gets its own editor");
 	assert.equal(created, 2);
 	focus.cleanup();

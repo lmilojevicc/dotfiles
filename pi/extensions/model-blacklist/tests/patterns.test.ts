@@ -66,10 +66,24 @@ test("miswritten patterns are reported instead of silently matching nothing", ()
 
 test("a version comparison reads the whole version number at its position", () => {
 	const old = parseMatcher("*claude-{opus,sonnet,haiku}-<5.5*");
-	for (const id of ["claude-opus-4-8", "claude-opus-5", "claude-opus-5-high", "claude-sonnet-5-4-thinking", "claude-haiku-4-5-20251001", "Claude-Opus-4.6"]) {
+	for (const id of [
+		"claude-opus-4-8",
+		"claude-opus-5",
+		"claude-opus-5-high",
+		"claude-sonnet-5-4-thinking",
+		"claude-haiku-4-5-20251001",
+		"Claude-Opus-4.6",
+	]) {
 		assert.ok(old.matches(id), id);
 	}
-	for (const id of ["claude-opus-5-5", "claude-opus-5-5-high", "claude-opus-5-10", "claude-opus-6", "claude-fable-5-1", "claude-opus"]) {
+	for (const id of [
+		"claude-opus-5-5",
+		"claude-opus-5-5-high",
+		"claude-opus-5-10",
+		"claude-opus-6",
+		"claude-fable-5-1",
+		"claude-opus",
+	]) {
 		assert.ok(!old.matches(id), id);
 	}
 

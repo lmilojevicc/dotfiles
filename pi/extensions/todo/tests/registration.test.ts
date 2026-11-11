@@ -9,25 +9,51 @@ test("registers exactly one todo tool, management commands, inspection-first boa
 	const shortcuts: string[] = [];
 	const events: string[] = [];
 	const pi = {
-		registerTool(tool: any) { tools.push(tool); },
-		registerCommand(name: string, options: any) { commands.push({ name, options }); },
-		registerShortcut(name: string) { shortcuts.push(name); },
-		on(name: string) { events.push(name); },
+		registerTool(tool: any) {
+			tools.push(tool);
+		},
+		registerCommand(name: string, options: any) {
+			commands.push({ name, options });
+		},
+		registerShortcut(name: string) {
+			shortcuts.push(name);
+		},
+		on(name: string) {
+			events.push(name);
+		},
 	} as any;
 	todoExtension(pi);
 	assert.equal(tools.length, 1);
 	assert.equal(tools[0].name, "todo");
-	assert.deepEqual(commands.map(({ name }) => name), ["todo", "todo-board"]);
-	assert.equal(commands[1]?.options.description, "Inspect todos and confirm deletions in a live board");
+	assert.deepEqual(
+		commands.map(({ name }) => name),
+		["todo", "todo-board"],
+	);
+	assert.equal(
+		commands[1]?.options.description,
+		"Inspect todos and confirm deletions in a live board",
+	);
 	assert.deepEqual(shortcuts, ["ctrl+shift+t"]);
-	assert.deepEqual(events, ["session_start", "session_tree", "session_compact", "session_shutdown", "before_agent_start", "tool_execution_end", "turn_end"]);
+	assert.deepEqual(events, [
+		"session_start",
+		"session_tree",
+		"session_compact",
+		"session_shutdown",
+		"before_agent_start",
+		"tool_execution_end",
+		"turn_end",
+	]);
 	assert.equal("renderCall" in tools[0], false);
 	assert.equal("renderResult" in tools[0], false);
 });
 
 test("todo definition maps actions to arguments and keeps tracking-only safety in context", () => {
 	let tool: any;
-	registerTodoTool({ registerTool(value: any) { tool = value; } } as any);
+	registerTodoTool({
+		registerTool(value: any) {
+			tool = value;
+		},
+	} as any);
 	for (const mapping of [
 		"create requires subject",
 		"update requires id and fields to change",
@@ -35,11 +61,15 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"batch requires operations",
 		"list optionally filters status (includeDeleted to show deleted)",
 		"clear removes all tasks",
-	]) assert.ok(tool.description.includes(mapping), mapping);
+	])
+		assert.ok(tool.description.includes(mapping), mapping);
 	assert.match(tool.description, /not execution or agent launches/);
 	assert.match(tool.description, /owner\/metadata are inert/);
 	assert.equal(tool.promptSnippet, "Track session tasks");
-	assert.match(tool.parameters.properties.expectedRevision.description, /Mutations only; must match current revision/);
+	assert.match(
+		tool.parameters.properties.expectedRevision.description,
+		/Mutations only; must match current revision/,
+	);
 
 	const guidance = tool.promptGuidelines.join("\n");
 	for (const rule of [
@@ -56,10 +86,18 @@ test("todo definition maps actions to arguments and keeps tracking-only safety i
 		"refs name preceding creates",
 		"todo create has no status field; status changes require update",
 		"use the returned task ID",
-	]) assert.ok(guidance.includes(rule), rule);
+	])
+		assert.ok(guidance.includes(rule), rule);
 
-	const definition = JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters });
-	const renderedGuidance = [`- ${tool.name}: ${tool.promptSnippet}`, ...tool.promptGuidelines.map((rule: string) => `- ${rule}`)].join("\n");
+	const definition = JSON.stringify({
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.parameters,
+	});
+	const renderedGuidance = [
+		`- ${tool.name}: ${tool.promptSnippet}`,
+		...tool.promptGuidelines.map((rule: string) => `- ${rule}`),
+	].join("\n");
 	// Full-surface budget including batch grammar and examples (original baseline: 4485 bytes).
 	assert.ok(Buffer.byteLength(`${definition}\n${renderedGuidance}`) < 3300);
 });

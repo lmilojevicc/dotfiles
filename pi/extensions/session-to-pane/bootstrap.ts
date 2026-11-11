@@ -3,7 +3,7 @@ import { restoreEditorFromHandoff } from "./session.ts";
 
 /** One-shot bootstrap loaded only by the child Pi process. */
 export default function sessionToPaneBootstrap(pi: ExtensionAPI): void {
-  pi.on("session_start", (_event, ctx) => {
-    restoreEditorFromHandoff(ctx);
-  });
+	pi.on("session_start", (_event, ctx) => {
+		restoreEditorFromHandoff(ctx);
+	});
 }

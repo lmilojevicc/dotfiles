@@ -1,6 +1,11 @@
 import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { createEditorFocus, type EditorFactory, type EditorUI, type Scheduler } from "./editor-focus.ts";
+import {
+	createEditorFocus,
+	type EditorFactory,
+	type EditorUI,
+	type Scheduler,
+} from "./editor-focus.ts";
 import { createHerdrIngress, type StdinIngress } from "./herdr.ts";
 import { createTmuxIngress, type TerminalOutput } from "./tmux.ts";
 
@@ -32,7 +37,10 @@ export interface TerminalFocusCursorDependencies {
 export const createPiDefaultEditor: EditorFactory = (tui, theme, keybindings) =>
 	new CustomEditor(tui, theme, keybindings, { embedWorkingStatus: true });
 
-export function selectPlatform(ctx: SelectionContext, env: Record<string, string | undefined>): Platform | undefined {
+export function selectPlatform(
+	ctx: SelectionContext,
+	env: Record<string, string | undefined>,
+): Platform | undefined {
 	if (env.HERDR_ENV === "1") return ctx.mode === "tui" ? "herdr" : undefined;
 	return ctx.mode === "tui" && ctx.hasUI && env.TMUX ? "tmux" : undefined;
 }

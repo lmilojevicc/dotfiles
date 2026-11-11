@@ -10,7 +10,14 @@ import {
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
-import { Key, Markdown, matchesKey, visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import {
+	Key,
+	Markdown,
+	matchesKey,
+	visibleWidth,
+	type TUI,
+	type TuiMouseEvent,
+} from "@earendil-works/pi-tui";
 import { padLine, wrapRawLines } from "./format.ts";
 
 export type ContextPart = {
@@ -28,12 +35,12 @@ type PreviewKey =
 	| "contextFiles";
 
 export type ContextItem = {
- label: string;
- tokens: number;
- content: string;
- source: string;
- // Structured leaves stay raw; document leaves offer Markdown with an optional raw view.
- raw?: boolean;
+	label: string;
+	tokens: number;
+	content: string;
+	source: string;
+	// Structured leaves stay raw; document leaves offer Markdown with an optional raw view.
+	raw?: boolean;
 };
 
 type ContextPreview = {
@@ -78,16 +85,29 @@ export function escCloseHitbox(bounds: DialogBounds): {
 	};
 }
 
-const contextOverlayOptions = { anchor: "center" as const, width: 80, minWidth: 44, maxHeight: "90%" as const, margin: 1 };
+const contextOverlayOptions = {
+	anchor: "center" as const,
+	width: 80,
+	minWidth: 44,
+	maxHeight: "90%" as const,
+	margin: 1,
+};
 
 function contextDialogHeight(rows: number): number {
 	return Math.max(1, Math.min(30, Math.floor(rows * 0.9), rows - 2));
 }
 
 // Below a usable table size, retain keyboard dismissal without overflowing the terminal.
-function compactDialog(width: number, height: number, title: string, theme: Pick<Theme, "fg">): string[] | undefined {
+function compactDialog(
+	width: number,
+	height: number,
+	title: string,
+	theme: Pick<Theme, "fg">,
+): string[] | undefined {
 	if (width >= 38 && height >= 10) return undefined;
-	return Array.from({ length: height }, (_, row) => padLine(theme.fg("dim", row === 0 ? `${title} · [esc]` : ""), width));
+	return Array.from({ length: height }, (_, row) =>
+		padLine(theme.fg("dim", row === 0 ? `${title} · [esc]` : ""), width),
+	);
 }
 
 let activeContextOverlays = 0;
@@ -108,8 +128,12 @@ export function hasActiveTextPreview(): boolean {
  */
 function enableOverlayHover(tui: TUI): () => void {
 	const term = process.env.TERM?.toLowerCase() ?? "";
-	const multiplexed = process.env.TMUX !== undefined || process.env.ZELLIJ !== undefined ||
-		process.env.STY !== undefined || term.startsWith("tmux") || term.startsWith("screen");
+	const multiplexed =
+		process.env.TMUX !== undefined ||
+		process.env.ZELLIJ !== undefined ||
+		process.env.STY !== undefined ||
+		term.startsWith("tmux") ||
+		term.startsWith("screen");
 	const mouseEnabled = (tui as { mouseEnabled?: unknown }).mouseEnabled === true;
 	if (tui.mode !== "fullscreen" || !multiplexed || !mouseEnabled) return () => {};
 	tui.terminal.write("\x1b[?1003h");
@@ -120,7 +144,7 @@ export async function showTextPreview(
 	ctx: Pick<ExtensionCommandContext, "ui">,
 	title: string,
 	rawContent: string,
- raw = false,
+	raw = false,
 ): Promise<void> {
 	const rawDisplay = escapeRawControls(rawContent);
 	activeContextOverlays++;
@@ -131,7 +155,7 @@ export async function showTextPreview(
 				restoreHover = enableOverlayHover(tui);
 				let showingRaw = raw;
 				let scrollOffset = 0;
-                let pendingG = false;
+				let pendingG = false;
 				let pageSize = 1;
 				let totalLines = 1;
 				let escHovered = false;
@@ -147,7 +171,9 @@ export async function showTextPreview(
 					  }
 					| undefined;
 				let scrollbarDragOffset: number | null = null;
-				const markdownView = raw ? undefined : new Markdown(normalizePreviewText(rawContent), 0, 0, getMarkdownTheme());
+				const markdownView = raw
+					? undefined
+					: new Markdown(normalizePreviewText(rawContent), 0, 0, getMarkdownTheme());
 
 				const scrollTo = (nextOffset: number): void => {
 					const next = Math.max(0, Math.min(nextOffset, Math.max(0, totalLines - pageSize)));
@@ -182,12 +208,21 @@ export async function showTextPreview(
 						markdownView?.invalidate();
 					},
 					handleInput(data: string) {
-						if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
+						if (
+							matchesKey(data, Key.escape) ||
+							matchesKey(data, Key.ctrl("c")) ||
+							data === "q" ||
+							data === "h"
+						) {
 							done(undefined);
 							return;
 						}
-						if (data === "g") { if (pendingG) scrollTo(0); pendingG = !pendingG; return; }
-                        pendingG = false;
+						if (data === "g") {
+							if (pendingG) scrollTo(0);
+							pendingG = !pendingG;
+							return;
+						}
+						pendingG = false;
 						if (data === "r" && markdownView) {
 							showingRaw = !showingRaw;
 							scrollOffset = 0;
@@ -196,11 +231,13 @@ export async function showTextPreview(
 							tui.requestRender();
 							return;
 						}
-                        if (matchesKey(data, Key.up) || data === "k") scrollTo(scrollOffset - 1);
+						if (matchesKey(data, Key.up) || data === "k") scrollTo(scrollOffset - 1);
 						else if (matchesKey(data, Key.down) || data === "j") scrollTo(scrollOffset + 1);
-                        else if (data === "G") scrollTo(totalLines - pageSize);
-                        else if (matchesKey(data, Key.ctrl("u"))) scrollTo(scrollOffset - Math.max(1, Math.floor(pageSize / 2)));
-                        else if (matchesKey(data, Key.ctrl("d"))) scrollTo(scrollOffset + Math.max(1, Math.floor(pageSize / 2)));
+						else if (data === "G") scrollTo(totalLines - pageSize);
+						else if (matchesKey(data, Key.ctrl("u")))
+							scrollTo(scrollOffset - Math.max(1, Math.floor(pageSize / 2)));
+						else if (matchesKey(data, Key.ctrl("d")))
+							scrollTo(scrollOffset + Math.max(1, Math.floor(pageSize / 2)));
 						else if (matchesKey(data, "pageUp")) scrollTo(scrollOffset - pageSize);
 						else if (matchesKey(data, "pageDown")) scrollTo(scrollOffset + pageSize);
 						else if (matchesKey(data, Key.home)) scrollTo(0);
@@ -219,8 +256,12 @@ export async function showTextPreview(
 							return { handled: true };
 						}
 						if (event.type === "click") return { handled: true }; // Press already acted.
-						const overEsc = Boolean(escHitbox && row === escHitbox.row &&
-							col >= escHitbox.startCol && col <= escHitbox.endCol);
+						const overEsc = Boolean(
+							escHitbox &&
+							row === escHitbox.row &&
+							col >= escHitbox.startCol &&
+							col <= escHitbox.endCol,
+						);
 						setEscHovered(overEsc);
 						if (event.type === "drag" && scrollbarDragOffset !== null) {
 							dragScrollbarTo(row);
@@ -231,13 +272,19 @@ export async function showTextPreview(
 								done(undefined);
 								return { handled: true };
 							}
-							if (scrollbarHitbox && col === scrollbarHitbox.col &&
-								row >= scrollbarHitbox.startRow && row <= scrollbarHitbox.endRow) {
+							if (
+								scrollbarHitbox &&
+								col === scrollbarHitbox.col &&
+								row >= scrollbarHitbox.startRow &&
+								row <= scrollbarHitbox.endRow
+							) {
 								const trackRow = row - scrollbarHitbox.startRow;
-								const inThumb = trackRow >= scrollbarHitbox.thumbStart &&
+								const inThumb =
+									trackRow >= scrollbarHitbox.thumbStart &&
 									trackRow < scrollbarHitbox.thumbStart + scrollbarHitbox.thumbSize;
-								scrollbarDragOffset = inThumb ? trackRow - scrollbarHitbox.thumbStart :
-									Math.floor(scrollbarHitbox.thumbSize / 2);
+								scrollbarDragOffset = inThumb
+									? trackRow - scrollbarHitbox.thumbStart
+									: Math.floor(scrollbarHitbox.thumbSize / 2);
 								dragScrollbarTo(row);
 								return { handled: true, capture: true };
 							}
@@ -253,11 +300,19 @@ export async function showTextPreview(
 						const terminalHeight = Math.max(1, tui.terminal.rows);
 						const availableHeight = Math.max(1, terminalHeight - 2);
 						const viewportHeight = contextDialogHeight(terminalHeight);
-						const displayTitle = escapeSingleLineLabel(showingRaw ? `controls escaped · ${title}` : title);
+						const displayTitle = escapeSingleLineLabel(
+							showingRaw ? `controls escaped · ${title}` : title,
+						);
 						const compact = compactDialog(width, viewportHeight, displayTitle, theme);
-						if (compact) { escHitbox = undefined; scrollbarHitbox = undefined; return compact; }
+						if (compact) {
+							escHitbox = undefined;
+							scrollbarHitbox = undefined;
+							return compact;
+						}
 						pageSize = Math.max(1, viewportHeight - 6);
-						const wrapped = showingRaw ? wrapRawLines(rawDisplay, bodyWidth) : markdownView!.render(bodyWidth);
+						const wrapped = showingRaw
+							? wrapRawLines(rawDisplay, bodyWidth)
+							: markdownView!.render(bodyWidth);
 						totalLines = wrapped.length;
 						scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
 						// Mirror TUI resolveOverlayLayout for a centered overlay with margin 1.
@@ -391,7 +446,7 @@ type ContextBreakdown = {
 	parts: ContextPart[];
 	/** Aggregate preview text per category, assembled only when it is actually requested. */
 	previews: Record<PreviewKey, () => string>;
- items: Record<PreviewKey, ContextItem[]>;
+	items: Record<PreviewKey, ContextItem[]>;
 };
 
 /** Base64 image data is megabytes of payload the model sees as one block; show its size instead. */
@@ -399,7 +454,10 @@ function imagePlaceholder(block: { mimeType?: string; data?: string }): string {
 	const data = typeof block.data === "string" ? block.data : "";
 	const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
 	const bytes = Math.max(0, Math.floor((data.length * 3) / 4) - padding);
-	const size = bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	const size =
+		bytes >= 1024 * 1024
+			? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+			: `${Math.max(1, Math.round(bytes / 1024))} KB`;
 	return `[image ${block.mimeType ?? "unknown"}, ${size}]`;
 }
 
@@ -426,13 +484,16 @@ function joinedPreview(parts: Array<() => string>, empty: string): () => string 
 
 function leafValue(value: unknown): string {
 	const content = compactContent(value);
-	return typeof content === "string" ? content : JSON.stringify(content, null, 2) ?? String(content);
+	return typeof content === "string"
+		? content
+		: (JSON.stringify(content, null, 2) ?? String(content));
 }
 
 /** estimateTokens() only knows Pi's own message shapes; locally injected custom content can be structured. */
 function messageTokens(message: Parameters<typeof estimateTokens>[0]): number {
 	const content = (message as { content?: unknown }).content;
-	const structured = content !== undefined && typeof content !== "string" && !Array.isArray(content);
+	const structured =
+		content !== undefined && typeof content !== "string" && !Array.isArray(content);
 	return structured ? tokenEstimate(content) : estimateTokens(message);
 }
 
@@ -459,28 +520,67 @@ export function collectContextBreakdown(
 	let toolResultTokens = 0;
 	let contextTokens = 0;
 
-	const items: Record<PreviewKey, ContextItem[]> = { systemPrompt: [], memoryFiles: [], skills: [], tools: [], toolResults: [], contextFiles: [] };
- const memoryPreview: Array<() => string> = [];
+	const items: Record<PreviewKey, ContextItem[]> = {
+		systemPrompt: [],
+		memoryFiles: [],
+		skills: [],
+		tools: [],
+		toolResults: [],
+		contextFiles: [],
+	};
+	const memoryPreview: Array<() => string> = [];
 	let memoryTokens = 0;
 	for (const file of options.contextFiles ?? []) {
 		const tokens = embeddedTokens(systemPrompt, file.content);
-        memoryTokens += tokens;
-        items.memoryFiles.push({ label: file.path, tokens, content: file.content, source: "Embedded memory file", raw: false });
+		memoryTokens += tokens;
+		items.memoryFiles.push({
+			label: file.path,
+			tokens,
+			content: file.content,
+			source: "Embedded memory file",
+			raw: false,
+		});
 		memoryPreview.push(() => `## ${file.path}\n\n${previewValue(file.content)}`);
 	}
 
 	const skillsText = formatSkillsForPrompt(options.skills ?? []).trim();
 	const skillsTokens = embeddedTokens(systemPrompt, skillsText);
- for (const skill of options.skills ?? []) {
-   const advertisement = formatSkillsForPrompt([skill]).match(/<skill>[\s\S]*?<\/skill>/)?.[0];
-   if (!advertisement || !skillsText.includes(advertisement)) continue;
-   items.skills.push({ label: skill.name, tokens: embeddedTokens(systemPrompt, advertisement), content: advertisement, source: "Prompt advertisement", raw: true });
-   if (skill.filePath) {
-     try { items.skills.push({ label: `${skill.name} · SKILL.md`, tokens: 0, content: readFileSync(skill.filePath, "utf8"), source: "On-disk SKILL.md · NOT LOADED", raw: false }); } catch { /* A missing local source is not part of the prompt. */ }
-   }
- }
- const skillWrapperTokens = Math.max(0, skillsTokens - items.skills.reduce((sum, item) => sum + item.tokens, 0));
- if (skillWrapperTokens > 0) items.skills.push({ label: "Skill prompt wrapper · unattributed", tokens: skillWrapperTokens, content: skillsText, source: "Complete skill prompt (includes advertisements); wrapper estimate", raw: true });
+	for (const skill of options.skills ?? []) {
+		const advertisement = formatSkillsForPrompt([skill]).match(/<skill>[\s\S]*?<\/skill>/)?.[0];
+		if (!advertisement || !skillsText.includes(advertisement)) continue;
+		items.skills.push({
+			label: skill.name,
+			tokens: embeddedTokens(systemPrompt, advertisement),
+			content: advertisement,
+			source: "Prompt advertisement",
+			raw: true,
+		});
+		if (skill.filePath) {
+			try {
+				items.skills.push({
+					label: `${skill.name} · SKILL.md`,
+					tokens: 0,
+					content: readFileSync(skill.filePath, "utf8"),
+					source: "On-disk SKILL.md · NOT LOADED",
+					raw: false,
+				});
+			} catch {
+				/* A missing local source is not part of the prompt. */
+			}
+		}
+	}
+	const skillWrapperTokens = Math.max(
+		0,
+		skillsTokens - items.skills.reduce((sum, item) => sum + item.tokens, 0),
+	);
+	if (skillWrapperTokens > 0)
+		items.skills.push({
+			label: "Skill prompt wrapper · unattributed",
+			tokens: skillWrapperTokens,
+			content: skillsText,
+			source: "Complete skill prompt (includes advertisements); wrapper estimate",
+			raw: true,
+		});
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
@@ -490,8 +590,14 @@ export function collectContextBreakdown(
 			parameters: tool.parameters,
 		};
 		const tokens = tokenEstimate(definition);
-        toolDefinitionTokens += tokens;
-        items.tools.push({ label: tool.name, tokens, content: JSON.stringify(definition, null, 2), source: "Local registered tool schema · estimate", raw: true });
+		toolDefinitionTokens += tokens;
+		items.tools.push({
+			label: tool.name,
+			tokens,
+			content: JSON.stringify(definition, null, 2),
+			source: "Local registered tool schema · estimate",
+			raw: true,
+		});
 		toolDefinitionPreview.push(() => `## Definition: ${tool.name}\n\n${previewValue(definition)}`);
 	}
 
@@ -500,7 +606,12 @@ export function collectContextBreakdown(
 	for (const projected of ctx.sessionManager.buildSessionProjection().entries) {
 		if (projected.messages.length === 0) continue;
 		const source = projected.sourceEntry;
-		const entryHeading = source.type === "compaction" ? "Compaction" : source.type === "branch_summary" ? "Branch summary" : undefined;
+		const entryHeading =
+			source.type === "compaction"
+				? "Compaction"
+				: source.type === "branch_summary"
+					? "Branch summary"
+					: undefined;
 		for (const message of projected.messages) {
 			const label = projectedEntryLabel(source, message.role);
 			const heading = entryHeading ?? label;
@@ -508,57 +619,107 @@ export function collectContextBreakdown(
 				for (const block of message.content) {
 					if (block.type === "toolCall") {
 						const tokens = tokenEstimate(block.name) + tokenEstimate(block.arguments);
-                        contextTokens += tokens;
-                        items.contextFiles.push({ label: `Assistant tool call: ${block.name}`, tokens, content: leafValue(block.arguments), source: "Local session entry · provider payload unavailable", raw: true });
+						contextTokens += tokens;
+						items.contextFiles.push({
+							label: `Assistant tool call: ${block.name}`,
+							tokens,
+							content: leafValue(block.arguments),
+							source: "Local session entry · provider payload unavailable",
+							raw: true,
+						});
 						contextPreview.push(
 							() => `## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
 						);
 					} else if (block.type === "text") {
 						const tokens = tokenEstimate(block.text);
-                        contextTokens += tokens;
-                        items.contextFiles.push({ label: "Assistant", tokens, content: block.text, source: "Local session entry · provider payload unavailable", raw: false });
+						contextTokens += tokens;
+						items.contextFiles.push({
+							label: "Assistant",
+							tokens,
+							content: block.text,
+							source: "Local session entry · provider payload unavailable",
+							raw: false,
+						});
 						contextPreview.push(() => `## Assistant\n\n${block.text}`);
 					} else if (block.type === "thinking") {
 						const tokens = tokenEstimate(block.thinking);
-                        contextTokens += tokens;
-                        items.contextFiles.push({ label: "Assistant thinking", tokens, content: block.thinking, source: "Local session entry · provider payload unavailable", raw: false });
+						contextTokens += tokens;
+						items.contextFiles.push({
+							label: "Assistant thinking",
+							tokens,
+							content: block.thinking,
+							source: "Local session entry · provider payload unavailable",
+							raw: false,
+						});
 						contextPreview.push(() => `## Assistant thinking\n\n${block.thinking}`);
 					}
 				}
 			} else if (message.role === "toolResult") {
 				const tokens = estimateTokens(message);
-                toolResultTokens += tokens;
-                items.toolResults.push({ label: `Result: ${message.toolName}`, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: true });
+				toolResultTokens += tokens;
+				items.toolResults.push({
+					label: `Result: ${message.toolName}`,
+					tokens,
+					content: leafValue(message.content),
+					source: "Local session entry · provider payload unavailable",
+					raw: true,
+				});
 				toolResultPreview.push(
 					() => `## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
 				);
 			} else if (message.role === "bashExecution") {
 				// convertToLlm() drops `!!` executions before the request; they are not context.
 				if (message.excludeFromContext) continue;
-                const tokens = estimateTokens(message);
+				const tokens = estimateTokens(message);
 				toolResultTokens += tokens;
-                items.toolResults.push({ label: `Bash: ${message.command}`, tokens, content: leafValue(message.output), source: "Local session entry · provider payload unavailable", raw: true });
+				items.toolResults.push({
+					label: `Bash: ${message.command}`,
+					tokens,
+					content: leafValue(message.output),
+					source: "Local session entry · provider payload unavailable",
+					raw: true,
+				});
 				toolResultPreview.push(
-					() => `## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
+					() =>
+						`## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
 				);
 			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
 				const tokens = estimateTokens(message);
-                contextTokens += tokens;
-                items.contextFiles.push({ label, tokens, content: message.summary, source: "Local session entry · provider payload unavailable", raw: false });
+				contextTokens += tokens;
+				items.contextFiles.push({
+					label,
+					tokens,
+					content: message.summary,
+					source: "Local session entry · provider payload unavailable",
+					raw: false,
+				});
 				contextPreview.push(() => `## ${heading}\n\n${message.summary}`);
 			} else {
 				const tokens = messageTokens(message);
-                contextTokens += tokens;
-                items.contextFiles.push({ label, tokens, content: leafValue(message.content), source: "Local session entry · provider payload unavailable", raw: typeof message.content !== "string" });
+				contextTokens += tokens;
+				items.contextFiles.push({
+					label,
+					tokens,
+					content: leafValue(message.content),
+					source: "Local session entry · provider payload unavailable",
+					raw: typeof message.content !== "string",
+				});
 				contextPreview.push(() => `## ${heading}\n\n${previewValue(message.content)}`);
 			}
 		}
 	}
 
 	const systemTokens = Math.max(0, tokenEstimate(systemPrompt) - memoryTokens - skillsTokens);
- items.systemPrompt.push({ label: "System prompt · unattributed", tokens: systemTokens, content: systemPrompt || "No system prompt.", source: "Complete local prompt (includes embedded memory and skills); residual estimate, not isolated provider payload", raw: false });
+	items.systemPrompt.push({
+		label: "System prompt · unattributed",
+		tokens: systemTokens,
+		content: systemPrompt || "No system prompt.",
+		source:
+			"Complete local prompt (includes embedded memory and skills); residual estimate, not isolated provider payload",
+		raw: false,
+	});
 	return {
-        items,
+		items,
 		parts: [
 			{ label: "System prompt", tokens: systemTokens, color: "accent" },
 			{ label: "Memory", tokens: memoryTokens, color: "error" },
@@ -579,139 +740,201 @@ export function collectContextBreakdown(
 }
 
 /** Reconcile per-leaf estimates to a capped category; never assign unestimated provider usage to leaves. */
-export function normalizeCategoryItems(items: ContextItem[], categoryTokens: number): ContextItem[] {
- const estimated = items.reduce((sum, item) => sum + item.tokens, 0);
- const target = Math.max(0, categoryTokens);
- if (estimated <= target) return items;
- let cumulative = 0;
- let previous = 0;
- return items.map((item, index) => {
-  cumulative += item.tokens;
-  const next = index === items.length - 1 ? target : Math.round(cumulative / estimated * target);
-  const tokens = next - previous;
-  previous = next;
-  return { ...item, tokens };
- });
+export function normalizeCategoryItems(
+	items: ContextItem[],
+	categoryTokens: number,
+): ContextItem[] {
+	const estimated = items.reduce((sum, item) => sum + item.tokens, 0);
+	const target = Math.max(0, categoryTokens);
+	if (estimated <= target) return items;
+	let cumulative = 0;
+	let previous = 0;
+	return items.map((item, index) => {
+		cumulative += item.tokens;
+		const next =
+			index === items.length - 1 ? target : Math.round((cumulative / estimated) * target);
+		const tokens = next - previous;
+		previous = next;
+		return { ...item, tokens };
+	});
 }
 
 /** Order entries by share of their category, largest first; original order breaks ties. */
 export function sortCategoryItems(items: ContextItem[]): ContextItem[] {
- return items
-  .map((item, index) => ({ item, index }))
-  .sort((a, b) => b.item.tokens - a.item.tokens || a.index - b.index)
-  .map(({ item }) => item);
+	return items
+		.map((item, index) => ({ item, index }))
+		.sort((a, b) => b.item.tokens - a.item.tokens || a.index - b.index)
+		.map(({ item }) => item);
 }
 
 /** A sequential second layer: the root overlay is never rendered or styled by this component. */
 export async function showCategoryMenu(
- ctx: Pick<ExtensionCommandContext, "ui">,
- category: ContextPart,
- items: ContextItem[],
- contextWindow: number,
+	ctx: Pick<ExtensionCommandContext, "ui">,
+	category: ContextPart,
+	items: ContextItem[],
+	contextWindow: number,
 ): Promise<ContextItem | undefined> {
- activeContextOverlays++;
- let restoreHover = () => {};
- const orderedItems = sortCategoryItems(items);
- const displayedItems = normalizeCategoryItems(orderedItems, category.tokens);
- try {
-  const selected = await ctx.ui.custom((tui, theme, _keys, done) => {
-   restoreHover = enableOverlayHover(tui);
-   let index = 0;
-   let offset = 0;
-   let pageSize = 1;
-   let pendingG = false;
-   let hovered = -1;
-   let escHovered = false;
-   let hitboxes: { index: number; row: number; startCol: number; endCol: number }[] = [];
-   let escHitbox: ReturnType<typeof escCloseHitbox> | undefined;
-   const choose = (next: number) => {
-    index = Math.max(0, Math.min(orderedItems.length - 1, next));
-    if (index < offset) offset = index;
-    if (index >= offset + pageSize) offset = index - pageSize + 1;
-    tui.requestRender();
-   };
-   const mouseAt = (row: number, col: number, press: boolean) => {
-    const overEsc = Boolean(escHitbox && row === escHitbox.row && col >= escHitbox.startCol && col <= escHitbox.endCol);
-    const match = hitboxes.find((box) => box.row === row && col >= box.startCol && col <= box.endCol);
-    if (press) {
-     if (overEsc) done(undefined);
-     else if (match) { choose(match.index); done(match.index); }
-    } else if (escHovered !== overEsc || hovered !== (match?.index ?? -1)) {
-     escHovered = overEsc;
-     hovered = match?.index ?? -1;
-     tui.requestRender();
-    }
-   };
-   return {
-    invalidate() {},
-    handleInput(data: string) {
-     if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "h" || data === "q") { done(undefined); return; }
-     if (data === "g") { if (pendingG) choose(0); pendingG = !pendingG; return; }
-     pendingG = false;
-     if (matchesKey(data, Key.up) || data === "k") choose(index - 1);
-     else if (matchesKey(data, Key.down) || data === "j") choose(index + 1);
-     else if (data === "G" || matchesKey(data, Key.end)) choose(orderedItems.length - 1);
-     else if (matchesKey(data, Key.home)) choose(0);
-     else if (matchesKey(data, Key.ctrl("d")) || matchesKey(data, "pageDown")) choose(index + pageSize);
-     else if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, "pageUp")) choose(index - pageSize);
-     else if (matchesKey(data, Key.enter) || data === "l") { if (orderedItems.length) done(index); }
-    },
-    handleMouse(event: TuiMouseEvent) {
-     if (event.type === "wheel") choose(index + Math.sign(event.wheelDelta ?? 0) * 3);
-     else if (event.type === "press" || event.type === "move")
-      mouseAt(event.screenY + 1, event.screenX + 1, event.type === "press" && event.button === "left");
-     return { handled: true };
-    },
-    render(width: number) {
-     const inner = Math.max(1, width - 2);
-     const border = (text: string) => theme.fg("border", text);
-     const terminalHeight = Math.max(1, tui.terminal.rows);
-     const maxHeight = contextDialogHeight(terminalHeight);
-     const compact = compactDialog(width, maxHeight, escapeSingleLineLabel(category.label), theme);
-     if (compact) { hitboxes = []; escHitbox = undefined; return compact; }
-     pageSize = maxHeight - 9;
-     offset = Math.max(0, Math.min(offset, Math.max(0, items.length - pageSize)));
-     if (index < offset) offset = index;
-     if (index >= offset + pageSize) offset = index - pageSize + 1;
-     const visible = displayedItems.slice(offset, offset + pageSize);
-     const parent = Math.max(1, category.tokens);
-     const categoryWidth = inner >= 38 ? 10 : 8;
-     const categoryHeading = categoryWidth === 10 ? "% category" : "% cat.";
-     const labelWidth = Math.max(1, inner - 27 - categoryWidth);
-     const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window ${categoryHeading.padStart(categoryWidth)}`;
-     const rows = visible.map((item, n) => {
-      const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? item.tokens / contextWindow * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${(item.tokens / parent * 100).toFixed(0)}%`.padStart(categoryWidth)}`;
-      const label = padLine(escapeSingleLineLabel(item.label), labelWidth);
-      const line = padLine(`${offset + n === index ? "› " : "  "}${theme.fg(category.color, "■")} ${label} ${amount}`, inner);
-      return `${border("│")}${offset + n === index ? theme.bg("selectedBg", line) : offset + n === hovered ? theme.bg("customMessageBg", line) : line}${border("│")}`;
-     });
-     const escWidth = visibleWidth("[esc]");
-     const percent = contextWindow > 0 ? category.tokens / contextWindow * 100 : 0;
-     const barWidth = Math.max(1, inner - 2);
-     const cells = Math.min(barWidth, Math.round(percent / 100 * barWidth));
-     const lines = [
-      border(`╭${"─".repeat(inner)}╮`),
-      `${border("│")}${padLine(` ${theme.bold(theme.fg("accent", escapeSingleLineLabel(category.label)))}  ${theme.fg("muted", `${formatTokens(category.tokens)} tokens (${percent.toFixed(1)}%)`)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
-      `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-      `${border("│")}${padLine(` ${theme.fg(category.color, "█".repeat(cells))}${theme.fg("dim", "░".repeat(barWidth - cells))}`, inner)}${border("│")}`,
-      `${border("│")}${" ".repeat(inner)}${border("│")}`,
-      `${border("│")}${padLine(theme.fg("dim", heading), inner)}${border("│")}`,
-      ...rows,
-      ...Array.from({ length: pageSize - rows.length }, () => `${border("│")}${" ".repeat(inner)}${border("│")}`),
-      `${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-      `${border("│")}${padLine(theme.fg("dim", ` ${orderedItems.length ? `${offset + 1}-${offset + visible.length}/${orderedItems.length}` : "No items"} · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
-      border(`╰${"─".repeat(inner)}╯`),
-     ];
-     const top = 1 + Math.floor((Math.max(1, terminalHeight - 2) - Math.min(lines.length, maxHeight)) / 2);
-     const left = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
-     escHitbox = escCloseHitbox({ left, top, width });
-     hitboxes = visible.map((_, n) => ({ index: offset + n, row: top + 7 + n, startCol: left + 1, endCol: left + width }));
-     return lines;
-    },
-   };
-  }, { overlay: true, overlayOptions: contextOverlayOptions });
-  return selected === undefined ? undefined : orderedItems[selected as number];
- } finally { restoreHover(); activeContextOverlays--; }
+	activeContextOverlays++;
+	let restoreHover = () => {};
+	const orderedItems = sortCategoryItems(items);
+	const displayedItems = normalizeCategoryItems(orderedItems, category.tokens);
+	try {
+		const selected = await ctx.ui.custom(
+			(tui, theme, _keys, done) => {
+				restoreHover = enableOverlayHover(tui);
+				let index = 0;
+				let offset = 0;
+				let pageSize = 1;
+				let pendingG = false;
+				let hovered = -1;
+				let escHovered = false;
+				let hitboxes: { index: number; row: number; startCol: number; endCol: number }[] = [];
+				let escHitbox: ReturnType<typeof escCloseHitbox> | undefined;
+				const choose = (next: number) => {
+					index = Math.max(0, Math.min(orderedItems.length - 1, next));
+					if (index < offset) offset = index;
+					if (index >= offset + pageSize) offset = index - pageSize + 1;
+					tui.requestRender();
+				};
+				const mouseAt = (row: number, col: number, press: boolean) => {
+					const overEsc = Boolean(
+						escHitbox &&
+						row === escHitbox.row &&
+						col >= escHitbox.startCol &&
+						col <= escHitbox.endCol,
+					);
+					const match = hitboxes.find(
+						(box) => box.row === row && col >= box.startCol && col <= box.endCol,
+					);
+					if (press) {
+						if (overEsc) done(undefined);
+						else if (match) {
+							choose(match.index);
+							done(match.index);
+						}
+					} else if (escHovered !== overEsc || hovered !== (match?.index ?? -1)) {
+						escHovered = overEsc;
+						hovered = match?.index ?? -1;
+						tui.requestRender();
+					}
+				};
+				return {
+					invalidate() {},
+					handleInput(data: string) {
+						if (
+							matchesKey(data, Key.escape) ||
+							matchesKey(data, Key.ctrl("c")) ||
+							data === "h" ||
+							data === "q"
+						) {
+							done(undefined);
+							return;
+						}
+						if (data === "g") {
+							if (pendingG) choose(0);
+							pendingG = !pendingG;
+							return;
+						}
+						pendingG = false;
+						if (matchesKey(data, Key.up) || data === "k") choose(index - 1);
+						else if (matchesKey(data, Key.down) || data === "j") choose(index + 1);
+						else if (data === "G" || matchesKey(data, Key.end)) choose(orderedItems.length - 1);
+						else if (matchesKey(data, Key.home)) choose(0);
+						else if (matchesKey(data, Key.ctrl("d")) || matchesKey(data, "pageDown"))
+							choose(index + pageSize);
+						else if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, "pageUp"))
+							choose(index - pageSize);
+						else if (matchesKey(data, Key.enter) || data === "l") {
+							if (orderedItems.length) done(index);
+						}
+					},
+					handleMouse(event: TuiMouseEvent) {
+						if (event.type === "wheel") choose(index + Math.sign(event.wheelDelta ?? 0) * 3);
+						else if (event.type === "press" || event.type === "move")
+							mouseAt(
+								event.screenY + 1,
+								event.screenX + 1,
+								event.type === "press" && event.button === "left",
+							);
+						return { handled: true };
+					},
+					render(width: number) {
+						const inner = Math.max(1, width - 2);
+						const border = (text: string) => theme.fg("border", text);
+						const terminalHeight = Math.max(1, tui.terminal.rows);
+						const maxHeight = contextDialogHeight(terminalHeight);
+						const compact = compactDialog(
+							width,
+							maxHeight,
+							escapeSingleLineLabel(category.label),
+							theme,
+						);
+						if (compact) {
+							hitboxes = [];
+							escHitbox = undefined;
+							return compact;
+						}
+						pageSize = maxHeight - 9;
+						offset = Math.max(0, Math.min(offset, Math.max(0, items.length - pageSize)));
+						if (index < offset) offset = index;
+						if (index >= offset + pageSize) offset = index - pageSize + 1;
+						const visible = displayedItems.slice(offset, offset + pageSize);
+						const parent = Math.max(1, category.tokens);
+						const categoryWidth = inner >= 38 ? 10 : 8;
+						const categoryHeading = categoryWidth === 10 ? "% category" : "% cat.";
+						const labelWidth = Math.max(1, inner - 27 - categoryWidth);
+						const heading = `${" ".repeat(5 + labelWidth)}Est. tokens  % window ${categoryHeading.padStart(categoryWidth)}`;
+						const rows = visible.map((item, n) => {
+							const amount = `${formatTokens(item.tokens).padStart(11)}  ${`${(contextWindow > 0 ? (item.tokens / contextWindow) * 100 : 0).toFixed(1)}%`.padStart(8)} ${`${((item.tokens / parent) * 100).toFixed(0)}%`.padStart(categoryWidth)}`;
+							const label = padLine(escapeSingleLineLabel(item.label), labelWidth);
+							const line = padLine(
+								`${offset + n === index ? "› " : "  "}${theme.fg(category.color, "■")} ${label} ${amount}`,
+								inner,
+							);
+							return `${border("│")}${offset + n === index ? theme.bg("selectedBg", line) : offset + n === hovered ? theme.bg("customMessageBg", line) : line}${border("│")}`;
+						});
+						const escWidth = visibleWidth("[esc]");
+						const percent = contextWindow > 0 ? (category.tokens / contextWindow) * 100 : 0;
+						const barWidth = Math.max(1, inner - 2);
+						const cells = Math.min(barWidth, Math.round((percent / 100) * barWidth));
+						const lines = [
+							border(`╭${"─".repeat(inner)}╮`),
+							`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", escapeSingleLineLabel(category.label)))}  ${theme.fg("muted", `${formatTokens(category.tokens)} tokens (${percent.toFixed(1)}%)`)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
+							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
+							`${border("│")}${padLine(` ${theme.fg(category.color, "█".repeat(cells))}${theme.fg("dim", "░".repeat(barWidth - cells))}`, inner)}${border("│")}`,
+							`${border("│")}${" ".repeat(inner)}${border("│")}`,
+							`${border("│")}${padLine(theme.fg("dim", heading), inner)}${border("│")}`,
+							...rows,
+							...Array.from(
+								{ length: pageSize - rows.length },
+								() => `${border("│")}${" ".repeat(inner)}${border("│")}`,
+							),
+							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
+							`${border("│")}${padLine(theme.fg("dim", ` ${orderedItems.length ? `${offset + 1}-${offset + visible.length}/${orderedItems.length}` : "No items"} · ↑↓ Enter · [esc] back`), inner)}${border("│")}`,
+							border(`╰${"─".repeat(inner)}╯`),
+						];
+						const top =
+							1 +
+							Math.floor((Math.max(1, terminalHeight - 2) - Math.min(lines.length, maxHeight)) / 2);
+						const left = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
+						escHitbox = escCloseHitbox({ left, top, width });
+						hitboxes = visible.map((_, n) => ({
+							index: offset + n,
+							row: top + 7 + n,
+							startCol: left + 1,
+							endCol: left + width,
+						}));
+						return lines;
+					},
+				};
+			},
+			{ overlay: true, overlayOptions: contextOverlayOptions },
+		);
+		return selected === undefined ? undefined : orderedItems[selected as number];
+	} finally {
+		restoreHover();
+		activeContextOverlays--;
+	}
 }
 
 export default function contextUsageExtension(pi: ExtensionAPI) {
@@ -780,32 +1003,60 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							const scrollRows = (delta: number) => {
 								pendingRootG = false;
 								keepSelectionVisible = false;
-								rowOffset = Math.max(0, Math.min(rowOffset + delta, allParts.length - rootPageSize));
+								rowOffset = Math.max(
+									0,
+									Math.min(rowOffset + delta, allParts.length - rootPageSize),
+								);
 								tui.requestRender();
 							};
 
 							return {
 								invalidate() {},
 								handleInput(data: string) {
-									if (matchesKey(data, "pageDown")) { scrollRows(rootPageSize); return; }
-									if (matchesKey(data, "pageUp")) { scrollRows(-rootPageSize); return; }
+									if (matchesKey(data, "pageDown")) {
+										scrollRows(rootPageSize);
+										return;
+									}
+									if (matchesKey(data, "pageUp")) {
+										scrollRows(-rootPageSize);
+										return;
+									}
 									keepSelectionVisible = true;
-									if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || data === "q" || data === "h") {
+									if (
+										matchesKey(data, Key.escape) ||
+										matchesKey(data, Key.ctrl("c")) ||
+										data === "q" ||
+										data === "h"
+									) {
 										done(undefined);
 										return;
 									}
 									if (data === "g") {
-                                        if (pendingRootG) { selectedPreviewIndex = 0; tui.requestRender(); }
-                                        pendingRootG = !pendingRootG;
-                                        return;
-                                    }
-                                    pendingRootG = false;
-                                    if (data === "G") { selectedPreviewIndex = visiblePreviews.length - 1; tui.requestRender(); return; }
-                                    if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, Key.ctrl("d"))) {
-                                        selectedPreviewIndex = Math.max(0, Math.min(visiblePreviews.length - 1, selectedPreviewIndex + (matchesKey(data, Key.ctrl("d")) ? 3 : -3)));
-                                        tui.requestRender(); return;
-                                    }
-                                    if ((matchesKey(data, Key.up) || data === "k") && visiblePreviews.length > 0) {
+										if (pendingRootG) {
+											selectedPreviewIndex = 0;
+											tui.requestRender();
+										}
+										pendingRootG = !pendingRootG;
+										return;
+									}
+									pendingRootG = false;
+									if (data === "G") {
+										selectedPreviewIndex = visiblePreviews.length - 1;
+										tui.requestRender();
+										return;
+									}
+									if (matchesKey(data, Key.ctrl("u")) || matchesKey(data, Key.ctrl("d"))) {
+										selectedPreviewIndex = Math.max(
+											0,
+											Math.min(
+												visiblePreviews.length - 1,
+												selectedPreviewIndex + (matchesKey(data, Key.ctrl("d")) ? 3 : -3),
+											),
+										);
+										tui.requestRender();
+										return;
+									}
+									if ((matchesKey(data, Key.up) || data === "k") && visiblePreviews.length > 0) {
 										selectedPreviewIndex =
 											(selectedPreviewIndex - 1 + visiblePreviews.length) % visiblePreviews.length;
 										tui.requestRender();
@@ -825,12 +1076,21 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									pendingRootG = false;
 									const row = event.screenY + 1;
 									const col = event.screenX + 1;
-									if (event.type === "wheel") { scrollRows(Math.sign(event.wheelDelta ?? 0) * 3); return { handled: true }; }
+									if (event.type === "wheel") {
+										scrollRows(Math.sign(event.wheelDelta ?? 0) * 3);
+										return { handled: true };
+									}
 									if (event.type === "click" || event.type === "release") return { handled: true };
-									const overEsc = Boolean(escHitbox && row === escHitbox.row &&
-										col >= escHitbox.startCol && col <= escHitbox.endCol);
-									const hitbox = previewHitboxes.find((candidate) => row === candidate.row &&
-										col >= candidate.startCol && col <= candidate.endCol);
+									const overEsc = Boolean(
+										escHitbox &&
+										row === escHitbox.row &&
+										col >= escHitbox.startCol &&
+										col <= escHitbox.endCol,
+									);
+									const hitbox = previewHitboxes.find(
+										(candidate) =>
+											row === candidate.row && col >= candidate.startCol && col <= candidate.endCol,
+									);
 									if (overEsc !== escHovered || hitbox?.key !== hoveredKey) {
 										escHovered = overEsc;
 										hoveredKey = hitbox?.key;
@@ -839,8 +1099,10 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									if (event.type === "press" && event.button === "left") {
 										if (overEsc) done(undefined);
 										else if (hitbox) {
-											selectedPreviewIndex = Math.max(0,
-												visiblePreviews.findIndex((preview) => preview.key === hitbox.key));
+											selectedPreviewIndex = Math.max(
+												0,
+												visiblePreviews.findIndex((preview) => preview.key === hitbox.key),
+											);
 											done(hitbox.key);
 										}
 									}
@@ -851,12 +1113,17 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									const terminalHeight = Math.max(1, tui.terminal.rows);
 									const maxHeight = contextDialogHeight(terminalHeight);
 									const compact = compactDialog(width, maxHeight, "Context Usage", theme);
-									if (compact) { previewHitboxes = []; escHitbox = undefined; return compact; }
-									const pageSize = rootPageSize = maxHeight - 9;
+									if (compact) {
+										previewHitboxes = [];
+										escHitbox = undefined;
+										return compact;
+									}
+									const pageSize = (rootPageSize = maxHeight - 9);
 									rowOffset = Math.max(0, Math.min(rowOffset, allParts.length - pageSize));
 									if (keepSelectionVisible) {
 										if (selectedPreviewIndex < rowOffset) rowOffset = selectedPreviewIndex;
-										if (selectedPreviewIndex >= rowOffset + pageSize) rowOffset = selectedPreviewIndex - pageSize + 1;
+										if (selectedPreviewIndex >= rowOffset + pageSize)
+											rowOffset = selectedPreviewIndex - pageSize + 1;
 									}
 									const escWidth = visibleWidth("[esc]");
 									const percent = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
@@ -901,7 +1168,10 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 										`${border("│")}${" ".repeat(inner)}${border("│")}`,
 										`${border("│")}${padLine(theme.fg("dim", heading), inner)}${border("│")}`,
 										...partRows.map((row) => `${border("│")}${row}${border("│")}`),
-										...Array.from({ length: pageSize - partRows.length }, () => `${border("│")}${" ".repeat(inner)}${border("│")}`),
+										...Array.from(
+											{ length: pageSize - partRows.length },
+											() => `${border("│")}${" ".repeat(inner)}${border("│")}`,
+										),
 										`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 										`${border("│")}${padLine(theme.fg("dim", " ↑↓ select · Click / Enter to preview · [esc] close"), inner)}${border("│")}`,
 										border(`╰${"─".repeat(inner)}╯`),
@@ -943,14 +1213,14 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 
 				if (!action) break;
 				const preview = previewByKey.get(action as PreviewKey);
-                if (!preview) continue;
-                const part = allParts.find((part) => part.label === preview.label)!;
-                const entries = breakdown.items[preview.key];
-                while (true) {
-                    const item = await showCategoryMenu(ctx, part, entries, contextWindow);
-                    if (!item) break;
-                    await showTextPreview(ctx, `${item.source} · ${item.label}`, item.content, item.raw);
-                }
+				if (!preview) continue;
+				const part = allParts.find((part) => part.label === preview.label)!;
+				const entries = breakdown.items[preview.key];
+				while (true) {
+					const item = await showCategoryMenu(ctx, part, entries, contextWindow);
+					if (!item) break;
+					await showTextPreview(ctx, `${item.source} · ${item.label}`, item.content, item.raw);
+				}
 			}
 		},
 	});

@@ -134,12 +134,16 @@ export class Task {
 		});
 		this.fd = openSync(logPath, "a", 0o600);
 		try {
-			this.child = spawn(spec.shell, spec.commandFromStdin ? spec.args : [...spec.args, spec.command], {
-				cwd: spec.cwd,
-				env: spec.env,
-				detached: true,
-				stdio: [spec.commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
-			});
+			this.child = spawn(
+				spec.shell,
+				spec.commandFromStdin ? spec.args : [...spec.args, spec.command],
+				{
+					cwd: spec.cwd,
+					env: spec.env,
+					detached: true,
+					stdio: [spec.commandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
+				},
+			);
 		} catch (error) {
 			this.discardLog();
 			throw error;
@@ -290,7 +294,10 @@ export class Task {
 		if (this.fd === undefined) return;
 		try {
 			if (this.logBytes + chunk.length > MAX_LOG_BYTES) {
-				writeSync(this.fd, `\n[log stopped at ${MAX_LOG_BYTES / 1024 / 1024} MB; later output is discarded]\n`);
+				writeSync(
+					this.fd,
+					`\n[log stopped at ${MAX_LOG_BYTES / 1024 / 1024} MB; later output is discarded]\n`,
+				);
 				this.closeLog();
 				return;
 			}
@@ -373,7 +380,8 @@ export function removeStaleTables(root: string): void {
 		try {
 			process.kill(pid, 0);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ESRCH") rmSync(join(root, name), { recursive: true, force: true });
+			if ((error as NodeJS.ErrnoException).code === "ESRCH")
+				rmSync(join(root, name), { recursive: true, force: true });
 		}
 	}
 }
@@ -434,7 +442,8 @@ export class TaskTable {
 		task.markRead();
 		this.tasks.set(task.id, task);
 		const ended = [...this.tasks.values()].filter((other) => !other.running);
-		for (const old of ended.slice(0, Math.max(0, ended.length - KEEP_ENDED))) this.tasks.delete(old.id);
+		for (const old of ended.slice(0, Math.max(0, ended.length - KEEP_ENDED)))
+			this.tasks.delete(old.id);
 		this.events?.changed();
 	}
 
@@ -482,7 +491,9 @@ export interface RunOptions extends TaskSpec {
 /** How often `interrupt` is polled. */
 export const INTERRUPT_POLL_MS = 250;
 
-export type RunResult = { kind: "exited"; exitCode: number } | { kind: "background"; task: Task; interrupted: boolean };
+export type RunResult =
+	| { kind: "exited"; exitCode: number }
+	| { kind: "background"; task: Task; interrupted: boolean };
 
 /**
  * Run a command and wait for it in the foreground for at most `waitMs`. A command still running then,
@@ -533,7 +544,10 @@ export function runCommand(table: TaskTable, options: RunOptions): Promise<RunRe
 		task.onLinger = () => toBackground("leftover");
 		task.onDeadline = () => kill("timeout", new Error(`timeout:${options.timeoutSeconds}`));
 		options.signal?.addEventListener("abort", onAbort, { once: true });
-		const timer = setTimeout(() => toBackground(options.reason), Math.min(options.waitMs, MAX_TIMER_MS));
+		const timer = setTimeout(
+			() => toBackground(options.reason),
+			Math.min(options.waitMs, MAX_TIMER_MS),
+		);
 		const { interrupt } = options;
 		if (interrupt) {
 			const after = task.startedAt + (options.interruptAfterMs ?? 0);

@@ -4,28 +4,21 @@
 # builds stay in ~/go/bin. Do not self-update mise-managed runtimes.
 
 [misc]
-  # only filters Topgrade's fixed step order; it does not set the order.
-  only = [
-    "rustup",
-    "cargo",
-    "tldr",
-    "yazi",
-    "github_cli_extensions",
-    "custom_commands",
-  ]
-  assume_yes = true
-  cleanup = true
-  no_retry = true
+# only filters Topgrade's fixed step order; it does not set the order.
+only = ["rustup", "cargo", "tldr", "yazi", "github_cli_extensions", "custom_commands"]
+assume_yes = true
+cleanup = true
+no_retry = true
 
 [cargo]
-  # Only cargo-update/cargo-cache remain cargo-installed, with no git sources.
-  git = false
+# Only cargo-update/cargo-cache remain cargo-installed, with no git sources.
+git = false
 
 [commands]
-  # Built-in mise is cwd-sensitive. Upgrade global requests without bumping them
-  # or pruning interpreters that external projects may still use.
-  "mise global upgrade" = "mise plugins update && mise upgrade --global --yes --no-prune"
-  "Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
-  "Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
-  # Cache cleanup only; never uv self update on the mise-owned binary.
-  "uv cache prune" = "uv cache prune"
+# Built-in mise is cwd-sensitive. Upgrade global requests without bumping them
+# or pruning interpreters that external projects may still use.
+"mise global upgrade" = "mise plugins update && mise upgrade --global --yes --no-prune"
+"Zinit Self-Update" = "zsh -i -c 'zinit self-update'"
+"Zinit Plugins" = "zsh -i -c 'setopt nohup; zinit update --parallel 40'"
+# Cache cleanup only; never uv self update on the mise-owned binary.
+"uv cache prune" = "uv cache prune"

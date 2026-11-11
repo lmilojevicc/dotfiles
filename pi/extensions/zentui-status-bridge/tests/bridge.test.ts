@@ -25,7 +25,12 @@ function fakeBus(demanded: string[] | "all" = "all") {
 		emit(channel: string, data: unknown) {
 			emissions.push({ channel, data });
 			if (channel !== ZENTUI_CAPABILITY_EVENT) return;
-			const capability = data as { key?: string; supported: boolean; active: boolean; version?: number };
+			const capability = data as {
+				key?: string;
+				supported: boolean;
+				active: boolean;
+				version?: number;
+			};
 			const active =
 				demanded === "all" || (capability.key !== undefined && demanded.includes(capability.key));
 			capability.supported = active;

@@ -2,7 +2,7 @@
 
 Re-publishes Pi's `ctx.ui.setStatus()` extension statuses as [Zentui](https://github.com/lmilojevicc/pi-zentui) custom values, so any extension's status can render in the Minimalist editor border (for example bottom-right, before `$cwd`) instead of the footer.
 
-Zentui's custom-value protocol (`zentui:variable`) and `setStatus` are separate surfaces: Zentui's own docs say *custom values do not automatically consume `ctx.ui.setStatus()`*. This extension is the missing adapter, and it is package-agnostic — it bridges whatever keys are configured, not just pi-lens.
+Zentui's custom-value protocol (`zentui:variable`) and `setStatus` are separate surfaces: Zentui's own docs say _custom values do not automatically consume `ctx.ui.setStatus()`_. This extension is the missing adapter, and it is package-agnostic — it bridges whatever keys are configured, not just pi-lens.
 
 ## What it does
 
@@ -11,19 +11,19 @@ Zentui's custom-value protocol (`zentui:variable`) and `setStatus` are separate 
 3. On success it removes the host copy by forwarding `undefined`, so the value renders once — in the border, not the footer. Without Zentui (or with demand switched off) the status passes through unchanged.
 4. `session_shutdown` removes every value it published.
 
-The tap must sit *outside* Zentui's own `setStatus` wrapper, which hides keys by `extensionStatuses.visibility`. Zentui installs that wrapper on `session_start`; `before_agent_start` is the first event guaranteed to run after it, which is why the tap is re-asserted there. A tap that has been wrapped from the outside is re-installed on the next event and bridges only once (a depth guard stops the inner tap from publishing again).
+The tap must sit _outside_ Zentui's own `setStatus` wrapper, which hides keys by `extensionStatuses.visibility`. Zentui installs that wrapper on `session_start`; `before_agent_start` is the first event guaranteed to run after it, which is why the tap is re-asserted there. A tap that has been wrapped from the outside is re-installed on the next event and bridges only once (a depth guard stops the inner tap from publishing again).
 
 ## Configuration
 
 `~/.pi/agent/zentui-status-bridge.json` (repository: `pi/zentui-status-bridge.json`), read on `session_start` and by `/status-bridge`. A missing file bridges every key with the defaults; the file is never created or repaired. Keys starting with `_` are inert.
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `include` | `[]` | Status keys to bridge. Empty means every key any extension publishes. |
-| `exclude` | `[]` | Keys kept on the footer even when included. |
-| `keyPrefix` | `""` | Prefix for the published Zentui key (for example `"status/"`). Prefix plus key must stay within 64 characters. |
-| `suppressHostStatus` | `true` | Remove the footer copy once Zentui accepted the value. |
-| `maxTextLength` | `256` | Truncate longer text, because Zentui drops a value above 256 UTF-16 code units instead of clipping it. |
+| Key                  | Default | Meaning                                                                                                        |
+| -------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `include`            | `[]`    | Status keys to bridge. Empty means every key any extension publishes.                                          |
+| `exclude`            | `[]`    | Keys kept on the footer even when included.                                                                    |
+| `keyPrefix`          | `""`    | Prefix for the published Zentui key (for example `"status/"`). Prefix plus key must stay within 64 characters. |
+| `suppressHostStatus` | `true`  | Remove the footer copy once Zentui accepted the value.                                                         |
+| `maxTextLength`      | `256`   | Truncate longer text, because Zentui drops a value above 256 UTF-16 code units instead of clipping it.         |
 
 An invalid field is reported once and reset to its default; valid fields survive. A key whose prefixed name would exceed 64 characters keeps its footer copy.
 

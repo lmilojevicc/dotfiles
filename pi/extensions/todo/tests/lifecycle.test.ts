@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_TASKS_CONFIG, saveGlobalTasksConfig, type TaskDisplayConfig } from "../src/config/tasks-config.ts";
+import {
+	DEFAULT_TASKS_CONFIG,
+	saveGlobalTasksConfig,
+	type TaskDisplayConfig,
+} from "../src/config/tasks-config.ts";
 import { registerLifecycle, restoreContext, synchronizationMessage } from "../src/lifecycle.ts";
 import { snapshot, task } from "./helpers.ts";
 import { STATE_ENTRY } from "../src/state/replay.ts";
@@ -17,8 +21,12 @@ function ctx(id: string, branch: unknown[] = []) {
 }
 
 test("lifecycle replay keeps sessions isolated", () => {
-	restoreContext(ctx("a", [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)], 1) }]));
-	restoreContext(ctx("b", [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(8)], 2) }]));
+	restoreContext(
+		ctx("a", [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)], 1) }]),
+	);
+	restoreContext(
+		ctx("b", [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(8)], 2) }]),
+	);
 	assert.equal(getSnapshot("a").tasks[0]?.id, 1);
 	assert.equal(getSnapshot("b").tasks[0]?.id, 8);
 	evictSlot("a");
@@ -38,21 +46,36 @@ test("foreground session starts load shared global settings across projects and 
 	});
 	const handlers = new Map<string, Function>();
 	const configs: TaskDisplayConfig[] = [];
-	registerLifecycle({ on: (name: string, handler: Function) => handlers.set(name, handler) } as any, {
-		setConfig: (config) => { configs.push(config); }, refresh() {}, dispose() {},
-	});
+	registerLifecycle(
+		{ on: (name: string, handler: Function) => handlers.set(name, handler) } as any,
+		{
+			setConfig: (config) => {
+				configs.push(config);
+			},
+			refresh() {},
+			dispose() {},
+		},
+	);
 	const contexts = ["a", "b"].map((id, index) => {
 		const cwd = join(root, id);
 		mkdirSync(join(cwd, ".pi"), { recursive: true });
 		writeFileSync(join(cwd, ".pi", "tasks-config.json"), JSON.stringify({ maxVisible: index + 1 }));
 		return {
-			...ctx(id, [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(index + 1)], 1) }]),
-			cwd, mode: "tui", ui: { notify() {} },
+			...ctx(id, [
+				{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(index + 1)], 1) },
+			]),
+			cwd,
+			mode: "tui",
+			ui: { notify() {} },
 		};
 	});
 	saveGlobalTasksConfig({ showAll: true, maxVisible: 30 });
-	for (const context of contexts) await handlers.get("session_start")!({ reason: "startup" }, context);
-	assert.deepEqual(configs, Array.from({ length: 2 }, () => ({ ...DEFAULT_TASKS_CONFIG, showAll: true, maxVisible: 30 })));
+	for (const context of contexts)
+		await handlers.get("session_start")!({ reason: "startup" }, context);
+	assert.deepEqual(
+		configs,
+		Array.from({ length: 2 }, () => ({ ...DEFAULT_TASKS_CONFIG, showAll: true, maxVisible: 30 })),
+	);
 	saveGlobalTasksConfig({ showAll: false, maxVisible: 20 });
 	// Already-applied configs remain cached until another session_start, including /reload.
 	assert.equal(configs[0].maxVisible, 30);
@@ -63,7 +86,10 @@ test("foreground session starts load shared global settings across projects and 
 	assert.equal(getSnapshot("a").tasks[0]?.id, 1);
 	assert.equal(getSnapshot("b").tasks[0]?.id, 2);
 	for (const [index, context] of contexts.entries()) {
-		assert.equal(readFileSync(join(context.cwd, ".pi", "tasks-config.json"), "utf8"), JSON.stringify({ maxVisible: index + 1 }));
+		assert.equal(
+			readFileSync(join(context.cwd, ".pi", "tasks-config.json"), "utf8"),
+			JSON.stringify({ maxVisible: index + 1 }),
+		);
 	}
 });
 
@@ -82,13 +108,24 @@ test("registered lifecycle replays start/tree/compaction and cleans stale shutdo
 	const pi = { on: (name: string, handler: Function) => handlers.set(name, handler) } as any;
 	const calls = { bind: 0, refresh: 0, dispose: 0 };
 	registerLifecycle(pi, {
-		bind: () => { calls.bind++; },
-		refresh: () => { calls.refresh++; },
-		dispose: () => { calls.dispose++; throw new Error("UI context is stale after session replacement"); },
+		bind: () => {
+			calls.bind++;
+		},
+		refresh: () => {
+			calls.refresh++;
+		},
+		dispose: () => {
+			calls.dispose++;
+			throw new Error("UI context is stale after session replacement");
+		},
 	});
 	const context: any = {
-		mode: "tui", cwd: "/tmp/pi-tasks-lifecycle",
-		sessionManager: { getSessionId: () => "a", getBranch: () => [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)], 1) }] },
+		mode: "tui",
+		cwd: "/tmp/pi-tasks-lifecycle",
+		sessionManager: {
+			getSessionId: () => "a",
+			getBranch: () => [{ type: "custom", customType: STATE_ENTRY, data: snapshot([task(1)], 1) }],
+		},
 		ui: { notify() {} },
 	};
 	await handlers.get("session_start")!({}, context);
@@ -97,7 +134,13 @@ test("registered lifecycle replays start/tree/compaction and cleans stale shutdo
 	assert.equal(getSnapshot("a").revision, 1);
 	assert.equal(calls.bind, 1);
 	assert.equal(calls.refresh, 3);
-	const stale: any = { sessionManager: { getSessionId() { throw new Error("ctx is stale after session replacement"); } } };
+	const stale: any = {
+		sessionManager: {
+			getSessionId() {
+				throw new Error("ctx is stale after session replacement");
+			},
+		},
+	};
 	await handlers.get("session_shutdown")!({}, stale);
 	assert.equal(calls.dispose, 1);
 	assert.equal(getSnapshot("a").tasks.length, 0);
@@ -109,13 +152,27 @@ test("turn usage, compaction preservation, tree reset, and shutdown are ephemera
 	const handlers = new Map<string, Function>();
 	const pi = { on: (name: string, handler: Function) => handlers.set(name, handler) } as any;
 	let refreshes = 0;
-	registerLifecycle(pi, { bind() {}, refresh() { refreshes++; }, dispose() {} });
+	registerLifecycle(pi, {
+		bind() {},
+		refresh() {
+			refreshes++;
+		},
+		dispose() {},
+	});
 	const running = snapshot([task(1, "in_progress")], 1);
 	const branch = [{ type: "custom", customType: STATE_ENTRY, data: running }];
-	const context: any = { mode: "tui", cwd: "/tmp/pi-tasks-lifecycle", sessionManager: { getSessionId: () => "a", getBranch: () => branch }, ui: { notify() {} } };
+	const context: any = {
+		mode: "tui",
+		cwd: "/tmp/pi-tasks-lifecycle",
+		sessionManager: { getSessionId: () => "a", getBranch: () => branch },
+		ui: { notify() {} },
+	};
 	await handlers.get("session_start")!({}, context);
 	const startedAt = taskActivity.get("a")?.metrics?.startedAt;
-	await handlers.get("turn_end")!({ message: { role: "assistant", usage: { input: 10, output: 4 } } }, context);
+	await handlers.get("turn_end")!(
+		{ message: { role: "assistant", usage: { input: 10, output: 4 } } },
+		context,
+	);
 	assert.equal(taskActivity.get("a")?.metrics?.inputTokens, 10);
 	await handlers.get("session_compact")!({}, context);
 	assert.equal(taskActivity.get("a")?.metrics?.startedAt, startedAt);
@@ -129,10 +186,12 @@ test("turn usage, compaction preservation, tree reset, and shutdown are ephemera
 
 test("replay of an announced edit does not schedule a reminder loop", () => {
 	const state = snapshot([task(1)], 2);
-	restoreContext(ctx("a", [
-		{ type: "custom", customType: STATE_ENTRY, data: state },
-		{ type: "custom_message", customType: "pi-tasks-sync", details: { revision: 2 } },
-	]));
+	restoreContext(
+		ctx("a", [
+			{ type: "custom", customType: STATE_ENTRY, data: state },
+			{ type: "custom_message", customType: "pi-tasks-sync", details: { revision: 2 } },
+		]),
+	);
 	assert.equal(synchronizationMessage("a"), undefined);
 });
 
@@ -157,13 +216,19 @@ test("a legacy migration notice is persisted so reloading the branch does not re
 	const notifications: string[] = [];
 	const pi = {
 		on: (name: string, handler: Function) => handlers.set(name, handler),
-		appendEntry: (customType: string, data: unknown) => { appended.push([customType, data]); },
+		appendEntry: (customType: string, data: unknown) => {
+			appended.push([customType, data]);
+		},
 	} as any;
 	registerLifecycle(pi, { refresh() {}, dispose() {} });
 	const branch: unknown[] = [LEGACY_RESULT];
 	const context = () => ({
 		mode: "tui",
-		ui: { notify(message: string) { notifications.push(message); } },
+		ui: {
+			notify(message: string) {
+				notifications.push(message);
+			},
+		},
 		sessionManager: { getSessionId: () => "legacy", getBranch: () => branch },
 	});
 	await handlers.get("session_start")!({}, context());
@@ -181,11 +246,32 @@ test("a legacy migration notice is persisted so reloading the branch does not re
 test("a clean legacy migration without repairs is not persisted as a notice", async () => {
 	const handlers = new Map<string, Function>();
 	const appended: unknown[] = [];
-	registerLifecycle({
-		on: (name: string, handler: Function) => handlers.set(name, handler),
-		appendEntry: (...args: unknown[]) => { appended.push(args); },
-	} as any, { refresh() {}, dispose() {} });
-	const branch = [{ type: "message", message: { role: "toolResult", toolName: "todo", details: { nextId: 2, tasks: [{ id: 1, subject: "Clean", status: "pending" }] } } }];
-	await handlers.get("session_start")!({}, { mode: "tui", ui: { notify() {} }, sessionManager: { getSessionId: () => "clean", getBranch: () => branch } });
+	registerLifecycle(
+		{
+			on: (name: string, handler: Function) => handlers.set(name, handler),
+			appendEntry: (...args: unknown[]) => {
+				appended.push(args);
+			},
+		} as any,
+		{ refresh() {}, dispose() {} },
+	);
+	const branch = [
+		{
+			type: "message",
+			message: {
+				role: "toolResult",
+				toolName: "todo",
+				details: { nextId: 2, tasks: [{ id: 1, subject: "Clean", status: "pending" }] },
+			},
+		},
+	];
+	await handlers.get("session_start")!(
+		{},
+		{
+			mode: "tui",
+			ui: { notify() {} },
+			sessionManager: { getSessionId: () => "clean", getBranch: () => branch },
+		},
+	);
 	assert.deepEqual(appended, []);
 });

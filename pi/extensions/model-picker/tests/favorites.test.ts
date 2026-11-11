@@ -4,7 +4,13 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { favoriteIdentities, favoriteKey, legacyFavoriteKey, readFavorites, toggleFavorite } from "../favorites.ts";
+import {
+	favoriteIdentities,
+	favoriteKey,
+	legacyFavoriteKey,
+	readFavorites,
+	toggleFavorite,
+} from "../favorites.ts";
 
 const chosen = { provider: "beta", id: "vendor/model" };
 function fixture(t: test.TestContext) {
@@ -21,9 +27,17 @@ test("absent store is empty without creating files; toggles append/remove/readd 
 	assert.equal(legacyFavoriteKey(chosen), "beta/vendor/model");
 	assert.deepEqual(toggleFavorite(chosen, root), [favoriteKey(chosen)]);
 	toggleFavorite({ provider: "alpha", id: "shared" }, root);
-	assert.deepEqual(toggleFavorite(chosen, root), [favoriteKey({ provider: "alpha", id: "shared" })]);
-	assert.deepEqual(toggleFavorite(chosen, root), [favoriteKey({ provider: "alpha", id: "shared" }), favoriteKey(chosen)]);
-	assert.deepEqual(JSON.parse(fs.readFileSync(path, "utf8")).favorites, readFavorites(root).favorites);
+	assert.deepEqual(toggleFavorite(chosen, root), [
+		favoriteKey({ provider: "alpha", id: "shared" }),
+	]);
+	assert.deepEqual(toggleFavorite(chosen, root), [
+		favoriteKey({ provider: "alpha", id: "shared" }),
+		favoriteKey(chosen),
+	]);
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(path, "utf8")).favorites,
+		readFavorites(root).favorites,
+	);
 });
 
 test("missing favorites is valid; unrelated data, unavailable IDs and existing mode survive fresh toggles", (t) => {
@@ -32,11 +46,21 @@ test("missing favorites is valid; unrelated data, unavailable IDs and existing m
 	assert.deepEqual(readFavorites(root).favorites, []);
 	toggleFavorite(chosen, root);
 	// A writer changes the file after the picker read: never overwrite that fresh content from a cache.
-	fs.writeFileSync(path, '{"favorites":["missing/unavailable","alpha/shared"],"other":{"nested":[2]},"__proto__":{"safe":true}}');
+	fs.writeFileSync(
+		path,
+		'{"favorites":["missing/unavailable","alpha/shared"],"other":{"nested":[2]},"__proto__":{"safe":true}}',
+	);
 	fs.chmodSync(path, 0o640);
 	const oldUmask = process.umask(0o077);
-	try { assert.deepEqual(toggleFavorite(chosen, root), ["missing/unavailable", "alpha/shared", favoriteKey(chosen)]); }
-	finally { process.umask(oldUmask); }
+	try {
+		assert.deepEqual(toggleFavorite(chosen, root), [
+			"missing/unavailable",
+			"alpha/shared",
+			favoriteKey(chosen),
+		]);
+	} finally {
+		process.umask(oldUmask);
+	}
 	assert.equal(fs.statSync(path).mode & 0o777, 0o640);
 	const stored = JSON.parse(fs.readFileSync(path, "utf8"));
 	assert.deepEqual(stored.other, { nested: [2] });
@@ -44,7 +68,21 @@ test("missing favorites is valid; unrelated data, unavailable IDs and existing m
 	assert.deepEqual(fs.readdirSync(root), ["model-favorites.json"]);
 });
 
-for (const bytes of ["", " ", "{bad", "[]", "null", "true", "2", '"text"', '{"favorites":null}', '{"favorites":"p/m"}', '{"favorites":[""]}', '{"favorites":["p/m",2]}', '{"favorites":[{}]}']) {
+for (const bytes of [
+	"",
+	" ",
+	"{bad",
+	"[]",
+	"null",
+	"true",
+	"2",
+	'"text"',
+	'{"favorites":null}',
+	'{"favorites":"p/m"}',
+	'{"favorites":[""]}',
+	'{"favorites":["p/m",2]}',
+	'{"favorites":[{}]}',
+]) {
 	test(`invalid favorites preserve exact bytes: ${JSON.stringify(bytes)}`, (t) => {
 		const { root, path } = fixture(t);
 		fs.writeFileSync(path, bytes);
@@ -65,8 +103,12 @@ test("read-only favorites load but cannot be replaced; unreadable file remains i
 	assert.equal(fs.readFileSync(path, "utf8"), bytes);
 	if (process.getuid?.() !== 0) {
 		fs.chmodSync(path, 0o000);
-		try { assert.throws(() => readFavorites(root), /EACCES/); assert.throws(() => toggleFavorite(chosen, root), /EACCES/); }
-		finally { fs.chmodSync(path, 0o600); }
+		try {
+			assert.throws(() => readFavorites(root), /EACCES/);
+			assert.throws(() => toggleFavorite(chosen, root), /EACCES/);
+		} finally {
+			fs.chmodSync(path, 0o600);
+		}
 		assert.equal(fs.readFileSync(path, "utf8"), bytes);
 	}
 });
@@ -77,47 +119,65 @@ test("directories and symlinks are refused without changing the entry or target"
 	assert.throws(() => readFavorites(root), /regular/);
 	assert.throws(() => toggleFavorite(chosen, root), /regular/);
 	fs.rmdirSync(path);
-	const target = join(root, "target.json"), bytes = '{"favorites":[]}';
-	fs.writeFileSync(target, bytes); fs.symlinkSync(target, path);
+	const target = join(root, "target.json"),
+		bytes = '{"favorites":[]}';
+	fs.writeFileSync(target, bytes);
+	fs.symlinkSync(target, path);
 	assert.throws(() => readFavorites(root), /regular/);
 	assert.throws(() => toggleFavorite(chosen, root), /regular/);
 	assert.ok(fs.lstatSync(path).isSymbolicLink());
 	assert.equal(fs.readFileSync(target, "utf8"), bytes);
 });
 
-for (const operation of ["writeFileSync", "chmodSync", "renameSync"] as const) test(`${operation} failure preserves old bytes and removes temporary files`, (t) => {
-	const { root, path } = fixture(t);
-	const bytes = '{ "favorites": ["unavailable/model"], "other": true }\n';
-	fs.writeFileSync(path, bytes);
-	const originalWrite = fs.writeFileSync;
-	const mock = t.mock.method(fs, operation, (...args: unknown[]) => {
-		if (operation === "writeFileSync") originalWrite(args[0] as string, "partial write");
-		throw new Error(`injected ${operation} failure`);
+for (const operation of ["writeFileSync", "chmodSync", "renameSync"] as const)
+	test(`${operation} failure preserves old bytes and removes temporary files`, (t) => {
+		const { root, path } = fixture(t);
+		const bytes = '{ "favorites": ["unavailable/model"], "other": true }\n';
+		fs.writeFileSync(path, bytes);
+		const originalWrite = fs.writeFileSync;
+		const mock = t.mock.method(fs, operation, (...args: unknown[]) => {
+			if (operation === "writeFileSync") originalWrite(args[0] as string, "partial write");
+			throw new Error(`injected ${operation} failure`);
+		});
+		syncBuiltinESMExports();
+		try {
+			assert.throws(() => toggleFavorite(chosen, root), /injected/);
+		} finally {
+			mock.mock.restore();
+			syncBuiltinESMExports();
+		}
+		assert.equal(fs.readFileSync(path, "utf8"), bytes);
+		assert.deepEqual(fs.readdirSync(root), ["model-favorites.json"]);
 	});
-	syncBuiltinESMExports();
-	try { assert.throws(() => toggleFavorite(chosen, root), /injected/); }
-	finally { mock.mock.restore(); syncBuiltinESMExports(); }
-	assert.equal(fs.readFileSync(path, "utf8"), bytes);
-	assert.deepEqual(fs.readdirSync(root), ["model-favorites.json"]);
-});
 
 test("unwritable directory fails a new toggle without creating a store", (t) => {
 	if (process.getuid?.() === 0) return t.skip("root bypasses directory permissions");
 	const { root } = fixture(t);
 	fs.chmodSync(root, 0o500);
-	try { assert.throws(() => toggleFavorite(chosen, root), /EACCES/); assert.deepEqual(fs.readdirSync(root), []); }
-	finally { fs.chmodSync(root, 0o700); }
+	try {
+		assert.throws(() => toggleFavorite(chosen, root), /EACCES/);
+		assert.deepEqual(fs.readdirSync(root), []);
+	} finally {
+		fs.chmodSync(root, 0o700);
+	}
 });
 
 test("tuple identities stay distinct when provider/ID joins collide", (t) => {
 	const { root, path } = fixture(t);
-	const nested = { provider: "openrouter", id: "vendor/model" }, flat = { provider: "openrouter/vendor", id: "model" };
+	const nested = { provider: "openrouter", id: "vendor/model" },
+		flat = { provider: "openrouter/vendor", id: "model" };
 	const models = [nested, flat];
 	assert.notEqual(favoriteKey(nested), favoriteKey(flat));
 	assert.equal(legacyFavoriteKey(nested), legacyFavoriteKey(flat));
 	// A pre-tuple entry cannot be split, so it names both; removing one keeps the other starred.
 	fs.writeFileSync(path, JSON.stringify({ favorites: [legacyFavoriteKey(nested)] }));
-	assert.deepEqual(favoriteIdentities([legacyFavoriteKey(nested)], models), new Map([[favoriteKey(nested), 0], [favoriteKey(flat), 0]]));
+	assert.deepEqual(
+		favoriteIdentities([legacyFavoriteKey(nested)], models),
+		new Map([
+			[favoriteKey(nested), 0],
+			[favoriteKey(flat), 0],
+		]),
+	);
 	assert.deepEqual(toggleFavorite(nested, root, models), [favoriteKey(flat)]);
 	assert.deepEqual(JSON.parse(fs.readFileSync(path, "utf8")).favorites, [favoriteKey(flat)]);
 	// Tuple entries then toggle independently, whichever side of the slash they sit on.
@@ -132,5 +192,9 @@ test("unresolvable legacy entries are preserved but rank nothing", (t) => {
 	fs.writeFileSync(path, JSON.stringify({ favorites: ["outside/model", "[broken"] }));
 	assert.deepEqual(favoriteIdentities(readFavorites(root).favorites, [chosen]), new Map());
 	assert.deepEqual(toggleFavorite(chosen, root), ["outside/model", "[broken", favoriteKey(chosen)]);
-	assert.deepEqual(JSON.parse(fs.readFileSync(path, "utf8")).favorites, ["outside/model", "[broken", favoriteKey(chosen)]);
+	assert.deepEqual(JSON.parse(fs.readFileSync(path, "utf8")).favorites, [
+		"outside/model",
+		"[broken",
+		favoriteKey(chosen),
+	]);
 });

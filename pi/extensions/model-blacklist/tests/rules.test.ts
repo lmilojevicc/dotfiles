@@ -60,7 +60,10 @@ test("a negated pattern hides everything it does not match on that provider", ()
 });
 
 test("plain patterns override the gate and the gate composes with global patterns", () => {
-	const rules = compileRules({ providers: { alpha: ["!gpt-6*", "gpt-6-sol"] }, global: ["*-preview"] });
+	const rules = compileRules({
+		providers: { alpha: ["!gpt-6*", "gpt-6-sol"] },
+		global: ["*-preview"],
+	});
 	assert.ok(!rules.isBlocked("alpha", "gpt-6-luna"));
 	assert.ok(rules.isBlocked("alpha", "gpt-6-sol"));
 	assert.ok(rules.isBlocked("alpha", "gpt-5.4"));
@@ -87,11 +90,21 @@ test("threshold patterns gate a provider like negations do", () => {
 		global: [],
 	});
 	assert.equal(rules.patternCount, 3);
-	assert.deepEqual(rules.patternsFor("antigravity"), ["!gemini-3.8+", "!claude-opus-5+", "!claude-sonnet-5+"]);
+	assert.deepEqual(rules.patternsFor("antigravity"), [
+		"!gemini-3.8+",
+		"!claude-opus-5+",
+		"!claude-sonnet-5+",
+	]);
 
 	for (const id of ["gemini-3.8-flash", "gemini-4-flash", "claude-opus-5-5", "claude-sonnet-6"])
 		assert.ok(!rules.isBlocked("antigravity", id), id);
-	for (const id of ["gemini-3.7-flash", "gemini-2.5-pro", "claude-opus-4-6", "claude-sonnet-4-6", "gpt-oss-120b"])
+	for (const id of [
+		"gemini-3.7-flash",
+		"gemini-2.5-pro",
+		"claude-opus-4-6",
+		"claude-sonnet-4-6",
+		"gpt-oss-120b",
+	])
 		assert.ok(rules.isBlocked("antigravity", id), id);
 });
 
@@ -104,7 +117,13 @@ test("a plain threshold hides its version and newer", () => {
 
 test("a lone * hides every model on its provider only", () => {
 	const rules = compileRules({ providers: { "openai-codex": ["*"] }, global: [] });
-	for (const id of ["gpt-5.3-codex-spark", "gpt-5.6-terra", "gpt-6-astra", "gpt-6.1-sol", "some-future-id"])
+	for (const id of [
+		"gpt-5.3-codex-spark",
+		"gpt-5.6-terra",
+		"gpt-6-astra",
+		"gpt-6.1-sol",
+		"some-future-id",
+	])
 		assert.ok(rules.isBlocked("openai-codex", id), id);
 	assert.ok(!rules.isBlocked("openai", "gpt-6.1-sol"));
 });

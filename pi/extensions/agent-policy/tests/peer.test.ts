@@ -11,10 +11,20 @@ function fixture(t: any) {
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const url = pathToFileURL(join(root, "extension", "index.ts")).href;
 	const agentDir = join(root, "agent");
-	function pkg(anchor: string, source = "export function registerRequiredChildExtensions() { return { dispose() {} }; }") {
+	function pkg(
+		anchor: string,
+		source = "export function registerRequiredChildExtensions() { return { dispose() {} }; }",
+	) {
 		const directory = join(anchor, "node_modules", "pi-subagents");
 		mkdirSync(directory, { recursive: true });
-		writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "pi-subagents", type: "module", exports: { "./required-child-extensions": "./api.js" } }));
+		writeFileSync(
+			join(directory, "package.json"),
+			JSON.stringify({
+				name: "pi-subagents",
+				type: "module",
+				exports: { "./required-child-extensions": "./api.js" },
+			}),
+		);
 		writeFileSync(join(directory, "api.js"), source);
 		return join(directory, "api.js");
 	}
@@ -41,15 +51,25 @@ test("missing peer registers nothing; a malformed public API fails honestly with
 	const f = fixture(t);
 	assert.throws(() => resolveRequiredChildAPI(f.url, f.agentDir), /provision a compatible peer/);
 	const noChildren = await loadRequiredChildAPI(f.url, f.agentDir);
-	assert.equal(typeof noChildren({ sessionId: "test", extensions: [] }).dispose, "function", "no installed pi-subagents means no children to register for");
+	assert.equal(
+		typeof noChildren({ sessionId: "test", extensions: [] }).dispose,
+		"function",
+		"no installed pi-subagents means no children to register for",
+	);
 	f.pkg(join(f.agentDir, "npm"), "export const unrelated = true;");
-	await assert.rejects(loadRequiredChildAPI(f.url, f.agentDir), /lacks registerRequiredChildExtensions/);
+	await assert.rejects(
+		loadRequiredChildAPI(f.url, f.agentDir),
+		/lacks registerRequiredChildExtensions/,
+	);
 });
 
 test("an incompatible local export is not silently replaced by a managed peer", (t) => {
 	const f = fixture(t);
 	f.pkg(join(f.agentDir, "npm"));
 	f.pkg(join(f.root, "extension"));
-	writeFileSync(join(f.root, "extension", "node_modules", "pi-subagents", "package.json"), JSON.stringify({ type: "module", exports: {} }));
+	writeFileSync(
+		join(f.root, "extension", "node_modules", "pi-subagents", "package.json"),
+		JSON.stringify({ type: "module", exports: {} }),
+	);
 	assert.throws(() => resolveRequiredChildAPI(f.url, f.agentDir), /not defined by "exports"/);
 });

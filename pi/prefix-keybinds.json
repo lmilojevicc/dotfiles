@@ -2,10 +2,7 @@
   "prefixKey": "ctrl+x",
   "timeoutMs": 2000,
   "showHelp": true,
-  "cancelKeys": [
-    "escape",
-    "ctrl+c"
-  ],
+  "cancelKeys": ["escape", "ctrl+c"],
   "replaceDefaults": true,
   "bindings": {
     "m": "pi.model-picker",

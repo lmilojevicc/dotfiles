@@ -10,7 +10,11 @@ import {
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ExtensionManagerComponent, type ExtensionManagerResult, type ExtensionManagerRow } from "./component.ts";
+import {
+	ExtensionManagerComponent,
+	type ExtensionManagerResult,
+	type ExtensionManagerRow,
+} from "./component.ts";
 import { applyExtensionChanges, type ExtensionChange } from "./state.ts";
 
 export const SAVE_CHOICE = "Save changes";
@@ -37,9 +41,7 @@ function slash(path: string): string {
 function resourceName(resource: ResolvedResource, agentDir: string): string {
 	const baseDir = resource.metadata.baseDir ?? agentDir;
 	const path = slash(relative(baseDir, resource.path)) || basename(resource.path);
-	const source = resource.metadata.origin === "package"
-		? resource.metadata.source
-		: "local";
+	const source = resource.metadata.origin === "package" ? resource.metadata.source : "local";
 	return `${source} · ${path}`;
 }
 
@@ -84,18 +86,26 @@ async function discoverDeltaPackageExtensions(
 	npmCommand: string[] | undefined,
 ): Promise<ResolvedResource[]> {
 	const deltaPackages = packages.filter(
-		(pkg): pkg is Exclude<PackageSource, string> => typeof pkg !== "string" && pkg.autoload === false,
+		(pkg): pkg is Exclude<PackageSource, string> =>
+			typeof pkg !== "string" && pkg.autoload === false,
 	);
 	if (deltaPackages.length === 0) return [];
 
 	// A delta package only returns resources named by its filters. Resolve the same
 	// installed package without those filters so the menu can also enable omitted
 	// extensions; "skip" guarantees discovery never installs a missing package.
-	const discoverySettings = SettingsManager.inMemory({
-		npmCommand,
-		packages: deltaPackages.map(packageSource),
-	}, { projectTrusted: false });
-	const discoveryManager = new DefaultPackageManager({ cwd, agentDir, settingsManager: discoverySettings });
+	const discoverySettings = SettingsManager.inMemory(
+		{
+			npmCommand,
+			packages: deltaPackages.map(packageSource),
+		},
+		{ projectTrusted: false },
+	);
+	const discoveryManager = new DefaultPackageManager({
+		cwd,
+		agentDir,
+		settingsManager: discoverySettings,
+	});
 	const discovered = await discoveryManager.resolve(async () => "skip");
 	return discovered.extensions.filter((resource) => resource.metadata.scope === "user");
 }
@@ -135,7 +145,9 @@ async function loadGlobalExtensions(ctx: ExtensionCommandContext): Promise<{
 		knownPaths.add(path);
 		resources.push({ ...resource, enabled: false });
 	}
-	resources.sort((left, right) => resourceName(left, agentDir).localeCompare(resourceName(right, agentDir)));
+	resources.sort((left, right) =>
+		resourceName(left, agentDir).localeCompare(resourceName(right, agentDir)),
+	);
 	return { settingsManager, resources, localFilePackageSources, agentDir };
 }
 
@@ -156,7 +168,10 @@ async function persistChanges(
 
 	validateGlobalRoot(agentDir);
 	await settingsManager.reload();
-	const reloadError = errorMessage("Could not refresh global settings", settingsManager.drainErrors());
+	const reloadError = errorMessage(
+		"Could not refresh global settings",
+		settingsManager.drainErrors(),
+	);
 	if (reloadError) throw new Error(reloadError);
 	validateGlobalRoot(agentDir);
 	const current = settingsManager.getGlobalSettings();
@@ -170,12 +185,18 @@ async function persistChanges(
 	if (update.packagesChanged) settingsManager.setPackages(update.packages);
 	await settingsManager.flush();
 
-	const saveError = errorMessage("Could not save extension settings", settingsManager.drainErrors());
+	const saveError = errorMessage(
+		"Could not save extension settings",
+		settingsManager.drainErrors(),
+	);
 	if (saveError) throw new Error(saveError);
 	return changes.length;
 }
 
-function stagedCount(resources: readonly ResolvedResource[], desired: ReadonlyMap<string, boolean>): number {
+function stagedCount(
+	resources: readonly ResolvedResource[],
+	desired: ReadonlyMap<string, boolean>,
+): number {
 	return resources.filter((resource) => desired.get(resource.path) !== resource.enabled).length;
 }
 
@@ -186,11 +207,17 @@ function toggleResource(
 	localFilePackageSources: ReadonlySet<string>,
 ): void {
 	if (isManagerResource(resource)) {
-		ctx.ui.notify("The extension manager keeps itself enabled so disabled extensions remain recoverable", "warning");
+		ctx.ui.notify(
+			"The extension manager keeps itself enabled so disabled extensions remain recoverable",
+			"warning",
+		);
 		return;
 	}
 	if (localFilePackageSources.has(resource.metadata.source)) {
-		ctx.ui.notify("Pi does not support extension filters for local-file packages; configure a directory package to make this extension toggleable", "warning");
+		ctx.ui.notify(
+			"Pi does not support extension filters for local-file packages; configure a directory package to make this extension toggleable",
+			"warning",
+		);
 		return;
 	}
 	desired.set(resource.path, !(desired.get(resource.path) ?? resource.enabled));
@@ -220,10 +247,14 @@ async function openSelectManager(
 			[...choices, SAVE_CHOICE, CANCEL_CHOICE],
 		);
 		if (choice === undefined || choice === CANCEL_CHOICE) {
-			if (stagedCount(resources, desired) === 0 || await ctx.ui.confirm(
-				"Discard extension changes?",
-				"Discard staged changes? Choose No to keep editing.",
-			)) return "cancel";
+			if (
+				stagedCount(resources, desired) === 0 ||
+				(await ctx.ui.confirm(
+					"Discard extension changes?",
+					"Discard staged changes? Choose No to keep editing.",
+				))
+			)
+				return "cancel";
 			continue;
 		}
 		if (choice === SAVE_CHOICE) return "save";
@@ -248,47 +279,53 @@ async function openTuiManager(
 			enabled: resource.enabled,
 			lock: isManagerResource(resource)
 				? "required"
-				: localFilePackageSources.has(resource.metadata.source) ? "local-file-package" : undefined,
+				: localFilePackageSources.has(resource.metadata.source)
+					? "local-file-package"
+					: undefined,
 		};
 	});
 	const byPath = new Map(resources.map((resource) => [resource.path, resource]));
 	let getTerminalWidth = () => 1;
-	return ctx.ui.custom<ExtensionManagerResult | undefined>((tui, theme, keybindings, done) => {
-		getTerminalWidth = () => tui.terminal.columns;
-		return new ExtensionManagerComponent({
-			rows,
-			theme,
-			keybindings,
-			getHeight: () => Math.max(1, Math.min(19, tui.terminal.rows - 2)),
-			getWidth: () => tui.terminal.columns,
-			getTerminalHeight: () => tui.terminal.rows,
-			getEnabled: (row) => desired.get(row.id) ?? row.enabled,
-			getStagedCount: () => stagedCount(resources, desired),
-			onToggle: (row) => {
-				const resource = byPath.get(row.id);
-				if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);
-			},
-			onChange: () => tui.requestRender(),
-			onDone: done,
-		});
-	}, {
-		overlay: true,
-		overlayOptions: {
-			// OverlayOptions has no maxWidth, so cap its percentage width on each layout read.
-			get width() {
-				return Math.max(1, Math.min(Math.floor(getTerminalWidth() * 0.8), 96));
-			},
-			maxHeight: 19,
-			margin: { left: 1, right: 1 },
-			anchor: "center",
+	return ctx.ui.custom<ExtensionManagerResult | undefined>(
+		(tui, theme, keybindings, done) => {
+			getTerminalWidth = () => tui.terminal.columns;
+			return new ExtensionManagerComponent({
+				rows,
+				theme,
+				keybindings,
+				getHeight: () => Math.max(1, Math.min(19, tui.terminal.rows - 2)),
+				getWidth: () => tui.terminal.columns,
+				getTerminalHeight: () => tui.terminal.rows,
+				getEnabled: (row) => desired.get(row.id) ?? row.enabled,
+				getStagedCount: () => stagedCount(resources, desired),
+				onToggle: (row) => {
+					const resource = byPath.get(row.id);
+					if (resource) toggleResource(ctx, resource, desired, localFilePackageSources);
+				},
+				onChange: () => tui.requestRender(),
+				onDone: done,
+			});
 		},
-	});
+		{
+			overlay: true,
+			overlayOptions: {
+				// OverlayOptions has no maxWidth, so cap its percentage width on each layout read.
+				get width() {
+					return Math.max(1, Math.min(Math.floor(getTerminalWidth() * 0.8), 96));
+				},
+				maxHeight: 19,
+				margin: { left: 1, right: 1 },
+				anchor: "center",
+			},
+		},
+	);
 }
 
 async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 	if (!ctx.hasUI) throw new Error("/extensions-manager requires interactive or RPC UI mode");
 
-	const { settingsManager, resources, localFilePackageSources, agentDir } = await loadGlobalExtensions(ctx);
+	const { settingsManager, resources, localFilePackageSources, agentDir } =
+		await loadGlobalExtensions(ctx);
 	if (resources.length === 0) {
 		ctx.ui.notify("No global extensions found", "warning");
 		return;
@@ -297,9 +334,10 @@ async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 	const desired = new Map(
 		resources.map((resource) => [resource.path, isManagerResource(resource) || resource.enabled]),
 	);
-	const result = ctx.mode === "tui"
-		? await openTuiManager(ctx, resources, desired, localFilePackageSources, agentDir)
-		: await openSelectManager(ctx, resources, desired, localFilePackageSources, agentDir);
+	const result =
+		ctx.mode === "tui"
+			? await openTuiManager(ctx, resources, desired, localFilePackageSources, agentDir)
+			: await openSelectManager(ctx, resources, desired, localFilePackageSources, agentDir);
 	if (result !== "save") {
 		if (stagedCount(resources, desired) > 0) ctx.ui.notify("Extension changes discarded", "info");
 		return;
@@ -310,7 +348,10 @@ async function openManager(ctx: ExtensionCommandContext): Promise<void> {
 		ctx.ui.notify("No extension changes to save", "info");
 		return;
 	}
-	ctx.ui.notify(`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reload Pi for changes to take effect`, "info");
+	ctx.ui.notify(
+		`Saved ${changed} extension change${changed === 1 ? "" : "s"}; reload Pi for changes to take effect`,
+		"info",
+	);
 }
 
 export default function extensionManager(pi: ExtensionAPI): void {

@@ -24,7 +24,8 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: TOOL_NAME,
 		label: "Tasks",
-		description: "Track session tasks, not execution or agent launches. create requires subject; update requires id and fields to change; get/delete require id; batch requires operations; list optionally filters status (includeDeleted to show deleted); clear removes all tasks. owner/metadata are inert.",
+		description:
+			"Track session tasks, not execution or agent launches. create requires subject; update requires id and fields to change; get/delete require id; batch requires operations; list optionally filters status (includeDeleted to show deleted); clear removes all tasks. owner/metadata are inert.",
 		promptSnippet: "Track session tasks",
 		promptGuidelines: PROMPT_GUIDELINES,
 		parameters: TodoParameters,

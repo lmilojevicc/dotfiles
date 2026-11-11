@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ProviderStateError } from "../core.ts";
-import { isOfficialOrigin, opencodeGoAdapter, parseOpencodeGoPayload } from "../providers/opencode-go.ts";
+import {
+	isOfficialOrigin,
+	opencodeGoAdapter,
+	parseOpencodeGoPayload,
+} from "../providers/opencode-go.ts";
 import { formatProviderLines } from "../render.ts";
 import { adapterContext, fakeFetch, jsonResponse, plain, theme } from "./helpers.ts";
 
@@ -25,7 +29,9 @@ test("parses the live OpenCode Go shape into rolling, weekly and monthly used wi
 		{ label: "Weekly", usedPercent: 22, resetsAt: now / 1000 + (3 * 24 + 9) * 3600 },
 		{ label: "Monthly", usedPercent: 57, resetsAt: now / 1000 + (11 * 24 + 1) * 3600 },
 	]);
-	const text = plain(formatProviderLines(theme, "OpenCode Go", { snapshot, loading: false }, 80, now)).join("\n");
+	const text = plain(
+		formatProviderLines(theme, "OpenCode Go", { snapshot, loading: false }, 80, now),
+	).join("\n");
 	assert.match(text, /Rolling\s+█░░░░░░░░░\s+8%\s+~1h/);
 	assert.match(text, /Weekly\s+██░░░░░░░░\s+22%\s+~3d 9h/);
 	assert.match(text, /Monthly\s+██████░░░░\s+57%\s+~11d 1h/);
@@ -33,8 +39,14 @@ test("parses the live OpenCode Go shape into rolling, weekly and monthly used wi
 });
 
 test("accepts snake_case variants and an unwrapped root", () => {
-	const snapshot = parseOpencodeGoPayload({ weekly: { used_percent: 12.5, resets_at: 1_900_000_000 } });
-	assert.deepEqual(snapshot.rows[0]?.windows[1], { label: "Weekly", usedPercent: 12.5, resetsAt: 1_900_000_000 });
+	const snapshot = parseOpencodeGoPayload({
+		weekly: { used_percent: 12.5, resets_at: 1_900_000_000 },
+	});
+	assert.deepEqual(snapshot.rows[0]?.windows[1], {
+		label: "Weekly",
+		usedPercent: 12.5,
+		resetsAt: 1_900_000_000,
+	});
 });
 
 test("unknown fields and statuses degrade to ?% plus notes instead of throwing", () => {
@@ -51,9 +63,14 @@ test("unknown fields and statuses degrade to ?% plus notes instead of throwing",
 		{ label: "Monthly", usedPercent: 3, note: "status: maintenance [31m" },
 	]);
 	const empty = parseOpencodeGoPayload(null);
-	assert.deepEqual(empty.rows[0]?.windows.map((window) => window.note), ["not reported", "not reported", "not reported"]);
+	assert.deepEqual(
+		empty.rows[0]?.windows.map((window) => window.note),
+		["not reported", "not reported", "not reported"],
+	);
 	assert.deepEqual(empty.notes, ["OpenCode Go returned no recognizable usage percentages."]);
-	const text = plain(formatProviderLines(theme, "OpenCode Go", { snapshot: empty, loading: false }, 80)).join("\n");
+	const text = plain(
+		formatProviderLines(theme, "OpenCode Go", { snapshot: empty, loading: false }, 80),
+	).join("\n");
 	assert.match(text, /Rolling\s+░{10}\s+\?%/);
 });
 
@@ -63,8 +80,17 @@ test("only the official origin receives the key", async () => {
 	assert.equal(isOfficialOrigin("https://opencode.ai.evil.test/zen"), false);
 	assert.equal(isOfficialOrigin("http://opencode.ai/zen"), false);
 	const { fetch, requests } = fakeFetch(() => jsonResponse(live));
-	const proxied = adapterContext({ fetch, getProviderAuth: async () => ({ apiKey: "sk-SECRET-zen", baseUrl: "https://proxy.test/v1" }) });
-	await assert.rejects(opencodeGoAdapter.fetch(proxied), (error: unknown) => error instanceof ProviderStateError && error.state === "setup" && !/SECRET/.test(error.message));
+	const proxied = adapterContext({
+		fetch,
+		getProviderAuth: async () => ({ apiKey: "sk-SECRET-zen", baseUrl: "https://proxy.test/v1" }),
+	});
+	await assert.rejects(
+		opencodeGoAdapter.fetch(proxied),
+		(error: unknown) =>
+			error instanceof ProviderStateError &&
+			error.state === "setup" &&
+			!/SECRET/.test(error.message),
+	);
 	assert.equal(requests.length, 0);
 });
 
@@ -73,7 +99,10 @@ test("adapter fetches the fixed usage endpoint with bearer auth and gates tabs o
 	const ctx = adapterContext({
 		fetch,
 		hasProviderCredentials: (id) => id === "opencode-go",
-		getProviderAuth: async () => ({ apiKey: "sk-SECRET-zen", baseUrl: "https://opencode.ai/zen/go/v1" }),
+		getProviderAuth: async () => ({
+			apiKey: "sk-SECRET-zen",
+			baseUrl: "https://opencode.ai/zen/go/v1",
+		}),
 	});
 	assert.equal(await opencodeGoAdapter.hasCredentials(ctx), true);
 	assert.equal(await opencodeGoAdapter.hasCredentials(adapterContext()), false);

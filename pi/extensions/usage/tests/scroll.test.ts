@@ -34,7 +34,15 @@ function frameFor(count: number, width: number, height: number | undefined, offs
 	const table = formatUsageTableParts(theme, longRows(count), width, now);
 	return formatScrollFrame(
 		theme,
-		{ titles: ["Codex", "OpenCode Go", "CLIProxyAPI"], active: 2, head: table.head, band: table.band, foot: [], height, offset },
+		{
+			titles: ["Codex", "OpenCode Go", "CLIProxyAPI"],
+			active: 2,
+			head: table.head,
+			band: table.band,
+			foot: [],
+			height,
+			offset,
+		},
 		width,
 	);
 }
@@ -98,9 +106,17 @@ test("scrollBand reports a governing heading as metadata without shrinking the w
 	assert.equal(onHeading.heading, undefined, "a window starting on a heading needs no metadata");
 
 	const headingScrolledPast = scrollBand(band, 5, 2);
-	assert.deepEqual(headingScrolledPast.lines, ["b1", "b2"], "an offset past the end clamps to the last full band");
+	assert.deepEqual(
+		headingScrolledPast.lines,
+		["b1", "b2"],
+		"an offset past the end clamps to the last full band",
+	);
 	assert.equal(headingScrolledPast.offset, 4, "the clamp is reported back to the caller");
-	assert.equal(headingScrolledPast.heading, "Heading B", "the nearest preceding section is reported");
+	assert.equal(
+		headingScrolledPast.heading,
+		"Heading B",
+		"the nearest preceding section is reported",
+	);
 
 	const lastBand = scrollBand(band, band.length - 2, 2);
 	assert.deepEqual(lastBand.lines, ["b1", "b2"], "the last full band keeps its rows");
@@ -133,7 +149,11 @@ test("scrolling never collapses the page step, so paging keeps advancing", () =>
 
 test("a short list renders the flat layout with no indicator and no scroll hints", () => {
 	const shortRows: UsageRow[] = [
-		{ label: "only-1", windows: [{ label: "5h", usedPercent: 8, resetsAt: now / 1000 + 3600 }], state: "ok" },
+		{
+			label: "only-1",
+			windows: [{ label: "5h", usedPercent: 8, resetsAt: now / 1000 + 3600 }],
+			state: "ok",
+		},
 		{ label: "only-2", windows: [{ label: "weekly", usedPercent: 22 }], state: "ok" },
 	];
 
@@ -141,17 +161,35 @@ test("a short list renders the flat layout with no indicator and no scroll hints
 		const table = formatUsageTableParts(theme, shortRows, width, now);
 		const flat = formatScrollFrame(
 			theme,
-			{ titles: ["Codex", "CLIProxyAPI"], active: 1, head: table.head, band: table.band, foot: [], height: undefined },
+			{
+				titles: ["Codex", "CLIProxyAPI"],
+				active: 1,
+				head: table.head,
+				band: table.band,
+				foot: [],
+				height: undefined,
+			},
 			width,
 		);
 		const tall = formatScrollFrame(
 			theme,
-			{ titles: ["Codex", "CLIProxyAPI"], active: 1, head: table.head, band: table.band, foot: [], height: 40 },
+			{
+				titles: ["Codex", "CLIProxyAPI"],
+				active: 1,
+				head: table.head,
+				band: table.band,
+				foot: [],
+				height: 40,
+			},
 			width,
 		);
 		assert.equal(flat.overflow, false, "flat render cannot overflow");
 		assert.equal(tall.overflow, false, "tall render cannot overflow");
-		assert.deepEqual(tall.lines, flat.lines, `a fitting list renders identically at ${width} columns`);
+		assert.deepEqual(
+			tall.lines,
+			flat.lines,
+			`a fitting list renders identically at ${width} columns`,
+		);
 		const text = plain(tall.lines).join("\n");
 		assert.doesNotMatch(text, /rows \d+-\d+ of \d+/, "no range indicator when nothing scrolls");
 		assert.doesNotMatch(text, /↑↓\/jk scroll/, "no scroll hints when nothing scrolls");
@@ -171,7 +209,10 @@ test("an overflowing band keeps the frame inside the terminal and reports its ra
 				`${frame.lines.length} lines exceed the ${height}-row terminal at ${width} columns`,
 			);
 			for (const line of frame.lines) {
-				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width} at height ${height}`);
+				assert.ok(
+					visibleWidth(line) <= width,
+					`${visibleWidth(line)} > ${width} at height ${height}`,
+				);
 			}
 			const text = plain(frame.lines).join("\n");
 			assert.match(text, /rows 1-\d+ of \d+/, "range indicator starts at the first row");
@@ -197,13 +238,21 @@ test("paging advances by the band and stops at the last full band", () => {
 	const last = frameFor(40, width, height, Number.POSITIVE_INFINITY);
 	assert.equal(last.offset, last.maxOffset, "paging past the end stops at the last full band");
 	const lastText = plain(last.lines).join("\n");
-	assert.match(lastText, new RegExp(`rows ${last.maxOffset + 1}-${last.offset + last.bandSize} of `), "indicator follows the clamp");
+	assert.match(
+		lastText,
+		new RegExp(`rows ${last.maxOffset + 1}-${last.offset + last.bandSize} of `),
+		"indicator follows the clamp",
+	);
 
 	const back = frameFor(40, width, height, last.maxOffset - 1);
 	assert.equal(back.offset, last.maxOffset - 1, "stepping back moves one row");
 
 	const beyond = frameFor(40, width, height, last.maxOffset + 25);
-	assert.equal(beyond.offset, last.maxOffset, "requests past the end clamp instead of blanking the band");
+	assert.equal(
+		beyond.offset,
+		last.maxOffset,
+		"requests past the end clamp instead of blanking the band",
+	);
 	assert.ok(beyond.lines.length <= height, "clamped frame still fits the terminal");
 });
 
@@ -217,11 +266,21 @@ test("wide characters in labels never break the width contract", () => {
 		const table = formatUsageTableParts(theme, rows, width, now);
 		const frame = formatScrollFrame(
 			theme,
-			{ titles: ["Codex", "CLIProxyAPI"], active: 1, head: table.head, band: table.band, foot: [], height: 20 },
+			{
+				titles: ["Codex", "CLIProxyAPI"],
+				active: 1,
+				head: table.head,
+				band: table.band,
+				foot: [],
+				height: 20,
+			},
 			width,
 		);
 		for (const line of frame.lines) {
-			assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width} with wide characters`);
+			assert.ok(
+				visibleWidth(line) <= width,
+				`${visibleWidth(line)} > ${width} with wide characters`,
+			);
 		}
 	}
 });
@@ -234,7 +293,10 @@ test("every rendered line is clamped to the width for a full-height band", () =>
 	}
 	const stripped = frame.lines.map((line) => stripVTControlCharacters(line));
 	assert.ok(stripped[0]!.length > 0, "top rule is rendered first");
-	assert.ok(stripped.some((line) => line.includes("rows ")), "range indicator is inside the frame");
+	assert.ok(
+		stripped.some((line) => line.includes("rows ")),
+		"range indicator is inside the frame",
+	);
 	assert.ok(stripped.at(-1)!.startsWith("─"), "bottom rule is last");
 });
 
@@ -249,7 +311,14 @@ function frameWithNotes(rows: number, width: number, height: number | undefined)
 	const table = formatUsageTableParts(theme, longRows(rows), width, now);
 	return formatScrollFrame(
 		theme,
-		{ titles: ["OpenCode Go", "CLIProxyAPI"], active: 1, head: table.head, band: table.band, foot: LIVE_NOTES, height },
+		{
+			titles: ["OpenCode Go", "CLIProxyAPI"],
+			active: 1,
+			head: table.head,
+			band: table.band,
+			foot: LIVE_NOTES,
+			height,
+		},
 		width,
 	);
 }
@@ -263,7 +332,10 @@ test("a short pane with notes stays inside the height and keeps the essentials",
 				`${frame.lines.length} lines exceed the ${height}-row pane at ${width} columns`,
 			);
 			for (const line of frame.lines) {
-				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width} at ${height} rows`);
+				assert.ok(
+					visibleWidth(line) <= width,
+					`${visibleWidth(line)} > ${width} at ${height} rows`,
+				);
 			}
 			const text = plain(frame.lines).join("\n");
 			assert.match(text, /rows \d+-\d+ of \d+/, "range indicator survives a short pane");
@@ -282,7 +354,10 @@ test("rows outrank notes: a tight pane drops notes before shrinking the band", (
 	assert.ok(frame.bandSize >= 3, `band must stay usable, got ${frame.bandSize}`);
 	const text = plain(frame.lines).join("\n");
 	assert.equal(frame.bandSize >= 3, true, "the band keeps a comfortable size on a tight pane");
-	assert.ok(text.includes("No API-key traffic recorded.") || text.includes("… +"), "dropped notes are either shown or disclosed");
+	assert.ok(
+		text.includes("No API-key traffic recorded.") || text.includes("… +"),
+		"dropped notes are either shown or disclosed",
+	);
 	assert.ok(!/\n\s*\n\s*\n/.test(text), "no empty runs from dropped notes");
 });
 
@@ -291,8 +366,15 @@ test("a roomy pane still shows every note and never exceeds its height", () => {
 		const frame = frameWithNotes(32, 120, height);
 		assert.ok(frame.lines.length <= height, `${frame.lines.length} > ${height}`);
 		const text = plain(frame.lines).join("\n");
-		assert.ok(text.includes("Normalized quota needs a CLIProxyAPI quota plugin."), `notes shown at ${height} rows`);
-		assert.doesNotMatch(plain([text]).join("\n"), /\+1 more|\+2 more|\+3 more/, "no marker when everything fits");
+		assert.ok(
+			text.includes("Normalized quota needs a CLIProxyAPI quota plugin."),
+			`notes shown at ${height} rows`,
+		);
+		assert.doesNotMatch(
+			plain([text]).join("\n"),
+			/\+1 more|\+2 more|\+3 more/,
+			"no marker when everything fits",
+		);
 		assert.ok(frame.bandSize >= 3, `band stays comfortable at ${height} rows`);
 	}
 });
@@ -306,7 +388,6 @@ test("notes that do not fit are replaced by a marker rather than pushing the fra
 	assert.ok(text.includes("rows "), "the band is still reported");
 });
 
-
 test("error and loading frames without a band still respect the height", () => {
 	const head = [
 		"  CLIProxyAPI · localhost:8317",
@@ -318,7 +399,14 @@ test("error and loading frames without a band still respect the height", () => {
 		for (const height of [8, 9, 10, 12, 16, 24]) {
 			const frame = formatScrollFrame(
 				theme,
-				{ titles: ["OpenCode Go", "CLIProxyAPI"], active: 1, head, band: [], foot: ["", "  Skipped the hashed secret-key."], height },
+				{
+					titles: ["OpenCode Go", "CLIProxyAPI"],
+					active: 1,
+					head,
+					band: [],
+					foot: ["", "  Skipped the hashed secret-key."],
+					height,
+				},
 				width,
 			);
 			assert.ok(
@@ -329,7 +417,11 @@ test("error and loading frames without a band still respect the height", () => {
 				assert.ok(visibleWidth(line) <= width, `${visibleWidth(line)} > ${width}`);
 			}
 			const text = plain(frame.lines).join("\n");
-			assert.doesNotMatch(text, /rows \d+-\d+ of 0/, "an empty band is never described as a scrollable range");
+			assert.doesNotMatch(
+				text,
+				/rows \d+-\d+ of 0/,
+				"an empty band is never described as a scrollable range",
+			);
 			assert.equal(frame.overflow, false, "nothing to scroll means no overflow");
 			if (height >= 12) assert.match(text, /Esc close/, "the way out survives on a short pane");
 		}
@@ -343,7 +435,14 @@ test("a short pane drops the column header before the title", () => {
 	const table = formatUsageTableParts(theme, longRows(24), 80, now);
 	const frame = formatScrollFrame(
 		theme,
-		{ titles: ["OpenCode Go", "CLIProxyAPI"], active: 1, head, band: table.band, foot: [], height: 11 },
+		{
+			titles: ["OpenCode Go", "CLIProxyAPI"],
+			active: 1,
+			head,
+			band: table.band,
+			foot: [],
+			height: 11,
+		},
 		80,
 	);
 	assert.ok(frame.lines.length <= 11, `${frame.lines.length} > 11`);
@@ -359,12 +458,23 @@ test("the production foot shape (leading blank line) is handled", () => {
 	for (const height of [13, 16, 20, 26]) {
 		const frame = formatScrollFrame(
 			theme,
-			{ titles: ["OpenCode Go", "CLIProxyAPI"], active: 1, head: table.head, band: table.band, foot, height },
+			{
+				titles: ["OpenCode Go", "CLIProxyAPI"],
+				active: 1,
+				head: table.head,
+				band: table.band,
+				foot,
+				height,
+			},
 			120,
 		);
-		assert.ok(frame.lines.length <= height, `${frame.lines.length} > ${height} with the production foot shape`);
+		assert.ok(
+			frame.lines.length <= height,
+			`${frame.lines.length} > ${height} with the production foot shape`,
+		);
 		const text = plain(frame.lines).join("\n");
-		if (text.includes("… +")) assert.match(text, /… \+\d+ more/, "a marker reports the omitted notes honestly");
+		if (text.includes("… +"))
+			assert.match(text, /… \+\d+ more/, "a marker reports the omitted notes honestly");
 		assert.ok(!/\n\s*\n\s*\n/.test(text), "no empty runs from dropped notes");
 	}
 });
@@ -374,11 +484,23 @@ test("even a pathologically narrow pane keeps the exit hint inside the height", 
 	for (const height of [8, 9, 10]) {
 		const frame = formatScrollFrame(
 			theme,
-			{ titles: ["Codex", "OpenCode Go", "CLIProxyAPI"], active: 2, head: table.head, band: table.band, foot: LIVE_NOTES, height },
+			{
+				titles: ["Codex", "OpenCode Go", "CLIProxyAPI"],
+				active: 2,
+				head: table.head,
+				band: table.band,
+				foot: LIVE_NOTES,
+				height,
+			},
 			20,
 		);
 		assert.ok(frame.lines.length <= height, `${frame.lines.length} lines exceed ${height} rows`);
-		for (const line of frame.lines) assert.ok(visibleWidth(line) <= 20, `${visibleWidth(line)} > 20`);
-		assert.match(plain(frame.lines).join("\n"), /Esc close/, "the way out survives the last-resort clamp");
+		for (const line of frame.lines)
+			assert.ok(visibleWidth(line) <= 20, `${visibleWidth(line)} > 20`);
+		assert.match(
+			plain(frame.lines).join("\n"),
+			/Esc close/,
+			"the way out survives the last-resort clamp",
+		);
 	}
 });

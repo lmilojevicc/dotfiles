@@ -10,7 +10,12 @@ import { ids } from "./helpers.ts";
 const HOOK_STATE_KEY = Symbol.for("pi.model-blacklist.hook-state");
 
 const PROVIDER = "cliproxyapi";
-const BLOCKED = ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3.1-flash-lite", "gemini-3.1-pro-low"];
+const BLOCKED = [
+	"claude-opus-4-6-thinking",
+	"claude-sonnet-4-6",
+	"gemini-3.1-flash-lite",
+	"gemini-3.1-pro-low",
+];
 const KEPT = "claude-opus-5-5";
 
 /**
@@ -42,7 +47,10 @@ test("a models.json provider stays filtered through real composition", async () 
 
 	const runtime = await ModelRuntime.create({ refreshOnCreate: false });
 	const before = await runtime.getAvailable();
-	assert.deepEqual(ids(before.filter((model) => model.provider === PROVIDER)).sort(), [...BLOCKED, KEPT].sort());
+	assert.deepEqual(
+		ids(before.filter((model) => model.provider === PROVIDER)).sort(),
+		[...BLOCKED, KEPT].sort(),
+	);
 
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	modelBlacklist({
@@ -58,7 +66,8 @@ test("a models.json provider stays filtered through real composition", async () 
 		ui: { notify: () => {} },
 	};
 	const sessionStart = (reason: string): void => {
-		for (const handler of handlers.get("session_start") ?? []) handler({ type: "session_start", reason }, ctx);
+		for (const handler of handlers.get("session_start") ?? [])
+			handler({ type: "session_start", reason }, ctx);
 	};
 
 	sessionStart("startup");
@@ -67,7 +76,10 @@ test("a models.json provider stays filtered through real composition", async () 
 
 	// Pi's own availability pass reads through the stored provider.
 	await runtime.getAvailable();
-	assert.deepEqual(ids(runtime.getAvailableSnapshot().filter((model) => model.provider === PROVIDER)), [KEPT]);
+	assert.deepEqual(
+		ids(runtime.getAvailableSnapshot().filter((model) => model.provider === PROVIDER)),
+		[KEPT],
+	);
 
 	// A full recomposition writes a freshly composed provider holding every models.json model.
 	await runtime.refresh({ allowNetwork: false });

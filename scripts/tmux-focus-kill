@@ -25,8 +25,8 @@ window_is_active() {
 }
 
 session_has_client() {
-  tmux list-clients -F '#{client_session}' 2>/dev/null \
-    | grep -qxF "$my_session"
+  tmux list-clients -F '#{client_session}' 2>/dev/null |
+    grep -qxF "$my_session"
 }
 
 should_dismiss() {

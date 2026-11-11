@@ -27,7 +27,10 @@ export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<
 	});
 }
 
-export function requestSignal(signal?: AbortSignal, timeoutMs = CODEX_REQUEST_TIMEOUT_MS): AbortSignal {
+export function requestSignal(
+	signal?: AbortSignal,
+	timeoutMs = CODEX_REQUEST_TIMEOUT_MS,
+): AbortSignal {
 	const timeout = AbortSignal.timeout(Math.max(1, timeoutMs));
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
@@ -38,13 +41,21 @@ function cancelAndRelease(reader: ReadableStreamDefaultReader<Uint8Array>): void
 	} catch {
 		// Cleanup failures are intentionally opaque.
 	} finally {
-		try { reader.releaseLock(); } catch { /* pending reads release after cancellation */ }
+		try {
+			reader.releaseLock();
+		} catch {
+			/* pending reads release after cancellation */
+		}
 	}
 }
 
 function cancelBody(body: ReadableStream<Uint8Array> | null): void {
 	if (!body) return;
-	try { void body.cancel().catch(() => undefined); } catch { /* opaque cleanup failure */ }
+	try {
+		void body.cancel().catch(() => undefined);
+	} catch {
+		/* opaque cleanup failure */
+	}
 }
 
 async function readWithSignal(
@@ -55,7 +66,10 @@ async function readWithSignal(
 	return await new Promise((resolve, reject) => {
 		const onAbort = () => reject(signal.reason);
 		signal.addEventListener("abort", onAbort, { once: true });
-		reader.read().then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+		reader
+			.read()
+			.then(resolve, reject)
+			.finally(() => signal.removeEventListener("abort", onAbort));
 	});
 }
 

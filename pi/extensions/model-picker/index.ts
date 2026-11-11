@@ -1,4 +1,8 @@
-import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	getAgentDir,
+	type ExtensionAPI,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { ModelPickerComponent } from "./component.ts";
 import { readConfig } from "./config.ts";
 import { catalogue, modelLabel, type PickerModel } from "./domain.ts";
@@ -25,35 +29,69 @@ export default function modelPicker(pi: ExtensionAPI): void {
 			const { vimMode } = readConfig((message) => ctx.ui.notify(message, "warning"));
 			const models = catalogue(ctx);
 			const agentDir = getAgentDir();
-			let favorites: string[] = [], favoriteError: string | undefined;
-			try { favorites = readFavorites(agentDir).favorites; }
-			catch (error) { favoriteError = favoritesError(error); }
-			const selected = await ctx.ui.custom<PickerModel | undefined>((tui, theme, keybindings, done) => {
-				cancelPicker = () => done(undefined);
-				return new ModelPickerComponent({
-					models, current: ctx.model, scoped: ctx.scopedModels.length > 0, vimMode,
-					favorites, favoriteError, onToggleFavorite: (model) => toggleFavorite(model, agentDir, models),
-					theme, keybindings,
-					// Reserve vertical inset here, not via host margin: Pi can place a fixed
-					// top margin outside a one-row terminal after resize.
-					getHeight: () => Math.max(1, Math.min(22, Math.floor(tui.terminal.rows * 0.85), tui.terminal.rows - 2)),
-					getWidth: () => tui.terminal.columns,
-					getTerminalHeight: () => tui.terminal.rows,
-					onChange: () => tui.requestRender(),
-					onSelect: done,
-					onCancel: () => done(undefined),
-				});
-			}, { overlay: true, overlayOptions: { width: "95%", maxHeight: "85%", margin: { left: 1, right: 1 }, anchor: "center" } });
+			let favorites: string[] = [],
+				favoriteError: string | undefined;
+			try {
+				favorites = readFavorites(agentDir).favorites;
+			} catch (error) {
+				favoriteError = favoritesError(error);
+			}
+			const selected = await ctx.ui.custom<PickerModel | undefined>(
+				(tui, theme, keybindings, done) => {
+					cancelPicker = () => done(undefined);
+					return new ModelPickerComponent({
+						models,
+						current: ctx.model,
+						scoped: ctx.scopedModels.length > 0,
+						vimMode,
+						favorites,
+						favoriteError,
+						onToggleFavorite: (model) => toggleFavorite(model, agentDir, models),
+						theme,
+						keybindings,
+						// Reserve vertical inset here, not via host margin: Pi can place a fixed
+						// top margin outside a one-row terminal after resize.
+						getHeight: () =>
+							Math.max(
+								1,
+								Math.min(22, Math.floor(tui.terminal.rows * 0.85), tui.terminal.rows - 2),
+							),
+						getWidth: () => tui.terminal.columns,
+						getTerminalHeight: () => tui.terminal.rows,
+						onChange: () => tui.requestRender(),
+						onSelect: done,
+						onCancel: () => done(undefined),
+					});
+				},
+				{
+					overlay: true,
+					overlayOptions: {
+						width: "95%",
+						maxHeight: "85%",
+						margin: { left: 1, right: 1 },
+						anchor: "center",
+					},
+				},
+			);
 			cancelPicker = undefined;
 			if (!selected || started !== generation) return;
 			const result = await switchAndSave(pi, ctx, selected);
 			if (started !== generation) return;
 			if (result.status === "saved") {
-				ctx.ui.notify(`Switched to ${modelLabel(selected)}; saved global default (project settings may override it)`, "info");
+				ctx.ui.notify(
+					`Switched to ${modelLabel(selected)}; saved global default (project settings may override it)`,
+					"info",
+				);
 			} else if (result.status === "switched-not-saved") {
-				ctx.ui.notify(`Switched to ${modelLabel(selected)}, but global default was NOT saved: ${result.error}`, "error");
+				ctx.ui.notify(
+					`Switched to ${modelLabel(selected)}, but global default was NOT saved: ${result.error}`,
+					"error",
+				);
 			} else if (result.status === "switch-failed") {
-				ctx.ui.notify(`Model switch failed; active model may have changed. Global default was NOT saved: ${result.error}`, "error");
+				ctx.ui.notify(
+					`Model switch failed; active model may have changed. Global default was NOT saved: ${result.error}`,
+					"error",
+				);
 			} else ctx.ui.notify(`Model not changed: ${result.error}`, "error");
 		} finally {
 			cancelPicker = undefined;
@@ -74,7 +112,11 @@ export default function modelPicker(pi: ExtensionAPI): void {
 			(acknowledge as () => void)();
 			const started = generation;
 			void open(ctx).catch((error: unknown) => {
-				if (started === generation) ctx.ui.notify(`Cannot open model picker: ${error instanceof Error ? error.message : String(error)}`, "error");
+				if (started === generation)
+					ctx.ui.notify(
+						`Cannot open model picker: ${error instanceof Error ? error.message : String(error)}`,
+						"error",
+					);
 			});
 		});
 	});

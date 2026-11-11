@@ -37,7 +37,11 @@ export default function zentuiStatusBridge(pi: ExtensionAPI): void {
 		const result = installStatusTap(ctx.ui, bridge);
 		if (result === "unsupported" && !unsupportedReported) {
 			unsupportedReported = true;
-			report(ctx, "Status bridge: Pi's setStatus is not a patchable method; statuses stay on the footer", "warning");
+			report(
+				ctx,
+				"Status bridge: Pi's setStatus is not a patchable method; statuses stay on the footer",
+				"warning",
+			);
 		}
 	};
 

@@ -15,7 +15,10 @@ function createHarness(options: { providers?: Provider[]; mode?: Mode } = {}) {
 	const runtime = fakeRuntime(options.providers ?? []);
 	const mode = options.mode ?? "tui";
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
-	const commands = new Map<string, { description: string; handler: (args: string, ctx: unknown) => unknown }>();
+	const commands = new Map<
+		string,
+		{ description: string; handler: (args: string, ctx: unknown) => unknown }
+	>();
 	const notices: { message: string; type: string }[] = [];
 	const ctx = {
 		modelRegistry: { runtime },
@@ -31,7 +34,10 @@ function createHarness(options: { providers?: Provider[]; mode?: Mode } = {}) {
 		on: (event: string, handler: (event: unknown, ctx: unknown) => unknown) => {
 			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 		},
-		registerCommand: (name: string, command: { description: string; handler: (args: string, ctx: unknown) => unknown }) => {
+		registerCommand: (
+			name: string,
+			command: { description: string; handler: (args: string, ctx: unknown) => unknown },
+		) => {
 			commands.set(name, command);
 		},
 	} as never);
@@ -51,7 +57,10 @@ function createHarness(options: { providers?: Provider[]; mode?: Mode } = {}) {
 
 function writeConfig(contents: unknown): void {
 	mkdirSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true });
-	writeFileSync(join(process.env.PI_CODING_AGENT_DIR!, "model-blacklist.json"), typeof contents === "string" ? contents : JSON.stringify(contents));
+	writeFileSync(
+		join(process.env.PI_CODING_AGENT_DIR!, "model-blacklist.json"),
+		typeof contents === "string" ? contents : JSON.stringify(contents),
+	);
 }
 
 /** Lines this run wrote through `console.error`. */
@@ -136,11 +145,15 @@ test("a provider composed after session_start stays filtered", () => {
 	const { runtime, start } = createHarness();
 
 	start();
-	runtime.models!.setProvider!(fakeProvider("commandcode", ["claude-opus-5-5", "deepseek-v4.1-flash"]));
+	runtime.models!.setProvider!(
+		fakeProvider("commandcode", ["claude-opus-5-5", "deepseek-v4.1-flash"]),
+	);
 	assert.deepEqual(ids(runtime.providers.get("commandcode")!.getModels()), ["deepseek-v4.1-flash"]);
 
 	// A background catalogue refresh composes a fresh provider that re-adds the model.
-	runtime.models!.setProvider!(fakeProvider("commandcode", ["claude-opus-5-5", "claude-fable-5-1", "deepseek-v4.1-flash"]));
+	runtime.models!.setProvider!(
+		fakeProvider("commandcode", ["claude-opus-5-5", "claude-fable-5-1", "deepseek-v4.1-flash"]),
+	);
 	assert.deepEqual(ids(runtime.providers.get("commandcode")!.getModels()), ["deepseek-v4.1-flash"]);
 
 	// Removing the rule unhides the same wrapper, without another layer.
@@ -191,7 +204,10 @@ test("a negated rule hides everything it does not match end to end", async () =>
 	const { runtime, notices, start, command } = createHarness({ providers: [alpha, beta] });
 
 	start();
-	assert.deepEqual(ids(runtime.providers.get("alpha")!.getModels()), ["gpt-6-astra", "gpt-6.1-sol"]);
+	assert.deepEqual(ids(runtime.providers.get("alpha")!.getModels()), [
+		"gpt-6-astra",
+		"gpt-6.1-sol",
+	]);
 	assert.deepEqual(ids(runtime.providers.get("beta")!.getModels()), ["gpt-5.5"]);
 
 	await command();
@@ -200,11 +216,21 @@ test("a negated rule hides everything it does not match end to end", async () =>
 
 test("a threshold rule gates the provider end to end", () => {
 	writeConfig({ providers: { antigravity: ["!gemini-3.8+", "!claude-opus-5+"] } });
-	const antigravity = fakeProvider("antigravity", ["gemini-3.7-flash", "gemini-3.8-flash", "gemini-3.10-pro", "claude-opus-4-6", "claude-opus-5-5"]);
+	const antigravity = fakeProvider("antigravity", [
+		"gemini-3.7-flash",
+		"gemini-3.8-flash",
+		"gemini-3.10-pro",
+		"claude-opus-4-6",
+		"claude-opus-5-5",
+	]);
 	const { runtime, start } = createHarness({ providers: [antigravity] });
 
 	start();
-	assert.deepEqual(ids(runtime.providers.get("antigravity")!.getModels()), ["gemini-3.8-flash", "gemini-3.10-pro", "claude-opus-5-5"]);
+	assert.deepEqual(ids(runtime.providers.get("antigravity")!.getModels()), [
+		"gemini-3.8-flash",
+		"gemini-3.10-pro",
+		"claude-opus-5-5",
+	]);
 });
 
 test("non-TUI hosts get diagnostics on stderr as well as a notification", async () => {
@@ -234,8 +260,12 @@ test("an unreadable runtime shape is reported instead of hiding nothing quietly"
 	const handlers: ((event: unknown, ctx: unknown) => unknown)[] = [];
 	const commands = new Map<string, { handler: (args: string, ctx: unknown) => unknown }>();
 	modelBlacklist({
-		on: (_event: string, handler: (event: unknown, ctx: unknown) => unknown) => handlers.push(handler),
-		registerCommand: (name: string, command: { handler: (args: string, ctx: unknown) => unknown }) => commands.set(name, command),
+		on: (_event: string, handler: (event: unknown, ctx: unknown) => unknown) =>
+			handlers.push(handler),
+		registerCommand: (
+			name: string,
+			command: { handler: (args: string, ctx: unknown) => unknown },
+		) => commands.set(name, command),
 	} as never);
 	const ctx = {
 		modelRegistry: { runtime },

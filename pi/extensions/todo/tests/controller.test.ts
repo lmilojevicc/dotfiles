@@ -9,11 +9,22 @@ test.beforeEach(resetStore);
 function harness(responses: Array<string | undefined> = [], mode = "tui") {
 	const calls: any = { select: [], input: [], notify: [], confirm: [] };
 	const ctx: any = {
-		mode, cwd: "/tmp/tasks-controller-no-settings", sessionManager: { getSessionId: () => "session" },
+		mode,
+		cwd: "/tmp/tasks-controller-no-settings",
+		sessionManager: { getSessionId: () => "session" },
 		ui: {
-			select: async (title: string, options: string[]) => { calls.select.push([title, options]); return responses.shift(); },
-			input: async (title: string) => { calls.input.push(title); return responses.shift(); },
-			confirm: async (...args: any[]) => { calls.confirm.push(args); return responses.shift() === "yes"; },
+			select: async (title: string, options: string[]) => {
+				calls.select.push([title, options]);
+				return responses.shift();
+			},
+			input: async (title: string) => {
+				calls.input.push(title);
+				return responses.shift();
+			},
+			confirm: async (...args: any[]) => {
+				calls.confirm.push(args);
+				return responses.shift() === "yes";
+			},
 			notify: (...args: any[]) => calls.notify.push(args),
 			custom: async () => undefined,
 		},
@@ -27,8 +38,16 @@ test("human mutations append full snapshots only on commit and preserve explicit
 	const { ctx, pi, entries } = harness();
 	assert.equal(applyHumanMutation(pi, ctx, { action: "create", subject: "One" }).changed, true);
 	assert.equal(entries[0][0], "pi-tasks-state");
-	assert.equal(applyHumanMutation(pi, ctx, { action: "update", id: 1, status: "pending" }).changed, false);
-	const stale = applyHumanMutation(pi, ctx, { action: "update", id: 1, subject: "Stale", expectedRevision: 0 });
+	assert.equal(
+		applyHumanMutation(pi, ctx, { action: "update", id: 1, status: "pending" }).changed,
+		false,
+	);
+	const stale = applyHumanMutation(pi, ctx, {
+		action: "update",
+		id: 1,
+		subject: "Stale",
+		expectedRevision: 0,
+	});
 	assert.deepEqual(stale, { changed: false, error: "expected revision 0, current revision is 1" });
 	assert.equal(getSnapshot("session").tasks[0]?.subject, "One");
 	assert.equal(entries.length, 1);
@@ -40,11 +59,19 @@ test("main menu uses exact dynamic upstream order", async () => {
 	applyHumanMutation(pi, ctx, { action: "create", subject: "Done" });
 	applyHumanMutation(pi, ctx, { action: "update", id: 2, status: "completed" });
 	await openTaskManager(pi, ctx);
-	assert.deepEqual(calls.select[0], ["Tasks", ["View all tasks (2)", "Create task", "Clear completed (1)", "Clear all (2)", "Settings"]]);
+	assert.deepEqual(calls.select[0], [
+		"Tasks",
+		["View all tasks (2)", "Create task", "Clear completed (1)", "Clear all (2)", "Settings"],
+	]);
 });
 
 test("list and detail flows have exact rows, titles, and status actions", async () => {
-	const { ctx, calls, pi } = harness(["View all tasks (3)", "◻ #1 [pending] Pending", "← Back", undefined]);
+	const { ctx, calls, pi } = harness([
+		"View all tasks (3)",
+		"◻ #1 [pending] Pending",
+		"← Back",
+		undefined,
+	]);
 	applyHumanMutation(pi, ctx, { action: "create", subject: "Pending", description: "Details" });
 	applyHumanMutation(pi, ctx, { action: "create", subject: "Running" });
 	applyHumanMutation(pi, ctx, { action: "update", id: 2, status: "in_progress" });
@@ -52,8 +79,14 @@ test("list and detail flows have exact rows, titles, and status actions", async 
 	applyHumanMutation(pi, ctx, { action: "update", id: 2, status: "completed" });
 	applyHumanMutation(pi, ctx, { action: "update", id: 3, status: "completed" });
 	await openTaskManager(pi, ctx);
-	assert.deepEqual(calls.select[1], ["Tasks", ["◻ #1 [pending] Pending", "✔ #2 [completed] Running", "✔ #3 [completed] Done", "← Back"]]);
-	assert.deepEqual(calls.select[2], ["#1 [pending] Pending\nDetails", ["▸ Start (in_progress)", "✗ Delete", "← Back"]]);
+	assert.deepEqual(calls.select[1], [
+		"Tasks",
+		["◻ #1 [pending] Pending", "✔ #2 [completed] Running", "✔ #3 [completed] Done", "← Back"],
+	]);
+	assert.deepEqual(calls.select[2], [
+		"#1 [pending] Pending\nDetails",
+		["▸ Start (in_progress)", "✗ Delete", "← Back"],
+	]);
 });
 
 test("empty view and create cancellation/empty description persist nothing", async () => {
@@ -67,7 +100,13 @@ test("empty view and create cancellation/empty description persist nothing", asy
 });
 
 test("delete and clear-all retain confirmations", async () => {
-	const remove = harness(["View all tasks (1)", "◻ #1 [pending] Keep", "✗ Delete", undefined, undefined]);
+	const remove = harness([
+		"View all tasks (1)",
+		"◻ #1 [pending] Keep",
+		"✗ Delete",
+		undefined,
+		undefined,
+	]);
 	applyHumanMutation(remove.pi, remove.ctx, { action: "create", subject: "Keep" });
 	await openTaskManager(remove.pi, remove.ctx);
 	assert.deepEqual(remove.calls.confirm[0], ["Delete task", "Delete #1 Keep?"]);
@@ -82,7 +121,13 @@ test("delete and clear-all retain confirmations", async () => {
 });
 
 test("starting a second task surfaces the one-active reducer error", async () => {
-	const h = harness(["View all tasks (2)", "◻ #2 [pending] Two", "▸ Start (in_progress)", "← Back", undefined]);
+	const h = harness([
+		"View all tasks (2)",
+		"◻ #2 [pending] Two",
+		"▸ Start (in_progress)",
+		"← Back",
+		undefined,
+	]);
 	applyHumanMutation(h.pi, h.ctx, { action: "create", subject: "One" });
 	applyHumanMutation(h.pi, h.ctx, { action: "update", id: 1, status: "in_progress" });
 	applyHumanMutation(h.pi, h.ctx, { action: "create", subject: "Two" });
@@ -97,7 +142,10 @@ test("clear completed is one atomic commit and rejects surviving dependents", ()
 	assert.equal(failure.committed, false);
 	assert.equal(failure.state, blocked);
 	assert.equal(failure.error?.code, "has_dependents");
-	const many = snapshot(Array.from({ length: 75 }, (_, index) => task(index + 1, "completed")), 2);
+	const many = snapshot(
+		Array.from({ length: 75 }, (_, index) => task(index + 1, "completed")),
+		2,
+	);
 	const result = reduceClearCompleted(many);
 	assert.equal(result.committed, true);
 	assert.equal(result.state.tasks.length, 0);

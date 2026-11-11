@@ -25,9 +25,10 @@ export class TaskActivityStore {
 
 	reset(sessionId: string, snapshot: TaskSnapshot, now = Date.now()): SessionActivity {
 		const id = activeId(snapshot);
-		const activity: SessionActivity = id === undefined
-			? {}
-			: { activeTaskId: id, metrics: { startedAt: now, inputTokens: 0, outputTokens: 0 } };
+		const activity: SessionActivity =
+			id === undefined
+				? {}
+				: { activeTaskId: id, metrics: { startedAt: now, inputTokens: 0, outputTokens: 0 } };
 		this.sessions.set(sessionId, activity);
 		return activity;
 	}
@@ -44,7 +45,13 @@ export class TaskActivityStore {
 		return this.reset(sessionId, snapshot, now);
 	}
 
-	addTurnUsage(sessionId: string, snapshot: TaskSnapshot, input: unknown, output: unknown, now = Date.now()): SessionActivity {
+	addTurnUsage(
+		sessionId: string,
+		snapshot: TaskSnapshot,
+		input: unknown,
+		output: unknown,
+		now = Date.now(),
+	): SessionActivity {
 		const activity = this.reconcile(sessionId, snapshot, now);
 		if (activity.metrics) {
 			activity.metrics.inputTokens += tokenDelta(input);

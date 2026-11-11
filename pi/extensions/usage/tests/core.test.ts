@@ -65,10 +65,18 @@ test("epoch seconds accept seconds, milliseconds and date strings", () => {
 
 test("footer value keeps the raw percentage and formats as used", () => {
 	const snapshot = {
-		providerId: "p", title: "P", observedAt: 0,
+		providerId: "p",
+		title: "P",
+		observedAt: 0,
 		rows: [
 			{ label: "empty", windows: [{ label: "x" }] },
-			{ label: "main", windows: [{ label: "5h", usedPercent: 25.4 }, { label: "weekly", usedPercent: 99.6 }] },
+			{
+				label: "main",
+				windows: [
+					{ label: "5h", usedPercent: 25.4 },
+					{ label: "weekly", usedPercent: 99.6 },
+				],
+			},
 			{ label: "other", windows: [{ label: "1h", usedPercent: 100 }] },
 		],
 	};
@@ -80,8 +88,16 @@ test("footer value keeps the raw percentage and formats as used", () => {
 });
 
 test("requireProviderAuth reports auth needing refresh instead of a generic failure", async () => {
-	await assert.rejects(requireProviderAuth(adapterContext(), "opencode-go"), (error: unknown) =>
-		error instanceof ProviderStateError && error.state === "auth-refresh" && error.message === "Auth needs refresh · run /login opencode-go");
-	const auth = await requireProviderAuth(adapterContext({ getProviderAuth: async () => ({ apiKey: "k", baseUrl: "u" }) }), "x");
+	await assert.rejects(
+		requireProviderAuth(adapterContext(), "opencode-go"),
+		(error: unknown) =>
+			error instanceof ProviderStateError &&
+			error.state === "auth-refresh" &&
+			error.message === "Auth needs refresh · run /login opencode-go",
+	);
+	const auth = await requireProviderAuth(
+		adapterContext({ getProviderAuth: async () => ({ apiKey: "k", baseUrl: "u" }) }),
+		"x",
+	);
 	assert.deepEqual(auth, { apiKey: "k", baseUrl: "u" });
 });

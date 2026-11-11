@@ -15,7 +15,7 @@
 Edit **`~/.pi/agent/model-picker.json`** (repository: `pi/model-picker.json`). The loader uses `join(getAgentDir(), "model-picker.json")`, so a custom `PI_CODING_AGENT_DIR` relocates the file to that agent directory:
 
 ```json
-{"vimMode":true}
+{ "vimMode": true }
 ```
 
 Vim navigation is **enabled in the checked-in config for this setup**. Set `false` to restore standard immediate text search. Both `/model-picker` and prefix `m` resolve the effective agent directory and read this file fresh on **every opening**; no reload is needed for config edits. Missing file/field safely falls back to `false`. Malformed JSON, non-object roots, a nonboolean `vimMode`, or unreadable files warn with the path and fall back to `false`; unknown fields are ignored. Config symlinks are read normally. Opening never creates, repairs, migrates or writes config. The old `extensions/model-picker/config.json` and project-local files are ignored, with no fallback to them or to the default home directory when an agent-directory override is set. There are no watchers, project overrides or command toggles.

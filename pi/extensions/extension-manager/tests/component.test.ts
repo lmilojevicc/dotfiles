@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	CURSOR_MARKER,
+	KeybindingsManager,
+	TUI_KEYBINDINGS,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import {
 	ExtensionManagerComponent,
 	extensionViewport,
@@ -9,7 +14,11 @@ import {
 	type ExtensionManagerRow,
 } from "../component.ts";
 
-const up = "\x1b[A", down = "\x1b[B", pageDown = "\x1b[6~", enter = "\r", escape = "\x1b";
+const up = "\x1b[A",
+	down = "\x1b[B",
+	pageDown = "\x1b[6~",
+	enter = "\r",
+	escape = "\x1b";
 const plainTheme = {
 	fg: (_color: string, value: string) => value,
 	bold: (value: string) => value,
@@ -23,7 +32,13 @@ const row = (name: string, options: Partial<ExtensionManagerRow> = {}): Extensio
 	...options,
 });
 
-function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initialWidth = 100, theme = plainTheme, keybindings = keys()) {
+function setup(
+	rows: readonly ExtensionManagerRow[],
+	initialHeight = 19,
+	initialWidth = 100,
+	theme = plainTheme,
+	keybindings = keys(),
+) {
 	const desired = new Map(rows.map((item) => [item.id, item.enabled]));
 	const done: ExtensionManagerResult[] = [];
 	let changed = 0;
@@ -49,7 +64,9 @@ function setup(rows: readonly ExtensionManagerRow[], initialHeight = 19, initial
 test("search covers extension identity fields and fuzzy-ranks matches", () => {
 	const rows = [
 		row("other", { searchText: "npm:other fuzzy src search package" }),
-		row("fuzzy-search", { searchText: "fuzzy-search local extensions/fuzzy-search/index.ts top-level" }),
+		row("fuzzy-search", {
+			searchText: "fuzzy-search local extensions/fuzzy-search/index.ts top-level",
+		}),
 		row("日本語", { searchText: "npm:国際 packages/日本語/index.ts package" }),
 	];
 	assert.equal(filterExtensionRows(rows, "FUZZY search")[0], rows[1]);
@@ -65,7 +82,9 @@ test("centered viewport clamps at head, middle, and tail", () => {
 });
 
 test("bounded render reports exact hidden counts above and below", () => {
-	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${String(index).padStart(2, "0")}`));
+	const rows = Array.from({ length: 20 }, (_, index) =>
+		row(`item-${String(index).padStart(2, "0")}`),
+	);
 	const { component } = setup(rows);
 	let output = component.render(100).join("\n");
 	assert.match(output, /↓ 10 more/);
@@ -128,7 +147,11 @@ test("footer keeps the save hint visible at narrow usable widths without action 
 
 test("frame accounting preserves adaptive one-to-ten-row list capacity", () => {
 	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
-	for (const [height, count, linesExpected] of [[10, 3, 10], [13, 6, 13], [19, 10, 17]] as const) {
+	for (const [height, count, linesExpected] of [
+		[10, 3, 10],
+		[13, 6, 13],
+		[19, 10, 17],
+	] as const) {
 		const { component } = setup(rows, height, 80);
 		const lines = component.render(80);
 		assert.equal(lines.length, linesExpected);
@@ -170,7 +193,11 @@ test("toggles remain staged across searches and ctrl+s saves from the last filte
 	assert.equal(desired.get(rows[1].id), false);
 	assert.match(component.render(100).join("\n"), /Extensions \(2 staged\)/);
 	component.handleInput(down);
-	assert.equal(component.getSelectedRow(), rows[1], "single-result navigation cannot reach an action row");
+	assert.equal(
+		component.getSelectedRow(),
+		rows[1],
+		"single-result navigation cannot reach an action row",
+	);
 	component.handleInput("\x13");
 	assert.deepEqual(done, ["save"]);
 });
@@ -241,7 +268,10 @@ test("ctrl+s takes precedence over a remapped cancel=ctrl+s only on a usable fra
 	assert.deepEqual(resizeRequired.done, ["cancel"], "Resize required frames cannot save");
 });
 
-for (const [name, space] of [["raw", " "], ["Kitty CSI-u", "\x1b[32u"]] as const) {
+for (const [name, space] of [
+	["raw", " "],
+	["Kitty CSI-u", "\x1b[32u"],
+] as const) {
 	test(`${name} Space edits a nonempty query but toggles when search is empty`, () => {
 		const rows = [row("alpha beta"), row("other")];
 		const searching = setup(rows);
@@ -260,13 +290,25 @@ for (const [name, space] of [["raw", " "], ["Kitty CSI-u", "\x1b[32u"]] as const
 test("resize recomputes framed capacity and stale frames cannot toggle or save", () => {
 	const rows = Array.from({ length: 20 }, (_, index) => row(`item-${index}`));
 	const { component, desired, terminal } = setup(rows, 19, 80);
-	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 10);
+	assert.equal(
+		component
+			.render(80)
+			.join("\n")
+			.match(/\[[ x]\]/g)?.length,
+		10,
+	);
 	terminal.height = 13;
 	component.handleInput("\x13");
 	assert.equal(component.getQuery(), "");
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), true);
-	assert.equal(component.render(80).join("\n").match(/\[[ x]\]/g)?.length, 6);
+	assert.equal(
+		component
+			.render(80)
+			.join("\n")
+			.match(/\[[ x]\]/g)?.length,
+		6,
+	);
 	component.handleInput(enter);
 	assert.equal(desired.get(rows[0].id), false);
 });
@@ -286,7 +328,10 @@ test("save is unavailable on stale or Resize required frames but cancel remains 
 
 test("feasible Resize required layouts use a compact themed frame without enabling actions", () => {
 	const disabled = row("disabled", { enabled: false });
-	for (const [width, height] of [[35, 8], [20, 17]] as const) {
+	for (const [width, height] of [
+		[35, 8],
+		[20, 17],
+	] as const) {
 		const { component } = setup([disabled], height, width);
 		const lines = component.render(width);
 		assert.equal(lines.length, 4);
@@ -331,7 +376,8 @@ test("tiny layouts remain cancellable; focus, clipping, and Unicode widths are s
 			const { component } = setup([long], height, width);
 			const lines = component.render(width);
 			assert.ok(lines.length <= height);
-			for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width}x${height}: ${JSON.stringify(line)}`);
+			for (const line of lines)
+				assert.ok(visibleWidth(line) <= width, `${width}x${height}: ${JSON.stringify(line)}`);
 		}
 	}
 	const disabledLong = { ...long, enabled: false };
@@ -347,7 +393,10 @@ test("tiny layouts remain cancellable; focus, clipping, and Unicode widths are s
 
 	const tooNarrow = setup([disabledLong], 17, 3);
 	const tooNarrowLines = tooNarrow.component.render(3);
-	assert.deepEqual(tooNarrowLines.map((line) => line.slice(0, 3)), ["Res", "Esc"]);
+	assert.deepEqual(
+		tooNarrowLines.map((line) => line.slice(0, 3)),
+		["Res", "Esc"],
+	);
 	assert.ok(tooNarrowLines.every((line) => visibleWidth(line) === 3));
 	assert.doesNotMatch(tooNarrowLines.join("\n"), /[╭╮╰╯│]/);
 
@@ -382,7 +431,11 @@ test("dirty cancel keeps the draft, search, and selection until explicit discard
 	assert.match(frame, /Discard changes/);
 	component.handleInput("\x13");
 	component.handleInput(enter);
-	assert.deepEqual(done, [], "save does not run during confirmation and Keep editing is the default");
+	assert.deepEqual(
+		done,
+		[],
+		"save does not run during confirmation and Keep editing is the default",
+	);
 	assert.equal(component.getQuery(), "beta");
 	assert.equal(component.getSelectedRow(), rows[1]);
 	assert.equal(desired.get(rows[0].id), false);
@@ -432,10 +485,18 @@ test("confirmation handles narrow, short, and stale frames without destructive i
 });
 
 test("remapped cancel keeps editing inside the prompt, including when mapped to s", () => {
-	for (const [binding, input] of [["ctrl+q", "\x11"], ["s", "s"]] as const) {
+	for (const [binding, input] of [
+		["ctrl+q", "\x11"],
+		["s", "s"],
+	] as const) {
 		const rows = [row("alpha")];
-		const { component, done, desired } = setup(rows, 19, 80, plainTheme,
-			new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": binding }));
+		const { component, done, desired } = setup(
+			rows,
+			19,
+			80,
+			plainTheme,
+			new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.cancel": binding }),
+		);
 		component.handleInput(enter);
 		component.handleInput(input);
 		assert.match(component.render(80).join("\n"), /› Keep editing/);
@@ -456,12 +517,21 @@ test("remapped native bindings control navigation, confirmation, and cancellatio
 	let toggles = 0;
 	const done: ExtensionManagerResult[] = [];
 	const component = new ExtensionManagerComponent({
-		rows, theme: plainTheme as never,
+		rows,
+		theme: plainTheme as never,
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS, {
-			"tui.select.down": "ctrl+n", "tui.select.confirm": "ctrl+g", "tui.select.cancel": "ctrl+q",
+			"tui.select.down": "ctrl+n",
+			"tui.select.confirm": "ctrl+g",
+			"tui.select.cancel": "ctrl+q",
 		}),
-		getHeight: () => 17, getEnabled: (item) => item.enabled, getStagedCount: () => 0,
-		onToggle: () => { toggles++; }, onChange: () => {}, onDone: (result) => done.push(result),
+		getHeight: () => 17,
+		getEnabled: (item) => item.enabled,
+		getStagedCount: () => 0,
+		onToggle: () => {
+			toggles++;
+		},
+		onChange: () => {},
+		onDone: (result) => done.push(result),
 	});
 	component.render(80);
 	component.handleInput("\x0e");
@@ -477,10 +547,17 @@ test("ctrl+s saves rather than confirming when a native binding is remapped onto
 	let toggles = 0;
 	const done: ExtensionManagerResult[] = [];
 	const component = new ExtensionManagerComponent({
-		rows, theme: plainTheme as never,
+		rows,
+		theme: plainTheme as never,
 		keybindings: new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.confirm": "ctrl+s" }),
-		getHeight: () => 17, getEnabled: (item) => item.enabled, getStagedCount: () => 0,
-		onToggle: () => { toggles++; }, onChange: () => {}, onDone: (result) => done.push(result),
+		getHeight: () => 17,
+		getEnabled: (item) => item.enabled,
+		getStagedCount: () => 0,
+		onToggle: () => {
+			toggles++;
+		},
+		onChange: () => {},
+		onDone: (result) => done.push(result),
 	});
 	component.render(80);
 	component.handleInput("\x13");

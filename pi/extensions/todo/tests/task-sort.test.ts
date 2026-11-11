@@ -19,7 +19,10 @@ test("implements all upstream presets and tie breakers", () => {
 });
 
 test("valid custom specs work and malformed values fall back to id", () => {
-	assert.deepEqual(ids([{ field: "status", rank: ["pending", "completed", "in_progress"] }]), [2, 1, 3]);
+	assert.deepEqual(
+		ids([{ field: "status", rank: ["pending", "completed", "in_progress"] }]),
+		[2, 1, 3],
+	);
 	assert.deepEqual(ids([{ field: "id", direction: "desc" }]), [3, 2, 1]);
 	assert.deepEqual(ids([]), [1, 2, 3]);
 	assert.deepEqual(ids([{ field: "owner" }]), [1, 2, 3]);

@@ -36,11 +36,23 @@ const DEFAULT_GLYPHS: Omit<TaskGlyphs, "completedSummary"> = {
 };
 
 const UNSAFE_GLYPH = /[\p{Cc}\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
-const isGlyph = (value: unknown): value is string => typeof value === "string" && value.length > 0 && !UNSAFE_GLYPH.test(value);
-const isSpinner = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.every(isGlyph);
+const isGlyph = (value: unknown): value is string =>
+	typeof value === "string" && value.length > 0 && !UNSAFE_GLYPH.test(value);
+const isSpinner = (value: unknown): value is string[] =>
+	Array.isArray(value) && value.length > 0 && value.every(isGlyph);
 const GLYPH_KEYS = [
-	"completed", "inProgress", "pending", "completedSummary", "header", "overflow", "blocked",
-	"inputTokens", "outputTokens", "statsSeparator", "trailingEllipsis", "truncation",
+	"completed",
+	"inProgress",
+	"pending",
+	"completedSummary",
+	"header",
+	"overflow",
+	"blocked",
+	"inputTokens",
+	"outputTokens",
+	"statsSeparator",
+	"trailingEllipsis",
+	"truncation",
 ] as const;
 
 /** Retain only glyph entries that the renderer can safely use. */
@@ -56,7 +68,7 @@ export function normalizeTaskGlyphsConfig(value: unknown): TaskGlyphsConfig {
 }
 
 export function resolveTaskGlyphs(glyphs: TaskGlyphsConfig | undefined): TaskGlyphs {
-	const glyph = (value: unknown, fallback: string) => isGlyph(value) ? value : fallback;
+	const glyph = (value: unknown, fallback: string) => (isGlyph(value) ? value : fallback);
 	const completed = glyph(glyphs?.completed, DEFAULT_GLYPHS.completed);
 	return {
 		completed,

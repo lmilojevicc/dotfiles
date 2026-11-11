@@ -1,9 +1,26 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
-	Input, KeybindingsManager, decodeKittyPrintable, getKeybindings, matchesKey, setKeybindings, truncateToWidth, visibleWidth,
-	type Component, type Focusable, type Keybinding,
+	Input,
+	KeybindingsManager,
+	decodeKittyPrintable,
+	getKeybindings,
+	matchesKey,
+	setKeybindings,
+	truncateToWidth,
+	visibleWidth,
+	type Component,
+	type Focusable,
+	type Keybinding,
 } from "@earendil-works/pi-tui";
-import { modelKey, modelLabel, orderModels, providerCounts, searchModels, searchTier, type PickerModel } from "./domain.ts";
+import {
+	modelKey,
+	modelLabel,
+	orderModels,
+	providerCounts,
+	searchModels,
+	searchTier,
+	type PickerModel,
+} from "./domain.ts";
 import { favoriteIdentities, favoritesError } from "./favorites.ts";
 
 type PickerScope = { kind: "all" } | { kind: "favorites" } | { kind: "provider"; provider: string };
@@ -73,16 +90,30 @@ export class ModelPickerComponent implements Component, Focusable {
 		this.matches = orderModels(options.models, this.favorites, options.current);
 		this.results = this.matches;
 		this.counts = providerCounts(options.models, this.matches);
-		this.scopes = [this.scope, { kind: "favorites" }, ...[...this.counts.keys()].map((provider): PickerScope => ({ kind: "provider", provider }))];
-		const currentIndex = this.results.findIndex((model) => options.current && modelKey(model) === modelKey(options.current));
+		this.scopes = [
+			this.scope,
+			{ kind: "favorites" },
+			...[...this.counts.keys()].map((provider): PickerScope => ({ kind: "provider", provider })),
+		];
+		const currentIndex = this.results.findIndex(
+			(model) => options.current && modelKey(model) === modelKey(options.current),
+		);
 		const favoriteIndex = this.results.findIndex((model) => this.isFavorite(model));
-		this.selected = currentIndex >= 0 && this.isFavorite(this.results[currentIndex]) ? currentIndex :
-			favoriteIndex >= 0 ? favoriteIndex : Math.max(0, currentIndex);
+		this.selected =
+			currentIndex >= 0 && this.isFavorite(this.results[currentIndex])
+				? currentIndex
+				: favoriteIndex >= 0
+					? favoriteIndex
+					: Math.max(0, currentIndex);
 	}
 
-	private isFavorite(model: PickerModel): boolean { return this.favoriteIds.has(modelKey(model)); }
+	private isFavorite(model: PickerModel): boolean {
+		return this.favoriteIds.has(modelKey(model));
+	}
 
-	get focused(): boolean { return this._focused; }
+	get focused(): boolean {
+		return this._focused;
+	}
 	set focused(value: boolean) {
 		this._focused = value;
 		this.input.focused = value && (!this.options.vimMode || this.mode === "search");
@@ -91,15 +122,25 @@ export class ModelPickerComponent implements Component, Focusable {
 		this.mode = mode;
 		this.focused = this._focused;
 	}
-	getQuery(): string { return this.input.getValue(); }
-	getSelectedModel(): PickerModel | undefined { return this.results[this.selected]; }
-	getScope(): PickerScope { return this.scope; }
-	getPane(): "providers" | "models" { return this.pane; }
+	getQuery(): string {
+		return this.input.getValue();
+	}
+	getSelectedModel(): PickerModel | undefined {
+		return this.results[this.selected];
+	}
+	getScope(): PickerScope {
+		return this.scope;
+	}
+	getPane(): "providers" | "models" {
+		return this.pane;
+	}
 
 	handleInput(data: string): void {
 		if (this.disposed) return;
 		const kb = this.options.keybindings;
-		const usable = this.usable && this.options.getHeight() === this.renderedHeight &&
+		const usable =
+			this.usable &&
+			this.options.getHeight() === this.renderedHeight &&
 			this.options.getWidth?.() === this.renderedTerminalWidth &&
 			this.options.getTerminalHeight?.() === this.renderedTerminalHeight;
 		// Pi's StdinBuffer delivers a complete start marker. Keep all subsequent paste
@@ -122,34 +163,58 @@ export class ModelPickerComponent implements Component, Focusable {
 		const decoded = decodeKittyPrintable(data) ?? data;
 		// Pi's decoder also returns DEL/C1 controls and U+E046 for Kitty keypad Enter.
 		// Reject that functional event, not arbitrary Unicode or literal private-use text.
-		const keypadEnter = decoded === "\ue046" && (matchesKey(data, "enter") || matchesKey(data, "shift+enter"));
-		const printable = !keypadEnter && /^[^\x00-\x1f\x7f-\x9f]+$/u.test(decoded) ? decoded : undefined;
+		const keypadEnter =
+			decoded === "\ue046" && (matchesKey(data, "enter") || matchesKey(data, "shift+enter"));
+		const printable =
+			!keypadEnter && /^[^\x00-\x1f\x7f-\x9f]+$/u.test(decoded) ? decoded : undefined;
 		// Never navigate or save an invisible layout; Escape remains available to leave.
 		if (!usable) {
-			if (this.options.vimMode && this.mode === "search" && printable === undefined &&
-				(matchesKey(data, "escape") || matchesKey(data, "enter") ||
-					kb.matches(data, "tui.select.cancel") || kb.matches(data, "tui.select.confirm"))) {
+			if (
+				this.options.vimMode &&
+				this.mode === "search" &&
+				printable === undefined &&
+				(matchesKey(data, "escape") ||
+					matchesKey(data, "enter") ||
+					kb.matches(data, "tui.select.cancel") ||
+					kb.matches(data, "tui.select.confirm"))
+			) {
 				this.setMode("normal");
 				this.invalidate();
 				this.options.onChange();
-			} else if (!(this.options.vimMode && this.mode === "search" && printable !== undefined) && kb.matches(data, "tui.select.cancel")) {
+			} else if (
+				!(this.options.vimMode && this.mode === "search" && printable !== undefined) &&
+				kb.matches(data, "tui.select.cancel")
+			) {
 				this.dispose();
 				this.options.onCancel();
 			}
 			return;
 		}
-		if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "/")) this.setMode("search");
+		if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "/"))
+			this.setMode("search");
 		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "j")) this.move(1);
 		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "k")) this.move(-1);
-		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "h")) this.pane = "providers";
-		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "l")) this.pane = "models";
+		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "h"))
+			this.pane = "providers";
+		else if (this.options.vimMode && this.mode === "normal" && matchesKey(data, "l"))
+			this.pane = "models";
 		else if (this.options.vimMode && this.mode === "search" && printable !== undefined) {
 			// Paste framing bypasses Input's own global printable cancel remaps too.
 			this.editQuery(`\x1b[200~${printable}\x1b[201~`);
-		} else if (this.options.vimMode && this.mode === "search" && (matchesKey(data, "left") || matchesKey(data, "right"))) {
+		} else if (
+			this.options.vimMode &&
+			this.mode === "search" &&
+			(matchesKey(data, "left") || matchesKey(data, "right"))
+		) {
 			this.editSearchCursor(data);
-		} else if (this.options.vimMode && this.mode === "search" &&
-			(matchesKey(data, "enter") || matchesKey(data, "escape") || kb.matches(data, "tui.select.confirm") || kb.matches(data, "tui.select.cancel"))) {
+		} else if (
+			this.options.vimMode &&
+			this.mode === "search" &&
+			(matchesKey(data, "enter") ||
+				matchesKey(data, "escape") ||
+				kb.matches(data, "tui.select.confirm") ||
+				kb.matches(data, "tui.select.cancel"))
+		) {
 			this.setMode("normal");
 		} else if (matchesKey(data, "tab") || matchesKey(data, "shift+tab")) {
 			this.pane = this.pane === "models" ? "providers" : "models";
@@ -178,7 +243,12 @@ export class ModelPickerComponent implements Component, Focusable {
 		else if (kb.matches(data, "tui.select.pageDown")) this.move(this.pageSize, true);
 		else if (matchesKey(data, "ctrl+f")) {
 			const model = this.getSelectedModel();
-			if (this.pane === "models" && model && this.visibleSelection === modelKey(model) && this.options.onToggleFavorite) {
+			if (
+				this.pane === "models" &&
+				model &&
+				this.visibleSelection === modelKey(model) &&
+				this.options.onToggleFavorite
+			) {
 				try {
 					this.favorites = this.options.onToggleFavorite(model);
 					this.favoriteIds = favoriteIdentities(this.favorites, this.options.models);
@@ -187,10 +257,13 @@ export class ModelPickerComponent implements Component, Focusable {
 					if (this.scope.kind === "favorites") {
 						this.results = this.matches.filter((item) => this.isFavorite(item));
 						const index = this.results.findIndex((item) => modelKey(item) === modelKey(model));
-						this.selected = index >= 0 ? index : Math.max(0, Math.min(this.selected, this.results.length - 1));
+						this.selected =
+							index >= 0 ? index : Math.max(0, Math.min(this.selected, this.results.length - 1));
 					}
 					this.visibleSelection = undefined;
-				} catch (error) { this.favoriteError = favoritesError(error); }
+				} catch (error) {
+					this.favoriteError = favoritesError(error);
+				}
 			}
 		} else if (!this.options.vimMode || this.mode === "search") {
 			// Left/right, home/end and deletion stay with Pi's Input while searching.
@@ -205,15 +278,18 @@ export class ModelPickerComponent implements Component, Focusable {
 		// Input checks global select.cancel before its editor bindings (not select.confirm).
 		// Alternate cursor keys can also be remapped. Suppress only cancel, synchronously,
 		// without changing the original manager or spanning filtering/render callbacks.
-		const editing = new class extends KeybindingsManager {
+		const editing = new (class extends KeybindingsManager {
 			override matches(event: string, action: Keybinding): boolean {
 				return action !== "tui.select.cancel" && original.matches(event, action);
 			}
-		}({});
+		})({});
 		const previous = this.getQuery();
 		setKeybindings(editing);
-		try { this.input.handleInput(data); }
-		finally { setKeybindings(original); }
+		try {
+			this.input.handleInput(data);
+		} finally {
+			setKeybindings(original);
+		}
 		if (previous !== this.getQuery()) this.filter(true);
 	}
 
@@ -225,15 +301,30 @@ export class ModelPickerComponent implements Component, Focusable {
 
 	private filter(queryChanged: boolean): void {
 		const previous = this.getSelectedModel();
-		this.matches = searchModels(orderModels(this.options.models, this.favorites, this.options.current), this.getQuery(), this.favorites);
+		this.matches = searchModels(
+			orderModels(this.options.models, this.favorites, this.options.current),
+			this.getQuery(),
+			this.favorites,
+		);
 		this.counts = providerCounts(this.options.models, this.matches);
 		const scope = this.scope;
-		this.results = scope.kind === "all" ? this.matches : this.matches.filter((model) =>
-			scope.kind === "favorites" ? this.isFavorite(model) : model.provider === scope.provider);
-		const index = previous ? this.results.findIndex((model) => modelKey(model) === modelKey(previous)) : -1;
+		this.results =
+			scope.kind === "all"
+				? this.matches
+				: this.matches.filter((model) =>
+						scope.kind === "favorites" ? this.isFavorite(model) : model.provider === scope.provider,
+					);
+		const index = previous
+			? this.results.findIndex((model) => modelKey(model) === modelKey(previous))
+			: -1;
 		// Keep identity while navigating scopes; a stronger search tier wins over a weak old highlight.
-		this.selected = index >= 0 && (!queryChanged || searchTier(this.results[index], this.getQuery()) === searchTier(this.results[0], this.getQuery()))
-			? index : 0;
+		this.selected =
+			index >= 0 &&
+			(!queryChanged ||
+				searchTier(this.results[index], this.getQuery()) ===
+					searchTier(this.results[0], this.getQuery()))
+				? index
+				: 0;
 		this.resultOffset = 0;
 		this.visibleSelection = undefined;
 	}
@@ -243,7 +334,9 @@ export class ModelPickerComponent implements Component, Focusable {
 		const length = this.pane === "providers" ? providers.length : this.results.length;
 		if (!length) return;
 		const current = this.pane === "providers" ? providers.indexOf(this.scope) : this.selected;
-		const next = page ? Math.max(0, Math.min(length - 1, current + delta)) : (current + delta + length) % length;
+		const next = page
+			? Math.max(0, Math.min(length - 1, current + delta))
+			: (current + delta + length) % length;
 		if (this.pane === "providers" && next !== current) {
 			this.scope = providers[next];
 			this.filter(false);
@@ -265,7 +358,8 @@ export class ModelPickerComponent implements Component, Focusable {
 			const value = clip(line, size);
 			return value + " ".repeat(Math.max(0, size - visibleWidth(value)));
 		};
-		const availableKey = (key: string) => !this.options.vimMode || !["j", "k", "h", "l", "/"].includes(key);
+		const availableKey = (key: string) =>
+			!this.options.vimMode || !["j", "k", "h", "l", "/"].includes(key);
 		const confirmKey = kb.getKeys("tui.select.confirm").find(availableKey) ?? "unbound";
 		const cancelKey = kb.getKeys("tui.select.cancel").find(availableKey) ?? "unbound";
 		const cancelName = cancelKey === "escape" ? "Esc" : cancelKey;
@@ -278,88 +372,172 @@ export class ModelPickerComponent implements Component, Focusable {
 		const twoPane = width >= 64 && height >= 8;
 		const footerBudget = framed && height >= 10 ? 2 : 1;
 		// Pack whole hints, with primary actions first; never truncate a binding or its action.
-		const normalFooter = visibleWidth(`${confirmHint} · ${cancelHint}`) <= contentWidth
-			? [`${confirmHint} · ${cancelHint}`]
-			: visibleWidth(`${confirmHint} ${cancelHint}`) <= contentWidth
-				? [`${confirmHint} ${cancelHint}`] : [confirmHint, cancelHint];
+		const normalFooter =
+			visibleWidth(`${confirmHint} · ${cancelHint}`) <= contentWidth
+				? [`${confirmHint} · ${cancelHint}`]
+				: visibleWidth(`${confirmHint} ${cancelHint}`) <= contentWidth
+					? [`${confirmHint} ${cancelHint}`]
+					: [confirmHint, cancelHint];
 		const searchFooter = ["Enter/Esc navigate"];
 		const footerLines = searching ? searchFooter : normalFooter;
 		const vimFooterRows = Math.max(footerBudget, normalFooter.length, searchFooter.length);
-		const hints = this.options.vimMode && !searching ? ["/ search", "j/k move", "h/l pane", "Tab pane"] : ["Tab pane"];
-		if (this.options.onToggleFavorite && this.pane === "models" &&
-			!(["up", "down", "pageUp", "pageDown", "confirm", "cancel"] as const).some((action) => kb.matches("\x06", `tui.select.${action}`))) hints.push("Ctrl+F favorite");
+		const hints =
+			this.options.vimMode && !searching
+				? ["/ search", "j/k move", "h/l pane", "Tab pane"]
+				: ["Tab pane"];
+		if (
+			this.options.onToggleFavorite &&
+			this.pane === "models" &&
+			!(["up", "down", "pageUp", "pageDown", "confirm", "cancel"] as const).some((action) =>
+				kb.matches("\x06", `tui.select.${action}`),
+			)
+		)
+			hints.push("Ctrl+F favorite");
 		for (const hint of hints) {
 			const next = `${footerLines.at(-1)} · ${hint}`;
 			if (visibleWidth(next) <= contentWidth) footerLines[footerLines.length - 1] = next;
-			else if (footerLines.length < footerBudget && visibleWidth(hint) <= contentWidth) footerLines.push(hint);
+			else if (footerLines.length < footerBudget && visibleWidth(hint) <= contentWidth)
+				footerLines.push(hint);
 		}
 		// Mode transitions never change body capacity or the centered frame's height.
 		if (this.options.vimMode) while (footerLines.length < vimFooterRows) footerLines.push("");
 		const overhead = 2 + footerLines.length + (framed ? 4 : 0);
-		if (width < 20 || height < overhead + 1 || footerLines.some((line) => visibleWidth(line) > contentWidth)) {
-			return [theme.fg("warning", clip("Resize required")), ...(height > 1 ? [theme.fg("dim", clip(`${cancelKey === "escape" ? "Esc" : cancelKey} close`))] : [])];
+		if (
+			width < 20 ||
+			height < overhead + 1 ||
+			footerLines.some((line) => visibleWidth(line) > contentWidth)
+		) {
+			return [
+				theme.fg("warning", clip("Resize required")),
+				...(height > 1
+					? [theme.fg("dim", clip(`${cancelKey === "escape" ? "Esc" : cancelKey} close`))]
+					: []),
+			];
 		}
 		this.usable = true;
 		const session = this.options.scoped ? " [session]" : "";
-		const heading = clip(twoPane || this.pane === "providers" ? "Model picker" : text(scopeLabel(this.scope)),
-			contentWidth - visibleWidth(session) - (framed ? 2 : 0)) + session;
+		const heading =
+			clip(
+				twoPane || this.pane === "providers" ? "Model picker" : text(scopeLabel(this.scope)),
+				contentWidth - visibleWidth(session) - (framed ? 2 : 0),
+			) + session;
 		const title = (framed ? theme.fg("accent", "● ") : "") + theme.bold(heading);
 		const compactError = !!this.favoriteError && (!framed || contentWidth < 60);
-		const searchPrefix = compactError ? theme.fg("warning", "Favorites error: ") :
-			theme.fg("muted", this.options.vimMode && !searching ? "/ search: " : "Search: ");
-		const search = searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
-		const bordered = (line: string) => theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
+		const searchPrefix = compactError
+			? theme.fg("warning", "Favorites error: ")
+			: theme.fg("muted", this.options.vimMode && !searching ? "/ search: " : "Search: ");
+		const search =
+			searchPrefix + this.input.render(Math.max(1, contentWidth - visibleWidth(searchPrefix)))[0];
+		const bordered = (line: string) =>
+			theme.fg("border", "│") + " " + fill(line, contentWidth) + " " + theme.fg("border", "│");
 		const lines: string[] = [];
 		if (framed) lines.push(theme.fg("border", `╭${"─".repeat(width - 2)}╮`));
-		const header = title + (this.favoriteError && !compactError ? theme.fg("warning", ` · ${text(this.favoriteError)}`) : "");
+		const header =
+			title +
+			(this.favoriteError && !compactError
+				? theme.fg("warning", ` · ${text(this.favoriteError)}`)
+				: "");
 		lines.push(framed ? bordered(header) : clip(header), framed ? bordered(search) : clip(search));
 		// Catalogue-based height is stable even when Favorites empties or counts change.
-		const rows = Math.max(1, Math.min(12, height - overhead, Math.max(this.options.models.length, this.scopes.length)));
+		const rows = Math.max(
+			1,
+			Math.min(12, height - overhead, Math.max(this.options.models.length, this.scopes.length)),
+		);
 		this.pageSize = rows;
 		const providers = this.scopes;
-		this.providerOffset = windowStart(this.providerOffset, providers.indexOf(this.scope), providers.length, rows);
+		this.providerOffset = windowStart(
+			this.providerOffset,
+			providers.indexOf(this.scope),
+			providers.length,
+			rows,
+		);
 		this.resultOffset = windowStart(this.resultOffset, this.selected, this.results.length, rows);
 		const providerWidth = twoPane ? Math.min(26, Math.floor(contentWidth / 3)) : contentWidth;
 		const rule = (top: boolean) => {
 			if (!twoPane) return theme.fg("border", `├${"─".repeat(width - 2)}┤`);
-			const left = providerWidth + 2, right = width - left - 3;
-			return theme.fg("border", "├") + theme.fg(!top && this.pane === "providers" ? "borderAccent" : "border", "─".repeat(left)) +
-				theme.fg("borderMuted", top ? "┬" : "┴") + theme.fg(!top && this.pane === "models" ? "borderAccent" : "border", "─".repeat(right)) + theme.fg("border", "┤");
+			const left = providerWidth + 2,
+				right = width - left - 3;
+			return (
+				theme.fg("border", "├") +
+				theme.fg(!top && this.pane === "providers" ? "borderAccent" : "border", "─".repeat(left)) +
+				theme.fg("borderMuted", top ? "┬" : "┴") +
+				theme.fg(!top && this.pane === "models" ? "borderAccent" : "border", "─".repeat(right)) +
+				theme.fg("border", "┤")
+			);
 		};
 		if (framed) lines.push(rule(true));
 		const providerLine = (index: number): string => {
 			if (index >= providers.length) return "";
 			const provider = providers[index];
 			const active = provider === this.scope;
-			const count = provider.kind === "all" ? this.matches.length : provider.kind === "favorites"
-				? this.matches.filter((model) => this.isFavorite(model)).length : this.counts.get(provider.provider);
+			const count =
+				provider.kind === "all"
+					? this.matches.length
+					: provider.kind === "favorites"
+						? this.matches.filter((model) => this.isFavorite(model)).length
+						: this.counts.get(provider.provider);
 			const suffix = ` (${count})`;
-			const label = clip(`${active ? "› " : "  "}${text(scopeLabel(provider))}`, providerWidth - visibleWidth(suffix)) + suffix;
+			const label =
+				clip(
+					`${active ? "› " : "  "}${text(scopeLabel(provider))}`,
+					providerWidth - visibleWidth(suffix),
+				) + suffix;
 			return active ? theme.fg("accent", theme.bold(label)) : theme.fg("muted", label);
 		};
 		const modelLine = (index: number, size: number): string => {
 			const model = this.results[index];
-			if (!model) return index === 0 ? clip(theme.fg("warning", this.scope.kind === "favorites" && !this.options.models.some((item) => this.isFavorite(item))
-				? "No favorites yet" : this.options.models.length ? "No matching models" : "No models available"), size) : "";
+			if (!model)
+				return index === 0
+					? clip(
+							theme.fg(
+								"warning",
+								this.scope.kind === "favorites" &&
+									!this.options.models.some((item) => this.isFavorite(item))
+									? "No favorites yet"
+									: this.options.models.length
+										? "No matching models"
+										: "No models available",
+							),
+							size,
+						)
+					: "";
 			const current = this.options.current && modelKey(model) === modelKey(this.options.current);
 			const active = index === this.selected && this.pane === "models";
 			const label = text(this.scope.kind === "provider" ? model.id : modelLabel(model));
-			return clip((active ? theme.fg("accent", "›") : " ") + ` ${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ` +
-				(active ? theme.bold(label) : current ? theme.fg("success", label) : label), size);
+			return clip(
+				(active ? theme.fg("accent", "›") : " ") +
+					` ${this.isFavorite(model) ? "★" : " "}${current ? "*" : " "} ` +
+					(active ? theme.bold(label) : current ? theme.fg("success", label) : label),
+				size,
+			);
 		};
 		for (let row = 0; row < rows; row++) {
 			const body = twoPane
-				? fill(providerLine(this.providerOffset + row), providerWidth) + theme.fg("borderMuted", " │ ") + modelLine(this.resultOffset + row, contentWidth - providerWidth - 3)
-				: this.pane === "providers" ? providerLine(this.providerOffset + row) : modelLine(this.resultOffset + row, contentWidth);
+				? fill(providerLine(this.providerOffset + row), providerWidth) +
+					theme.fg("borderMuted", " │ ") +
+					modelLine(this.resultOffset + row, contentWidth - providerWidth - 3)
+				: this.pane === "providers"
+					? providerLine(this.providerOffset + row)
+					: modelLine(this.resultOffset + row, contentWidth);
 			lines.push(framed ? bordered(body) : clip(body));
 		}
 		if (framed) lines.push(rule(false));
-		lines.push(...footerLines.map((line) => framed ? bordered(theme.fg("dim", line)) : theme.fg("dim", line)));
+		lines.push(
+			...footerLines.map((line) =>
+				framed ? bordered(theme.fg("dim", line)) : theme.fg("dim", line),
+			),
+		);
 		if (framed) lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
-		if (this.pane === "models" && this.getSelectedModel()) this.visibleSelection = modelKey(this.getSelectedModel()!);
+		if (this.pane === "models" && this.getSelectedModel())
+			this.visibleSelection = modelKey(this.getSelectedModel()!);
 		return lines.map((line) => clip(line));
 	}
 
-	invalidate(): void { this.input.invalidate(); }
-	dispose(): void { this.disposed = true; this.focused = false; }
+	invalidate(): void {
+		this.input.invalidate();
+	}
+	dispose(): void {
+		this.disposed = true;
+		this.focused = false;
+	}
 }

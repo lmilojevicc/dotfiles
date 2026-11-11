@@ -13,7 +13,9 @@ function recordingUi() {
 	return { ui, calls };
 }
 
-function recordingBridge(forward: (text: string | undefined) => string | undefined = (text) => text) {
+function recordingBridge(
+	forward: (text: string | undefined) => string | undefined = (text) => text,
+) {
 	const seen: Array<[string, string | undefined]> = [];
 	const bridge: StatusBridge = {
 		handle(key, text) {
@@ -30,7 +32,9 @@ function recordingBridge(forward: (text: string | undefined) => string | undefin
 
 test("every publication passes through the bridge before the host setter", () => {
 	const { ui, calls } = recordingUi();
-	const { bridge, seen } = recordingBridge((text) => (text === undefined ? undefined : `bridged:${text}`));
+	const { bridge, seen } = recordingBridge((text) =>
+		text === undefined ? undefined : `bridged:${text}`,
+	);
 	assert.equal(installStatusTap(ui, bridge), "installed");
 	ui.setStatus("pi-lens-lsp", "LSP Active: tsserver");
 	ui.setStatus("pi-lens-lsp", undefined);
@@ -81,7 +85,11 @@ test("an accessor, a frozen object or a missing method is left alone", () => {
 	assert.equal(installStatusTap(frozen, recordingBridge().bridge), "unsupported");
 
 	const locked = {};
-	Object.defineProperty(locked, "setStatus", { value: () => {}, writable: false, configurable: false });
+	Object.defineProperty(locked, "setStatus", {
+		value: () => {},
+		writable: false,
+		configurable: false,
+	});
 	assert.equal(installStatusTap(locked as StatusUi, recordingBridge().bridge), "unsupported");
 
 	assert.equal(installStatusTap({} as StatusUi, recordingBridge().bridge), "unsupported");
@@ -89,7 +97,9 @@ test("an accessor, a frozen object or a missing method is left alone", () => {
 
 test("a tap that ends up inside a foreign wrapper is re-installed outside and bridges once", () => {
 	const { ui, calls } = recordingUi();
-	const { bridge, seen } = recordingBridge((text) => (text === undefined ? undefined : `bridged:${text}`));
+	const { bridge, seen } = recordingBridge((text) =>
+		text === undefined ? undefined : `bridged:${text}`,
+	);
 	installStatusTap(ui, bridge);
 
 	// Simulate Zentui installing its wrapper afterwards (hiding this key by

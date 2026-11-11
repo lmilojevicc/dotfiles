@@ -86,7 +86,9 @@ function extractAccountId(token: string): string | undefined {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) return undefined;
-		const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8")) as unknown;
+		const payload = JSON.parse(
+			Buffer.from(parts[1] ?? "", "base64url").toString("utf8"),
+		) as unknown;
 		const auth = isRecord(payload) ? payload[JWT_CLAIM_PATH] : undefined;
 		return isRecord(auth) ? stringValue(auth.chatgpt_account_id) : undefined;
 	} catch {
@@ -100,7 +102,9 @@ async function resolveCanonicalCodexAuth(ctx: ExtensionContext): Promise<Canonic
 	const baseUrl = resolved?.auth.baseUrl ?? CODEX_BASE_URL;
 	const accountId = token ? extractAccountId(token) : undefined;
 	if (!token || !accountId || !isCanonicalBaseUrl(baseUrl, true)) {
-		throw new Error("Run /login openai-codex for Codex backend access; /login openai alone is not enough.");
+		throw new Error(
+			"Run /login openai-codex for Codex backend access; /login openai alone is not enough.",
+		);
 	}
 	return { token, accountId, baseUrl: baseUrl.replace(/\/+$/, "") };
 }
@@ -121,7 +125,11 @@ function contentItems(value: unknown, output = false): ResponseItem[] {
 		if (typeof part.text === "string") {
 			return [{ type: output ? "output_text" : "input_text", text: part.text }];
 		}
-		if (part.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string") {
+		if (
+			part.type === "image" &&
+			typeof part.data === "string" &&
+			typeof part.mimeType === "string"
+		) {
 			return [{ type: "input_image", image_url: `data:${part.mimeType};base64,${part.data}` }];
 		}
 		return [];
@@ -132,7 +140,9 @@ function parseReasoningSignature(value: unknown): ResponseItem | undefined {
 	if (typeof value !== "string" || !value.trim()) return undefined;
 	try {
 		const parsed = JSON.parse(value) as unknown;
-		return isRecord(parsed) && parsed.type === "reasoning" ? clone(parsed as ResponseItem) : undefined;
+		return isRecord(parsed) && parsed.type === "reasoning"
+			? clone(parsed as ResponseItem)
+			: undefined;
 	} catch {
 		return undefined;
 	}
@@ -146,7 +156,8 @@ export function messageToResponseItems(message: Record<string, unknown>): Respon
 	if (message.role === "toolResult") {
 		const callId = stringValue(message.toolCallId)?.split("|", 1)[0];
 		if (!callId) return [];
-		const output = typeof message.content === "string" ? message.content : contentItems(message.content);
+		const output =
+			typeof message.content === "string" ? message.content : contentItems(message.content);
 		return [{ type: "function_call_output", call_id: callId, output }];
 	}
 	if (message.role !== "assistant" || !Array.isArray(message.content)) return [];
@@ -171,7 +182,9 @@ export function messageToResponseItems(message: Record<string, unknown>): Respon
 				try {
 					const signature = JSON.parse(block.textSignature) as unknown;
 					if (isRecord(signature) && typeof signature.phase === "string") phase = signature.phase;
-				} catch { /* older signatures do not carry a phase */ }
+				} catch {
+					/* older signatures do not carry a phase */
+				}
 			}
 			text += block.text;
 			continue;
@@ -207,7 +220,7 @@ function responseMessageText(item: ResponseItem): string {
 	if (item.type !== "message" || !Array.isArray(item.content)) return "";
 	return item.content
 		.filter(isRecord)
-		.map((part) => typeof part.text === "string" ? part.text : "")
+		.map((part) => (typeof part.text === "string" ? part.text : ""))
 		.join("");
 }
 
@@ -228,13 +241,23 @@ function retainRecentUserMessages(items: ResponseItem[]): ResponseItem[] {
 function detailsFrom(value: unknown): ServerCompactionDetails | undefined {
 	if (!isRecord(value)) return undefined;
 	const details = isRecord(value.codexEnhancedCompaction) ? value.codexEnhancedCompaction : value;
-	if (!isRecord(details)
-		|| details.version !== 2
-		|| details.provider !== "openai-responses-compaction"
-		|| typeof details.modelKey !== "string"
-		|| !Array.isArray(details.replacementHistory)) return undefined;
-	const replacementHistory = details.replacementHistory.filter((item): item is ResponseItem => isRecord(item) && typeof item.type === "string");
-	if (!replacementHistory.some((item) => item.type === "compaction" && stringValue(item.encrypted_content))) return undefined;
+	if (
+		!isRecord(details) ||
+		details.version !== 2 ||
+		details.provider !== "openai-responses-compaction" ||
+		typeof details.modelKey !== "string" ||
+		!Array.isArray(details.replacementHistory)
+	)
+		return undefined;
+	const replacementHistory = details.replacementHistory.filter(
+		(item): item is ResponseItem => isRecord(item) && typeof item.type === "string",
+	);
+	if (
+		!replacementHistory.some(
+			(item) => item.type === "compaction" && stringValue(item.encrypted_content),
+		)
+	)
+		return undefined;
 	return {
 		version: 2,
 		provider: "openai-responses-compaction",
@@ -244,11 +267,16 @@ function detailsFrom(value: unknown): ServerCompactionDetails | undefined {
 }
 
 function assistantMatchesModel(message: Record<string, unknown>, model: RuntimeModel): boolean {
-	return message.provider === model.provider && message.api === model.api && message.model === model.id;
+	return (
+		message.provider === model.provider && message.api === model.api && message.model === model.id
+	);
 }
 
 function entryToLlmMessages(entry: BranchEntry): Record<string, unknown>[] {
-	return convertToLlm(sessionEntryToContextMessages(entry) as never) as unknown as Record<string, unknown>[];
+	return convertToLlm(sessionEntryToContextMessages(entry) as never) as unknown as Record<
+		string,
+		unknown
+	>[];
 }
 
 function entriesToLlmMessages(entries: BranchEntry[]): Record<string, unknown>[] {
@@ -283,7 +311,10 @@ export function reconstructCompactedHistory(
 	return [...history, ...pending];
 }
 
-export function applyCompactedHistory(payload: unknown, history: ResponseItem[]): Record<string, unknown> | undefined {
+export function applyCompactedHistory(
+	payload: unknown,
+	history: ResponseItem[],
+): Record<string, unknown> | undefined {
 	if (!isRecord(payload)) return undefined;
 	const next: Record<string, unknown> = { ...payload, input: clone(history) };
 	delete next.messages;
@@ -294,7 +325,9 @@ export function applyCompactedHistory(payload: unknown, history: ResponseItem[])
 export function captureRequestShape(payload: unknown): RequestShape | undefined {
 	if (!isRecord(payload)) return undefined;
 	return {
-		...(typeof payload.parallel_tool_calls === "boolean" ? { parallelToolCalls: payload.parallel_tool_calls } : {}),
+		...(typeof payload.parallel_tool_calls === "boolean"
+			? { parallelToolCalls: payload.parallel_tool_calls }
+			: {}),
 		...(payload.tool_choice !== undefined ? { toolChoice: clone(payload.tool_choice) } : {}),
 		...(typeof payload.service_tier === "string" ? { serviceTier: payload.service_tier } : {}),
 		...(isRecord(payload.reasoning) ? { reasoning: clone(payload.reasoning) } : {}),
@@ -319,7 +352,10 @@ export function withCurrentActiveTools(
 	const active = new Set(pi.getActiveTools());
 	return {
 		...shape,
-		tools: pi.getAllTools().filter((tool) => active.has(tool.name)).map(responseTool),
+		tools: pi
+			.getAllTools()
+			.filter((tool) => active.has(tool.name))
+			.map(responseTool),
 	};
 }
 
@@ -327,15 +363,19 @@ function messageText(message: Record<string, unknown>): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
-	return content.filter(isRecord).map((part) => {
-		if (typeof part.text === "string") return part.text;
-		if (typeof part.thinking === "string") return `[reasoning]\n${part.thinking}`;
-		if (part.type === "toolCall") {
-			return `[tool call: ${String(part.name ?? "unknown")}]\n${JSON.stringify(part.arguments ?? {})}`;
-		}
-		if (part.type === "image") return "[image attachment]";
-		return "";
-	}).filter(Boolean).join("\n");
+	return content
+		.filter(isRecord)
+		.map((part) => {
+			if (typeof part.text === "string") return part.text;
+			if (typeof part.thinking === "string") return `[reasoning]\n${part.thinking}`;
+			if (part.type === "toolCall") {
+				return `[tool call: ${String(part.name ?? "unknown")}]\n${JSON.stringify(part.arguments ?? {})}`;
+			}
+			if (part.type === "image") return "[image attachment]";
+			return "";
+		})
+		.filter(Boolean)
+		.join("\n");
 }
 
 async function generatePortableSummary(
@@ -348,17 +388,27 @@ async function generatePortableSummary(
 		.map((message) => `${String(message.role ?? "message").toUpperCase()}: ${messageText(message)}`)
 		.filter((line) => !line.endsWith(": "))
 		.join("\n\n");
-	const extra = event.customInstructions ? `\n\nAdditional instructions:\n${event.customInstructions}` : "";
-	const response = await ctx.modelRegistry.complete(model as never, {
-		messages: [{
-			role: "user",
-			content: [{
-				type: "text",
-				text: `Summarize this conversation for continuation. Preserve goals, decisions, important facts, file paths, open questions, and next steps. Be concise but complete.${extra}\n\n<conversation>\n${conversation}\n</conversation>`,
-			}],
-			timestamp: Date.now(),
-		}],
-	}, { maxTokens: 4096, signal: event.signal, cacheRetention: "none" });
+	const extra = event.customInstructions
+		? `\n\nAdditional instructions:\n${event.customInstructions}`
+		: "";
+	const response = await ctx.modelRegistry.complete(
+		model as never,
+		{
+			messages: [
+				{
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: `Summarize this conversation for continuation. Preserve goals, decisions, important facts, file paths, open questions, and next steps. Be concise but complete.${extra}\n\n<conversation>\n${conversation}\n</conversation>`,
+						},
+					],
+					timestamp: Date.now(),
+				},
+			],
+		},
+		{ maxTokens: 4096, signal: event.signal, cacheRetention: "none" },
+	);
 	const summary = response.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
 		.map((part) => part.text)
@@ -369,15 +419,23 @@ async function generatePortableSummary(
 }
 
 function parseSseEvents(text: string): unknown[] {
-	return text.replace(/\r\n/g, "\n").split("\n\n").flatMap((block) => {
-		const data = block.split("\n")
-			.filter((line) => line.startsWith("data:"))
-			.map((line) => line.slice(5).trimStart())
-			.join("\n")
-			.trim();
-		if (!data || data === "[DONE]") return [];
-		try { return [JSON.parse(data) as unknown]; } catch { return []; }
-	});
+	return text
+		.replace(/\r\n/g, "\n")
+		.split("\n\n")
+		.flatMap((block) => {
+			const data = block
+				.split("\n")
+				.filter((line) => line.startsWith("data:"))
+				.map((line) => line.slice(5).trimStart())
+				.join("\n")
+				.trim();
+			if (!data || data === "[DONE]") return [];
+			try {
+				return [JSON.parse(data) as unknown];
+			} catch {
+				return [];
+			}
+		});
 }
 
 export function extractCompactionItem(events: unknown[]): ResponseItem {
@@ -385,10 +443,16 @@ export function extractCompactionItem(events: unknown[]): ResponseItem {
 	const items: ResponseItem[] = [];
 	for (const event of events) {
 		if (!isRecord(event)) continue;
-		if (event.type === "error") throw new Error(stringValue(event.message) ?? "OpenAI server compaction failed.");
-		if (event.type === "response.failed") throw new Error("OpenAI server compaction response failed.");
-		if (event.type === "response.output_item.done" && isRecord(event.item)
-			&& event.item.type === "compaction" && stringValue(event.item.encrypted_content)) {
+		if (event.type === "error")
+			throw new Error(stringValue(event.message) ?? "OpenAI server compaction failed.");
+		if (event.type === "response.failed")
+			throw new Error("OpenAI server compaction response failed.");
+		if (
+			event.type === "response.output_item.done" &&
+			isRecord(event.item) &&
+			event.item.type === "compaction" &&
+			stringValue(event.item.encrypted_content)
+		) {
 			items.push(clone(event.item as ResponseItem));
 		}
 		if (event.type === "response.completed") completed = true;
@@ -436,7 +500,9 @@ async function requestServerCompaction(
 	});
 	if (!response.ok) {
 		const message = await response.text().catch(() => "");
-		throw new Error(`OpenAI server compaction failed (${response.status}): ${message || response.statusText}`);
+		throw new Error(
+			`OpenAI server compaction failed (${response.status}): ${message || response.statusText}`,
+		);
 	}
 	const compactionItem = extractCompactionItem(parseSseEvents(await response.text()));
 	return [...retainRecentUserMessages(input), compactionItem];
@@ -455,7 +521,13 @@ export async function compactOnServer(
 	try {
 		// Compact remotely first so an unsupported/failed endpoint does not also spend
 		// a second model call on a portable summary before Pi performs local fallback.
-		const replacementHistory = await requestServerCompaction(ctx, model, input, shape, event.signal);
+		const replacementHistory = await requestServerCompaction(
+			ctx,
+			model,
+			input,
+			shape,
+			event.signal,
+		);
 		const portable = await generatePortableSummary(event, ctx, model, messages);
 		return {
 			summary: portable.summary,
@@ -472,7 +544,8 @@ export async function compactOnServer(
 			},
 		};
 	} catch (error) {
-		if (event.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+		if (event.signal.aborted || (error instanceof Error && error.name === "AbortError"))
+			throw error;
 		// Returning undefined delegates to Pi's normal local compaction.
 		return undefined;
 	}

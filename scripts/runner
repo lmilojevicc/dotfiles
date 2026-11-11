@@ -2,8 +2,8 @@
 # runner - execute a command completely detached from tmux / terminal process groups
 
 if [ $# -eq 0 ]; then
-    echo "Usage: runner <command> [args...]"
-    exit 1
+  echo "Usage: runner <command> [args...]"
+  exit 1
 fi
 
 python3 -c '

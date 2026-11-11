@@ -1,5 +1,18 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -59,11 +72,17 @@ test("merges global, project, and environment config while validating values", (
 		assert.equal(config.showHelp, false);
 		assert.deepEqual(config.cancelKeys, ["escape", "ctrl+c"]);
 		assert.deepEqual(config.loadedPaths, [globalPath, projectPath, envPath]);
-		assert.equal(config.bindings.some((binding) => binding.key === "m"), false);
+		assert.equal(
+			config.bindings.some((binding) => binding.key === "m"),
+			false,
+		);
 		assert.deepEqual(
 			config.bindings
 				.filter((binding) => ["a", "b", "c"].includes(binding.key))
-				.map((binding) => `${binding.key} -> ${binding.action} (${binding.label}: ${binding.description})`)
+				.map(
+					(binding) =>
+						`${binding.key} -> ${binding.action} (${binding.label}: ${binding.description})`,
+				)
 				.sort(),
 			[
 				"a -> app.exit (leave: Exit when editor is empty)",
@@ -79,7 +98,10 @@ test("merges global, project, and environment config while validating values", (
 		delete process.env.PI_PREFIX_KEYBINDS_CONFIG;
 		assert.equal(__testing.configWritePath(cwd, config.loadedPaths), projectPath);
 		rmSync(projectPath);
-		assert.equal(__testing.configWritePath(cwd, [join(root, "custom.json")]), join(root, "custom.json"));
+		assert.equal(
+			__testing.configWritePath(cwd, [join(root, "custom.json")]),
+			join(root, "custom.json"),
+		);
 		assert.equal(__testing.configWritePath(cwd, []), globalPath);
 		process.env.PI_PREFIX_KEYBINDS_CONFIG = "relative/config.json";
 		assert.equal(__testing.configWritePath(cwd, []), resolve(cwd, "relative/config.json"));
@@ -157,7 +179,11 @@ test("persistence writes through a symlinked config instead of replacing the lin
 		writeJson(real, { prefixKey: "ctrl+y" });
 		symlinkSync(real, link);
 		const next = { ...config(), loadedPaths: [link] };
-		__testing.persistConfig(root, { ...next, prefixKey: "ctrl+x" }, { kind: "prefix", prefixKey: "ctrl+x" });
+		__testing.persistConfig(
+			root,
+			{ ...next, prefixKey: "ctrl+x" },
+			{ kind: "prefix", prefixKey: "ctrl+x" },
+		);
 		assert.ok(lstatSync(link).isSymbolicLink(), "the link survives");
 		assert.deepEqual(JSON.parse(readFileSync(real, "utf8")), { prefixKey: "ctrl+x" });
 		assert.deepEqual(readdirSync(join(root, "agent")), ["prefix.json"]);
@@ -178,24 +204,45 @@ test("atomic persistence preserves permissions and cleans failed temporary files
 		const previousUmask = process.umask(0o077);
 		try {
 			assert.equal(
-				__testing.persistConfig(root, { ...next, prefixKey: "ctrl+x" }, { kind: "prefix", prefixKey: "ctrl+x" }),
+				__testing.persistConfig(
+					root,
+					{ ...next, prefixKey: "ctrl+x" },
+					{ kind: "prefix", prefixKey: "ctrl+x" },
+				),
 				target,
 			);
 		} finally {
 			process.umask(previousUmask);
 		}
-		assert.equal(statSync(target).mode & 0o777, 0o640, "existing mode survives a restrictive umask");
-		assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), { ...existing, prefixKey: "ctrl+x" });
-		assert.deepEqual(readdirSync(root).filter((name) => name.includes(".tmp")), []);
+		assert.equal(
+			statSync(target).mode & 0o777,
+			0o640,
+			"existing mode survives a restrictive umask",
+		);
+		assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), {
+			...existing,
+			prefixKey: "ctrl+x",
+		});
+		assert.deepEqual(
+			readdirSync(root).filter((name) => name.includes(".tmp")),
+			[],
+		);
 
 		const blocked = join(root, "blocked.json");
 		mkdirSync(blocked);
 		writeFileSync(join(blocked, "old.txt"), "old content");
 		assert.throws(() =>
-			__testing.persistConfig(root, { ...next, loadedPaths: [blocked] }, { kind: "replace", config: next }),
+			__testing.persistConfig(
+				root,
+				{ ...next, loadedPaths: [blocked] },
+				{ kind: "replace", config: next },
+			),
 		);
 		assert.equal(readFileSync(join(blocked, "old.txt"), "utf8"), "old content");
-		assert.deepEqual(readdirSync(root).filter((name) => name.startsWith("blocked.json.") && name.endsWith(".tmp")), []);
+		assert.deepEqual(
+			readdirSync(root).filter((name) => name.startsWith("blocked.json.") && name.endsWith(".tmp")),
+			[],
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -212,21 +259,33 @@ test("managed editor layers replace stale closures without growing chains in eit
 		const observedContexts: object[] = [];
 		const install = (session: number) => {
 			const context = { ui: { session }, cwd: `/session-${session}`, config: { session } };
-			const prefixLayer = (next: any) => (...args: any[]) => {
-				calls.push(`prefix:${session}`);
-				observedContexts.push(context);
-				return next?.(...args) ?? {};
-			};
-			const focusLayer = (next: any) => (...args: any[]) => {
-				calls.push(`focus:${session}`);
-				observedContexts.push(context);
-				return next?.(...args) ?? {};
-			};
+			const prefixLayer =
+				(next: any) =>
+				(...args: any[]) => {
+					calls.push(`prefix:${session}`);
+					observedContexts.push(context);
+					return next?.(...args) ?? {};
+				};
+			const focusLayer =
+				(next: any) =>
+				(...args: any[]) => {
+					calls.push(`focus:${session}`);
+					observedContexts.push(context);
+					return next?.(...args) ?? {};
+				};
 			if (order === "prefix-first") {
 				factory = __testing.installEditorLayer(factory, "prefix-keybinds", prefixLayer) as never;
-				factory = focusTesting.installEditorLayer(factory, "terminal-focus-cursor", focusLayer) as never;
+				factory = focusTesting.installEditorLayer(
+					factory,
+					"terminal-focus-cursor",
+					focusLayer,
+				) as never;
 			} else {
-				factory = focusTesting.installEditorLayer(factory, "terminal-focus-cursor", focusLayer) as never;
+				factory = focusTesting.installEditorLayer(
+					factory,
+					"terminal-focus-cursor",
+					focusLayer,
+				) as never;
 				factory = __testing.installEditorLayer(factory, "prefix-keybinds", prefixLayer) as never;
 			}
 		};
@@ -236,13 +295,22 @@ test("managed editor layers replace stale closures without growing chains in eit
 		calls.length = 0;
 		install(2);
 		(factory as any)({}, {}, {});
-		const expectedOrder = order === "prefix-first"
-			? ["focus:2", "prefix:2", "base"]
-			: ["prefix:2", "focus:2", "base"];
-		assert.deepEqual(calls, expectedOrder, "layer execution order remains stable after replacement");
-		assert.equal(calls.some((value) => value.endsWith(":1")), false);
+		const expectedOrder =
+			order === "prefix-first" ? ["focus:2", "prefix:2", "base"] : ["prefix:2", "focus:2", "base"];
+		assert.deepEqual(
+			calls,
+			expectedOrder,
+			"layer execution order remains stable after replacement",
+		);
+		assert.equal(
+			calls.some((value) => value.endsWith(":1")),
+			false,
+		);
 		assert.equal(observedContexts.length, 4);
-		assert.equal(observedContexts.slice(-2).every((context: any) => context.cwd === "/session-2"), true);
+		assert.equal(
+			observedContexts.slice(-2).every((context: any) => context.cwd === "/session-2"),
+			true,
+		);
 		const metadata = (factory as any)[Symbol.for("milo.pi.editor-factory-layers.v1")];
 		assert.equal(metadata.baseFactory, base);
 		assert.deepEqual(
@@ -270,7 +338,9 @@ test("session shutdown cancels deferred prefix installation", () => {
 	try {
 		prefixKeybindsExtension({
 			registerCommand() {},
-			on(event: string, handler: Function) { handlers.set(event, handler); },
+			on(event: string, handler: Function) {
+				handlers.set(event, handler);
+			},
 		} as never);
 		const ctx = {
 			hasUI: true,
@@ -278,7 +348,9 @@ test("session shutdown cancels deferred prefix installation", () => {
 			ui: {
 				getEditorComponent: () => undefined,
 				setEditorComponent: () => installations++,
-				notify() {}, setStatus() {}, setWidget() {},
+				notify() {},
+				setStatus() {},
+				setWidget() {},
 				theme: { fg: (_color: string, value: string) => value },
 			},
 		};
@@ -341,34 +413,53 @@ test("configured custom prefix+m dispatches picker without submit; native action
 		writeJson(path, { prefixKey: "ctrl+q" });
 		let loaded = __testing.loadConfig(root).config;
 		assert.equal(loaded.bindings.find((binding) => binding.key === "m")?.action, "pi.model-picker");
-		const submitted: string[] = [], forwarded: string[] = [];
-		let native = 0, opened = 0;
-		const editor = __testing.patchWithPrefix({
-			handleInput: (data: string) => forwarded.push(data),
-			onSubmit: (value: string) => submitted.push(value),
-			actionHandlers: new Map([["app.model.select", () => native++]]),
-		}, fakeUi(), () => loaded, () => { opened++; return true; });
+		const submitted: string[] = [],
+			forwarded: string[] = [];
+		let native = 0,
+			opened = 0;
+		const editor = __testing.patchWithPrefix(
+			{
+				handleInput: (data: string) => forwarded.push(data),
+				onSubmit: (value: string) => submitted.push(value),
+				actionHandlers: new Map([["app.model.select", () => native++]]),
+			},
+			fakeUi(),
+			() => loaded,
+			() => {
+				opened++;
+				return true;
+			},
+		);
 		try {
 			editor.handleInput("ctrl+x"); // not the configured prefix
-			editor.handleInput("ctrl+q"); editor.handleInput("m");
+			editor.handleInput("ctrl+q");
+			editor.handleInput("m");
 			assert.deepEqual(submitted, []);
 			assert.equal(opened, 1);
 			assert.deepEqual(forwarded, ["ctrl+x"]);
 			assert.equal(native, 0);
 			writeJson(path, { prefixKey: "alt+g", bindings: { m: "app.model.select" } });
 			loaded = __testing.loadConfig(root).config;
-			editor.handleInput("alt+g"); editor.handleInput("m");
+			editor.handleInput("alt+g");
+			editor.handleInput("m");
 			assert.equal(native, 1, "explicit native action override still dispatches native selector");
 			assert.deepEqual(submitted, []);
 			assert.equal(opened, 1);
 			const overridePath = join(root, "override.json");
 			writeJson(overridePath, { bindings: { m: null } });
 			process.env.PI_PREFIX_KEYBINDS_CONFIG = overridePath;
-			assert.equal(__testing.loadConfig(root).config.bindings.some((binding) => binding.key === "m"), false);
-		} finally { editor.dispose?.(); }
+			assert.equal(
+				__testing.loadConfig(root).config.bindings.some((binding) => binding.key === "m"),
+				false,
+			);
+		} finally {
+			editor.dispose?.();
+		}
 	} finally {
-		if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;
-		if (previousOverride === undefined) delete process.env.PI_PREFIX_KEYBINDS_CONFIG; else process.env.PI_PREFIX_KEYBINDS_CONFIG = previousOverride;
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
+		if (previousOverride === undefined) delete process.env.PI_PREFIX_KEYBINDS_CONFIG;
+		else process.env.PI_PREFIX_KEYBINDS_CONFIG = previousOverride;
 		rmSync(root, { recursive: true, force: true });
 	}
 });
@@ -377,18 +468,25 @@ test("missing model-picker warns without replacing draft or submitting a command
 	const inserted: string[] = [];
 	const ui = { ...fakeUi(), setEditorText: (value: string) => inserted.push(value) };
 	const editor = __testing.patchWithPrefix({ handleInput() {} }, ui, () => ({
-		...config(), bindings: [{ key: "m", label: "m", description: "Models", action: "pi.model-picker" }],
+		...config(),
+		bindings: [{ key: "m", label: "m", description: "Models", action: "pi.model-picker" }],
 	}));
 	try {
-		editor.handleInput("ctrl+x"); editor.handleInput("m");
+		editor.handleInput("ctrl+x");
+		editor.handleInput("m");
 		assert.deepEqual(inserted, []);
 		assert.match(ui.notifications[0]?.[0] ?? "", /unavailable/);
-	} finally { editor.dispose?.(); }
+	} finally {
+		editor.dispose?.();
+	}
 });
 
 function registeredExtension() {
 	const handlers = new Map<string, Function>();
-	const commands = new Map<string, { handler: (args: string, ctx: never) => Promise<void> | void }>();
+	const commands = new Map<
+		string,
+		{ handler: (args: string, ctx: never) => Promise<void> | void }
+	>();
 	prefixKeybindsExtension({
 		registerCommand(name: string, definition: never) {
 			commands.set(name, definition);
@@ -401,7 +499,10 @@ function registeredExtension() {
 	return { handlers, commands };
 }
 
-function fakeCommandUi(cwd: string, answers: { input?: string[]; select?: string[]; confirm?: boolean } = {}) {
+function fakeCommandUi(
+	cwd: string,
+	answers: { input?: string[]; select?: string[]; confirm?: boolean } = {},
+) {
 	const selects: string[][] = [];
 	const ui = {
 		...fakeUi(),
@@ -441,7 +542,10 @@ test(
 	"the removed pi.peek action warns instead of submitting /peek to the model",
 	withIsolatedHome(async (root) => {
 		const loaded = __testing.loadConfig(root).config;
-		assert.equal(loaded.bindings.some((binding) => binding.action === "pi.peek"), false);
+		assert.equal(
+			loaded.bindings.some((binding) => binding.action === "pi.peek"),
+			false,
+		);
 
 		const submitted: string[] = [];
 		const ui = fakeUi();
@@ -505,12 +609,24 @@ test(
 		});
 
 		const { config: loaded, warnings } = __testing.loadConfig(cwd);
-		assert.equal(loaded.prefixKey, "ctrl+x", "an unusable prefix falls back instead of disarming the layer");
+		assert.equal(
+			loaded.prefixKey,
+			"ctrl+x",
+			"an unusable prefix falls back instead of disarming the layer",
+		);
 		assert.deepEqual(loaded.cancelKeys, ["escape"]);
-		assert.equal(loaded.bindings.some((binding) => binding.action === "app.clear"), false);
-		assert.equal(loaded.bindings.find((binding) => binding.key === "m")?.action, "app.model.select");
+		assert.equal(
+			loaded.bindings.some((binding) => binding.action === "app.clear"),
+			false,
+		);
+		assert.equal(
+			loaded.bindings.find((binding) => binding.key === "m")?.action,
+			"app.model.select",
+		);
 		assert.deepEqual(
-			warnings.map((warning) => warning.replace(`${join(root, "home", ".pi", "agent", "prefix-keybinds.json")}: `, "")),
+			warnings.map((warning) =>
+				warning.replace(`${join(root, "home", ".pi", "agent", "prefix-keybinds.json")}: `, ""),
+			),
 			[
 				'ignored prefixKey because "ctrl_+x" is not a key Pi can report',
 				'ignored cancel key because "foo" is not a key Pi can report; use one character (x), a named key (escape, tab), or a modifier combination (ctrl+x)',
@@ -533,7 +649,10 @@ test(
 
 		await handler("prefix ctrl_+x", ctx as never);
 		assert.equal(existsSync(projectPath), false, "an unusable prefix is not persisted");
-		assert.match(ui.notifications.at(-1)?.[0] ?? "", /Prefix key not saved: .*not a key Pi can report/);
+		assert.match(
+			ui.notifications.at(-1)?.[0] ?? "",
+			/Prefix key not saved: .*not a key Pi can report/,
+		);
 
 		await handler("set foo app.clear", ctx as never);
 		assert.equal(existsSync(projectPath), false, "an unusable binding key is not persisted");
@@ -564,7 +683,9 @@ test(
 
 		await handler("set m app.clear", ctx as never);
 		assert.equal(existsSync(projectPath), false);
-		assert.deepEqual(JSON.parse(readFileSync(globalPath, "utf8")), { bindings: { m: "app.clear" } });
+		assert.deepEqual(JSON.parse(readFileSync(globalPath, "utf8")), {
+			bindings: { m: "app.clear" },
+		});
 	}),
 );
 
@@ -582,7 +703,12 @@ test(
 			...loaded,
 			bindings: [
 				...loaded.bindings.filter((binding) => binding.key !== "z"),
-				{ key: "z", label: "z", description: "Exit when editor is empty", action: "app.exit" as const },
+				{
+					key: "z",
+					label: "z",
+					description: "Exit when editor is empty",
+					action: "app.exit" as const,
+				},
 			],
 		};
 		__testing.persistConfig(cwd, changed, { kind: "binding", key: "z", action: "app.exit" });
@@ -605,13 +731,20 @@ test(
 			["a -> app.clear", "b -> app.suspend", "z -> app.exit"],
 		);
 
-		__testing.persistConfig(cwd, { ...reloaded, bindings: reloaded.bindings.filter((binding) => binding.key !== "z") }, {
-			kind: "unbind",
-			key: "z",
-		});
+		__testing.persistConfig(
+			cwd,
+			{ ...reloaded, bindings: reloaded.bindings.filter((binding) => binding.key !== "z") },
+			{
+				kind: "unbind",
+				key: "z",
+			},
+		);
 		assert.equal(JSON.parse(readFileSync(projectPath, "utf8")).bindings.z, false);
 		const afterUnbind = __testing.loadConfig(cwd).config;
-		assert.equal(afterUnbind.bindings.some((binding) => binding.key === "z"), false);
+		assert.equal(
+			afterUnbind.bindings.some((binding) => binding.key === "z"),
+			false,
+		);
 	}),
 );
 
@@ -624,7 +757,8 @@ test(
 
 		assert.equal(__testing.ensureState(cwd).config.prefixKey, "alt+g");
 		const loads = __testing.configLoadCount();
-		for (let index = 0; index < 5; index += 1) assert.equal(__testing.ensureState(cwd).config.prefixKey, "alt+g");
+		for (let index = 0; index < 5; index += 1)
+			assert.equal(__testing.ensureState(cwd).config.prefixKey, "alt+g");
 		assert.equal(__testing.configLoadCount(), loads, "an unchanged config is not re-read");
 
 		writeJson(globalPath, { prefixKey: "ctrl+q" });
@@ -635,7 +769,11 @@ test(
 		writeFileSync(globalPath, sameSize);
 		const future = new Date(Date.now() + 60_000);
 		utimesSync(globalPath, future, future);
-		assert.equal(__testing.ensureState(cwd).config.prefixKey, "ctrl+w", "an mtime-only edit is picked up");
+		assert.equal(
+			__testing.ensureState(cwd).config.prefixKey,
+			"ctrl+w",
+			"an mtime-only edit is picked up",
+		);
 	}),
 );
 
@@ -651,7 +789,11 @@ test("session shutdown disarms a prefix layer left active", async () => {
 		assert.ok(cleared > armed, "shutdown clears the status of the live editor");
 
 		await new Promise((resolvePromise) => setTimeout(resolvePromise, 60));
-		assert.equal(ui.statuses.length, cleared, "the armed timeout no longer fires against a dead editor");
+		assert.equal(
+			ui.statuses.length,
+			cleared,
+			"the armed timeout no longer fires against a dead editor",
+		);
 	} finally {
 		editor.dispose?.();
 	}

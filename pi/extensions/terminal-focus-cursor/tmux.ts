@@ -19,7 +19,11 @@ export interface TmuxIngress {
 }
 
 /** Observe focus before fullscreen consumes it and balance this integration's DEC mode writes. */
-export function createTmuxIngress(focus: EditorFocus, stdin: StdinIngress, output: TerminalOutput): TmuxIngress {
+export function createTmuxIngress(
+	focus: EditorFocus,
+	stdin: StdinIngress,
+	output: TerminalOutput,
+): TmuxIngress {
 	const scanner = new FocusEventScanner();
 	let unsubscribeInput: (() => void) | undefined;
 	let rawInputListener: ((data: string | Buffer) => void) | undefined;

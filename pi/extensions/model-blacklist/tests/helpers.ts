@@ -3,7 +3,19 @@ import type { HookState, RuntimeLike } from "../store-hook.ts";
 
 /** Minimal model; wrapping only reads `id` and `provider`. */
 export function model(id: string, provider = "test", type = "chat"): AnyModel {
-	return { id, provider, type, name: id, api: "test-api", baseUrl: "http://example.invalid", input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1, maxTokens: 1, reasoning: false } as unknown as AnyModel;
+	return {
+		id,
+		provider,
+		type,
+		name: id,
+		api: "test-api",
+		baseUrl: "http://example.invalid",
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 1,
+		maxTokens: 1,
+		reasoning: false,
+	} as unknown as AnyModel;
 }
 
 export interface FakeProviderOptions {
@@ -16,18 +28,38 @@ export interface FakeProviderOptions {
 }
 
 /** Plain provider object shaped like the ones `composeModelProvider` returns. */
-export function fakeProvider(id: string, chatIds: string[], options: FakeProviderOptions = {}): Provider {
+export function fakeProvider(
+	id: string,
+	chatIds: string[],
+	options: FakeProviderOptions = {},
+): Provider {
 	const chat = chatIds.map((chatId) => model(chatId, id));
 	const all = [...chat, ...(options.allModels ?? [])];
 	const provider = {
 		id,
 		name: id,
 		baseUrl: "http://example.invalid",
-		auth: { apiKey: { name: "test", check: async () => ({ type: "api_key", source: "test" }), resolve: async () => ({ auth: { apiKey: "test" }, source: "test" }) } },
+		auth: {
+			apiKey: {
+				name: "test",
+				check: async () => ({ type: "api_key", source: "test" }),
+				resolve: async () => ({ auth: { apiKey: "test" }, source: "test" }),
+			},
+		},
 		getModels: () => chat,
 		...(options.withGetAllModels === false ? {} : { getAllModels: () => all }),
-		...(options.filter ? { filterModels: (models: readonly AnyModel[]) => models.filter((entry) => options.filter!(entry.id)) } : {}),
-		...(options.filterAll ? { filterAllModels: (models: readonly AnyModel[]) => models.filter((entry) => options.filterAll!(entry.id)) } : {}),
+		...(options.filter
+			? {
+					filterModels: (models: readonly AnyModel[]) =>
+						models.filter((entry) => options.filter!(entry.id)),
+				}
+			: {}),
+		...(options.filterAll
+			? {
+					filterAllModels: (models: readonly AnyModel[]) =>
+						models.filter((entry) => options.filterAll!(entry.id)),
+				}
+			: {}),
 		stream: () => {
 			throw new Error("not used in tests");
 		},

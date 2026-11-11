@@ -24,7 +24,11 @@ interface EntryState {
 }
 
 function claimsModernSnapshot(value: unknown): boolean {
-	return !!value && typeof value === "object" && (value as { kind?: unknown }).kind === "pi.tasks.snapshot";
+	return (
+		!!value &&
+		typeof value === "object" &&
+		(value as { kind?: unknown }).kind === "pi.tasks.snapshot"
+	);
 }
 
 function revisionOf(value: unknown): number | undefined {
@@ -45,8 +49,12 @@ function validSnapshot(value: unknown): TaskSnapshot | undefined {
 }
 
 function isStateEntry(entry: BranchEntry): boolean {
-	return (entry.type === "custom" && entry.customType === STATE_ENTRY)
-		|| (entry.type === "message" && entry.message?.role === "toolResult" && entry.message.toolName === "todo");
+	return (
+		(entry.type === "custom" && entry.customType === STATE_ENTRY) ||
+		(entry.type === "message" &&
+			entry.message?.role === "toolResult" &&
+			entry.message.toolName === "todo")
+	);
 }
 
 /** State carried by one state-bearing entry, or undefined when the entry holds no replayable snapshot. */
@@ -67,8 +75,13 @@ function entryState(entry: BranchEntry): EntryState | undefined {
  * Newest human edit that was not announced yet. Candidate revisions are read without validating every
  * entry; only a candidate that would actually produce a reminder is validated, highest revision first.
  */
-function unannouncedHumanRevision(candidates: ReadonlyArray<{ revision: number; data: unknown }>, announcedRevision: number): number | undefined {
-	const pending = candidates.filter((candidate) => candidate.revision > announcedRevision).sort((a, b) => b.revision - a.revision);
+function unannouncedHumanRevision(
+	candidates: ReadonlyArray<{ revision: number; data: unknown }>,
+	announcedRevision: number,
+): number | undefined {
+	const pending = candidates
+		.filter((candidate) => candidate.revision > announcedRevision)
+		.sort((a, b) => b.revision - a.revision);
 	for (const candidate of pending) {
 		if (validSnapshot(candidate.data)) return candidate.revision;
 	}
@@ -112,7 +125,10 @@ export function replayBranch(branch: Iterable<unknown>): ReplayResult {
 		announcedRevision,
 		...(pendingHumanRevision === undefined ? {} : { pendingHumanRevision }),
 		...(newest?.warning
-			? { migrationWarning: newest.warning, ...(migrationAnnounced ? { migrationAnnounced: true } : {}) }
+			? {
+					migrationWarning: newest.warning,
+					...(migrationAnnounced ? { migrationAnnounced: true } : {}),
+				}
 			: {}),
 	};
 }

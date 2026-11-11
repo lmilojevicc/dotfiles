@@ -4,15 +4,50 @@ import { reduceTasks } from "../src/domain/reducer.ts";
 import { snapshot, task } from "./helpers.ts";
 
 test("create trims subject, preserves compatible fields, and increments revision", () => {
-	const result = reduceTasks(snapshot(), { action: "create", subject: "  Build feature  ", description: "Details", activeForm: "Building", owner: "worker", metadata: { source: "user" } }, 100);
+	const result = reduceTasks(
+		snapshot(),
+		{
+			action: "create",
+			subject: "  Build feature  ",
+			description: "Details",
+			activeForm: "Building",
+			owner: "worker",
+			metadata: { source: "user" },
+		},
+		100,
+	);
 	assert.equal(result.committed, true);
 	assert.equal(result.state.revision, 1);
-	assert.deepEqual(result.state.tasks[0], { id: 1, subject: "Build feature", description: "Details", activeForm: "Building", owner: "worker", metadata: { source: "user" }, status: "pending", blockedBy: [], createdAt: 100, updatedAt: 100 });
+	assert.deepEqual(result.state.tasks[0], {
+		id: 1,
+		subject: "Build feature",
+		description: "Details",
+		activeForm: "Building",
+		owner: "worker",
+		metadata: { source: "user" },
+		status: "pending",
+		blockedBy: [],
+		createdAt: 100,
+		updatedAt: 100,
+	});
 });
 
 test("update supports field clearing, metadata merge/removal, and no-op revision stability", () => {
-	let state = snapshot([{ ...task(1), description: "old", owner: "a", metadata: { keep: 1, remove: 2 } }], 4);
-	const changed = reduceTasks(state, { action: "update", id: 1, description: null, owner: null, metadata: { remove: null, add: true } }, 200);
+	let state = snapshot(
+		[{ ...task(1), description: "old", owner: "a", metadata: { keep: 1, remove: 2 } }],
+		4,
+	);
+	const changed = reduceTasks(
+		state,
+		{
+			action: "update",
+			id: 1,
+			description: null,
+			owner: null,
+			metadata: { remove: null, add: true },
+		},
+		200,
+	);
 	assert.equal(changed.state.revision, 5);
 	assert.deepEqual(changed.state.tasks[0]?.metadata, { keep: 1, add: true });
 	assert.equal(changed.state.tasks[0]?.description, undefined);
@@ -25,16 +60,33 @@ test("update supports field clearing, metadata merge/removal, and no-op revision
 
 test("enforces one active task and legal transitions", () => {
 	const state = snapshot([task(1, "in_progress"), task(2)], 1);
-	assert.match(reduceTasks(state, { action: "update", id: 2, status: "in_progress" }).error?.message ?? "", /at most one/);
-	assert.equal(reduceTasks(snapshot([task(1, "completed")]), { action: "update", id: 1, status: "pending" }).error?.code, "illegal_transition");
-	assert.equal(reduceTasks(snapshot([task(1, "deleted")]), { action: "update", id: 1, subject: "again" }).error?.code, "deleted");
+	assert.match(
+		reduceTasks(state, { action: "update", id: 2, status: "in_progress" }).error?.message ?? "",
+		/at most one/,
+	);
+	assert.equal(
+		reduceTasks(snapshot([task(1, "completed")]), { action: "update", id: 1, status: "pending" })
+			.error?.code,
+		"illegal_transition",
+	);
+	assert.equal(
+		reduceTasks(snapshot([task(1, "deleted")]), { action: "update", id: 1, subject: "again" }).error
+			?.code,
+		"deleted",
+	);
 });
 
 test("a blocked task cannot start until every prerequisite is completed", () => {
 	const blocked = snapshot([task(1), task(2, "pending", [1])]);
-	assert.equal(reduceTasks(blocked, { action: "update", id: 2, status: "in_progress" }).error?.code, "blocked");
+	assert.equal(
+		reduceTasks(blocked, { action: "update", id: 2, status: "in_progress" }).error?.code,
+		"blocked",
+	);
 	const ready = snapshot([task(1, "completed"), task(2, "pending", [1])]);
-	assert.equal(reduceTasks(ready, { action: "update", id: 2, status: "in_progress" }).committed, true);
+	assert.equal(
+		reduceTasks(ready, { action: "update", id: 2, status: "in_progress" }).committed,
+		true,
+	);
 });
 
 test("delete is gated by live dependents and repeated delete is a no-op", () => {
@@ -64,7 +116,12 @@ test("clear preserves monotonic nextId and empty clear is a no-op", () => {
 
 test("expectedRevision rejects stale writes atomically", () => {
 	const state = snapshot([task(1)], 3);
-	const result = reduceTasks(state, { action: "update", id: 1, subject: "new", expectedRevision: 2 });
+	const result = reduceTasks(state, {
+		action: "update",
+		id: 1,
+		subject: "new",
+		expectedRevision: 2,
+	});
 	assert.equal(result.error?.code, "stale_revision");
 	assert.strictEqual(result.state, state);
 });
@@ -82,12 +139,35 @@ test("rejects action-inapplicable fields", () => {
 });
 
 test("metadata must be bounded JSON", () => {
-	assert.equal(reduceTasks(snapshot(), { action: "create", subject: "x", metadata: { value: BigInt(1) } }).error?.code, "invalid_metadata");
-	assert.equal(reduceTasks(snapshot(), { action: "create", subject: "x", metadata: { huge: "x".repeat(70_000) } }).error?.code, "invalid_metadata");
-	assert.equal(reduceTasks(snapshot(), { action: "create", subject: "x", metadata: Object.fromEntries(Array.from({ length: 51 }, (_, index) => [String(index), index])) }).error?.code, "invalid_metadata");
+	assert.equal(
+		reduceTasks(snapshot(), { action: "create", subject: "x", metadata: { value: BigInt(1) } })
+			.error?.code,
+		"invalid_metadata",
+	);
+	assert.equal(
+		reduceTasks(snapshot(), {
+			action: "create",
+			subject: "x",
+			metadata: { huge: "x".repeat(70_000) },
+		}).error?.code,
+		"invalid_metadata",
+	);
+	assert.equal(
+		reduceTasks(snapshot(), {
+			action: "create",
+			subject: "x",
+			metadata: Object.fromEntries(
+				Array.from({ length: 51 }, (_, index) => [String(index), index]),
+			),
+		}).error?.code,
+		"invalid_metadata",
+	);
 	let nested: Record<string, unknown> = {};
 	for (let index = 0; index < 9; index++) nested = { child: nested };
-	assert.equal(reduceTasks(snapshot(), { action: "create", subject: "x", metadata: nested }).error?.code, "invalid_metadata");
+	assert.equal(
+		reduceTasks(snapshot(), { action: "create", subject: "x", metadata: nested }).error?.code,
+		"invalid_metadata",
+	);
 });
 
 test("all persisted string bounds reject singular creates and updates atomically", () => {

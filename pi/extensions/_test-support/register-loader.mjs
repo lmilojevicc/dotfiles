@@ -22,7 +22,9 @@ function piPackageRoot() {
 	const candidates = [];
 	if (process.env.PI_PACKAGE_ROOT) candidates.push(process.env.PI_PACKAGE_ROOT);
 	try {
-		const launcher = realpathSync(execFileSync("which", [process.env.PI_BIN ?? "pi"], { encoding: "utf8" }).trim());
+		const launcher = realpathSync(
+			execFileSync("which", [process.env.PI_BIN ?? "pi"], { encoding: "utf8" }).trim(),
+		);
 		const install = join(dirname(dirname(launcher)), "install");
 		const version = readFileSync(join(install, "current-version"), "utf8").trim();
 		candidates.push(join(install, "releases", version, "node_modules", packageName));
@@ -32,12 +34,17 @@ function piPackageRoot() {
 	try {
 		const env = { ...process.env };
 		delete env.npm_config_prefix;
-		candidates.push(join(execFileSync("npm", ["root", "-g"], { encoding: "utf8", env }).trim(), packageName));
+		candidates.push(
+			join(execFileSync("npm", ["root", "-g"], { encoding: "utf8", env }).trim(), packageName),
+		);
 	} catch {
 		// npm may be unavailable.
 	}
 	const root = candidates.find((candidate) => existsSync(join(candidate, "package.json")));
-	if (!root) throw new Error(`Cannot find ${packageName}. Set PI_PACKAGE_ROOT to the installed package directory.`);
+	if (!root)
+		throw new Error(
+			`Cannot find ${packageName}. Set PI_PACKAGE_ROOT to the installed package directory.`,
+		);
 	return root;
 }
 
@@ -55,7 +62,10 @@ registerHooks({
 	resolve(specifier, context, nextResolve) {
 		// Resolve from Pi's own package.json, so every @earendil-works package (and typebox, which Pi
 		// ships) comes from the same Pi release instead of a stale global or leftover node_modules.
-		const fromPi = specifier.startsWith("@earendil-works/") || specifier === "typebox" || specifier.startsWith("typebox/");
+		const fromPi =
+			specifier.startsWith("@earendil-works/") ||
+			specifier === "typebox" ||
+			specifier.startsWith("typebox/");
 		return nextResolve(specifier, fromPi ? { ...context, parentURL } : context);
 	},
 });

@@ -106,9 +106,13 @@ export class ProviderStateError extends Error {
 }
 
 /** Resolve Pi provider auth or throw the "auth needs refresh" state. */
-export async function requireProviderAuth(ctx: AdapterContext, providerId: string): Promise<ProviderAuth & { apiKey: string }> {
+export async function requireProviderAuth(
+	ctx: AdapterContext,
+	providerId: string,
+): Promise<ProviderAuth & { apiKey: string }> {
 	const auth = await ctx.getProviderAuth(providerId);
-	if (!auth?.apiKey) throw new ProviderStateError("auth-refresh", `Auth needs refresh · run /login ${providerId}`);
+	if (!auth?.apiKey)
+		throw new ProviderStateError("auth-refresh", `Auth needs refresh · run /login ${providerId}`);
 	return { ...auth, apiKey: auth.apiKey };
 }
 
@@ -127,7 +131,8 @@ export function numberValue(value: unknown): number | undefined {
 
 /** Epoch seconds from an epoch number (seconds or milliseconds) or a date string. */
 export function epochSeconds(value: unknown): number | undefined {
-	if (typeof value === "number" && Number.isFinite(value) && value > 0) return value > 1e12 ? Math.floor(value / 1000) : value;
+	if (typeof value === "number" && Number.isFinite(value) && value > 0)
+		return value > 1e12 ? Math.floor(value / 1000) : value;
 	if (typeof value !== "string" || !value.trim()) return undefined;
 	const parsed = Date.parse(value);
 	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed / 1000) : undefined;
@@ -135,7 +140,10 @@ export function epochSeconds(value: unknown): number | undefined {
 
 /** Provider text shown in the UI: single line, no control characters, bounded length. */
 export function displayText(value: unknown, maxLength = 80): string | undefined {
-	const text = stringValue(value)?.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").replace(/\s+/g, " ").trim();
+	const text = stringValue(value)
+		?.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 	if (!text) return undefined;
 	return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
@@ -176,7 +184,8 @@ export function formatClock(timestampSeconds: number, now = Date.now()): string 
 
 /** "5h" / "weekly" for the canonical windows, otherwise a compact duration; `fallback` when unknown. */
 export function windowLabel(windowMinutes: number | undefined, fallback = "window"): string {
-	if (windowMinutes === undefined || !Number.isFinite(windowMinutes) || windowMinutes <= 0) return fallback;
+	if (windowMinutes === undefined || !Number.isFinite(windowMinutes) || windowMinutes <= 0)
+		return fallback;
 	if (windowMinutes === FIVE_HOUR_WINDOW_MINUTES) return "5h";
 	if (windowMinutes === WEEKLY_WINDOW_MINUTES) return "weekly";
 	if (windowMinutes % 1440 === 0) return `${windowMinutes / 1440}d`;
@@ -186,9 +195,12 @@ export function windowLabel(windowMinutes: number | undefined, fallback = "windo
 
 /** The raw used percentage the footer publishes for a snapshot, if any. */
 export function statusUsedPercent(snapshot: ProviderSnapshot): number | undefined {
-	if (snapshot.statusPercent !== undefined && Number.isFinite(snapshot.statusPercent)) return snapshot.statusPercent;
+	if (snapshot.statusPercent !== undefined && Number.isFinite(snapshot.statusPercent))
+		return snapshot.statusPercent;
 	for (const row of snapshot.rows) {
-		const known = row.windows.map((window) => window.usedPercent).filter((value): value is number => value !== undefined && Number.isFinite(value));
+		const known = row.windows
+			.map((window) => window.usedPercent)
+			.filter((value): value is number => value !== undefined && Number.isFinite(value));
 		if (known.length) return Math.max(...known);
 	}
 	return undefined;

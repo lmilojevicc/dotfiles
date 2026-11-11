@@ -13,15 +13,15 @@ my_workspace="${HERDR_WORKSPACE_ID:?HERDR_WORKSPACE_ID is not set (run inside a 
 poll_interval="${HERDR_FOCUS_KILL_POLL:-0.15}"
 
 current_focused_workspace() {
-  herdr workspace list 2>/dev/null \
-    | jq -r '.result.workspaces[] | select(.focused) | .workspace_id' 2>/dev/null \
-    | head -1 \
-    || true
+  herdr workspace list 2>/dev/null |
+    jq -r '.result.workspaces[] | select(.focused) | .workspace_id' 2>/dev/null |
+    head -1 ||
+    true
 }
 
 is_overlay_focused() {
-  herdr pane get "$my_pane" 2>/dev/null \
-    | jq -e '.result.pane.focused == true' >/dev/null 2>&1
+  herdr pane get "$my_pane" 2>/dev/null |
+    jq -e '.result.pane.focused == true' >/dev/null 2>&1
 }
 
 should_dismiss() {

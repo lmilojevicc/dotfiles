@@ -34,8 +34,10 @@ function appendedNativeLaunchTag(systemPrompt: string): string | undefined {
 	// Inherited text / either Chadineer hook order may leave owned blocks after the suffix.
 	// Inspect only complete trailing blocks; stripOwnedBlocks still owns validation and removal.
 	for (;;) {
-		const markers = [[POLICY_OPEN, POLICY_CLOSE], [LEGACY_START, LEGACY_END]]
-			.find(([, end]) => prompt.endsWith(end));
+		const markers = [
+			[POLICY_OPEN, POLICY_CLOSE],
+			[LEGACY_START, LEGACY_END],
+		].find(([, end]) => prompt.endsWith(end));
 		if (!markers) break;
 		const start = prompt.lastIndexOf(markers[0]);
 		if (start === -1) break;
@@ -79,14 +81,25 @@ function tagName(tag: string): string | undefined {
 	if (!encoded) return undefined;
 	// Reverse only the native launcher's four XML escapes, never aliases or fuzzy names.
 	if (/&(?!amp;|quot;|lt;|gt;)/.test(encoded)) return undefined;
-	return encoded.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+	return encoded
+		.replace(/&quot;/g, '"')
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&amp;/g, "&");
 }
 
 export type PolicyProfile = "main" | "main-bb" | "subagent";
 
-export function selectProfile(systemPrompt: string, backgroundChild: boolean, bbWorkflowWorker = false): PolicyProfile {
-	return backgroundChild || bbWorkflowWorker || CHILD_PREFIXES.some((prefix) => systemPrompt.trimStart().startsWith(prefix))
-		|| appendedNativeLaunchTag(systemPrompt) !== undefined || generatedLaunchTag(systemPrompt) !== undefined
+export function selectProfile(
+	systemPrompt: string,
+	backgroundChild: boolean,
+	bbWorkflowWorker = false,
+): PolicyProfile {
+	return backgroundChild ||
+		bbWorkflowWorker ||
+		CHILD_PREFIXES.some((prefix) => systemPrompt.trimStart().startsWith(prefix)) ||
+		appendedNativeLaunchTag(systemPrompt) !== undefined ||
+		generatedLaunchTag(systemPrompt) !== undefined
 		? "subagent"
 		: "main";
 }
@@ -94,8 +107,10 @@ export function selectProfile(systemPrompt: string, backgroundChild: boolean, bb
 /** Exact configured-name routing; no role fallback. Call with native profile only. */
 export function selectAgentName(systemPrompt: string, profile: PolicyProfile): string | undefined {
 	if (profile !== "subagent") return undefined;
-	const tag = appendedNativeLaunchTag(systemPrompt) ?? generatedLaunchTag(systemPrompt)
-		?? systemPrompt.match(/^<active_agent\b[^\r\n]*$/m)?.[0];
+	const tag =
+		appendedNativeLaunchTag(systemPrompt) ??
+		generatedLaunchTag(systemPrompt) ??
+		systemPrompt.match(/^<active_agent\b[^\r\n]*$/m)?.[0];
 	return tag ? tagName(tag) : undefined;
 }
 
@@ -131,9 +146,12 @@ function removeBlocks(prompt: string, start: string, end: string): string {
 /** The owned section text for a layer, or undefined when the layer composed nothing. */
 export function policySection(profile: PolicyProfile, policy: string): string | undefined {
 	if (!policy.trim()) return undefined;
-	const marker = profile === "subagent"
-		? CHILD_POLICY_MARKER
-		: profile === "main-bb" ? MAIN_BB_POLICY_MARKER : MAIN_POLICY_MARKER;
+	const marker =
+		profile === "subagent"
+			? CHILD_POLICY_MARKER
+			: profile === "main-bb"
+				? MAIN_BB_POLICY_MARKER
+				: MAIN_POLICY_MARKER;
 	return `${marker}\n\n${policy}`;
 }
 
@@ -141,7 +159,11 @@ export function policySection(profile: PolicyProfile, policy: string): string | 
  *  The section wrapper is ours, so its complete blocks are removed wherever they appear. A peer
  *  hook's legacy block is only replaced when this layer composes text to replace it with.
  */
-export function stripOwnedBlocks(prompt: string, profile: PolicyProfile, dropLegacy = profile === "subagent"): string {
+export function stripOwnedBlocks(
+	prompt: string,
+	profile: PolicyProfile,
+	dropLegacy = profile === "subagent",
+): string {
 	const retained = removeBlocks(prompt, POLICY_OPEN, POLICY_CLOSE);
 	return dropLegacy ? removeBlocks(retained, LEGACY_START, LEGACY_END) : retained;
 }

@@ -21,13 +21,13 @@ The approved hybrid exception is deliberately conservative: main may do a genuin
 
 Use criteria → targeted discovery/decisions → proportionate plan → one writer → focused verification → applicable fresh review → parent adjudication → bounded fixes → integrated evidence. Tiny/copy/docs work needs proportionate checks, not a code-review ceremony. Substantive code requires both meaningful executable evidence and one fresh general review of actual changes. Neither a confident model nor a majority vote is verification.
 
-| Perspective | Trigger | Evidence |
-| --- | --- | --- |
-| General correctness/maintainability | Substantive code; lightweight disposition for other work | Criteria, actual changes/contracts, behavioral assertions, failures and gaps |
-| Security | Identity/authorization, untrusted input, secrets, sensitive data or external effects | Relevant trust-boundary inspection and allow/deny/abuse checks |
-| UI/accessibility | User-visible interaction/navigation/layout/forms | Running flows, keyboard/focus/labels, relevant automated and manual checks |
-| Performance | Hot paths, large data, resource-sensitive operations or explicit budgets | Equivalent baseline/candidate workloads and qualified measurements |
-| Compatibility/data safety | Public API, serialization/schema/config defaults or migrations | Supported-consumer contracts, old/new behavior and migration/recovery evidence |
+| Perspective                         | Trigger                                                                              | Evidence                                                                       |
+| ----------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| General correctness/maintainability | Substantive code; lightweight disposition for other work                             | Criteria, actual changes/contracts, behavioral assertions, failures and gaps   |
+| Security                            | Identity/authorization, untrusted input, secrets, sensitive data or external effects | Relevant trust-boundary inspection and allow/deny/abuse checks                 |
+| UI/accessibility                    | User-visible interaction/navigation/layout/forms                                     | Running flows, keyboard/focus/labels, relevant automated and manual checks     |
+| Performance                         | Hot paths, large data, resource-sensitive operations or explicit budgets             | Equivalent baseline/candidate workloads and qualified measurements             |
+| Compatibility/data safety           | Public API, serialization/schema/config defaults or migrations                       | Supported-consumer contracts, old/new behavior and migration/recovery evidence |
 
 Do not force three reviewers. Consolidate overlapping perspectives without concealing actual high-risk gaps. Reviewers remain read-only and use supported tools; if check execution is unavailable, an authorized verifier runs it. Initially give fresh reviewers the actual candidate, criteria, interfaces, and check evidence rather than other reviewers' verdicts or just the writer's narrative. Fresh context reduces anchoring; it does not prove statistical independence.
 

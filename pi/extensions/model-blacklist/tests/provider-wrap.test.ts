@@ -4,7 +4,9 @@ import { BLACKLIST_MARKER, unwrapProvider, wrapProvider } from "../provider-wrap
 import { fakeProvider, ids, model } from "./helpers.ts";
 
 test("wrappers remove blocked chat and non-chat models while keeping order", () => {
-	const base = fakeProvider("test", ["a", "b", "c"], { allModels: [model("image-1", "test", "image")] });
+	const base = fakeProvider("test", ["a", "b", "c"], {
+		allModels: [model("image-1", "test", "image")],
+	});
 	const wrapper = wrapProvider(base, (model) => model.id === "b");
 	assert.deepEqual(ids(wrapper.getModels()), ["a", "c"]);
 	assert.deepEqual(ids(wrapper.getAllModels!()), ["a", "c", "image-1"]);
