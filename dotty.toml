@@ -6,6 +6,12 @@ links = [{ source = ".", target = "~/.config/aerospace" }]
 [packages.bat]
 links = [{ source = ".", target = "~/.config/bat" }]
 
+[packages.claude]
+links = [
+	{ source = "settings.json", target = "~/.claude/settings.json" },
+	{ source = "themes", target = "~/.claude/themes" },
+]
+
 [packages.ghostty]
 links = [{ source = ".", target = "~/.config/ghostty" }]
 
