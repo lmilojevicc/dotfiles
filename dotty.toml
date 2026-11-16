@@ -43,7 +43,7 @@ links = [{ source = ".", target = "~/.config/neru" }]
 links = [{ source = ".", target = "~/.config/nvim" }]
 
 [packages.omniwm]
-links = [{ source = ".", target = "~/.config/omniwm" }]
+links = [{ source = "settings.toml", target = "~/.config/omniwm/settings.toml" }]
 
 [packages.opencode]
 links = [
