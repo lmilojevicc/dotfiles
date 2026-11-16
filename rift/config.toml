@@ -80,6 +80,7 @@ app_rules = [
 	{ app_id = "com.apple.finder", title_substring = "Deleting", floating = true },
 	{ app_id = "pl.maketheweb.cleanshotx", floating = true },
 	{ app_id = "com.apple.systempreferences", floating = true },
+	{ app_id = "com.apple.calculator", floating = true },
 	{ app_id = "com.objective-see.lulu.app", floating = true },
 	{ app_id = "com.superace.updf.mac", floating = false },
 	# Settings/preferences windows float like popups instead of being tiled.
