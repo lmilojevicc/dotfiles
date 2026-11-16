@@ -19,7 +19,6 @@ export POSTING_THEME_DIRECTORY="$XDG_CONFIG_HOME/posting/themes"
 export PI_LENS_CONFIG_PATH="$HOME/.pi/agent/pi-lens.json"
 export PI_LENS_HOME="$XDG_DATA_HOME/pi-lens"
 export PI_WEB_ACCESS_CACHE_ROOT="$XDG_CACHE_HOME/pi"
-export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 # Must precede zinit's bun/uv snippets, which run mise shims at source time.
 export MISE_ENV="${MISE_ENV:-macos}"
