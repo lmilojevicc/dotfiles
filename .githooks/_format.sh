@@ -12,7 +12,7 @@ dotfiles_require() {
   return 1
 }
 
-# True when the file starts with a bash/sh shebang (zsh is not supported by shfmt).
+# True when the file starts with a bash/sh shebang.
 dotfiles_is_shell() {
   local first
   IFS= read -r first <"$1" 2>/dev/null || return 1
@@ -22,12 +22,26 @@ dotfiles_is_shell() {
   return 1
 }
 
+# True when the file starts with a zsh shebang. shfmt >= 3.13 parses zsh
+# natively, so these take the same shfmt path below, just without --indent
+# (the .editorconfig zsh section pins 4-space, and CLI flags would override it).
+dotfiles_is_zsh() {
+  local first
+  IFS= read -r first <"$1" 2>/dev/null || return 1
+  case "$first" in
+  '#!'*'/zsh' | '#!'*' zsh') return 0 ;;
+  esac
+  return 1
+}
+
 # Format the given paths (relative to the repo root) with the same tools nvim's
 # conform uses: oxfmt for JS/TS/JSON/CSS/Markdown/YAML/TOML, stylua for Lua,
-# shfmt (2-space via .editorconfig) for shell. Paths with no formatter are left
-# alone. Must be called with the repo root as the working directory.
+# shfmt for shell (2-space for bash/sh via --indent, 4-space for zsh via the
+# .editorconfig zsh section -- shfmt >= 3.13 parses zsh natively). Paths with
+# no formatter are left alone. Must be called with the repo root as the
+# working directory.
 dotfiles_format() {
-  local ox=() lua=() sh=() f
+  local ox=() lua=() sh=() zsh=() f
   for f in "$@"; do
     [[ -f $f ]] || continue
     case "$f" in
@@ -36,9 +50,14 @@ dotfiles_format() {
       ;;
     *.lua) lua+=("$f") ;;
     *.sh) sh+=("$f") ;;
+    *.zsh | *.zshrc | *.zshenv | *.zprofile) zsh+=("$f") ;;
     *)
       # Extensionless executables such as scripts/runner, gated on their shebang.
-      dotfiles_is_shell "$f" && sh+=("$f")
+      if dotfiles_is_shell "$f"; then
+        sh+=("$f")
+      elif dotfiles_is_zsh "$f"; then
+        zsh+=("$f")
+      fi
       ;;
     esac
   done
@@ -55,6 +74,13 @@ dotfiles_format() {
   if ((${#sh[@]})); then
     dotfiles_require shfmt || return 1
     shfmt --write --indent 2 -- "${sh[@]}" || rc=1
+  fi
+  if ((${#zsh[@]})); then
+    dotfiles_require shfmt || return 1
+    # No --indent: the .editorconfig zsh section (shell_variant = zsh,
+    # indent_size 4) must decide, and CLI flags take precedence over it. This
+    # is the same arg-less run nvim's conform does.
+    shfmt --write -- "${zsh[@]}" || rc=1
   fi
   return $rc
 }

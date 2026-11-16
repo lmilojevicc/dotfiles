@@ -15,14 +15,25 @@ oxfmt --check || rc=1
 stylua --check . || rc=1
 
 shell=()
+zsh=()
 while IFS= read -r -d '' f; do
   case "$f" in
   *.sh) shell+=("$f") ;;
+  *.zsh | *.zshrc | *.zshenv | *.zprofile) zsh+=("$f") ;;
   *.lua) ;;
-  *) dotfiles_is_shell "$f" && shell+=("$f") ;;
+  *)
+    # Extensionless executables, gated on their shebang.
+    if dotfiles_is_shell "$f"; then
+      shell+=("$f")
+    elif dotfiles_is_zsh "$f"; then
+      zsh+=("$f")
+    fi
+    ;;
   esac
 done < <(git ls-files -z)
 shfmt --diff --indent 2 -- "${shell[@]}" || rc=1
+# zsh via the .editorconfig section (no --indent: CLI flags would override it).
+shfmt --diff -- "${zsh[@]}" || rc=1
 
 # Type-aware lint and a real type check need Pi's installed .d.ts, linked into a
 # gitignored node_modules/ (no downloads: the links point at Pi's managed install).

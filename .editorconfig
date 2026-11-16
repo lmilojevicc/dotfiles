@@ -22,3 +22,8 @@ indent_size = 2
 [*.lua]
 indent_style = space
 indent_size = 2
+
+[{*.zsh,*.zshrc,*.zshenv,*.zprofile}]
+shell_variant = zsh
+indent_style = space
+indent_size = 4

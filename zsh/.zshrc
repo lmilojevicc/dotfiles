@@ -81,7 +81,6 @@ if [[ -f "/opt/homebrew/bin/brew" ]]; then
     fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
 fi
 
-
 # Custom completions
 fpath=("$HOME/.zsh/completions" $fpath)
 
@@ -281,7 +280,7 @@ add-zsh-hook chpwd auto_venv
 # Expand shortened/redirecting URLs to their final destination
 # usage: unshorten <url> [url...]
 function unshorten() {
-    if (( $# == 0 )); then
+    if (($# == 0)); then
         print -u2 "usage: unshorten <url> [url...]"
         return 2
     fi
@@ -295,27 +294,27 @@ function unshorten() {
     fi
 
     local pretty=0
-    (( $# > 1 )) && pretty=1
+    (($# > 1)) && pretty=1
 
     local url final i=0 rc=0
     for url in "$@"; do
-        (( i++ ))
+        ((i++))
         [[ "$url" == *://* ]] || url="https://$url"
 
         if ! final=$(curl -sL -o /dev/null --max-time 30 -w '%{url_effective}' "$url" 2>/dev/null) || [[ -z "$final" ]]; then
             print -u2 "unshorten: failed to resolve $url"
-            (( pretty && i < $# )) && print
+            ((pretty && i < $#)) && print
             rc=1
             continue
         fi
 
-        if (( pretty )); then
+        if ((pretty)); then
             printf '%s%d.%s %s%s%s\n   %s→%s %s\n' \
                 "$c_dim" "$i" "$c_reset" "$c_url" "$url" "$c_reset" \
                 "$c_arrow" "$c_reset" "$final"
             [[ "${final%/}" == "${url%/}" ]] &&
                 print -u2 "${c_dim}   no redirect followed – target may need JS/meta-refresh handling${c_reset}"
-            (( i < $# )) && print
+            ((i < $#)) && print
         else
             print -r -- "$final"
             [[ "${final%/}" == "${url%/}" ]] &&
