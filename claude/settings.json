@@ -13,9 +13,7 @@
     "pr": ""
   },
   "permissions": {
-    "allow": [
-      "mcp__fff__*"
-    ],
+    "allow": ["mcp__fff__*"],
     "deny": [
       "PushNotification",
       "RemoteTrigger",
@@ -408,7 +406,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '/home/milo/.claude/hooks/herdr-agent-state.sh' session",
+            "command": "bash \"$HOME/.claude/hooks/herdr-agent-state.sh\" session",
             "timeout": 10
           }
         ]
