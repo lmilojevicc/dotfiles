@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "opencode-secrets-registry",
+  "title": "opencode-secrets registry",
+  "description": "Registry for the opencode-secrets OpenCode server plugin. Lives at ~/.config/opencode/opencode-secrets.json by default (path overridable via the plugin's `registry` option). The plugin ignores unknown root keys, so a `$schema` pointer is safe.",
+  "type": "object",
+  "required": ["entries"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional. Point at this schema file for editor validation, e.g. ./plugins/opencode-secrets/registry.schema.json"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "description": "Exactly one of content/value/env is required. Invalid regex entries are skipped with a console warning; entries with fewer than 6 characters of value are ignored.",
+        "anyOf": [
+          { "required": ["content"] },
+          { "required": ["value"] },
+          { "required": ["env"] }
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "friendlyName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Label shown in the placeholder: $$FRIENDLYNAME_12CHARS$$. Sanitized to A-Z0-9."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Legacy alias for friendlyName."
+          },
+          "type": {
+            "enum": ["plain", "regex"],
+            "default": "plain",
+            "description": "plain: content/value is a literal secret. regex: content is a regular expression."
+          },
+          "mode": {
+            "enum": ["obfuscate", "replace"],
+            "default": "obfuscate",
+            "description": "obfuscate: reversible $$LABEL_12CHARS$$ placeholder, restored into tool inputs. replace: one-way same-length rewrite that never restores."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The secret (type plain) or pattern (type regex). Regex entries also accept /pattern/flags literal form. Values under 6 characters are ignored."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Legacy alias for content (plain only)."
+          },
+          "env": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Read the secret from this environment variable at store build time (plain only)."
+          },
+          "replacement": {
+            "type": "string",
+            "description": "Fixed replacement text for mode=replace entries (regex and plain alike). Regex entries without one get a same-length scrambled rewrite that provably does not re-trigger the pattern."
+          },
+          "flags": {
+            "type": "string",
+            "description": "RegExp flags for type=regex entries, e.g. \"i\". Ignored for plain entries."
+          }
+        }
+      }
+    },
+    "envScan": {
+      "type": "object",
+      "description": "Optional opt-in scan of environment variables (pi-style implicit scan). Absent = no env scan.",
+      "required": ["pattern"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Case-insensitive, unanchored name pattern, e.g. (KEY|SECRET|TOKEN|PASSWORD|PASS|AUTH|CREDENTIAL|PRIVATE|OAUTH)(_|$). Include (_|$) to enforce a word boundary so KEY does not match MONKEY."
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 8,
+          "description": "Minimum env value length to register."
+        }
+      }
+    }
+  }
+}
