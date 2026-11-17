@@ -11,7 +11,8 @@
     "npm:pi-antigravity",
     "npm:pi-lens",
     "npm:@gotgenes/pi-permission-system",
-    "npm:@k3_2o/pi-secrets"
+    "npm:@k3_2o/pi-secrets",
+    "npm:pi-freeflow"
   ],
   "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
   "doubleEscapeAction": "tree",
