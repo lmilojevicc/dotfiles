@@ -50,6 +50,8 @@ links = [
 	{ source = "AGENTS.md", target = "~/.config/opencode/AGENTS.md" },
 	{ source = "agents", target = "~/.config/opencode/agents" },
 	{ source = "opencode.jsonc", target = "~/.config/opencode/opencode.jsonc" },
+	{ source = "cli.json", target = "~/.config/opencode/cli.json" },
+	{ source = "plugins", target = "~/.config/opencode/plugins" },
 ]
 
 [packages.pi]
