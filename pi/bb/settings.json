@@ -9,7 +9,6 @@
     "npm:@ff-labs/pi-fff",
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
-    "npm:pi-commandcode-provider",
     "npm:pi-lens",
     "npm:@gotgenes/pi-permission-system",
     "npm:@k3_2o/pi-secrets"
@@ -33,7 +32,6 @@
     "~/.pi/agent/extensions/bash-improved",
     "~/.pi/agent/extensions/model-blacklist",
     "~/.pi/agent/extensions/model-instructions",
-    "~/.pi/agent/extensions/opencode-free",
     "-builtin:mcp"
   ],
   "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]

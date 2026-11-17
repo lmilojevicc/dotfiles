@@ -15,12 +15,15 @@
     "npm:pi-mcp-adapter",
     "npm:pi-antigravity",
     "npm:pi-interactive-shell",
-    "npm:pi-commandcode-provider",
     "npm:pi-lens",
     "npm:@gotgenes/pi-permission-system",
     "npm:@k3_2o/pi-secrets"
   ],
-  "skills": [".claude/skills", ".codex/skills", ".opencode/skills"],
+  "skills": [
+    ".claude/skills",
+    ".codex/skills",
+    ".opencode/skills"
+  ],
   "doubleEscapeAction": "tree",
   "quietStartup": true,
   "secrets": {
@@ -34,15 +37,21 @@
   "defaultProjectTrust": "ask",
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
-  "extensions": ["-builtin:mcp"],
+  "extensions": [
+    "-builtin:mcp"
+  ],
   "extensionChangelogVersions": {
-    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.47.0",
-    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.88.0",
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.48.0",
+    "{\"source\":\"npm:pi-subagents\",\"scope\":\"user\"}": "0.88.1",
     "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
     "{\"source\":\"npm:pi-interactive-shell\",\"scope\":\"user\"}": "0.18.0",
-    "{\"source\":\"npm:pi-commandcode-provider\",\"scope\":\"user\"}": "0.8.1",
-    "{\"source\":\"npm:pi-lens\",\"scope\":\"user\"}": "4.4.12",
+    "{\"source\":\"npm:pi-lens\",\"scope\":\"user\"}": "4.5.0",
     "{\"source\":\"npm:@gotgenes/pi-permission-system\",\"scope\":\"user\"}": "42.0.0"
   },
-  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
+  "defaultTools": [
+    "+codemode",
+    "+find",
+    "+grep",
+    "+tool_search"
+  ]
 }
