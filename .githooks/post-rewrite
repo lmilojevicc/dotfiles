@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# After `git pull --rebase` / `git rebase` (not `commit --amend`): see .githooks/post-pull.
+[[ ${DOTFILES_SKIP_HOOKS:-0} == 1 ]] && exit 0
+[[ ${1:-} == rebase ]] || exit 0
+bash "$(git rev-parse --show-toplevel)/.githooks/post-pull" || true

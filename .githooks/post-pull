@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Shared body of post-merge and post-rewrite: catch this machine up with what a
+# pull brought in. Never fails the pull; problems are only reported.
+#
+#   1. OpenCode plugins: bun install where deps are missing or changed.
+#   2. mise.toml or mise/*.toml changed: `mise install` (pinned hook tools, and the
+#      host layer selected by MISE_ENV).
+#   3. dotty.toml changed: report packages whose links are broken (conflict,
+#      partial, blocked, missing-source), plus newly added packages not linked here.
+#      Nothing is linked automatically: `dotty link` can overwrite local files.
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root" || exit 0
+
+# ORIG_HEAD is the pre-pull tip for merge, fast-forward and rebase alike.
+changed=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null || true)
+touched() { grep -Eq "$1" <<<"$changed"; }
+
+# dotty status prints "pkg  STATE" per package, or "pkg  source  target  STATE" per
+# link when packages are named; reduce either form to one "pkg  STATE" line each.
+package_states() {
+  awk '$1 != "Repository:" && $1 != "Summary:" && NF >= 2 && $NF ~ /^[A-Z][A-Z-]+$/ && !seen[$1]++ {
+    printf "%-24s %s\n", $1, $NF
+  }'
+}
+
+bash .githooks/opencode-plugins || true
+
+if touched '^(mise\.toml|mise/[^/]+\.toml)$'; then
+  if command -v mise >/dev/null 2>&1; then
+    echo "post-pull: mise config changed; running mise install"
+    mise install --yes || echo "post-pull: mise install failed (untrusted config? try 'mise trust')." >&2
+  else
+    echo "post-pull: mise config changed but mise is not on PATH; run 'mise install'." >&2
+  fi
+fi
+
+if touched '^dotty\.toml$'; then
+  if command -v dotty >/dev/null 2>&1; then
+    broken=$(dotty --repo "$root" status --state conflict --state partial --state blocked --state missing-source 2>&1 |
+      package_states)
+
+    added=()
+    while IFS= read -r pkg; do
+      [[ -n $pkg ]] && added+=("$pkg")
+    done < <(git diff ORIG_HEAD HEAD -- dotty.toml | sed -nE 's/^\+\[packages\.([^]]+)\].*/\1/p')
+    fresh=""
+    if ((${#added[@]})); then
+      fresh=$(dotty --repo "$root" status --state unlinked "${added[@]}" 2>&1 |
+        package_states)
+    fi
+
+    if [[ -n $broken || -n $fresh ]]; then
+      echo "post-pull: dotty.toml changed; these packages need attention:"
+      [[ -n $broken ]] && sed 's/^/  /' <<<"$broken"
+      [[ -n $fresh ]] && sed 's/^/  /; s/$/  (new package)/' <<<"$fresh"
+      echo "  inspect with 'dotty status -v <package>', then 'dotty link <package>'."
+    fi
+  else
+    echo "post-pull: dotty.toml changed but dotty is not on PATH; check 'dotty status'." >&2
+  fi
+fi
+
+exit 0

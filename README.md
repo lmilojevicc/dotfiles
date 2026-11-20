@@ -70,6 +70,8 @@ mise run typecheck   # tsc over extension sources against the real Pi API
 mise run check       # formatting + type-aware lint + typecheck, non-zero on drift
 ```
 
+`.githooks/post-merge` and `post-rewrite` (after `git pull`, with or without `--rebase`) run `.githooks/post-pull`, which catches the machine up: `bun install` in any `opencode/plugins/*` whose `package.json`/`bun.lock` changed or whose gitignored `node_modules/` is missing (`mise run opencode-plugins` by hand); `mise install` when `mise.toml` or `mise/*.toml` changed; and, when `dotty.toml` changed, a list of packages with broken links or newly added packages not linked yet. It never links anything itself and never fails the pull; `DOTFILES_SKIP_HOOKS=1` skips it.
+
 `.githooks/pre-commit` formats only the files staged for the commit, re-stages them, then fails the commit if `oxlint --type-aware` reports anything. Every `git commit` runs it, so agent commits land formatted and lint-clean; `git commit --no-verify` bypasses it. `tsc` is left out of the hook (12 s) and covered by `mise run check` instead.
 
 Type checking and type-aware linting resolve `@earendil-works/*` from Pi's own managed install, so extension code is checked against the API it actually runs on — no `node_modules` install, no duplicated type copies. `mise run pi-types` re-links after a Pi upgrade (`tsconfig.tests.json` / `mise run typecheck:tests` covers test files, which still carry pre-existing type debt). The one-time repo-wide reformat is listed in `.git-blame-ignore-revs`.

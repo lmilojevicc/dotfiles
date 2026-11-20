@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Install dependencies for local OpenCode plugins (opencode/plugins/*/package.json).
+# Their node_modules/ is gitignored, so a fresh pull of a plugin leaves it unloadable
+# ("Plugin failed to load") until `bun install` runs on this machine.
+#
+# A plugin is installed when node_modules/ is missing or its package.json/bun.lock
+# changed since the last install (stamp in node_modules/.dotfiles-deps). Run by the
+# post-merge/post-rewrite hooks and by `mise run opencode-plugins`; --force reinstalls all.
+#
+# --backend=copyfile: bun's default on Linux hardlinks files from its global cache,
+# and dotty then reports the plugins link as CONFLICT ("external hardlink aliases")
+# and refuses `dotty link opencode`.
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root" || exit 1
+
+force=0
+[[ ${1:-} == --force ]] && force=1
+
+shopt -s nullglob
+manifests=(opencode/plugins/*/package.json)
+((${#manifests[@]})) || exit 0
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "opencode-plugins: bun not found; skipping dependency install for ${#manifests[@]} plugin(s)." >&2
+  exit 0
+fi
+
+status=0
+for manifest in "${manifests[@]}"; do
+  dir=${manifest%/package.json}
+  stamp_file=$dir/node_modules/.dotfiles-deps
+  stamp=$(cat "$manifest" "$dir/bun.lock" 2>/dev/null | git hash-object --stdin)
+
+  if ((!force)) && [[ -d $dir/node_modules && -f $stamp_file && $(<"$stamp_file") == "$stamp" ]]; then
+    continue
+  fi
+
+  echo "opencode-plugins: bun install in $dir"
+  if (cd "$dir" && bun install --frozen-lockfile --backend=copyfile --silent); then
+    printf '%s\n' "$stamp" >"$stamp_file"
+  else
+    echo "opencode-plugins: bun install failed in $dir (run it there by hand to see why)." >&2
+    status=1
+  fi
+done
+
+exit "$status"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# After `git pull` / `git merge`: see .githooks/post-pull.
+[[ ${DOTFILES_SKIP_HOOKS:-0} == 1 ]] && exit 0
+bash "$(git rev-parse --show-toplevel)/.githooks/post-pull" || true
