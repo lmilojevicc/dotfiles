@@ -1,6 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "omni",
+  // Compact at 80% of the model's window (background summarizing is on by default).
+  "compaction": { "buffer": "20%" },
   "permissions": [
     { "action": "*", "resource": "*", "effect": "allow" },
 
