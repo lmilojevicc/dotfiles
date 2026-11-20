@@ -30,6 +30,7 @@
   "treeFilterMode": "no-tools",
   "extensions": [
     "~/.pi/agent/extensions/agent-policy",
+    "~/.pi/agent/extensions/auto-compact",
     "~/.pi/agent/extensions/bash-improved",
     "~/.pi/agent/extensions/model-blacklist",
     "~/.pi/agent/extensions/model-instructions",
