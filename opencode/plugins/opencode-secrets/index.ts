@@ -1850,7 +1850,18 @@ function repositionMentions(prompt: any, before: string, after: string): void {
   }
 }
 
-const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "list", "webfetch", "websearch"])
+const READ_ONLY_TOOLS = new Set([
+  "read",
+  "grep",
+  "glob",
+  "ls",
+  "list",
+  "webfetch",
+  "websearch",
+  // opencode-fff
+  "ffgrep",
+  "fffind",
+])
 
 export default {
   id: "opencode-secrets",

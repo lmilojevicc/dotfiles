@@ -320,5 +320,9 @@
       },
     },
   },
-  "plugins": [{ "package": "./plugins/opencode-secrets", "options": { "enabled": true } }],
+  "plugins": [
+    { "package": "./plugins/opencode-secrets", "options": { "enabled": true } },
+    // FFF file/content search as native tools (ffgrep, fffind); run `bun install` in the plugin dir first.
+    { "package": "./plugins/opencode-fff" },
+  ],
 }

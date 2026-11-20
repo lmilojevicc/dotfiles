@@ -1,0 +1,16 @@
+{
+  "name": "opencode-fff",
+  "private": true,
+  "type": "module",
+  "description": "OpenCode plugin: FFF-powered fuzzy file and content search (port of @ff-labs/pi-fff)",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "test": "bun test tests/"
+  },
+  "dependencies": {
+    "@ff-labs/fff-bun": "0.11.0"
+  }
+}

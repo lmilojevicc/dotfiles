@@ -19,3 +19,6 @@ pi/web-search.json
 
 # Symlinks created by `mise run pi-types` (Pi's installed packages, for tsc/oxlint).
 /node_modules/
+
+# OpenCode local plugin dependencies (`bun install` in each plugin dir).
+opencode/plugins/*/node_modules/
