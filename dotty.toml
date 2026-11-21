@@ -51,6 +51,7 @@ links = [
 	{ source = "agents", target = "~/.config/opencode/agents" },
 	{ source = "opencode.jsonc", target = "~/.config/opencode/opencode.jsonc" },
 	{ source = "cli.json", target = "~/.config/opencode/cli.json" },
+	{ source = "themes", target = "~/.config/opencode/themes" },
 	{ source = "plugins", target = "~/.config/opencode/plugins" },
 ]
 
