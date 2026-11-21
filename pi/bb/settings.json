@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.4.0",
+  "lastChangelogVersion": "1.5.2",
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4.1-flash",
   "defaultThinkingLevel": "xhigh",
@@ -29,12 +29,17 @@
   "tuiMode": "fullscreen",
   "treeFilterMode": "no-tools",
   "extensions": [
-    "~/.pi/agent/extensions/agent-policy",
     "~/.pi/agent/extensions/auto-compact",
     "~/.pi/agent/extensions/bash-improved",
     "~/.pi/agent/extensions/model-blacklist",
     "~/.pi/agent/extensions/model-instructions",
     "-builtin:mcp"
   ],
-  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"]
+  "defaultTools": ["+codemode", "+find", "+grep", "+tool_search"],
+  "extensionChangelogVersions": {
+    "{\"source\":\"npm:pi-web-access\",\"scope\":\"user\"}": "0.48.0",
+    "{\"source\":\"npm:pi-mcp-adapter\",\"scope\":\"user\"}": "7.0.1",
+    "{\"source\":\"npm:pi-lens\",\"scope\":\"user\"}": "4.5.0",
+    "{\"source\":\"npm:@gotgenes/pi-permission-system\",\"scope\":\"user\"}": "42.0.0"
+  }
 }

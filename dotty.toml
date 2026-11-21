@@ -66,8 +66,11 @@ links = [
 	{ source = "zentui.json", target = "~/.pi/agent/zentui.json" },
 	{ source = "pi-lens.json", target = "~/.pi/agent/pi-lens.json" },
 	{ source = "subagent.json", target = "~/.pi/agent/subagent.json" },
-	{ source = "agent-policy.json", target = "~/.pi/agent/agent-policy.json" },
 	{ source = "model-instructions.json", target = "~/.pi/agent/model-instructions.json" },
+	# Shared rules reach every Pi session and, via defaultInheritGlobalContext, every child.
+	{ source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
+	# Orchestrator-only rules. pi-subagents empties the append slot, so children never see this.
+	{ source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
 	{ source = "auto-compact.json", target = "~/.pi/agent/auto-compact.json" },
 	{ source = "themes", target = "~/.pi/agent/themes" },
 	{ source = "extensions", target = "~/.pi/agent/extensions" },
@@ -77,7 +80,12 @@ links = [
 	{ source = "model-blacklist.json", target = "~/.pi/agent-bb/model-blacklist.json" },
 	{ source = "themes", target = "~/.pi/agent-bb/themes" },
 	# Same unified config files, pointed at the BB agent dir (PI_CODING_AGENT_DIR=~/.pi/agent-bb).
-	{ source = "agent-policy.json", target = "~/.pi/agent-bb/agent-policy.json" },
+	{ source = "AGENTS.md", target = "~/.pi/agent-bb/AGENTS.md" },
+	# Deliberately NO APPEND_SYSTEM.md in the BB agent dir. BB passes its own --append-system-prompt
+	# whenever its assembled instructions are non-empty, and when they are empty, Pi falls back to
+	# native discovery of <agentDir>/APPEND_SYSTEM.md — arming that path would leak the orchestrator
+	# rules to worker/gate threads. The "append-system" BB plugin reads the plain-Pi
+	# ~/.pi/agent/APPEND_SYSTEM.md (the same single source) and injects it for non-worker threads only.
 	{ source = "model-instructions.json", target = "~/.pi/agent-bb/model-instructions.json" },
 	{ source = "auto-compact.json", target = "~/.pi/agent-bb/auto-compact.json" },
 ]

@@ -28,7 +28,6 @@ launcher=$(realpath_py "$launcher")
 install=$(dirname "$(dirname "$launcher")")/install
 version=$(cat "$install/current-version" 2>/dev/null || true)
 pkgs="$install/releases/$version/node_modules"
-agent_pkgs=$(realpath_py "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}")/npm/node_modules
 
 if [[ ! -d $pkgs/@earendil-works ]]; then
   echo "pi-types: expected Pi packages under $pkgs" >&2
@@ -54,7 +53,5 @@ done
 # import the extensions declare.
 [[ -d $pkgs/@types ]] && link @types "$pkgs/@types"
 [[ -d $pkgs/typebox ]] && link typebox "$pkgs/typebox"
-# Extensions such as agent-policy import from the user-installed packages.
-[[ -d $agent_pkgs/pi-subagents ]] && link pi-subagents "$agent_pkgs/pi-subagents"
 
 ((quiet)) || echo "pi-types: linked Pi $version packages for type checking."
