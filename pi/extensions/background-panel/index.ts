@@ -20,6 +20,7 @@ import {
 } from "./config.ts";
 import { BackgroundPanelController, BACKGROUND_PANEL_STATUS_KEY } from "./controller.ts";
 import { BackgroundJobsRegistry } from "./registry.ts";
+import { INTERACTIVE_SHELL_TOOL, startShellInBackground } from "./shell-launch.ts";
 
 /** The status key that carries the count line; zentui-status-bridge can move it into the editor border. */
 export const STATUS_KEY = BACKGROUND_PANEL_STATUS_KEY;
@@ -69,6 +70,16 @@ export default function backgroundPanel(pi: ExtensionAPI): void {
 	// A provider can reinstall a replaced widget between runs; the panel hides its own again.
 	pi.on("before_agent_start", (_event, ctx: ExtensionContext) => {
 		controller.suppressReplacedWidgets(ctx);
+	});
+
+	// New interactive shells start in the background, in the Terminals tab, instead of opening their
+	// overlay over the chat; the user opens them from the panel.
+	pi.on("tool_call", (event) => {
+		if (event.toolName !== INTERACTIVE_SHELL_TOOL) return;
+		const settings = getConfig();
+		if (!settings.backgroundShells || !settings.bridges.piInteractiveShell) return;
+		if (!controller.isComponentActive()) return;
+		startShellInBackground(event.input);
 	});
 
 	pi.on("session_shutdown", () => {

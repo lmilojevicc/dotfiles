@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 describe("background panel config", () => {
-	it("defaults to the open key ↓, both bridges, and hidden native widgets", () => {
+	it("defaults to the open key ↓, both bridges, hidden native widgets, and background shells", () => {
 		assert.deepEqual(parseConfig({}), DEFAULT_BACKGROUND_PANEL_CONFIG);
 		// A non-object is the invalid-file case: loadBackgroundPanelConfig turns it into defaults plus
 		// a warning (covered below); parseConfig itself rejects it.
@@ -42,12 +42,14 @@ describe("background panel config", () => {
 			tabOrder: { shell: 5, subagents: "first", ["x".repeat(65)]: 1, terminals: 2.5 },
 			bridges: { piSubagents: false, piInteractiveShell: "no" },
 			hideNativeWidgets: false,
+			backgroundShells: "yes",
 		});
 		assert.deepEqual(config, {
 			openKey: "ctrl+j",
 			tabOrder: { shell: 5 },
 			bridges: { piSubagents: false, piInteractiveShell: true },
 			hideNativeWidgets: false,
+			backgroundShells: true,
 		});
 		assert.equal(parseConfig({ openKey: "enter" }).openKey, "down");
 	});
@@ -92,6 +94,7 @@ describe("background panel config", () => {
 					tabOrder: { subagents: 5 },
 					bridges: { piInteractiveShell: false },
 					hideNativeWidgets: false,
+					backgroundShells: false,
 				}),
 			),
 		);
@@ -101,6 +104,7 @@ describe("background panel config", () => {
 			tabOrder: { subagents: 5 },
 			bridges: { piSubagents: true, piInteractiveShell: false },
 			hideNativeWidgets: false,
+			backgroundShells: false,
 		});
 		assert.equal(loaded.warning, undefined);
 	});

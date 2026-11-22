@@ -21,7 +21,8 @@ Optional JSON file `background-panel.json` in the agent dir (`~/.pi/agent/backgr
 	"openKey": "down",
 	"tabOrder": {},
 	"bridges": { "piSubagents": true, "piInteractiveShell": true },
-	"hideNativeWidgets": true
+	"hideNativeWidgets": true,
+	"backgroundShells": true
 }
 ```
 
@@ -29,6 +30,7 @@ Optional JSON file `background-panel.json` in the agent dir (`~/.pi/agent/backgr
 - `tabOrder`: per-tab order overrides by tab id; a tab without an entry keeps its provider's `order` (default 100).
 - `bridges` (default both `true`): whether the built-in bridges below may publish their tabs. A bridge whose package is not loaded publishes nothing, so no empty tab appears.
 - `hideNativeWidgets` (default `true`): remove widgets the panel replaces — pi-interactive-shell's `bg-sessions` background session list. They return when their extension reinstalls them and the panel is gone.
+- `backgroundShells` (default `true`): new pi-interactive-shell sessions start in the background instead of opening their overlay over the chat; they appear in the Terminals tab, where Enter attaches. The panel rewrites the agent's `interactive_shell` launch to `mode: "dispatch", background: true` (pi-interactive-shell allows background only for dispatch). An `interactive` or `hands-free` launch also gets `handsFree.autoExitOnQuiet: false` unless the agent set it, so a session waiting quietly for input (a password prompt) is not ended. Calls on existing sessions, monitors, and launches already in the background are unchanged. TUI sessions only.
 
 ## Sources
 

@@ -26,6 +26,8 @@ export interface BackgroundPanelConfig {
 	bridges: BackgroundPanelBridgesConfig;
 	/** Remove widgets the panel replaces (pi-interactive-shell's `bg-sessions`). */
 	hideNativeWidgets: boolean;
+	/** Start new pi-interactive-shell sessions in the background, listed in the Terminals tab. */
+	backgroundShells: boolean;
 }
 
 export const BACKGROUND_PANEL_CONFIG_ENV = "PI_BACKGROUND_PANEL_CONFIG";
@@ -35,6 +37,7 @@ export const DEFAULT_BACKGROUND_PANEL_CONFIG: BackgroundPanelConfig = {
 	tabOrder: {},
 	bridges: { piSubagents: true, piInteractiveShell: true },
 	hideNativeWidgets: true,
+	backgroundShells: true,
 };
 
 const OPEN_KEYS: ReadonlySet<string> = new Set(["down", "up", "ctrl+j"]);
@@ -86,6 +89,10 @@ function parseHideNativeWidgets(value: unknown): boolean {
 	return typeof value === "boolean" ? value : DEFAULT_BACKGROUND_PANEL_CONFIG.hideNativeWidgets;
 }
 
+function parseBackgroundShells(value: unknown): boolean {
+	return typeof value === "boolean" ? value : DEFAULT_BACKGROUND_PANEL_CONFIG.backgroundShells;
+}
+
 /** Resolves each field independently; an invalid field falls back to its default. */
 export function parseConfig(value: unknown): BackgroundPanelConfig {
 	if (!isRecord(value)) throw new Error("Expected a JSON object.");
@@ -94,6 +101,7 @@ export function parseConfig(value: unknown): BackgroundPanelConfig {
 		tabOrder: parseTabOrder(value.tabOrder),
 		bridges: parseBridges(value.bridges),
 		hideNativeWidgets: parseHideNativeWidgets(value.hideNativeWidgets),
+		backgroundShells: parseBackgroundShells(value.backgroundShells),
 	};
 }
 
