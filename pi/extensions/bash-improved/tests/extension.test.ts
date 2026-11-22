@@ -43,6 +43,8 @@ interface HarnessOptions {
 	ui?: Record<string, unknown>;
 	/** Receives each call's `structuredContent`; Pi's tool result messages do not keep it. */
 	structuredResults?: unknown[];
+	/** More extensions loaded next to bash-improved. */
+	extensions?: Array<(pi: ExtensionAPI) => void>;
 }
 
 /** Report the machine-readable half of every tool result, which session history drops. */
@@ -72,6 +74,7 @@ async function harness(
 		extensionFactories: [
 			bashImproved,
 			...(options.structuredResults ? [structuredResultCapture(options.structuredResults)] : []),
+			...(options.extensions ?? []),
 		],
 	});
 	await resourceLoader.reload();
@@ -535,7 +538,108 @@ test("/tasks without a terminal answers in the transcript without waking the age
 	}
 });
 
-test("in the TUI a widget shows running tasks, and /tasks picks one to show its output or stop it", async () => {
+interface PanelSnapshot {
+	version: number;
+	source: string;
+	tab?: { id: string; label: string; noun: string[]; order?: number };
+	jobs?: Array<{ id: string; title: string; status: string; actions?: Record<string, unknown> }>;
+	remove?: true;
+}
+
+interface PanelSeen {
+	snapshots: PanelSnapshot[];
+	act(jobId: string, action: string): Promise<Record<string, unknown>>;
+}
+
+/** Stand-in for the background-panel extension: records snapshots and sends actions. */
+function panelStandIn(seen: PanelSeen) {
+	return (pi: ExtensionAPI) => {
+		let next = 0;
+		pi.events.on("background-jobs:v1:snapshot", (message) => {
+			seen.snapshots.push(message as PanelSnapshot);
+		});
+		seen.act = (jobId, action) =>
+			new Promise((resolve) => {
+				const requestId = `r${++next}`;
+				const off = pi.events.on("background-jobs:v1:action-reply", (reply) => {
+					if ((reply as { requestId: string }).requestId !== requestId) return;
+					off();
+					resolve(reply as Record<string, unknown>);
+				});
+				pi.events.emit("background-jobs:v1:action", {
+					version: 1,
+					requestId,
+					source: "bash-improved",
+					jobId,
+					action,
+				});
+			});
+		pi.on("session_start", () => {
+			pi.events.emit("background-jobs:v1:capability", {
+				supported: true,
+				active: true,
+				version: 1,
+			});
+		});
+	};
+}
+
+test("tasks are published to the background panel, which can show their output and stop them", async () => {
+	const tui = fakeTui([]);
+	const seen: PanelSeen = { snapshots: [], act: async () => ({}) };
+	const latest = () => seen.snapshots.at(-1);
+	const h = await harness(
+		[
+			bash({
+				command: "echo hello; sleep 30",
+				description: "Serve the docs",
+				run_in_background: true,
+			}),
+			fauxAssistantMessage("Started."),
+		],
+		{ mode: "tui", ui: tui.ui, extensions: [panelStandIn(seen)] },
+	);
+	try {
+		assert.equal(latest()?.source, "bash-improved");
+		assert.deepEqual(latest()?.tab, {
+			id: "shell",
+			label: "Shell",
+			noun: ["shell", "shells"],
+			order: 20,
+		});
+		assert.deepEqual(latest()?.jobs, []);
+
+		const before = seen.snapshots.length;
+		await h.session.prompt("start the server");
+		assert.ok(seen.snapshots.length > before, "a new task is announced");
+		const [job] = latest()?.jobs ?? [];
+		assert.equal(job.title, "echo hello; sleep 30");
+		assert.equal(job.status, "running");
+		assert.deepEqual(job.actions, { stop: "kill", output: true });
+		const output = (await seen.act(job.id, "output")) as {
+			ok: boolean;
+			output?: { heading?: string; text: string };
+		};
+		assert.equal(output.ok, true);
+		assert.equal(output.output?.heading, "Serve the docs\n$ echo hello; sleep 30");
+		assert.match(output.output?.text ?? "", /^hello\n/);
+		assert.equal(tui.widgets.length, 0, "no widget above the editor");
+
+		const calls = h.calls();
+		assert.equal((await seen.act(job.id, "stop")).ok, true);
+		await until(() => latest()?.jobs?.[0]?.status === "stopped");
+		assert.deepEqual(latest()?.jobs?.[0]?.actions, { output: true }, "a stopped task has no kill");
+		assert.equal(tui.notified.at(-1), "Stopped task 1");
+		assert.equal(h.calls(), calls, "stopping does not wake the agent");
+		assert.deepEqual(notices(h.session), [], "the model hears about it on its next turn");
+		assert.equal((await seen.act("9", "output")).ok, false, "an unknown task is an error");
+	} finally {
+		await h.close();
+	}
+	assert.equal(latest()?.remove, true, "the source is withdrawn on shutdown");
+});
+
+test("in the TUI /tasks picks a task to show its output or stop it", async () => {
 	const tui = fakeTui(["1", "Show output", "1", "Stop"]);
 	const h = await harness(
 		[
@@ -550,12 +654,6 @@ test("in the TUI a widget shows running tasks, and /tasks picks one to show its 
 	);
 	try {
 		await h.session.prompt("start the server");
-		assert.match(
-			tui.widgets.at(-1)?.[0] ?? "",
-			/^⏵ Running background command: Serve the docs \d+s$/,
-		);
-		assert.match(tui.widgets.at(-1)?.[1] ?? "", /\/tasks to manage/);
-
 		await h.session.prompt("/tasks");
 		assert.match(tui.dialogs[0].options?.[0] ?? "", /^1 {2}running {2}\d+s {2}Serve the docs$/);
 		assert.deepEqual(tui.dialogs[1].options, ["Show output", "Stop"]);
@@ -565,7 +663,6 @@ test("in the TUI a widget shows running tasks, and /tasks picks one to show its 
 		const calls = h.calls();
 		await h.session.prompt("/tasks");
 		assert.equal(tui.notified.at(-1), "Stopped task 1");
-		await until(() => tui.widgets.at(-1) === undefined);
 		assert.equal(h.calls(), calls, "stopping does not wake the agent");
 		assert.deepEqual(notices(h.session), [], "the model hears about it on its next turn");
 	} finally {

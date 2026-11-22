@@ -63,6 +63,7 @@ import {
 	type ReadySpec,
 	waitReady,
 } from "./ready.ts";
+import { publishJobs } from "./background-jobs.ts";
 import { INTERRUPT_POLL_MS, runCommand, type Task, TaskTable, removeStaleTables } from "./tasks.ts";
 
 function secondsFromEnv(name: string, fallback: number): number {
@@ -74,8 +75,6 @@ function secondsFromEnv(name: string, fallback: number): number {
 const WAIT_SECONDS = secondsFromEnv("PI_BASH_WAIT_SECONDS", 10);
 /** `run_in_background` still waits this long, so a command that fails at once reports it inline. */
 const START_CHECK_MS = 1000;
-/** Running tasks the widget names one per line before it sums up the rest. */
-const WIDGET_LINES = 3;
 /** A timeout at most this much past the wait keeps the command in the foreground until it ends or is killed. */
 const SHORT_TIMEOUT_SLACK_SECONDS = 5;
 /** Tasks that end within this long of the first one are reported in one message. */
@@ -122,7 +121,6 @@ const NON_INTERACTIVE_ENV = {
 };
 
 const MESSAGE_TYPE = "background-task";
-const WIDGET_KEY = "bash-improved";
 const TABLES = Symbol.for("pi.bash-improved.tables");
 /** Where every Pi keeps its task directories; BB's pi-tasks plugin reads them. */
 export const TASKS_ROOT = process.env.PI_BASH_TASKS_DIR || join(tmpdir(), "pi-bash-tasks");
@@ -270,10 +268,16 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		shellPath?: string;
 		commandPrefix?: string;
 		binDir: string;
-		ticker?: NodeJS.Timeout;
 		watcher?: FSWatcher;
 	}
 	let state: State | undefined;
+
+	/** The tasks in the dotfiles background panel's Shell tab, which replaces the old widget. */
+	const jobs = publishJobs(pi, {
+		tasks: () => (state ? [...state.table.tasks.values()] : []),
+		get: (id) => state?.table.get(id),
+		stop: (task) => userStop(task, state?.ctx.mode === "tui"),
+	});
 
 	function attach(ctx: ExtensionContext): State {
 		const id = ctx.sessionManager.getSessionId();
@@ -353,7 +357,7 @@ export default function bashImproved(pi: ExtensionAPI): void {
 	}
 
 	function changed(): void {
-		showWidget();
+		jobs.changed();
 		if (state) writeState(state);
 	}
 
@@ -399,43 +403,6 @@ export default function bashImproved(pi: ExtensionAPI): void {
 		} catch {
 			return undefined;
 		}
-	}
-
-	/** Claude Code's line above the editor: `Running background command: <description> 5m 57s`. */
-	function widgetLines(current: State): string[] | undefined {
-		const running = current.table.running();
-		if (running.length === 0) return undefined;
-		const { theme } = current.ctx.ui;
-		const now = Date.now();
-		const lines = running
-			.slice(0, WIDGET_LINES)
-			.map(
-				(task) =>
-					`${theme.fg("accent", "⏵")} ${theme.fg("muted", "Running background command:")} ${title(task, 70)} ${theme.fg("dim", formatDuration(now - task.startedAt))}`,
-			);
-		const more = running.length - WIDGET_LINES;
-		lines.push(`  ${theme.fg("dim", `${more > 0 ? `+${more} more · ` : ""}/tasks to manage`)}`);
-		return lines;
-	}
-
-	function showWidget(): void {
-		const current = state;
-		if (current?.ctx.mode !== "tui") return;
-		const lines = widgetLines(current);
-		current.ctx.ui.setWidget(WIDGET_KEY, lines);
-		if (lines && !current.ticker) {
-			current.ticker = setInterval(showWidget, 1000);
-			current.ticker.unref();
-		} else if (!lines && current.ticker) {
-			clearInterval(current.ticker);
-			current.ticker = undefined;
-		}
-	}
-
-	function hideWidget(current: State): void {
-		clearInterval(current.ticker);
-		current.ticker = undefined;
-		if (current.ctx.mode === "tui") current.ctx.ui.setWidget(WIDGET_KEY, undefined);
 	}
 
 	/** Text for the user, such as a `/tasks` answer outside the TUI: shown in the transcript without waking the agent. */
@@ -884,14 +851,15 @@ export default function bashImproved(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		writeState(attach(ctx));
+		jobs.changed();
 	});
 
 	pi.on("session_shutdown", async (event) => {
 		const current = state;
 		state = undefined;
+		jobs.dispose();
 		if (!current) return;
 		current.watcher?.close();
-		hideWidget(current);
 		clearTimeout(flushTimer);
 		flushTimer = undefined;
 		const unsent = pending.splice(0).filter((task) => !task.reported);

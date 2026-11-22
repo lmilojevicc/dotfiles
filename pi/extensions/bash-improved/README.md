@@ -32,7 +32,7 @@ Commands run with stdin closed and with editors (`GIT_EDITOR`, `GIT_SEQUENCE_EDI
 
 ## For the user
 
-- In the TUI, a widget above the editor shows each running task, like Claude Code: `⏵ Running background command: <description> 5m 57s`, up to three, then `+N more · /tasks to manage`.
+- In the TUI, tasks appear in the Shell tab of the [background-panel](../background-panel) extension's ↓ panel, which counts them in the `background-jobs` status (`↓ 2 shells`; zentui-status-bridge can move it into the zentui editor border as `$jobs`), shows their output and kills them. bash-improved publishes them there over the `background-jobs:v1` events ([`background-jobs.ts`](background-jobs.ts)): the row is the command, the output view is headed by the description. Without that extension loaded, `/tasks` is the way in.
 - **`/tasks`** opens a picker of every task; pick one to show its output (in a read-only editor dialog) or stop it. `/tasks stop <id>` stops one directly, `/tasks <id>` shows its output.
 - A task the user stops does not wake the agent; the model learns about it on its next turn.
 - Over RPC (BB), dialogs work through BB's interaction prompts, so `/tasks` works there too. BB drops notifications and widgets, so plain answers (no tasks, a task already ended) appear as `background-task` messages in the transcript instead, which do not start a turn.
@@ -52,4 +52,4 @@ Because `bash` now comes from this extension rather than Pi itself, renderers th
 
 ## Tests
 
-`npm test` runs real processes and a real Pi session with the faux model, so it needs no provider or network. It covers the foreground wait, moving to the background, ending a wait early for a user message, short timeouts, `ready` by port and log (ready, not ready, exited, bad values), `cwd`, batched messages, leftover and escaped processes, timeouts, abort, SIGTERM escalation, the unread-output cursor, every `tasks` command and its parsing, the sleep guard, the wake-up message and when it is skipped, the tool text, the widget, `/tasks` in the TUI and over RPC, `state.json` and stop requests, and reload versus quit.
+`npm test` runs real processes and a real Pi session with the faux model, so it needs no provider or network. It covers the foreground wait, moving to the background, ending a wait early for a user message, short timeouts, `ready` by port and log (ready, not ready, exited, bad values), `cwd`, batched messages, leftover and escaped processes, timeouts, abort, SIGTERM escalation, the unread-output cursor, every `tasks` command and its parsing, the sleep guard, the wake-up message and when it is skipped, the tool text, the background-jobs provider, `/tasks` in the TUI and over RPC, `state.json` and stop requests, and reload versus quit.
