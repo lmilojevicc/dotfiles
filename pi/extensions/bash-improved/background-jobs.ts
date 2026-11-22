@@ -25,6 +25,8 @@ export interface BackgroundJob {
 	id: string;
 	title: string;
 	status: "running" | "done" | "failed" | "stopped";
+	/** On failure, why it failed, such as `exit 2` or `signal SIGTERM`; the panel shows it as the row's badge. */
+	badge?: string;
 	startedAt?: number;
 	endedAt?: number;
 	actions: { stop?: string; output: true };
@@ -45,13 +47,22 @@ export function jobStatus(task: Task): BackgroundJob["status"] {
 	return failed(task) ? "failed" : "done";
 }
 
+/** Why a task failed, as the row's badge: the exit code, or the signal that killed it. */
+function exitBadge(task: Task): string {
+	if (task.exitCode !== null) return `exit ${task.exitCode}`;
+	if (task.exitSignal) return `signal ${task.exitSignal}`;
+	return "failed";
+}
+
 export function toJob(task: Task): BackgroundJob {
 	// The panel row shows the command, like OpenCode; the description is a fallback for a blank one.
 	const title = task.label.split("\n", 1)[0].trim() || task.description || `task ${task.id}`;
+	const status = jobStatus(task);
 	return {
 		id: String(task.id),
 		title: clamp(title, MAX_TEXT),
-		status: jobStatus(task),
+		status,
+		...(status === "failed" ? { badge: exitBadge(task) } : {}),
 		startedAt: task.startedAt,
 		...(task.endedAt ? { endedAt: task.endedAt } : {}),
 		actions: task.running ? { stop: "kill", output: true } : { output: true },

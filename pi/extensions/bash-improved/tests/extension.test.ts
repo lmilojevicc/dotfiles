@@ -542,7 +542,13 @@ interface PanelSnapshot {
 	version: number;
 	source: string;
 	tab?: { id: string; label: string; noun: string[]; order?: number };
-	jobs?: Array<{ id: string; title: string; status: string; actions?: Record<string, unknown> }>;
+	jobs?: Array<{
+		id: string;
+		title: string;
+		status: string;
+		badge?: string;
+		actions?: Record<string, unknown>;
+	}>;
 	remove?: true;
 }
 
@@ -637,6 +643,26 @@ test("tasks are published to the background panel, which can show their output a
 		await h.close();
 	}
 	assert.equal(latest()?.remove, true, "the source is withdrawn on shutdown");
+});
+
+test("a failed task's panel row carries its exit code as the badge", async () => {
+	const seen: PanelSeen = { snapshots: [], act: async () => ({}) };
+	const h = await harness(
+		[
+			// Longer than the 1s foreground wait, so it becomes a background task before failing.
+			bash({ command: "sleep 1.5; exit 3", run_in_background: true }),
+			fauxAssistantMessage("Started."),
+		],
+		{ mode: "tui", ui: fakeTui([]).ui, extensions: [panelStandIn(seen)] },
+	);
+	try {
+		await h.session.prompt("run it");
+		await until(() => seen.snapshots.at(-1)?.jobs?.[0]?.status === "failed");
+		const job = seen.snapshots.at(-1)?.jobs?.[0];
+		assert.equal(job?.badge, "exit 3");
+	} finally {
+		await h.close();
+	}
 });
 
 test("in the TUI /tasks picks a task to show its output or stop it", async () => {
