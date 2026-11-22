@@ -7,6 +7,11 @@
  * panel.ts/output-view.ts; data in registry.ts/protocol.ts; the JSON file it reads is documented
  * in config.ts. Outside a TUI session it installs none of this: no key handler, no widget, no
  * status, nothing republished.
+ *
+ * The panel's one animation clock lives here: a 500 ms timer that runs only while the panel or the
+ * output view is open and at least one job runs. Each tick advances the braille spinner frame of
+ * the running rows and asks the TUI to re-render. The count line itself stays plain text. The
+ * scheduler is injectable, so tests drive ticks without waiting.
  */
 import { getMarkdownTheme, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { EventBus } from "@earendil-works/pi-coding-agent";
@@ -26,7 +31,13 @@ import {
 } from "./protocol.ts";
 import type { BackgroundPanelOpenKey } from "./config.ts";
 import { OutputView } from "./output-view.ts";
-import { Panel, type PanelResult, type PanelState, type PanelTheme } from "./panel.ts";
+import {
+	Panel,
+	type PanelResult,
+	type PanelState,
+	type PanelTheme,
+	SPINNER_FRAMES,
+} from "./panel.ts";
 import { backgroundJobsSummary, type BackgroundJobsRegistry, type TabJob } from "./registry.ts";
 
 /** The status key that carries the count line; zentui-status-bridge can pick it up as `$jobs`. */
@@ -36,12 +47,32 @@ const REPLACED_WIDGETS = ["bg-sessions"];
 const WIDGET_KEY = "background-panel";
 /** How long the panel waits for an action reply before showing an error. */
 export const BACKGROUND_JOBS_ACTION_TIMEOUT_MS = 3000;
+/** One animation frame per tick, as pi-subagents' widget animates its spinners. */
+export const BACKGROUND_PANEL_CLOCK_MS = 500;
 
 /** The config fields the controller reads (config.ts resolves and validates them). */
 export interface BackgroundPanelRuntimeConfig {
 	openKey: BackgroundPanelOpenKey;
 	tabOrder: Record<string, number>;
 	hideNativeWidgets: boolean;
+}
+
+/** The animation clock's time source; tests inject a fake, the default uses the globals. */
+export interface AnimationScheduler {
+	now(): number;
+	/** Run `handler` every `ms` until the returned handle is cleared. */
+	every(ms: number, handler: () => void): { clear(): void };
+}
+
+function globalScheduler(): AnimationScheduler {
+	return {
+		now: () => Date.now(),
+		every: (ms: number, handler: () => void) => {
+			const timer = setInterval(handler, ms);
+			timer.unref?.();
+			return { clear: () => clearInterval(timer) };
+		},
+	};
 }
 
 /** pi-tui's focus is private; an editor is the focused component that has getText and setText. */
@@ -73,6 +104,7 @@ export class BackgroundPanelController {
 	private readonly registry: BackgroundJobsRegistry;
 	private readonly events: EventBus | undefined;
 	private readonly getConfig: () => BackgroundPanelRuntimeConfig;
+	private readonly scheduler: AnimationScheduler;
 	private ctx: ExtensionContext | undefined;
 	private tui: FocusableTui | undefined;
 	private offInput: (() => void) | undefined;
@@ -87,15 +119,21 @@ export class BackgroundPanelController {
 		string,
 		{ timer: ReturnType<typeof setTimeout>; resolve: (reply: BackgroundJobsActionReply) => void }
 	>();
+	private frame = 0;
+	private clockTimer: { clear(): void } | undefined;
+	/** Rerenders the open surface (panel or output view) on clock ticks. */
+	private activeRender: (() => void) | undefined;
 
 	constructor(
 		events: EventBus | undefined,
 		registry: BackgroundJobsRegistry,
 		getConfig: () => BackgroundPanelRuntimeConfig,
+		scheduler: AnimationScheduler = globalScheduler(),
 	) {
 		this.events = events;
 		this.registry = registry;
 		this.getConfig = getConfig;
+		this.scheduler = scheduler;
 		this.registry.onChange(() => this.registryChanged());
 		if (!events) return;
 		events.on(BACKGROUND_JOBS_CAPABILITY_EVENT, (value) => this.answerCapability(value));
@@ -134,6 +172,7 @@ export class BackgroundPanelController {
 		this.open = false;
 		this.announced = false;
 		this.summary = undefined;
+		this.activeRender = undefined;
 		if (this.statusShown !== undefined) {
 			this.statusShown = undefined;
 			if (ctx) {
@@ -186,6 +225,7 @@ export class BackgroundPanelController {
 	private uninstall(): void {
 		if (!this.installed) return;
 		this.installed = false;
+		this.stopClock();
 		this.offInput?.();
 		this.offInput = undefined;
 		const ctx = this.ctx;
@@ -247,13 +287,14 @@ export class BackgroundPanelController {
 	private registryChanged(): void {
 		this.summary = backgroundJobsSummary(this.registry.tabs(this.getConfig().tabOrder));
 		this.syncStatus();
+		this.syncClock();
 	}
 
 	/** The count line as the `background-jobs` status: `↓ 1 workflow · 3 subagents · 1 shell`. */
 	private syncStatus(): void {
 		const ctx = this.ctx;
 		if (!ctx) return;
-		const next = this.isComponentActive() ? this.summary : undefined;
+		const next = this.isComponentActive() && this.summary !== undefined ? this.summary : undefined;
 		if (next === this.statusShown) return;
 		this.statusShown = next;
 		try {
@@ -261,6 +302,30 @@ export class BackgroundPanelController {
 		} catch {
 			// The context can be stale while the session is replaced.
 		}
+	}
+
+	/**
+	 * The clock runs only while something runs and the panel or the output view shows it: nothing is
+	 * animated when nothing runs or nothing is open.
+	 */
+	private syncClock(): void {
+		if (this.summary !== undefined && this.activeRender !== undefined) this.startClock();
+		else this.stopClock();
+	}
+
+	private startClock(): void {
+		if (this.clockTimer !== undefined) return;
+		this.clockTimer = this.scheduler.every(BACKGROUND_PANEL_CLOCK_MS, () => this.tick());
+	}
+
+	private stopClock(): void {
+		this.clockTimer?.clear();
+		this.clockTimer = undefined;
+	}
+
+	private tick(): void {
+		this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+		this.activeRender?.();
 	}
 
 	private handleKey(data: string): { consume: true } | undefined {
@@ -279,6 +344,10 @@ export class BackgroundPanelController {
 		return typeof focused.getText === "function" && typeof focused.setText === "function";
 	}
 
+	private panelClock(): { frame(): number; now(): number } {
+		return { frame: () => this.frame, now: () => this.scheduler.now() };
+	}
+
 	private async openPanel(ctx: ExtensionContext): Promise<void> {
 		this.open = true;
 		try {
@@ -291,16 +360,23 @@ export class BackgroundPanelController {
 						() => this.getConfig().tabOrder,
 						panelTheme,
 						this.panelState,
-						{ stop: (job) => this.stopJob(job) },
+						{
+							stop: (job) => this.stopJob(job),
+						},
 						done,
 						() => tui.requestRender(),
+						this.panelClock(),
 					);
+					this.activeRender = () => tui.requestRender();
+					this.syncClock();
 					const off = this.registry.onChange(() => tui.requestRender());
 					return {
 						render: (width: number) => panel.render(width),
 						handleInput: (data: string) => panel.handleInput(data),
 						invalidate: () => {},
-						dispose: off,
+						dispose: () => {
+							off();
+						},
 					};
 				});
 				if (result?.kind === "open") {
@@ -336,7 +412,10 @@ export class BackgroundPanelController {
 							() => done(),
 							() => tui.requestRender(),
 							markdownTheme(),
+							this.panelClock(),
 						);
+						this.activeRender = () => tui.requestRender();
+						this.syncClock();
 						return view;
 					},
 					{ overlay: true, overlayOptions: { width: "90%", maxHeight: "85%", anchor: "center" } },
@@ -349,6 +428,8 @@ export class BackgroundPanelController {
 			);
 		} finally {
 			this.open = false;
+			this.activeRender = undefined;
+			this.syncClock();
 		}
 	}
 

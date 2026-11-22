@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { EventBus, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
+	type AnimationScheduler,
 	BACKGROUND_JOBS_ACTION_TIMEOUT_MS,
 	BackgroundPanelController,
+	BACKGROUND_PANEL_CLOCK_MS,
 	BACKGROUND_PANEL_STATUS_KEY,
 } from "../controller.ts";
 import {
@@ -170,6 +172,7 @@ interface Setup {
 	events: EventBus & { emitted: Emitted };
 	registry: BackgroundJobsRegistry;
 	controller: BackgroundPanelController;
+	clock: FakeClock;
 	fake: FakeUi;
 	publish: (jobs: BackgroundJob[], tab?: BackgroundJobsTab) => void;
 	setConfig: (next: Partial<RuntimeConfig>) => void;
@@ -182,19 +185,57 @@ type RuntimeConfig = {
 	hideNativeWidgets: boolean;
 };
 
+interface FakeClock extends AnimationScheduler {
+	/** Runs every scheduled handler once, advancing the wall clock by one frame. */
+	tick: (steps?: number) => void;
+	/** How many timers are currently scheduled. */
+	running: () => number;
+}
+
+/** A scheduler whose ticks are driven by the test, so no test waits for real time. */
+function fakeClock(): FakeClock {
+	const handlers = new Set<() => void>();
+	let now = 0;
+	const clock: FakeClock = {
+		now: () => now,
+		every: (_ms: number, handler: () => void) => {
+			handlers.add(handler);
+			return {
+				clear: () => {
+					handlers.delete(handler);
+				},
+			};
+		},
+		tick: (steps = 1) => {
+			for (let i = 0; i < steps; i += 1) {
+				now += BACKGROUND_PANEL_CLOCK_MS;
+				for (const handler of handlers) handler();
+			}
+		},
+		running: () => handlers.size,
+	};
+	return clock;
+}
+
 function setup(
-	options: { openKey?: BackgroundPanelOpenKey; hideNativeWidgets?: boolean } = {},
+	options: {
+		openKey?: BackgroundPanelOpenKey;
+		hideNativeWidgets?: boolean;
+		clock?: FakeClock;
+	} = {},
 ): Setup {
 	const events = bus();
 	const registry = new BackgroundJobsRegistry();
+	const clock = options.clock ?? fakeClock();
 	let config: RuntimeConfig = {
 		openKey: options.openKey ?? ("down" as const),
 		tabOrder: {},
 		hideNativeWidgets: options.hideNativeWidgets ?? true,
 	};
-	const controller = new BackgroundPanelController(events, registry, () => config);
+	const controller = new BackgroundPanelController(events, registry, () => config, clock);
 	const fake = fakeContext();
 	return {
+		clock,
 		events,
 		registry,
 		controller,
@@ -564,5 +605,68 @@ describe("background panel lifecycle", () => {
 		assert.equal(first.inputHandlers.length, 0);
 		assert.equal(second.inputHandlers.length, 1);
 		assert.equal(second.statuses.get(BACKGROUND_PANEL_STATUS_KEY), undefined);
+	});
+});
+
+describe("background panel animation clock", () => {
+	it("keeps the count line plain text and animates running rows only while the panel is open", async () => {
+		const clock = fakeClock();
+		const { controller, fake, publish } = setup({ clock });
+		controller.startSession(fake.ctx);
+		publish([running]);
+		assert.equal(fake.statuses.get(BACKGROUND_PANEL_STATUS_KEY), "↓ 1 shell");
+		assert.equal(clock.running(), 0, "nothing is animated while the panel is closed");
+		const calls = fake.statusCalls.length;
+
+		fake.press("\u001b[B");
+		await flush();
+		assert.equal(clock.running(), 1, "the open panel animates its running rows");
+		const row = () => fake.shown[0].component.render(80)[3];
+		assert.ok(row().includes("⠋"));
+		clock.tick();
+		assert.ok(row().includes("⠙"));
+		clock.tick(8);
+		assert.ok(row().includes("⠏"));
+		clock.tick();
+		assert.ok(row().includes("⠋"), "the frames wrap after the last one");
+		assert.equal(fake.statusCalls.length, calls, "ticks never touch the count line");
+		assert.equal(fake.statuses.get(BACKGROUND_PANEL_STATUS_KEY), "↓ 1 shell");
+	});
+
+	it("stops the clock when nothing runs, so an open panel is not redrawn while idle", async () => {
+		const clock = fakeClock();
+		const { controller, fake, publish } = setup({ clock });
+		controller.startSession(fake.ctx);
+		publish([running]);
+		fake.press("\u001b[B");
+		await flush();
+		assert.equal(clock.running(), 1);
+		publish([{ ...running, status: "done", endedAt: 1 }]);
+		assert.equal(fake.statuses.get(BACKGROUND_PANEL_STATUS_KEY), undefined);
+		assert.equal(clock.running(), 0, "the clock stops when the last job ends");
+	});
+
+	it("stops the clock on shutdown and on session replacement", async () => {
+		const clock = fakeClock();
+		const { controller, fake, publish } = setup({ clock });
+		controller.startSession(fake.ctx);
+		publish([running]);
+		fake.press("\u001b[B");
+		await flush();
+		assert.equal(clock.running(), 1);
+		controller.shutdown();
+		assert.equal(clock.running(), 0);
+		publish([running]);
+		assert.equal(clock.running(), 0, "snapshots are ignored once the session is gone");
+	});
+
+	it("publishes the status only when its text changes", () => {
+		const { controller, fake, publish } = setup();
+		controller.startSession(fake.ctx);
+		publish([running]);
+		const calls = fake.statusCalls.length;
+		publish([running]);
+		publish([{ ...running, id: "2", title: "another shell", status: "running" }]);
+		assert.equal(fake.statusCalls.length, calls, "the same summary is not republished");
 	});
 });

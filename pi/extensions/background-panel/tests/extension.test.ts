@@ -153,8 +153,8 @@ test("↓ opens the panel on running shells; Enter shows output, Ctrl+D kills", 
 		const panel = fake.shown[0];
 		assert.equal(panel.overlay, false, "the panel takes the editor's place");
 		const lines = panel.component.render(80).map((line) => line.trimEnd());
-		assert.match(lines[1], /Shell +esc │$/);
-		assert.match(lines[3], /echo hello from the server; sleep 30 +Running │$/);
+		assert.match(lines[1], /● Shell 1 +esc │$/);
+		assert.match(lines[3], /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] echo hello from the server; sleep 30 +running \ds+ │$/);
 
 		fake.press(KEY.enter);
 		await until(() => fake.shown[0]?.overlay === true);
@@ -164,7 +164,10 @@ test("↓ opens the panel on running shells; Enter shows output, Ctrl+D kills", 
 		const view = fake.shown[0].component.render(80);
 		// A blank column outside each border keeps the chat behind away from it.
 		assert.match(view[0], /^ ╭─+╮ $/);
-		assert.match(view[1], /^ │ \$ echo hello from the server; sleep 30 +Running {2}esc │ $/);
+		assert.match(
+			view[1],
+			/^ │ \$ echo hello from the server; sleep 30 +[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Running \ds {2}esc │ $/,
+		);
 		assert.match(view[2], /^ │ Shell output +│ $/);
 		fake.press(KEY.escape);
 		await until(() => fake.shown[0]?.overlay === false);

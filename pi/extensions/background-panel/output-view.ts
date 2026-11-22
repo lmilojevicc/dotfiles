@@ -18,7 +18,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { PanelTheme } from "./panel.ts";
+import { formatDuration, type PanelClock, type PanelTheme, statusGlyph } from "./panel.ts";
 import type { BackgroundJobOutput } from "./protocol.ts";
 import type { TabJob } from "./registry.ts";
 
@@ -64,6 +64,7 @@ export class OutputView {
 	private readonly done: () => void;
 	private readonly requestRender: () => void;
 	private readonly markdownTheme: MarkdownTheme | undefined;
+	private readonly clock: PanelClock;
 	private markdown: { text: string; width: number; lines: string[] } | undefined;
 
 	constructor(
@@ -76,6 +77,7 @@ export class OutputView {
 		done: () => void,
 		requestRender: () => void,
 		markdownTheme?: MarkdownTheme,
+		clock: PanelClock = { frame: () => 0, now: () => Date.now() },
 	) {
 		this.markdownTheme = markdownTheme;
 		this.title = title;
@@ -86,6 +88,7 @@ export class OutputView {
 		this.load = load;
 		this.done = done;
 		this.requestRender = requestRender;
+		this.clock = clock;
 		void this.loadOutput();
 		this.timer = setInterval(() => void this.loadOutput(), POLL_MS);
 		this.timer.unref?.();
@@ -160,11 +163,15 @@ export class OutputView {
 		const rule = (left: string, right: string) => border(`${left}${"─".repeat(frame - 2)}${right}`);
 
 		const job = this.current() ?? this.job;
-		const status = theme.fg(
-			job.status === "failed" ? "error" : job.status === "running" ? "success" : "muted",
-			job.badge ?? STATUS_TEXT[job.status],
-		);
-		const right = `${status}  ${dim("esc")}`;
+		// The title row carries the job's glyph (the spinner frame while running) and its live time.
+		const { glyph, color } = statusGlyph(job.status, this.clock.frame());
+		const now = this.clock.now();
+		const time =
+			job.startedAt === undefined
+				? undefined
+				: formatDuration((job.status === "running" ? now : (job.endedAt ?? now)) - job.startedAt);
+		const status = theme.fg(color, job.badge ?? STATUS_TEXT[job.status]);
+		const right = `${theme.fg(color, glyph)} ${status}${time !== undefined ? ` ${theme.fg("dim", time)}` : ""}  ${dim("esc")}`;
 		const [first = job.title, ...rest] = (this.output?.heading ?? job.title)
 			.split("\n")
 			.map((part) => part.replace(/\s+/g, " ").trim())

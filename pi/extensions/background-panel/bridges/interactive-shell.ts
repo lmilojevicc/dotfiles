@@ -14,6 +14,11 @@ import { boundedOutput, boundedText, BridgePublisher, BRIDGE_POLL_MS } from "./c
 
 const MANAGER_KEY = "__piInteractiveShellSessionManagerV1";
 const TAIL_LINES = 2000;
+/** How many tail lines are compared to notice new output without reading the whole tail. */
+const QUIET_PROBE_LINES = 40;
+
+/** A running session whose output has not changed for this long is probably waiting for input. */
+export const PI_SHELL_QUIET_MS = 5000;
 
 export const PI_INTERACTIVE_SHELL_SOURCE = "pi-interactive-shell";
 export const PI_INTERACTIVE_SHELL_TAB: BackgroundJobsTab = {
@@ -60,16 +65,31 @@ export interface PiInteractiveShellBridgeOptions {
 	pollMs?: number;
 	/** Runs when the user takes a terminal over (`open`); the wiring sends `/attach <id>`. */
 	attach?: AttachSession;
+	/** The wall clock, for the quiet badge; tests inject a fake. */
+	now?: () => number;
+}
+
+/** `quiet 12s`: a running session whose output has not changed for `PI_SHELL_QUIET_MS`. */
+function formatQuiet(ms: number): string {
+	const seconds = Math.max(0, Math.round(ms / 1000));
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.floor(seconds / 60);
+	return `${minutes}m ${seconds % 60}s`;
 }
 
 /**
  * Publishes pi-interactive-shell's background sessions while the panel is active; without that
- * package loaded (no manager on globalThis) it publishes nothing, so no empty tab appears.
+ * package loaded (no manager on globalThis) it publishes nothing, so no empty tab appears. A
+ * running session that has printed nothing new for `PI_SHELL_QUIET_MS` gets a `quiet <time>` badge
+ * — it often means the program waits for input (a password prompt), which the panel marks with ◆.
  */
 export class PiInteractiveShellBridge {
 	private readonly publisher: BridgePublisher;
 	private readonly pollMs: number;
 	private readonly attach: AttachSession | undefined;
+	private readonly now: () => number;
+	/** When each running session's output tail last changed, to notice a quiet one. */
+	private readonly quietSince = new Map<string, { at: number; fingerprint: string }>();
 	private active = false;
 	private timer: ReturnType<typeof setInterval> | undefined;
 	private subscribed: SessionManager | undefined;
@@ -78,6 +98,7 @@ export class PiInteractiveShellBridge {
 	constructor(events: EventBus | undefined, options: PiInteractiveShellBridgeOptions = {}) {
 		this.pollMs = options.pollMs ?? BRIDGE_POLL_MS;
 		this.attach = options.attach;
+		this.now = options.now ?? (() => Date.now());
 		this.publisher = new BridgePublisher(
 			events,
 			PI_INTERACTIVE_SHELL_SOURCE,
@@ -120,22 +141,48 @@ export class PiInteractiveShellBridge {
 			sessions = [];
 		}
 		this.publisher.publish(
-			sessions.map((session): BackgroundJob => ({
-				id: session.id,
-				title: boundedText(
-					[session.command.replace(/\s+/g, " ").trim(), session.reason?.trim()]
-						.filter(Boolean)
-						.join(" · "),
-				),
-				status: !session.session.exited
-					? "running"
-					: (session.session.exitCode ?? 0) === 0
-						? "done"
-						: "failed",
-				startedAt: session.startedAt.getTime(),
-				actions: { stop: "kill", open: "attach", output: true },
-			})),
+			sessions.map((session): BackgroundJob => {
+				const running = !session.session.exited;
+				return {
+					id: session.id,
+					title: boundedText(
+						[session.command.replace(/\s+/g, " ").trim(), session.reason?.trim()]
+							.filter(Boolean)
+							.join(" · "),
+					),
+					status: running ? "running" : (session.session.exitCode ?? 0) === 0 ? "done" : "failed",
+					...(running ? { badge: this.quietBadge(session) } : {}),
+					startedAt: session.startedAt.getTime(),
+					actions: { stop: "kill", open: "attach", output: true },
+				};
+			}),
 		);
+	}
+
+	/**
+	 * A running session's quiet badge, or undefined while it still prints: the time since its
+	 * output tail last changed, once it reaches `PI_SHELL_QUIET_MS`.
+	 */
+	private quietBadge(session: ShellSession): string | undefined {
+		const now = this.now();
+		let fingerprint: string;
+		try {
+			const lines = session.session.getTailLines({ lines: QUIET_PROBE_LINES, ansi: false }).lines;
+			fingerprint = `${lines.length}\u0000${lines.slice(-2).join("\n")}`;
+		} catch {
+			// A session whose tail cannot be read is never called quiet.
+			return undefined;
+		}
+		const previous = this.quietSince.get(session.id);
+		const at =
+			previous === undefined
+				? session.startedAt.getTime()
+				: previous.fingerprint === fingerprint
+					? previous.at
+					: now;
+		this.quietSince.set(session.id, { at, fingerprint });
+		const quietFor = now - at;
+		return quietFor >= PI_SHELL_QUIET_MS ? `quiet ${formatQuiet(quietFor)}` : undefined;
 	}
 
 	private sessions(): ShellSession[] {

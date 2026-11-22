@@ -7,6 +7,7 @@ import { asyncRunsDir, PiSubagentsBridge } from "../bridges/subagents.ts";
 import {
 	PiInteractiveShellBridge,
 	PI_INTERACTIVE_SHELL_SOURCE,
+	PI_SHELL_QUIET_MS,
 } from "../bridges/interactive-shell.ts";
 import {
 	backgroundJobsActionReply,
@@ -618,6 +619,55 @@ describe("publisher bounds", () => {
 			});
 			events.emit(BACKGROUND_JOBS_ACTION_EVENT, { version: 1, requestId: "other" });
 			assert.equal(seen.length, 0);
+		} finally {
+			bridge.setActive(false);
+			clearManager();
+		}
+	});
+});
+describe("pi-interactive-shell quiet badge", () => {
+	it("marks a running terminal quiet after 5s without new output, and unmarks it when it prints", () => {
+		const tail = { lines: ["$ read -s -p 'pw: ' x"] };
+		const now = { value: 1000 };
+		const sessions = [
+			{
+				id: "calm-reef",
+				command: "read -s -p 'pw: ' x",
+				startedAt: new Date(0),
+				session: {
+					exited: false,
+					kill: () => {},
+					getTailLines: () => ({ lines: [...tail.lines] }),
+				},
+			},
+		];
+		fakeManager(sessions);
+		const events = bus();
+		const bridge = new PiInteractiveShellBridge(events, {
+			pollMs: 50,
+			now: () => now.value,
+		});
+		bridge.setActive(true);
+		try {
+			// Fresh output at the first poll: no badge.
+			assert.equal(events.snapshots[0].jobs[0].badge, undefined);
+			now.value = PI_SHELL_QUIET_MS - 1;
+			bridge.poll();
+			assert.equal(events.snapshots.length, 1, "still not quiet, nothing republished");
+			now.value = PI_SHELL_QUIET_MS;
+			bridge.poll();
+			assert.equal(events.snapshots[1].jobs[0].badge, "quiet 5s");
+			now.value = 13_000;
+			bridge.poll();
+			assert.equal(events.snapshots.at(-1)?.jobs[0].badge, "quiet 13s");
+			// New output ends the quiet stretch at once.
+			tail.lines.push("got");
+			bridge.poll();
+			assert.equal(events.snapshots.at(-1)?.jobs[0].badge, undefined);
+			// And the timer restarts from the fresh output.
+			now.value = 13_000 + PI_SHELL_QUIET_MS + 1000;
+			bridge.poll();
+			assert.equal(events.snapshots.at(-1)?.jobs[0].badge, "quiet 6s");
 		} finally {
 			bridge.setActive(false);
 			clearManager();

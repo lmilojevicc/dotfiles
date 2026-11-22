@@ -66,6 +66,7 @@ async function view(
 		current?: () => TabJob | undefined;
 		rows?: () => number;
 		markdown?: boolean;
+		clock?: { frame(): number; now(): number };
 	} = {},
 ): Promise<{
 	render: (width: number) => string[];
@@ -75,6 +76,7 @@ async function view(
 }> {
 	const entry = options.job ?? job();
 	let closed = false;
+	const clock = options.clock ?? { frame: () => 3, now: () => 42_000 };
 	const instance = new OutputView(
 		options.title ?? "Shell output",
 		options.current ?? (() => entry),
@@ -87,6 +89,7 @@ async function view(
 		},
 		() => {},
 		options.markdown ? markdownTheme : undefined,
+		clock,
 	);
 	await new Promise((resolve) => setTimeout(resolve, 10));
 	return {
@@ -124,7 +127,7 @@ describe("output view", () => {
 		}
 		const lines = raw.map(unbox);
 		assert.match(lines[0], /^╭─+╮$/);
-		assert.match(lines[1], /\$ yes +Running {2}esc$/);
+		assert.match(lines[1], /\$ yes +⠸ Running {2}esc$/);
 		assert.equal(lines[2], "Shell output");
 		assert.match(lines[3], /^├─+┤$/);
 		assert.equal(
@@ -256,15 +259,20 @@ describe("output view", () => {
 		plainText.dispose();
 	});
 
-	it("reflects the job's live status through the current getter", async () => {
-		let entry = job();
+	it("reflects the job's live status through the current getter, with its glyph and live time", async () => {
+		let entry = job({ startedAt: 42_000 - 33_000 });
+		const frame = { value: 3 };
+		const clock = { frame: () => frame.value, now: () => 42_000 };
 		const instance = await view(() => Promise.resolve({ text: "x" }), {
 			current: () => entry,
 			job: entry,
+			clock,
 		});
-		assert.match(instance.render(60).map(unbox)[1], /Running/);
-		entry = job({ status: "failed", badge: "Exited 1" });
-		assert.match(instance.render(60).map(unbox)[1], /make build +Exited 1 {2}esc$/);
+		assert.match(instance.render(60).map(unbox)[1], /make build +⠸ Running 33s {2}esc$/);
+		frame.value = 4;
+		assert.match(instance.render(60).map(unbox)[1], /⠼ Running 33s/);
+		entry = job({ status: "failed", badge: "Exited 1", startedAt: 0, endedAt: 14_000 });
+		assert.match(instance.render(60).map(unbox)[1], /make build +✗ Exited 1 14s {2}esc$/);
 		instance.dispose();
 	});
 
