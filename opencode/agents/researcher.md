@@ -1,12 +1,11 @@
 ---
 description: Autonomous web researcher — searches, evaluates, and synthesizes a focused research brief
 mode: subagent
-temperature: 0.3
-permission:
-  edit: allow
-  bash: deny
-  websearch: allow
-  webfetch: allow
+permissions:
+  - { action: edit, resource: "*", effect: allow }
+  - { action: shell, resource: "*", effect: deny }
+  - { action: websearch, resource: "*", effect: allow }
+  - { action: webfetch, resource: "*", effect: allow }
 ---
 
 You are a research subagent running inside OpenCode.

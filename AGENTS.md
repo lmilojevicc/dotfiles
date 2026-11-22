@@ -8,15 +8,16 @@
 
 ## Layout
 
-| Path                                                 | Notes                                                                                              |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `zsh/`, `starship/`, `tmux/`, `ghostty/`, `wezterm/` | Shell and terminal                                                                                 |
-| `nvim/`                                              | Lua config (lazy.nvim); format with StyLua (`nvim/.stylua.toml`); `lazy-lock.json` is tool-managed |
-| `mise/config.toml`                                   | Runtimes and global CLI tools                                                                      |
-| `scripts/`                                           | Small CLIs linked into `~/.local/bin`; tests in `scripts/tests/`                                   |
-| `pi/`                                                | Pi coding agent (see below)                                                                        |
-| `opencode/`                                          | OpenCode agents and its own `AGENTS.md`                                                            |
-| `aerospace/`, `rift/`, `omniwm/`, `neru/`            | macOS window management                                                                            |
+| Path                                                 | Notes                                                                                                                |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `zsh/`, `starship/`, `tmux/`, `ghostty/`, `wezterm/` | Shell and terminal                                                                                                   |
+| `nvim/`                                              | Lua config (lazy.nvim); format with StyLua (`nvim/.stylua.toml`); `lazy-lock.json` is tool-managed                   |
+| `mise/config.toml`                                   | Runtimes and global CLI tools                                                                                        |
+| `scripts/`                                           | Small CLIs linked into `~/.local/bin`                                                                                |
+| `tests/`                                             | Repo self-checks, one `bash tests/<name>.sh` per guard                                                               |
+| `pi/`                                                | Pi coding agent (see below)                                                                                          |
+| `opencode/`                                          | OpenCode agents; shared rules and orchestrator body single-sourced from `pi/` (guard: `tests/opencode-omni-sync.sh`) |
+| `aerospace/`, `rift/`, `omniwm/`, `neru/`            | macOS window management                                                                                              |
 
 ## Pi
 
@@ -31,7 +32,7 @@
 ## Testing
 
 - Pi extensions: `npm --prefix pi/extensions/<name> test`.
-- Scripts: `bash scripts/tests/<name>.sh` (`screenshot-mode` needs macOS BSD `sed`).
+- Scripts: `bash tests/<name>.sh` (`screenshot-mode` needs macOS BSD `sed`; `mise-migration` predates the per-host `mise/config.<host>.toml` split and fails on the missing shared config — fix or retire it when convenient).
 - Neovim: `nvim --headless -u NONE -l nvim/tests/<name>.lua` (each file's header has the exact command).
 - Report failures as they are; do not weaken tests to make them pass.
 

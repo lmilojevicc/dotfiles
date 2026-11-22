@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run on macOS (screenshot-mode uses BSD sed): bash scripts/tests/screenshot-mode.sh
+# Run on macOS (screenshot-mode uses BSD sed): bash tests/screenshot-mode.sh
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/screenshot-mode"

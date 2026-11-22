@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Run: bash scripts/tests/mise-migration.sh (Python 3.11+ and zsh; no installs).
+# Run: bash tests/mise-migration.sh (Python 3.11+ and zsh; no installs).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="$(command -v python3)"
 ZSH="$(command -v zsh)"
-TEST_HOME="$(mktemp -d "$ROOT/scripts/tests/.mise-migration.XXXXXX")"
+TEST_HOME="$(mktemp -d "$ROOT/tests/.mise-migration.XXXXXX")"
 trap 'rm -rf "$TEST_HOME"' EXIT
 
 "$PYTHON" - "$ROOT" "$TEST_HOME" <<'PY'

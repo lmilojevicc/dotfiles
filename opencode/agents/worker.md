@@ -1,10 +1,9 @@
 ---
 description: Implementation agent for normal tasks and approved handoffs
 mode: subagent
-temperature: 0.1
-permission:
-  edit: allow
-  bash: allow
+permissions:
+  - { action: edit, resource: "*", effect: allow }
+  - { action: shell, resource: "*", effect: allow }
 ---
 
 You are `worker`: the implementation subagent running inside OpenCode.

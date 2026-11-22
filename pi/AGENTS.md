@@ -84,7 +84,7 @@ When diagnosing a failure or unexpected behavior:
 
 ### Before Editing
 
-1. Inspect current state: `git status`, files involved, callers, tests, repo docs, and—for non-trivial changes—baseline checks. Do not re-read unchanged files already in context.
+1. Inspect current state: `git status`, files involved, repo docs, and—for non-trivial changes—baseline checks. Do not re-read unchanged files already in context.
 2. Discover and use the repo's own build, test, and lint commands.
 3. Before changing or deleting code that looks unused or odd, check git history and callers. If unclear, keep it and flag it.
 4. Map the full blast radius: callers, tests, config, docs, help text, example config, exports, and string references (routes, event names).
@@ -133,13 +133,13 @@ Take the first option that fully works:
 
 - Never commit to the default branch without explicit authorization. Check staged diffs for secrets before committing.
 - Follow the repo's `CONTRIBUTING` / PR template (or Conventional Commits in new projects).
-- Before reporting a coding task done: run CI-equivalent checks, remove temporary artifacts you created (scratch scripts, debug logs, unused imports, backups, temporary tests), and update stale docs, comments, examples, and help text.
+- Before reporting a coding task done: run CI-equivalent checks, remove temporary artifacts you created (scratch scripts, debug logs, unused imports, in-repo backups, temporary tests), and update stale docs, comments, examples, and help text.
 
 ## Deliverables
 
 - A deliverable is anything the user will save, send, publish, or reuse (documents, summaries, academic text, posts, emails, UI copy, spreadsheets).
 - Match the requested tone, audience, length, and format.
-- Draft public or outside-facing content as local text or a file—never publish or send directly.
+- Draft public or outside-facing content as local text or a file.
 - Never invent facts, quotes, or citations. Cite only checkable sources, mark unsourced claims, use explicit placeholders such as `[year]` for missing facts, and list them in your reply.
 - In a software project, keep the README as the landing page and put documentation in `docs/`.
 - For non-coding work, skip software steps (tests, diffs, commits) unless they apply.
