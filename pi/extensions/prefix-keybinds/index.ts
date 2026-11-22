@@ -853,10 +853,10 @@ class PrefixCommandPaletteComponent implements Component {
 		const paddingX = 2;
 		const inner = Math.max(1, frameInner - paddingX * 2);
 		const theme = this.theme;
-		const border = (value: string) => theme.fg("borderAccent", value);
+		// The same frame as pi-interactive-shell's popup: rounded, in the theme's border color, no fill.
+		const border = (value: string) => theme.fg("border", value);
 		const accent = (value: string) => theme.fg("accent", value);
 		const dim = (value: string) => theme.fg("dim", value);
-		const muted = (value: string) => theme.fg("muted", value);
 		const fixed = (value = "", rowWidth = inner) => {
 			const safe = value.replace(/[\r\n\t]+/g, " ");
 			const clipped = truncateToWidth(safe, rowWidth, "…");
@@ -865,13 +865,13 @@ class PrefixCommandPaletteComponent implements Component {
 		const row = (value = "", selected = false) => {
 			const body = fixed(value);
 			const rendered = selected ? theme.bg("selectedBg", body) : body;
-			return `${border("┃")}${" ".repeat(paddingX)}${rendered}${" ".repeat(paddingX)}${border("┃")}`;
+			return `${border("│")}${" ".repeat(paddingX)}${rendered}${" ".repeat(paddingX)}${border("│")}`;
 		};
-		const divider = () => row(muted("━".repeat(inner)));
-		const title = ` Prefix help ${this.config.prefixKey} `;
-		const titleFill = Math.max(1, frameInner - visibleWidth(title));
-		const top = `${border("┏")}${accent(title)}${border("━".repeat(titleFill))}${border("┓")}`;
-		const bottom = border(`┗${"━".repeat(frameInner)}┛`);
+		const divider = () => border(`├${"─".repeat(frameInner)}┤`);
+		const top = border(`╭${"─".repeat(frameInner)}╮`);
+		const bottom = border(`╰${"─".repeat(frameInner)}╯`);
+		const title = `Prefix help ${this.config.prefixKey}`;
+		const count = `${this.config.bindings.length} mapped command(s)`;
 		const maxVisible = this.maxVisibleRows();
 		const start = Math.max(
 			0,
@@ -882,7 +882,8 @@ class PrefixCommandPaletteComponent implements Component {
 		);
 		const end = Math.min(start + maxVisible, this.config.bindings.length);
 
-		const lines = [top, row(`${this.config.bindings.length} mapped command(s)`), divider()];
+		const heading = `${accent(title)}${" ".repeat(Math.max(1, inner - visibleWidth(title) - visibleWidth(count)))}${dim(count)}`;
+		const lines = [top, row(heading), divider()];
 		for (let index = start; index < end; index += 1) {
 			const binding = this.config.bindings[index];
 			if (!binding) continue;
