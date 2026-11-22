@@ -31,10 +31,11 @@
           "formats": {
             "bottomLeft": "$session_name$join_sep($git_branch)",
             "topRight": "$cost$sep$model$sep$thinking$sep$ac_context($sep$cache_hit)",
-            "bottomRight": "$lens$join_sep($cwd)"
+            "bottomRight": "$jobs$join_sep($lens)$join_sep($cwd)"
           },
           "variables": {
             "lens": "pi-lens-lsp",
+            "jobs": "background-jobs",
             "ac_context": "auto-compact:context"
           },
           "showCost": true,

@@ -1,5 +1,5 @@
 {
-  "include": ["pi-lens-lsp"],
+  "include": ["pi-lens-lsp", "background-jobs"],
   "exclude": [],
   "keyPrefix": "",
   "suppressHostStatus": true,

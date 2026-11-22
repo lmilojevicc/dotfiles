@@ -2,5 +2,7 @@
   "toolDescriptionMode": "compact",
   "waitTool": false,
   "asyncByDefault": true,
-  "artifactDir": "session"
+  "artifactDir": "session",
+  "fleetView": false,
+  "asyncWidget": false
 }
