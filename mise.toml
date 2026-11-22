@@ -28,6 +28,10 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs && echo 'blame.ignoreRevs
 description = "bun install for OpenCode plugins whose deps are missing or changed (--force: all)"
 run = "bash .githooks/opencode-plugins"
 
+[tasks.claude-plugins]
+description = "Install enabled Claude Code plugins + their language servers (--force: all plugins)"
+run = "bash .githooks/claude-plugins"
+
 [tasks.fmt]
 description = "Format every tracked file (same tools the pre-commit hook uses)"
 run = "bash .githooks/format-all"

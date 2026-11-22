@@ -3,9 +3,11 @@
 # pull brought in. Never fails the pull; problems are only reported.
 #
 #   1. OpenCode plugins: bun install where deps are missing or changed.
-#   2. mise.toml or mise/*.toml changed: `mise install` (pinned hook tools, and the
+#   2. Claude Code plugins enabled in claude/settings.json, plus the language
+#      servers they only declare (Claude Code never downloads those).
+#   3. mise.toml or mise/*.toml changed: `mise install` (pinned hook tools, and the
 #      host layer selected by MISE_ENV).
-#   3. dotty.toml changed: report packages whose links are broken (conflict,
+#   4. dotty.toml changed: report packages whose links are broken (conflict,
 #      partial, blocked, missing-source), plus newly added packages not linked here.
 #      Nothing is linked automatically: `dotty link` can overwrite local files.
 set -uo pipefail
@@ -26,6 +28,7 @@ package_states() {
 }
 
 bash .githooks/opencode-plugins || true
+bash .githooks/claude-plugins || true
 
 if touched '^(mise\.toml|mise/[^/]+\.toml)$'; then
   if command -v mise >/dev/null 2>&1; then

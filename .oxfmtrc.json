@@ -9,5 +9,9 @@
       }
     }
   ],
-  "ignorePatterns": ["pi/extensions/herdr-agent-state.ts", "pi/extensions/seshagy-agent-state.ts"]
+  "ignorePatterns": [
+    "pi/extensions/herdr-agent-state.ts",
+    "pi/extensions/seshagy-agent-state.ts",
+    "claude/settings.json"
+  ]
 }

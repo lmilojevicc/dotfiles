@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# Install the Claude Code plugins this repo enables, plus the language-server
+# binaries those plugins only *declare* (a plugin ships an .lsp.json naming a
+# command such as `gopls`; the binary itself is never downloaded by Claude Code,
+# so a fresh machine reports "Executable not found in $PATH" until it exists).
+#
+# The plugin list is claude/settings.json -> enabledPlugins, which dotty links to
+# ~/.claude/settings.json: pulling the repo brings the intent, this script brings
+# the bits. Enabled-but-not-installed is Claude Code's documented state for a
+# settings entry another machine installed, so skip work when it is already there.
+#
+# Everything is idempotent: run by .githooks/post-pull, by `mise run
+# claude-plugins`, or by hand. --force reinstalls every enabled plugin.
+#
+# Binaries are installed with each ecosystem's own installer into ~/.local (npm
+# prefix) / ~/go/bin (GOBIN) rather than mise: this host's mise is absent, and
+# these four servers come from four different ecosystems (npm, go, rustup, a
+# GitHub release tarball). Versions are pinned here so a pull reproduces the same
+# servers; bump them in one place and re-run with --force.
+set -uo pipefail
+
+# Works from a hook (inside the repo) and from a bare `bash .githooks/claude-plugins`
+# called anywhere else.
+root=$(git rev-parse --show-toplevel 2>/dev/null) || true
+[[ -n $root ]] || root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root" || exit 1
+
+force=0
+[[ ${1:-} == --force ]] && force=1
+
+settings=${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}
+bin_dir=$HOME/.local/bin
+
+gopls_version=v0.24.0
+tls_version=6.1.0
+ts_version=7.0.2
+pyright_version=1.1.414
+ra_tag=2026-11-16
+
+die() {
+  echo "claude-plugins: $*" >&2
+  exit 1
+}
+
+command -v claude >/dev/null 2>&1 || {
+  echo "claude-plugins: claude not on PATH; skipping." >&2
+  exit 0
+}
+[[ -f $settings ]] || {
+  echo "claude-plugins: no $settings; nothing declared." >&2
+  exit 0
+}
+command -v jq >/dev/null 2>&1 || die "jq not on PATH; cannot read enabledPlugins."
+
+status=0
+
+# ---------------------------------------------------------------- plugins ----
+mapfile -t plugins < <(jq -r '.enabledPlugins // {} | to_entries[] | select(.value == true) | .key' "$settings")
+((${#plugins[@]})) || {
+  echo "claude-plugins: no enabledPlugins in $settings."
+  exit 0
+}
+
+if ! claude plugin marketplace list 2>/dev/null | grep -q 'claude-plugins-official'; then
+  echo "claude-plugins: adding marketplace claude-plugins-official"
+  claude plugin marketplace add anthropics/claude-plugins-official || status=1
+fi
+
+mapfile -t installed < <(claude plugin list --json 2>/dev/null | jq -r '.[].id')
+
+has_plugin() {
+  local id=$1 candidate
+  for candidate in "${installed[@]}"; do
+    [[ $candidate == "$id" ]] && return 0
+  done
+  return 1
+}
+
+for id in "${plugins[@]}"; do
+  if ((! force)) && has_plugin "$id"; then
+    continue
+  fi
+  echo "claude-plugins: installing $id"
+  if ! claude plugin install "$id" --scope user -y >/dev/null; then
+    echo "claude-plugins: install failed for $id" >&2
+    status=1
+  fi
+done
+
+enabled() {
+  local want=$1 id
+  for id in "${plugins[@]}"; do
+    [[ $id == "$want@claude-plugins-official" ]] && return 0
+  done
+  return 1
+}
+
+# --------------------------------------------------------------- servers ----
+# npm servers land in ~/.local/bin, GOBIN is ~/go/bin (both on PATH).
+npm_install() {
+  local pkg
+  local -a args=()
+  for pkg in "$@"; do args+=("$pkg"); done
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "claude-plugins: npm not on PATH; install ${args[*]} by hand." >&2
+    return 1
+  fi
+  npm i -g --prefix "$HOME/.local" "${args[@]}" >/dev/null
+}
+
+go_install_gopls() {
+  if ! command -v go >/dev/null 2>&1; then
+    echo "claude-plugins: go not on PATH; install gopls$gopls_version by hand." >&2
+    return 1
+  fi
+  GOBIN=$HOME/go/bin go install "golang.org/x/tools/gopls@$gopls_version"
+}
+
+install_rust_analyzer() {
+  if command -v rustup >/dev/null 2>&1; then
+    rustup component add rust-analyzer && return 0
+  fi
+  local target
+  case "$(uname -sm)" in
+  "Linux x86_64") target=x86_64-unknown-linux-gnu ;;
+  "Linux aarch64") target=aarch64-unknown-linux-gnu ;;
+  "Darwin arm64") target=aarch64-apple-darwin ;;
+  "Darwin x86_64") target=x86_64-apple-darwin ;;
+  *)
+    echo "claude-plugins: no rust-analyzer build for $(uname -sm); install it by hand." >&2
+    return 1
+    ;;
+  esac
+  local tmp
+  tmp=$(mktemp) || return 1
+  if ! curl -fsSL -o "$tmp.gz" \
+    "https://github.com/rust-lang/rust-analyzer/releases/download/$ra_tag/rust-analyzer-$target.gz"; then
+    rm -f "$tmp" "$tmp.gz"
+    echo "claude-plugins: rust-analyzer $ra_tag download failed." >&2
+    return 1
+  fi
+  mkdir -p "$bin_dir"
+  gunzip -c "$tmp.gz" >"$bin_dir/rust-analyzer" && chmod +x "$bin_dir/rust-analyzer"
+  rm -f "$tmp" "$tmp.gz"
+}
+
+need_server() {
+  local plugin=$1 binary=$2
+  shift 2
+  enabled "$plugin" || return 0
+  command -v "$binary" >/dev/null 2>&1 && return 0
+  echo "claude-plugins: installing $binary (for $plugin)"
+  if ! "$@"; then
+    echo "claude-plugins: $binary install failed" >&2
+    status=1
+    return 0
+  fi
+  command -v "$binary" >/dev/null 2>&1 || {
+    echo "claude-plugins: $binary still not on PATH after install" >&2
+    status=1
+  }
+}
+
+need_server gopls-lsp gopls go_install_gopls
+need_server typescript-lsp typescript-language-server \
+  npm_install "typescript-language-server@$tls_version" "typescript@$ts_version"
+need_server pyright-lsp pyright-langserver npm_install "pyright@$pyright_version"
+need_server rust-analyzer-lsp rust-analyzer install_rust_analyzer
+
+exit "$status"

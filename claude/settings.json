@@ -13,7 +13,9 @@
     "pr": ""
   },
   "permissions": {
-    "allow": ["mcp__fff__*"],
+    "allow": [
+      "mcp__fff__*"
+    ],
     "deny": [
       "PushNotification",
       "RemoteTrigger",
@@ -414,6 +416,12 @@
     ]
   },
   "disableArtifact": true,
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true
+  },
   "feedbackSurveyRate": 0,
   "modelSettings": {
     "claude-opus-5-5": {
