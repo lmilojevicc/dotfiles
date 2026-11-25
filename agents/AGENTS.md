@@ -37,33 +37,27 @@
 
 ## Tools
 
-Installed CLI tools: `jq`, `yq`, `ast-grep` (AST search/rewrite), `ripgrep-all` (document search), `duckdb`, `anydoc` (docs to Markdown), `wt` (worktree management), `git-filter-repo`.
-
-- Prefer dedicated file, search, and edit tools over shell commands when available. Batch independent read-only calls in parallel. Do not chain shell commands with decorative `echo "===="` banners.
-- If a tool call is denied, adjust your approach rather than retrying verbatim.
-- Run scanners, linters, or profilers ad hoc instead of installing them, using the first option that works:
-  1. The repo's own pinned version.
-  2. `npx`, `uvx`, or `go run <pkg>@<version>`.
-  3. `mise x <tool>@<version> -- <cmd>` (check `mise registry`).
-  4. `nix shell nixpkgs#<pkg>` on NixOS.
+- Run independent read-only steps in parallel; no decorative banner output. If an action is denied, change approach rather than retrying it unchanged.
+- Run scanners, linters, or profilers ad hoc instead of installing them (unless user requests them or repo already has some): the repo's pinned version first, else an ephemeral runner (`npx`, `uvx`, `go run <pkg>@<version>`, `mise x`, `nix shell`).
 - If the repo pins no linter or formatter, run one read-only to find issues; do not let it rewrite files.
 - Always pin tool versions—never `@latest`. When unpinned, look up the current release from the official source, prefer one released at least a few days ago, and report the version run.
 - Never add tools to a repo, change tool config, or install packages globally unless asked or confirmed.
 
 ## Evidence Before Claims
 
-- For code changes, run the narrowest check first, then broaden to the full suite. Do not re-run an identical clean check when no code changed since.
+- For code changes, run the narrowest check first, then the full CI-equivalent suite before reporting done, even when the task names a single test. Do not re-run an identical clean check when no code changed since.
 - Before claiming work is done, fixed, passing, or working, run the proving check in this session, read the full output and exit code, and report what it showed.
 - Match wording to evidence ("34 of 34 tests pass", not "should work"). Zero tests found is not a pass.
 - If you cannot run a check, mark it unverified and name the check you would run.
 - For user-visible behavior, run a smoke check against the running app/surface.
+- Done means the full requested scope: check each requirement against the request and name every deliberate limit; never narrow scope silently.
 - Report pre-existing failures by name; do not fix them unless asked. Always state what you did not check.
 - Reference code locations as `path:line`.
 
 ## Check Integrity
 
 - Never weaken a check to get green: do not skip/delete tests, loosen assertions, lower thresholds, add suppression comments, relax lint/compiler rules, bypass hooks, disable CI jobs, or edit coverage config.
-- Treat a failing test as a code bug unless you have evidence otherwise. Modify a test only when the task intentionally changes the asserted behavior, the test is provably wrong (state evidence), or the code under test moved/was removed. List every modified test and why.
+- Treat a failing test as a code bug unless evidence says otherwise. Modify a test only when the task intentionally changes the asserted behavior, the test is provably wrong (state evidence), or the code under test moved/was removed. List every modified test and why.
 - Never write production code that detects test runs or hardcodes expected test values.
 - Derive expected test values from the spec or hand calculation, never from the code under test.
 - When spec, test, and code disagree, report the conflict; never reinterpret requirements to fit what you built.
@@ -73,11 +67,11 @@ Installed CLI tools: `jq`, `yq`, `ast-grep` (AST search/rewrite), `ripgrep-all` 
 When diagnosing a failure or unexpected behavior:
 
 1. Stop adding changes. Read the full error, stack trace, and line numbers.
-2. Build a fast, deterministic reproduction. If you cannot, gather evidence before guessing.
+2. Build a fast, deterministic reproduction of the user's exact symptom, not a nearby failure. If you cannot, gather evidence before guessing.
 3. Trace the bad value or behavior backward from symptom to source.
 4. State one falsifiable hypothesis ("X causes Y because Z") and test it with the smallest change. Tag temporary debug logs with a unique prefix for one-grep cleanup.
 5. If wrong, revert that change and return to step 4. Never stack speculative fixes.
-6. Fix the source once, add a regression test that fails without the fix, and check sibling code paths.
+6. Fix the source once, add a regression test that fails without the fix at a seam exercising the real failure (report it if none exists), and check sibling code paths.
 7. After three failed fixes, stop and report what you learned—the design may be wrong.
 
 ## When Writing or Editing Code
@@ -100,9 +94,9 @@ Take the first option that fully works:
 5. Otherwise, write the minimum code a reader understands at a glance.
 
 - Be lazy about the solution, never about the change: finish every place the change reaches. Delete before adding.
-- Make one logical change at a time and test after each. Keep refactors separate from behavior changes, and leave untouched code unformatted, unrenamed, and unmoved.
+- Make one logical change at a time and test after each. Keep refactors separate from behavior changes, and leave untouched code unformatted, unrenamed, and unmoved, comments included.
 - Follow repo conventions (or ecosystem defaults in new projects). If repo patterns differ from current docs, follow the repo and flag the difference.
-- When simplifying or refactoring, preserve exact behavior and optimize for reading speed, not line count. Keep concept-naming helpers, avoid merging unrelated logic, and preserve error handling and validation when moving/merging code.
+- When simplifying or refactoring, preserve exact behavior and optimize for reading speed, not line count. Keep concept-naming helpers, avoid merging unrelated logic, and never drop validation, security, accessibility, or error handling when moving, merging, or shrinking code.
 
 ### Tests
 
@@ -119,7 +113,7 @@ Take the first option that fully works:
 - Add timeouts to calls that can hang. Make writes safe to repeat (idempotent); retry only idempotent calls with a limit and backoff, and pass idempotency keys for external side effects. Make check-then-act atomic; fire external side effects after commit.
 - Public interfaces and schemas are contracts: extend additively. Migrate schemas in separate changes (expand, backfill/dual-write, switch reads, contract later—never drop/rename a column in the same change as code changes), and write and run the down migration before merge.
 - Optimize only on evidence: measure before and after reproducibly, report both numbers, and revert neutral or within-noise changes.
-- Comment only _why_, never _what_, change narration, or PR/task references. Mark deliberate limits with `shortcut: <the limit>, <when to upgrade>`.
+- Comment only _why_, never restate the code, or PR/task references. Mark deliberate limits with `shortcut: <the limit>, <when to upgrade>`.
 
 ### Never
 
@@ -133,7 +127,7 @@ Take the first option that fully works:
 
 - Never commit to the default branch without explicit authorization. Check staged diffs for secrets before committing.
 - Follow the repo's `CONTRIBUTING` / PR template (or Conventional Commits in new projects).
-- Before reporting a coding task done: run CI-equivalent checks, remove temporary artifacts you created (scratch scripts, debug logs, unused imports, in-repo backups, temporary tests), and update stale docs, comments, examples, and help text.
+- Before reporting a coding task done, remove temporary artifacts you created (scratch scripts, debug logs, unused imports, in-repo backups, temporary tests) and update stale docs, comments, examples, and help text.
 
 ## Deliverables
 
