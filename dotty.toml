@@ -3,6 +3,20 @@ version = 1
 [packages.aerospace]
 links = [{ source = ".", target = "~/.config/aerospace" }]
 
+# Harness-neutral agent instructions, one source each (guard: tests/opencode-omni-sync.sh).
+# OpenCode's omni agent reads orchestrator.md through opencode.jsonc ({file:}); the bb
+# agent-instructions plugin reads it through its `file` setting.
+[packages.agents]
+links = [
+	# Shared rules for every agent, workers included. Pi children inherit them via
+	# defaultInheritGlobalContext; OpenCode loads AGENTS.md for every agent.
+	{ source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
+	{ source = "AGENTS.md", target = "~/.pi/agent-bb/AGENTS.md" },
+	{ source = "AGENTS.md", target = "~/.config/opencode/AGENTS.md" },
+	# Orchestrator-only rules for plain Pi. pi-subagents empties the append slot, so children never see this.
+	{ source = "orchestrator.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
+]
+
 [packages.bat]
 links = [{ source = ".", target = "~/.config/bat" }]
 
@@ -47,7 +61,6 @@ links = [{ source = "settings.toml", target = "~/.config/omniwm/settings.toml" }
 
 [packages.opencode]
 links = [
-	{ source = "AGENTS.md", target = "~/.config/opencode/AGENTS.md" },
 	{ source = "agents", target = "~/.config/opencode/agents" },
 	{ source = "opencode.jsonc", target = "~/.config/opencode/opencode.jsonc" },
 	{ source = "cli.json", target = "~/.config/opencode/cli.json" },
@@ -67,10 +80,6 @@ links = [
 	{ source = "pi-lens.json", target = "~/.pi/agent/pi-lens.json" },
 	{ source = "subagent.json", target = "~/.pi/agent/subagent.json" },
 	{ source = "model-instructions.json", target = "~/.pi/agent/model-instructions.json" },
-	# Shared rules reach every Pi session and, via defaultInheritGlobalContext, every child.
-	{ source = "AGENTS.md", target = "~/.pi/agent/AGENTS.md" },
-	# Orchestrator-only rules. pi-subagents empties the append slot, so children never see this.
-	{ source = "APPEND_SYSTEM.md", target = "~/.pi/agent/APPEND_SYSTEM.md" },
 	{ source = "auto-compact.json", target = "~/.pi/agent/auto-compact.json" },
 	{ source = "themes", target = "~/.pi/agent/themes" },
 	{ source = "extensions", target = "~/.pi/agent/extensions" },
@@ -79,13 +88,11 @@ links = [
 	{ source = "keybindings.json", target = "~/.pi/agent-bb/keybindings.json" },
 	{ source = "model-blacklist.json", target = "~/.pi/agent-bb/model-blacklist.json" },
 	{ source = "themes", target = "~/.pi/agent-bb/themes" },
-	# Same unified config files, pointed at the BB agent dir (PI_CODING_AGENT_DIR=~/.pi/agent-bb).
-	{ source = "AGENTS.md", target = "~/.pi/agent-bb/AGENTS.md" },
 	# Deliberately NO APPEND_SYSTEM.md in the BB agent dir. BB passes its own --append-system-prompt
 	# whenever its assembled instructions are non-empty, and when they are empty, Pi falls back to
 	# native discovery of <agentDir>/APPEND_SYSTEM.md — arming that path would leak the orchestrator
-	# rules to worker/gate threads. The "append-system" BB plugin reads the plain-Pi
-	# ~/.pi/agent/APPEND_SYSTEM.md (the same single source) and injects it for non-worker threads only.
+	# rules to worker/gate threads. The "agent-instructions" BB plugin reads agents/orchestrator.md
+	# (its `file` setting) and injects it for non-worker threads only. Shared files: [packages.agents].
 	{ source = "model-instructions.json", target = "~/.pi/agent-bb/model-instructions.json" },
 	{ source = "auto-compact.json", target = "~/.pi/agent-bb/auto-compact.json" },
 ]

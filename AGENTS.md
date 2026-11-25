@@ -5,19 +5,21 @@
 - When you add, move or remove a tracked file, update `dotty.toml` and run `dotty link <package>`; `dotty status <package>` shows broken or missing links.
 - Never track secrets or machine state: auth tokens, caches, sessions. Link those per machine instead.
 - System services (for example `bb.service`) live in the NixOS config at `~/nixos`, not here.
+- Agent instructions have one source each in `agents/`: edit `agents/AGENTS.md` for rules every agent gets, `agents/orchestrator.md` for the main agent only. Plain Pi, OpenCode and bb's agent-instructions plugin all read them from there; never copy them into `pi/` or `opencode/`.
 
 ## Layout
 
-| Path                                                 | Notes                                                                                                                |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `zsh/`, `starship/`, `tmux/`, `ghostty/`, `wezterm/` | Shell and terminal                                                                                                   |
-| `nvim/`                                              | Lua config (lazy.nvim); format with StyLua (`nvim/.stylua.toml`); `lazy-lock.json` is tool-managed                   |
-| `mise/config.toml`                                   | Runtimes and global CLI tools                                                                                        |
-| `scripts/`                                           | Small CLIs linked into `~/.local/bin`                                                                                |
-| `tests/`                                             | Repo self-checks, one `bash tests/<name>.sh` per guard                                                               |
-| `pi/`                                                | Pi coding agent (see below)                                                                                          |
-| `opencode/`                                          | OpenCode agents; shared rules and orchestrator body single-sourced from `pi/` (guard: `tests/opencode-omni-sync.sh`) |
-| `aerospace/`, `rift/`, `omniwm/`, `neru/`            | macOS window management                                                                                              |
+| Path                                                 | Notes                                                                                                                        |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `zsh/`, `starship/`, `tmux/`, `ghostty/`, `wezterm/` | Shell and terminal                                                                                                           |
+| `nvim/`                                              | Lua config (lazy.nvim); format with StyLua (`nvim/.stylua.toml`); `lazy-lock.json` is tool-managed                           |
+| `mise/config.toml`                                   | Runtimes and global CLI tools                                                                                                |
+| `scripts/`                                           | Small CLIs linked into `~/.local/bin`                                                                                        |
+| `tests/`                                             | Repo self-checks, one `bash tests/<name>.sh` per guard                                                                       |
+| `pi/`                                                | Pi coding agent (see below)                                                                                                  |
+| `agents/`                                            | Harness-neutral agent instructions: `AGENTS.md` (all agents) and `orchestrator.md` (main agent only)                         |
+| `opencode/`                                          | OpenCode config and subagents; omni's prompt is `{file:}` of `agents/orchestrator.md` (guard: `tests/opencode-omni-sync.sh`) |
+| `aerospace/`, `rift/`, `omniwm/`, `neru/`            | macOS window management                                                                                                      |
 
 ## Pi
 

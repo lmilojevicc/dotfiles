@@ -1,6 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "omni",
+  // The orchestrator: its system prompt replaces OpenCode's base prompt and comes from the
+  // harness-neutral agents/orchestrator.md (also plain Pi's APPEND_SYSTEM.md and bb's
+  // agent-instructions file). bb never starts on it (its OpenCode provider hides omni).
+  "agents": {
+    "omni": {
+      "mode": "primary",
+      "description": "Default primary orchestrator. System prompt from ~/dotfiles/agents/orchestrator.md; global AGENTS.md still stacks on top.",
+      "system": "{file:~/dotfiles/agents/orchestrator.md}",
+    },
+  },
   // Compact at 80% of the model's window (background summarizing is on by default).
   "compaction": { "buffer": "20%" },
   "permissions": [
