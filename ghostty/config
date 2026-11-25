@@ -12,6 +12,7 @@ alpha-blending = linear-corrected
 theme = Catppuccin Mocha
 background = #11111b
 split-divider-color = #313244
+cursor-color = #cdd6f4
 palette = 9=#f37799
 palette = 10=#89d88b
 palette = 11=#ebd391
@@ -21,6 +22,8 @@ palette = 14=#6bd7ca
 
 # Cursor settings
 cursor-style = block
+cursor-style-blink = false
+shell-integration-features = no-cursor
 mouse-hide-while-typing = true
 
 # Window
