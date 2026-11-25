@@ -14,7 +14,8 @@
   },
   "permissions": {
     "allow": [
-      "mcp__fff__*"
+      "mcp__fff__*",
+      "mcp__pi-web-access__*"
     ],
     "deny": [
       "PushNotification",
